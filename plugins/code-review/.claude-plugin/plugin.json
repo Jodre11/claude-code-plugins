@@ -1,0 +1,21 @@
+{
+  "name": "code-review",
+  "description": "10 specialist code review agents with orchestrator, PR review skill, pre-review and address-pr-comments commands",
+  "version": "1.0.0",
+  "author": {
+    "name": "Christian Haddrell"
+  },
+  "license": "MIT",
+  "keywords": [
+    "code-review",
+    "agents",
+    "security",
+    "correctness",
+    "consistency",
+    "style",
+    "archaeology",
+    "reuse",
+    "efficiency",
+    "jetbrains"
+  ]
+}

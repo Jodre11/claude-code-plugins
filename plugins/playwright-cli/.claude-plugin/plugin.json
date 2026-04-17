@@ -1,0 +1,16 @@
+{
+  "name": "playwright-cli",
+  "description": "Browser automation via playwright-cli — testing, form filling, screenshots, data extraction",
+  "version": "1.0.0",
+  "author": {
+    "name": "Christian Haddrell"
+  },
+  "license": "MIT",
+  "keywords": [
+    "playwright",
+    "browser",
+    "automation",
+    "testing",
+    "screenshots"
+  ]
+}

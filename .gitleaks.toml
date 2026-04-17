@@ -61,4 +61,6 @@ tags = ["secret"]
 paths = [
     '''.githooks/pre-commit''',
     '''.gitleaks.toml''',
+    '''.claude-plugin/marketplace.json''',
+    '''README.md''',
 ]

@@ -1,0 +1,16 @@
+{
+  "name": "md-to-clipboard",
+  "description": "Convert Markdown to Teams-compatible rich text on the macOS clipboard",
+  "version": "1.0.0",
+  "author": {
+    "name": "Christian Haddrell"
+  },
+  "license": "MIT",
+  "keywords": [
+    "markdown",
+    "clipboard",
+    "teams",
+    "rich-text",
+    "macos"
+  ]
+}

@@ -1,0 +1,14 @@
+{
+  "name": "web-search",
+  "description": "Web search via ddgr (DuckDuckGo CLI) — no API key, no tracking",
+  "version": "1.0.0",
+  "author": {
+    "name": "Christian Haddrell"
+  },
+  "license": "MIT",
+  "keywords": [
+    "web-search",
+    "ddgr",
+    "duckduckgo"
+  ]
+}

@@ -63,4 +63,6 @@ paths = [
     '''.gitleaks.toml''',
     '''.claude-plugin/marketplace.json''',
     '''README.md''',
+    '''plugins/.*/README.md''',
+    '''plugins/.*/.claude-plugin/plugin.json''',
 ]

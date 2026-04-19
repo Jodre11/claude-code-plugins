@@ -42,7 +42,7 @@ For `/pre-review`: write the git diff to the temp file:
 git diff {base}...HEAD > /tmp/claude-{session_name}/pr-diff.txt
 ```
 
-For `/review-pr`: fetch the PR diff to the temp file:
+For `/review-gh-pr`: fetch the PR diff to the temp file:
 ```bash
 gh pr diff {pr_number} > /tmp/claude-{session_name}/pr-diff.txt
 ```

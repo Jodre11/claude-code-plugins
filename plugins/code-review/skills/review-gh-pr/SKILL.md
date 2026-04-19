@@ -1,5 +1,5 @@
 ---
-name: review-pr
+name: review-gh-pr
 description: Review a GitHub pull request with inline comments
 argument-hint: "[pr-number-or-url]"
 ---

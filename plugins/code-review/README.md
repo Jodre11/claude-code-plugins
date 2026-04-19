@@ -22,8 +22,8 @@ for pre-review analysis and addressing PR comments.
 
 ### Skill
 
-- **review-pr** — Review a GitHub PR with inline comments. Automatically routes to lightweight
-  or full team review based on diff size. Usage: `/review-pr <pr-number-or-url>`
+- **review-gh-pr** — Review a GitHub PR with inline comments. Automatically routes to lightweight
+  or full team review based on diff size. Usage: `/review-gh-pr <pr-number-or-url>`
 
 ### Commands
 

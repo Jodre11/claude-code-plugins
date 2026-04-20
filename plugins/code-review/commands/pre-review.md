@@ -1,7 +1,9 @@
 ---
-description: "Analyze local changes before creating a PR"
+name: pre-review
+description: Analyze local changes before creating a PR
 argument-hint: "[base-branch]"
 ---
+
 Before analyzing, run `git fetch` and check whether the current branch is behind its remote tracking branch. If local is behind remote, warn me and ask whether to proceed — reviewing stale code may be wasted effort.
 
 ## Choose review approach

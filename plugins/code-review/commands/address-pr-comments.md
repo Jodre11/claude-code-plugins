@@ -1,3 +1,9 @@
+---
+name: address-pr-comments
+description: Address unresolved review comments on a GitHub PR
+argument-hint: "[pr-number-or-url]"
+---
+
 # Address PR Comments
 
 Examine a GitHub PR for unresolved review comments and address them systematically.

@@ -1,0 +1,271 @@
+#!/usr/bin/env python3
+"""Caching wrapper for ddgr with exponential backoff on rate limits."""
+
+import argparse
+import hashlib
+import json
+import os
+import random
+import sqlite3
+import subprocess
+import sys
+import time
+
+DEFAULT_TTL = 3600
+DEFAULT_MAX_RETRIES = 3
+DEFAULT_BASE_DELAY = 2.0
+CACHE_DIR = os.path.join(os.path.expanduser("~"), ".cache", "ddgr-cached")
+CACHE_DB = os.path.join(CACHE_DIR, "cache.db")
+
+
+def init_db(conn):
+    """Create the cache table if it does not exist."""
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS cache (
+            key     TEXT PRIMARY KEY,
+            query   TEXT NOT NULL,
+            result  TEXT NOT NULL,
+            created REAL NOT NULL
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS stats (
+            name  TEXT PRIMARY KEY,
+            value INTEGER NOT NULL DEFAULT 0
+        )
+        """
+    )
+    for name in ("hits", "misses", "retries", "failures"):
+        conn.execute(
+            "INSERT OR IGNORE INTO stats (name, value) VALUES (?, 0)", (name,)
+        )
+
+
+def bump_stat(conn, name, amount=1):
+    """Increment a stats counter."""
+    conn.execute(
+        "UPDATE stats SET value = value + ? WHERE name = ?", (amount, name)
+    )
+
+
+def get_stats(conn):
+    """Return all stats as a dict."""
+    rows = conn.execute("SELECT name, value FROM stats").fetchall()
+    return dict(rows)
+
+
+def cache_key(args):
+    """Deterministic hash of the ddgr invocation."""
+    canonical = json.dumps(args, separators=(",", ":"))
+    return hashlib.sha256(canonical.encode()).hexdigest()
+
+
+def get_cached(conn, key, ttl):
+    """Return cached result if within TTL, else None."""
+    row = conn.execute(
+        "SELECT result FROM cache WHERE key = ? AND ? - created <= ?",
+        (key, time.time(), ttl),
+    ).fetchone()
+    return row[0] if row else None
+
+
+def store_cached(conn, key, query_str, result):
+    """Store a result in the cache."""
+    conn.execute(
+        "INSERT OR REPLACE INTO cache (key, query, result, created) VALUES (?, ?, ?, ?)",
+        (key, query_str, result, time.time()),
+    )
+
+
+def is_rate_limited(stdout_text, stderr_text):
+    """Detect DuckDuckGo rate limiting from ddgr output."""
+    if "HTTP Error" in stderr_text:
+        return True
+    if "CAPTCHA" in stdout_text or "CAPTCHA" in stderr_text:
+        return True
+    return False
+
+
+def run_ddgr(ddgr_args):
+    """Run ddgr and return (stdout, stderr, returncode)."""
+    cmd = ["ddgr", "--json", "--np"] + ddgr_args
+    proc = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+    return proc.stdout, proc.stderr, proc.returncode
+
+
+def emit_error(message, suggestion):
+    """Emit a structured JSON error to stdout for Claude to parse."""
+    output = {
+        "error": message,
+        "suggestion": suggestion,
+        "results": [],
+    }
+    print(json.dumps(output, indent=2))
+
+
+def clear_cache(conn):
+    """Delete all cached entries and reset stats."""
+    conn.execute("DELETE FROM cache")
+    for name in ("hits", "misses", "retries", "failures"):
+        conn.execute("UPDATE stats SET value = 0 WHERE name = ?", (name,))
+    print("Cache cleared.", file=sys.stderr)
+
+
+def show_cache_stats(conn):
+    """Print cache statistics."""
+    stats = get_stats(conn)
+    entry_count = conn.execute("SELECT COUNT(*) FROM cache").fetchone()[0]
+    db_size = os.path.getsize(CACHE_DB) if os.path.exists(CACHE_DB) else 0
+
+    print(f"Cache entries:  {entry_count}")
+    print(f"Database size:  {db_size / 1024:.1f} KB")
+    print(f"Cache hits:     {stats.get('hits', 0)}")
+    print(f"Cache misses:   {stats.get('misses', 0)}")
+    print(f"Retries:        {stats.get('retries', 0)}")
+    print(f"Failures:       {stats.get('failures', 0)}")
+
+    total = stats.get("hits", 0) + stats.get("misses", 0)
+    if total > 0:
+        print(f"Hit rate:       {stats.get('hits', 0) / total * 100:.1f}%")
+
+
+def extract_keywords(ddgr_args):
+    """Extract positional keywords from ddgr arguments, ignoring flags and their values."""
+    ddgr_parser = argparse.ArgumentParser(add_help=False)
+    ddgr_parser.add_argument("-n", "--num")
+    ddgr_parser.add_argument("-r", "--reg")
+    ddgr_parser.add_argument("-t")
+    ddgr_parser.add_argument("-w")
+    ddgr_parser.add_argument("-p", "--proxy", action="store_true")
+    ddgr_parser.add_argument("--colorize", nargs="?")
+    ddgr_parser.add_argument("--colors")
+    ddgr_parser.add_argument("--url-handler")
+    for flag in ("-j", "-C", "-x", "--unsafe", "--noua", "--gb", "--rev",
+                 "--show-browser-logs", "-v"):
+        ddgr_parser.add_argument(flag, action="store_true")
+    _, positional = ddgr_parser.parse_known_args(ddgr_args)
+    return positional
+
+
+def parse_own_args(argv):
+    """Separate ddgr-cached flags from ddgr passthrough flags."""
+    parser = argparse.ArgumentParser(add_help=False)
+    parser.add_argument("--clear-cache", action="store_true")
+    parser.add_argument("--cache-stats", action="store_true")
+    parser.add_argument("--cache-ttl", type=int, default=None)
+    parser.add_argument("--max-retries", type=int, default=None)
+
+    own_args, ddgr_args = parser.parse_known_args(argv)
+    return own_args, ddgr_args
+
+
+def main():
+    own_args, ddgr_args = parse_own_args(sys.argv[1:])
+
+    ttl = (
+        own_args.cache_ttl
+        if own_args.cache_ttl is not None
+        else int(os.environ.get("DDGR_CACHE_TTL", DEFAULT_TTL))
+    )
+    max_retries = (
+        own_args.max_retries
+        if own_args.max_retries is not None
+        else int(os.environ.get("DDGR_MAX_RETRIES", DEFAULT_MAX_RETRIES))
+    )
+
+    os.makedirs(CACHE_DIR, exist_ok=True)
+    conn = sqlite3.connect(CACHE_DB)
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA busy_timeout=5000")
+    try:
+        _run(conn, own_args, ddgr_args, ttl, max_retries)
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def _run(conn, own_args, ddgr_args, ttl, max_retries):
+    """Core logic, separated so main() can guarantee conn.close() via finally."""
+    init_db(conn)
+
+    if own_args.clear_cache:
+        clear_cache(conn)
+        return
+
+    if own_args.cache_stats:
+        show_cache_stats(conn)
+        return
+
+    if not ddgr_args:
+        emit_error(
+            "No search query provided.",
+            "Provide search keywords: ddgr-cached 'your query here'",
+        )
+        sys.exit(1)
+
+    ddgr_args = [a for a in ddgr_args if a not in ("--json", "--np", "-j")]
+
+    key = cache_key(ddgr_args)
+    keywords = extract_keywords(ddgr_args)
+    query_str = " ".join(keywords) if keywords else " ".join(ddgr_args)
+
+    cached = get_cached(conn, key, ttl)
+    if cached is not None:
+        bump_stat(conn, "hits")
+        print(cached)
+        return
+
+    bump_stat(conn, "misses")
+
+    for attempt in range(max_retries + 1):
+        timed_out = False
+        try:
+            stdout, stderr, _ = run_ddgr(ddgr_args)
+        except subprocess.TimeoutExpired:
+            timed_out = True
+        except FileNotFoundError:
+            emit_error(
+                "ddgr is not installed.",
+                "Install ddgr: brew install ddgr",
+            )
+            sys.exit(1)
+
+        if not timed_out and not is_rate_limited(stdout, stderr):
+            stripped = stdout.strip()
+            try:
+                parsed = json.loads(stripped)
+                if isinstance(parsed, list):
+                    store_cached(conn, key, query_str, stripped)
+                    print(stripped)
+                    return
+            except (json.JSONDecodeError, TypeError):
+                print(
+                    f"[ddgr-cached] Unexpected output from ddgr: {stderr.strip()}",
+                    file=sys.stderr,
+                )
+
+        if attempt < max_retries:
+            bump_stat(conn, "retries")
+            delay = DEFAULT_BASE_DELAY * (2 ** attempt) + random.uniform(0, 1)
+            reason = "Timed out" if timed_out else "Rate limited"
+            print(
+                f"[ddgr-cached] {reason}, retrying in {delay:.1f}s "
+                f"(attempt {attempt + 1}/{max_retries})...",
+                file=sys.stderr,
+            )
+            time.sleep(delay)
+
+    bump_stat(conn, "failures")
+    emit_error(
+        f"Search failed after {max_retries} retries for query: {query_str}",
+        "Try again in 2-3 minutes. The rate limit is temporary. "
+        "Do NOT abandon this tool — it will work again shortly. "
+        "Continue with other work and retry this search later.",
+    )
+
+
+if __name__ == "__main__":
+    main()

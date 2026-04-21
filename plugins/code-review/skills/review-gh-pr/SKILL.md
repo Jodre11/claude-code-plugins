@@ -234,3 +234,9 @@ After submitting, provide the user with:
 - Review action taken (approved/requested changes/commented)
 - Number of inline comments added
 - Link to the PR
+
+## Step 8: Clean Up
+
+Follow the cleanup procedure from the agent team review (Step 6 in
+`includes/agent-team-review.md`). Shut down all teammates, delete the team, and
+clean temp files. Do not leave orphaned teammates running.

@@ -1,6 +1,7 @@
 ---
 name: archaeology-reviewer
 description: Investigates deleted and modified code for hidden historical intent. Identifies removals that may silently reintroduce past bugs. Used by code-review-team orchestrator or standalone.
+model: sonnet
 tools: Read, Grep, Glob, Bash
 background: true
 ---

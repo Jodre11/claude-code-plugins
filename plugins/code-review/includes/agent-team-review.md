@@ -71,6 +71,13 @@ branch, gathers the diff, and writes findings in its defined output format.
 Instruct each teammate to write its findings to a temp file:
 `/tmp/claude-{session_name}/review-{reviewer-name}.md`
 
+Append the following to each teammate's prompt so they know how to respond to
+shutdown requests:
+
+> When you receive a message with `{type: "shutdown_request"}`, respond
+> immediately with `{type: "shutdown_response", request_id: "<from the request>",
+> approve: true}` to confirm shutdown.
+
 After all teammates have been spawned, apply a layout that keeps the orchestrator
 pane prominent:
 
@@ -201,8 +208,45 @@ X file(s) changed | 0 findings — LGTM
 
 #### Step 6: Clean up
 
-After producing the final output, close all remaining teammate tmux panes that
-were created for this review. Do not leave orphaned panes running.
+After producing the final output, shut down all teammates and clean up resources.
+Follow each substep in order — do not skip the fallbacks.
+
+**Step 6a: Send shutdown requests**
+
+Send `SendMessage({to: "<name>", message: {type: "shutdown_request"}})` to each
+teammate individually. Do not use broadcast — it cannot carry structured messages.
+
+**Step 6b: Wait with timeout**
+
+Wait up to 60 seconds for `shutdown_response` messages from all teammates.
+Idle teammates will respond quickly. Mid-turn teammates will respond when their
+turn ends.
+
+**Step 6c: Force-kill unresponsive panes**
+
+If any teammates have not responded after 60 seconds:
+1. Read `~/.claude/teams/{team-name}/config.json` to get the `tmuxPaneId` for
+   each unresponsive member.
+2. Kill the pane directly: `tmux kill-pane -t {paneId}`
+
+This handles teammates that are blocked on permission prompts or frozen mid-turn.
+
+**Step 6d: TeamDelete with fallback**
+
+Call `TeamDelete` to remove the team. If it fails (e.g. members still show
+`isActive: true` due to stale state), fall back to removing the directories
+manually:
+
+```bash
+rm -rf ~/.claude/teams/{team-name}
+rm -rf ~/.claude/tasks/{team-name}
+```
+
+**Step 6e: Clean temp files**
+
+```bash
+rm -rf /tmp/claude-{session_name}/review-*.md /tmp/claude-{session_name}/pr-diff.txt
+```
 
 #### Rules
 - Do NOT use the Agent tool or code-review-team agent. Use the teammate mechanism.

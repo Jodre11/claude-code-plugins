@@ -233,9 +233,17 @@ This handles teammates that are blocked on permission prompts or frozen mid-turn
 
 **Step 6d: TeamDelete with fallback**
 
-Call `TeamDelete` to remove the team. If it fails (e.g. members still show
-`isActive: true` due to stale state), fall back to removing the directories
-manually:
+Call `TeamDelete` to remove the team. If it fails because members still show
+`isActive: true` (stale state after pane kill), patch the config and retry:
+
+1. Read `~/.claude/teams/{team-name}/config.json`
+2. Set `isActive: false` on every member
+3. Write the config back
+4. Call `TeamDelete` again
+
+This lets TeamDelete run its proper cleanup path (including ribbon teardown)
+rather than bypassing it. Only fall back to manual removal if the second
+attempt also fails:
 
 ```bash
 rm -rf ~/.claude/teams/{team-name}

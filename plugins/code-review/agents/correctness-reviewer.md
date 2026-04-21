@@ -1,6 +1,7 @@
 ---
 name: correctness-reviewer
 description: Reviews code changes for logic errors, bugs, and correctness issues. Used by code-review-team orchestrator or standalone.
+model: sonnet
 tools: Read, Grep, Glob, Bash
 background: true
 ---

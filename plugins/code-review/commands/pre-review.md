@@ -19,3 +19,6 @@ Then measure the diff:
 - Count the number of changed files and total lines changed (insertions + deletions)
 
 Follow the shared agent team review instructions in `includes/agent-team-review.md`.
+
+After the review is complete, follow the cleanup procedure in Step 6 of the
+agent team review instructions. Do not leave orphaned teammates running.

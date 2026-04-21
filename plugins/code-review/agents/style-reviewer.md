@@ -1,6 +1,7 @@
 ---
 name: style-reviewer
 description: Reviews code changes for readability, complexity, and maintainability. Used by code-review-team orchestrator or standalone.
+model: sonnet
 tools: Read, Grep, Glob, Bash
 background: true
 ---

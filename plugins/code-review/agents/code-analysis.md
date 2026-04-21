@@ -1,6 +1,7 @@
 ---
 name: code-analysis
 description: Analyzes local code changes for bugs, security issues, convention violations, and quality problems. Use before creating a PR.
+model: sonnet
 tools: Read, Grep, Glob, Bash
 background: true
 ---

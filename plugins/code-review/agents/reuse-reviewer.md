@@ -1,6 +1,7 @@
 ---
 name: reuse-reviewer
 description: Reviews code changes for missed reuse of existing utilities, helpers, and patterns. Used by code-review-team orchestrator or standalone.
+model: sonnet
 tools: Read, Grep, Glob, Bash
 background: true
 ---

@@ -1,6 +1,7 @@
 ---
 name: code-review-team
 description: Orchestrates a team of specialist code reviewers (security, correctness, consistency, style, archaeology, reuse, efficiency, and conditionally jbinspect for C#) for deep code review with disagreement surfacing. Use before creating a PR.
+model: opus
 tools: Agent, Read, Bash, Grep, Glob
 ultrathink: true
 ---

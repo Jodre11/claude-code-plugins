@@ -1,0 +1,251 @@
+#!/usr/bin/env python3
+"""Caching wrapper for SearXNG with exponential backoff on errors."""
+
+import argparse
+import hashlib
+import json
+import os
+import random
+import sqlite3
+import sys
+import time
+import urllib.error
+import urllib.parse
+import urllib.request
+
+DEFAULT_TTL = 3600
+DEFAULT_MAX_RETRIES = 3
+DEFAULT_BASE_DELAY = 2.0
+SEARXNG_BASE_URL = os.environ.get("SEARXNG_URL", "http://localhost:8888")
+CACHE_DIR = os.path.join(os.path.expanduser("~"), ".cache", "web-search")
+CACHE_DB = os.path.join(CACHE_DIR, "cache.db")
+
+
+def init_db(conn):
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS cache (
+            key     TEXT PRIMARY KEY,
+            query   TEXT NOT NULL,
+            result  TEXT NOT NULL,
+            created REAL NOT NULL
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS stats (
+            name  TEXT PRIMARY KEY,
+            value INTEGER NOT NULL DEFAULT 0
+        )
+        """
+    )
+    for name in ("hits", "misses", "retries", "failures"):
+        conn.execute(
+            "INSERT OR IGNORE INTO stats (name, value) VALUES (?, 0)", (name,)
+        )
+
+
+def bump_stat(conn, name, amount=1):
+    conn.execute(
+        "UPDATE stats SET value = value + ? WHERE name = ?", (amount, name)
+    )
+
+
+def get_stats(conn):
+    rows = conn.execute("SELECT name, value FROM stats").fetchall()
+    return dict(rows)
+
+
+def cache_key(query, num_results):
+    canonical = json.dumps({"q": query, "n": num_results}, separators=(",", ":"))
+    return hashlib.sha256(canonical.encode()).hexdigest()
+
+
+def get_cached(conn, key, ttl):
+    row = conn.execute(
+        "SELECT result FROM cache WHERE key = ? AND ? - created <= ?",
+        (key, time.time(), ttl),
+    ).fetchone()
+    return row[0] if row else None
+
+
+def store_cached(conn, key, query_str, result):
+    conn.execute(
+        "INSERT OR REPLACE INTO cache (key, query, result, created) VALUES (?, ?, ?, ?)",
+        (key, query_str, result, time.time()),
+    )
+
+
+def search_searxng(query, num_results):
+    """Call SearXNG JSON API and return a list of results with url, title, abstract keys."""
+    params = urllib.parse.urlencode({
+        "q": query,
+        "format": "json",
+        "language": "en",
+        "safesearch": "0",
+    })
+    url = f"{SEARXNG_BASE_URL}/search?{params}"
+
+    req = urllib.request.Request(
+        url,
+        headers={"User-Agent": "web-search/2.0 (local agent)"},
+    )
+    with urllib.request.urlopen(req, timeout=30) as response:
+        data = json.loads(response.read().decode("utf-8"))
+
+    if not isinstance(data, dict):
+        raise RuntimeError(f"Unexpected SearXNG response type: {type(data)}")
+
+    raw_results = data.get("results", [])
+
+    # SearXNG: url, title, content → ddgr-compatible: url, title, abstract
+    mapped = []
+    for item in raw_results[:num_results]:
+        mapped.append({
+            "url": item.get("url", ""),
+            "title": item.get("title", ""),
+            "abstract": item.get("content", ""),
+        })
+
+    return mapped
+
+
+def emit_error(message, suggestion):
+    output = {
+        "error": message,
+        "suggestion": suggestion,
+        "results": [],
+    }
+    print(json.dumps(output, indent=2))
+
+
+def clear_cache(conn):
+    conn.execute("DELETE FROM cache")
+    for name in ("hits", "misses", "retries", "failures"):
+        conn.execute("UPDATE stats SET value = 0 WHERE name = ?", (name,))
+    print("Cache cleared.", file=sys.stderr)
+
+
+def show_cache_stats(conn):
+    stats = get_stats(conn)
+    entry_count = conn.execute("SELECT COUNT(*) FROM cache").fetchone()[0]
+    db_size = os.path.getsize(CACHE_DB) if os.path.exists(CACHE_DB) else 0
+    print(f"Cache entries:  {entry_count}")
+    print(f"Database size:  {db_size / 1024:.1f} KB")
+    print(f"Cache hits:     {stats.get('hits', 0)}")
+    print(f"Cache misses:   {stats.get('misses', 0)}")
+    print(f"Retries:        {stats.get('retries', 0)}")
+    print(f"Failures:       {stats.get('failures', 0)}")
+    total = stats.get("hits", 0) + stats.get("misses", 0)
+    if total > 0:
+        print(f"Hit rate:       {stats.get('hits', 0) / total * 100:.1f}%")
+
+
+def parse_args(argv):
+    parser = argparse.ArgumentParser(
+        description="Caching wrapper for SearXNG JSON API",
+        add_help=True,
+    )
+    parser.add_argument("query", nargs="*", help="Search query")
+    parser.add_argument(
+        "-n", "--num",
+        type=int,
+        default=5,
+        help="Number of results (default: 5)",
+    )
+    parser.add_argument("--cache-ttl", type=int, default=None)
+    parser.add_argument("--max-retries", type=int, default=None)
+    parser.add_argument("--clear-cache", action="store_true")
+    parser.add_argument("--cache-stats", action="store_true")
+    return parser.parse_args(argv)
+
+
+def main():
+    args = parse_args(sys.argv[1:])
+
+    ttl = (
+        args.cache_ttl
+        if args.cache_ttl is not None
+        else int(os.environ.get("WEB_SEARCH_CACHE_TTL", DEFAULT_TTL))
+    )
+    max_retries = (
+        args.max_retries
+        if args.max_retries is not None
+        else int(os.environ.get("WEB_SEARCH_MAX_RETRIES", DEFAULT_MAX_RETRIES))
+    )
+
+    os.makedirs(CACHE_DIR, exist_ok=True)
+    conn = sqlite3.connect(CACHE_DB)
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA busy_timeout=5000")
+    try:
+        _run(conn, args, ttl, max_retries)
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def _run(conn, args, ttl, max_retries):
+    init_db(conn)
+
+    if args.clear_cache:
+        clear_cache(conn)
+        return
+
+    if args.cache_stats:
+        show_cache_stats(conn)
+        return
+
+    if not args.query:
+        emit_error(
+            "No search query provided.",
+            "Provide search keywords: web-search -n 5 'your query here'",
+        )
+        sys.exit(1)
+
+    query_str = " ".join(args.query)
+    num_results = args.num
+    key = cache_key(query_str, num_results)
+
+    cached = get_cached(conn, key, ttl)
+    if cached is not None:
+        bump_stat(conn, "hits")
+        print(cached)
+        return
+
+    bump_stat(conn, "misses")
+
+    for attempt in range(max_retries + 1):
+        try:
+            results = search_searxng(query_str, num_results)
+            output = json.dumps(results, indent=2)
+            store_cached(conn, key, query_str, output)
+            print(output)
+            return
+        except urllib.error.URLError as exc:
+            error_msg = str(exc)
+        except Exception as exc:
+            error_msg = str(exc)
+
+        if attempt < max_retries:
+            bump_stat(conn, "retries")
+            delay = DEFAULT_BASE_DELAY * (2 ** attempt) + random.uniform(0, 1)
+            print(
+                f"[web-search] Error: {error_msg}, retrying in {delay:.1f}s "
+                f"(attempt {attempt + 1}/{max_retries})...",
+                file=sys.stderr,
+            )
+            time.sleep(delay)
+
+    bump_stat(conn, "failures")
+    emit_error(
+        f"Search failed after {max_retries} retries for query: {query_str}",
+        "Check that SearXNG is running: searxng-ctl.sh status. "
+        "If not running, start it: searxng-ctl.sh start. "
+        "If Docker Desktop is not running, start it first.",
+    )
+
+
+if __name__ == "__main__":
+    main()

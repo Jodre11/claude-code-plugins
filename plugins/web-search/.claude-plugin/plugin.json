@@ -1,14 +1,14 @@
 {
   "name": "web-search",
-  "description": "Web search via ddgr (DuckDuckGo CLI) — no API key, no tracking",
-  "version": "1.0.0",
+  "description": "Web search via local SearXNG — self-hosted, no API key, no tracking",
+  "version": "2.0.0",
   "author": {
     "name": "Christian Haddrell"
   },
   "license": "MIT",
   "keywords": [
     "web-search",
-    "ddgr",
-    "duckduckgo"
+    "searxng",
+    "self-hosted"
   ]
 }

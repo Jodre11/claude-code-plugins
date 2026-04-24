@@ -11,7 +11,7 @@
     },
     {
       "name": "web-search",
-      "description": "Web search via ddgr (DuckDuckGo CLI) — no API key, no tracking",
+      "description": "Web search via local SearXNG — self-hosted, no API key, no tracking",
       "source": "./plugins/web-search"
     },
     {

@@ -36,8 +36,9 @@ each session start:
 }
 ```
 
-Plugins are fetched from the repo and cached locally. When commits are pushed to `main`, Claude
-Code picks up the changes on the next session start — no manual reinstall required.
+Plugins are cloned from the repo to `~/.claude/plugins/marketplaces/jodre11-plugins/`. When
+commits are pushed to `main`, Claude Code pulls the changes on the next session start — no
+manual reinstall required. Each plugin's `bin/` directory is added to PATH automatically.
 
 ## Prerequisites
 

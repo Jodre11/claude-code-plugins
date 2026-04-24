@@ -5,8 +5,8 @@ description: Use when you need to search the web for URLs, documentation, error 
 
 # Web Search
 
-Search the web via `ddgr-cached`, a caching wrapper around `ddgr` (DuckDuckGo CLI). No tracking,
-no API key. Results are cached locally to avoid redundant requests and rate limits.
+Search the web via `web-search`, a caching wrapper around a local SearXNG instance. No tracking,
+no API key. Results are cached locally to avoid redundant requests.
 
 ## When to Use
 
@@ -18,63 +18,66 @@ no API key. Results are cached locally to avoid redundant requests and rate limi
 ## Usage
 
 ```bash
-ddgr-cached -n 5 "search query"
+web-search -n 5 "search query"
 ```
 
-Key flags: `-n N` (result count, max 25). The `--json` and `--np` flags are added automatically.
+Key flag: `-n N` (result count, default 5).
 
-Pipe through `jq` to extract specific fields:
+## Output Format
+
+JSON array of objects:
+
+```json
+[
+  {"url": "...", "title": "...", "abstract": "..."},
+  ...
+]
+```
+
+Extract fields with jq:
 
 ```bash
-ddgr-cached -n 3 "EFF Cover Your Tracks" | jq '.[].url'
+web-search -n 3 "EFF Cover Your Tracks" | jq '.[].url'
 ```
 
 ## Wrapper Flags
 
 | Flag | Purpose |
 |------|---------|
-| `--cache-ttl N` | Cache TTL in seconds (default: 3600, also via `DDGR_CACHE_TTL` env var) |
-| `--max-retries N` | Max retry attempts on rate limit (default: 3, also via `DDGR_MAX_RETRIES` env var) |
+| `-n N` | Number of results (default: 5) |
+| `--cache-ttl N` | Cache TTL in seconds (default: 3600, also via `WEB_SEARCH_CACHE_TTL`) |
+| `--max-retries N` | Max retry attempts on error (default: 3, also via `WEB_SEARCH_MAX_RETRIES`) |
 | `--clear-cache` | Purge all cached results and reset statistics |
 | `--cache-stats` | Show cache hit/miss counts and database size |
 
-## ddgr Passthrough Flags
+## Error Handling
 
-| Flag | Purpose |
-|------|---------|
-| `-t d` | Results from past day |
-| `-t w` | Results from past week |
-| `-w SITE` | Restrict to a specific site |
-| `-r us-en` | Region-specific results |
+If SearXNG is unreachable (Docker not running, container stopped), the wrapper retries with
+exponential backoff (2s, 4s, 8s) then returns:
 
-## Rate Limit Handling
+```json
+{
+  "error": "Search failed after 3 retries for query: ...",
+  "suggestion": "Check that SearXNG is running: searxng-ctl.sh status. ...",
+  "results": []
+}
+```
 
-`ddgr-cached` handles DuckDuckGo rate limits automatically:
+**Follow the suggestion.** Do NOT abandon this tool — start SearXNG and retry.
 
-1. On rate limit, it retries with exponential backoff (2s, 4s, 8s) plus jitter
-2. Progress is reported to stderr so you can see retry attempts
-3. On persistent failure after all retries, it returns a structured JSON error:
-   ```json
-   {
-     "error": "DuckDuckGo rate limited after 3 retries for query: ...",
-     "suggestion": "Try again in 2-3 minutes. ...",
-     "results": []
-   }
-   ```
+## Prerequisites
 
-**If you receive an error response with a `suggestion` field, follow the suggestion.** Do NOT
-abandon this tool after a rate limit — it is temporary. Continue with other work and retry later.
+- Docker Desktop must be running
+- SearXNG container started via `searxng-ctl.sh start` or the LaunchAgent
 
 ## Caching
 
-- Results are cached in `~/.cache/ddgr-cached/cache.db` (SQLite)
-- Default TTL is 1 hour — identical queries within that window return instantly
-- Use `ddgr-cached --cache-stats` to inspect hit rates
-- Use `ddgr-cached --clear-cache` to purge stale data
+- Results cached in `~/.cache/web-search/cache.db` (SQLite)
+- Default TTL: 1 hour
+- `web-search --cache-stats` to inspect hit rates
+- `web-search --clear-cache` to purge stale data
 
 ## Common Mistakes
 
 - Guessing URLs instead of searching — always search and verify
-- Abandoning the tool after a rate limit — the wrapper retries automatically, and rate limits are
-  temporary
-- Passing `--json` or `--np` — these are added automatically by the wrapper
+- Not checking SearXNG is running when search fails — run `searxng-ctl.sh status`

@@ -10,20 +10,16 @@ grep-like features.
 
 ## Defaults
 
-Always apply these unless the user specifies otherwise:
-
-| Setting | Default |
-|---------|---------|
-| Profile | `--profile your-aws-profile` |
-| Bucket | `your-bucket-name` |
-| Region | None (inherited from profile) |
+Check auto-memory for default profile, bucket, and region. Always apply stored defaults
+unless the user specifies otherwise. If no defaults are found in memory, ask the user for
+the bucket name and AWS profile.
 
 ## Commands
 
 ### List files
 
 ```bash
-internal-project-5 ls <bucket> --profile your-aws-profile [options]
+internal-project-5 ls <bucket> [--profile <profile>] [options]
 ```
 
 | Flag | Purpose |
@@ -35,7 +31,7 @@ internal-project-5 ls <bucket> --profile your-aws-profile [options]
 ### Search file contents
 
 ```bash
-internal-project-5 grep <bucket> <regex> --profile your-aws-profile [options]
+internal-project-5 grep <bucket> <regex> [--profile <profile>] [options]
 ```
 
 | Flag | Purpose |
@@ -77,15 +73,10 @@ internal-project-5 auth status
 
 ## Error Handling
 
-If authentication fails, tell the user to run:
-
-```bash
-aws sso login --profile your-aws-profile
-```
-
-Do not attempt automatic SSO login.
+If authentication fails, tell the user to run `aws sso login` with the appropriate profile
+(check auto-memory for the default profile). Do not attempt automatic SSO login.
 
 ## Prerequisites
 
 - `internal-project-5` global .NET tool (v1.1.0+): `dotnet tool list -g | grep internal-project-5`
-- AWS SSO session authenticated for `your-aws-profile`
+- AWS SSO session authenticated for the target profile

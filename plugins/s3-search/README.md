@@ -1,8 +1,7 @@
 # S3 Search Plugin
 
 Search and list files in Amazon S3 buckets via the `internal-project-5` global .NET tool. Wraps
-`internal-project-5 ls` and `internal-project-5 grep` with sensible defaults for the Haven Finance production
-environment.
+`internal-project-5 ls` and `internal-project-5 grep` with environment-specific defaults stored in auto-memory.
 
 ## Usage
 
@@ -12,7 +11,7 @@ be invoked explicitly with `/s3-search`.
 ## Prerequisites
 
 - `internal-project-5` global .NET tool (v1.1.0+)
-- AWS SSO session authenticated for `your-aws-profile`
+- AWS SSO session authenticated for the target profile
 
 ## Installation
 

@@ -26,7 +26,7 @@ Store as `$BASE`.
 2. Run `git diff "$BASE"..."$HEAD_SHA" --name-only` and store as `$CHANGED_FILES`. If empty, report "No changes found against $BASE" and stop.
 3. Run `git diff "$BASE"..."$HEAD_SHA" --stat` and count:
    - `$FILE_COUNT` — number of changed files
-   - `$LINE_COUNT` — total lines changed (insertions + deletions). If only insertions or only deletions appear, treat the absent count as 0.
+   - `$LINE_COUNT` — total lines changed (insertions + deletions). If only insertions or only deletions appear, treat the absent count as 0. If neither insertions nor deletions appear (e.g., a rename with no content change), treat `$LINE_COUNT` as 0.
 4. Scan the changed file list:
    - **C# detection:** if any file ends with `.cs`, set `$CSHARP_DETECTED = true`
    - **UI detection:** if any file ends with `.html`, `.css`, `.scss`, `.less`, `.jsx`, `.tsx`, `.vue`, `.svelte`, `.axaml`, `.xaml`, or matches UI framework config patterns, set `$UI_DETECTED = true`
@@ -192,8 +192,9 @@ Use `$CROSS_REVIEW_COUNT` (not `$SPECIALIST_COUNT`) as the total count `R` count
    ...
    ```
 2. Remove the block whose heading matches `### <domain>-reviewer findings` (i.e. the cross-reviewer's own domain)
-3. Include jbinspect findings (if present) for ALL cross-reviewers — jbinspect is excluded from receiving cross-review, not from being reviewed
-4. Assemble the prompt and dispatch:
+3. Include jbinspect findings (if present) for ALL cross-reviewers — jbinspect is excluded from receiving cross-review, not from being reviewed. Omit the `### jbinspect-reviewer findings` block entirely if `$CSHARP_DETECTED` is false — do not include a placeholder
+4. Announce: `> Dispatching $CROSS_REVIEW_COUNT cross-review agents...`
+5. Note the dispatch timestamp, then assemble the prompt and dispatch:
 
 ```
 Agent({
@@ -204,10 +205,6 @@ Agent({
     prompt: "Domain: <domain>\nDomain focus: <focus summary from table>\n\nPeer findings:\n<filtered findings>"
 })
 ```
-
-Announce: `> Dispatching $CROSS_REVIEW_COUNT cross-review agents...`
-
-Note the dispatch timestamp.
 
 **Progress reporting:** As each cross-reviewer completes, output a status line using the progress line format defined above (use "opinions" instead of "findings").
 

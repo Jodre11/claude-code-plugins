@@ -25,7 +25,7 @@ Examine a GitHub PR for unresolved review comments and address them systematical
 Run steps 2a, 2b, and 2c in parallel — they are independent of each other.
 
 #### 2a. Get thread resolution state via GraphQL
-The REST API does not expose `isResolved`, `isOutdated`, or `isMinimized`. Use GraphQL to get the `databaseId` of the root comment in each thread along with its state:
+The REST API does not expose `isResolved`, `isOutdated`, or `isMinimized`. Use GraphQL to get the `databaseId` of the root comment in each thread along with its state. Related queries exist in `skills/review-gh-pr/SKILL.md` Steps 1 and 4 — keep in sync when modifying the schema:
 ```bash
 gh api graphql -f query='
 {
@@ -38,7 +38,7 @@ gh api graphql -f query='
           isResolved
           isOutdated
           path
-          comments(first: 1) {
+          comments(first: 50) {
             nodes {
               databaseId
               isMinimized
@@ -51,7 +51,7 @@ gh api graphql -f query='
   }
 }'
 ```
-- Collect threads where `isResolved == false` AND the root comment `isMinimized == false` AND the root comment author is not the current user. These are the **actionable threads**.
+- Collect threads where `isResolved == false` AND the root comment `isMinimized == false` AND the root comment author is not the current user AND the current user has not already replied (check reply authors in the thread). These are the **actionable threads**.
 - Also note which actionable threads have `isOutdated == true` — these need special handling in step 4 (the diff position no longer exists, but the concern may still be valid).
 - If `pageInfo.hasNextPage == true`, paginate using `after: "{endCursor}"` until all threads are fetched.
 
@@ -66,14 +66,16 @@ Inline comments are attached to diff lines. Reviewers can also leave feedback in
 ```bash
 gh api repos/{owner}/{repo}/pulls/{number}/reviews --paginate
 ```
-Check for non-empty `body` fields on reviews where `state` is not `APPROVED` and `user.login` is not the current user. Include these as additional actionable items (they won't have a `path` or `line` — treat them as general feedback).
+Check for non-empty `body` fields on reviews where `select(.state == "APPROVED" | not)` and `select(.user.login == "$CURRENT_USER" | not)`. Include these as additional actionable items (they won't have a `path` or `line` — treat them as general feedback).
+
+Follow the `gh --jq` guidance in `includes/gh-jq-pitfalls.md` — in particular, `gojq` does not support `!=`; use `select(.field == "value" | not)` instead.
 
 ### 3. Filter to actionable comments
 - From the REST comments (step 2b), keep only root comments (`in_reply_to_id: null`) whose `id` is in the actionable set from step 2a.
 - From the review bodies (step 2c), keep non-empty bodies from other users on non-approved reviews.
 - Present a summary to the user: **"Found N actionable inline threads (M outdated) and K review-level comments. Proceed?"** Wait for confirmation before continuing. This prevents wasted effort on PRs with many comments where manual triage may be preferred.
 
-### 4. Analyze each actionable comment
+### 4. Analyse each actionable comment
 - Determine if the concern is valid and accurate
 - Categorize: code change needed, documentation needed, or skip with justification
 - Consider effort vs value tradeoff

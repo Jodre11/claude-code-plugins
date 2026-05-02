@@ -21,7 +21,7 @@ You receive via your prompt:
 
 ## Context Gathering
 
-Extract the base branch from the `Base branch:` line in your prompt. Store as `$BASE`. If a `Head SHA: <sha>` line is present, extract it and store as `$HEAD_SHA`. Otherwise, run `git rev-parse HEAD` and store as `$HEAD_SHA`.
+Extract the base branch from the `Base branch:` line in your prompt. Store as `$BASE`. If a `Head SHA: <sha>` line is present, extract it and store as `$HEAD_SHA`. Otherwise, run `git rev-parse HEAD` and store as `$HEAD_SHA` — log a warning: "Head SHA not found in prompt — using current HEAD; results may differ from pipeline's measurement."
 
 Read the diff and changed files yourself for independent analysis:
 1. `git diff "$BASE"..."$HEAD_SHA"` — full diff

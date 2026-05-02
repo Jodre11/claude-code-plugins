@@ -27,7 +27,7 @@ gh api graphql -f query='query {
         pageInfo { hasNextPage endCursor }
         nodes {
           isResolved
-          comments(first: 50) {
+          comments(first: 100) {
             nodes {
               databaseId
               path
@@ -43,7 +43,7 @@ gh api graphql -f query='query {
 ```
 
 The third command fetches existing review comments to avoid duplication.
-The fourth command fetches the resolution status and **up to 50 replies** per review thread via GraphQL. Read author replies on resolved threads carefully — the author may have already addressed the concern. Threads with >50 replies are rare; if encountered, the last replies may be truncated.
+The fourth command fetches the resolution status and **up to 100 replies** per review thread via GraphQL. Read author replies on resolved threads carefully — the author may have already addressed the concern. Threads with >100 replies are rare; if encountered, the last replies may be truncated.
 
 If `pageInfo.hasNextPage` is true, paginate using `after: "{endCursor}"` until all threads are fetched. PRs with >50 threads silently lose overflow without pagination.
 
@@ -58,7 +58,7 @@ GH_USER=$(gh api user --jq .login)
 ```
 
 ```bash
-gh pr view "$ARGUMENTS" --json reviews --jq '.reviews[] | select(.author.login == "'"$GH_USER"'") | {state: .state, submittedAt: .submittedAt}'
+gh pr view "$ARGUMENTS" --json reviews | jq --arg user "$GH_USER" '.reviews[] | select(.author.login == $user) | {state, submittedAt}'
 ```
 
 If a prior review by the current user exists, this is a **self-re-review**. Switch to re-review mode (see below). Otherwise, proceed with standard full review.
@@ -145,7 +145,7 @@ gh api graphql -f query='query {
         pageInfo { hasNextPage endCursor }
         nodes {
           isResolved
-          comments(first: 50) {
+          comments(first: 100) {
             nodes {
               databaseId
               body
@@ -160,9 +160,9 @@ gh api graphql -f query='query {
 gh pr view "$ARGUMENTS" --json headRefOid -q '.headRefOid'
 ```
 
-**Note:** This GraphQL query is a variant of the Step 1 query — it intentionally omits `path` from inner comments because Step 4 only needs resolution state and reply content, not file positions. If the Step 1 query schema changes (e.g. new fields), update this variant to match where applicable.
+**Note:** This GraphQL query is a variant of the Step 1 query — it intentionally omits `path` from inner comments because Step 4 only needs resolution state and reply content, not file positions. If the Step 1 query schema changes (e.g. new fields), update this variant to match where applicable. A related query also exists in `commands/address-pr-comments.md` Step 2a — keep all three in sync when modifying the schema.
 
-**Pagination:** If `pageInfo.hasNextPage` is true, paginate using `after: "{endCursor}"` until all threads are fetched, as in Step 1.
+**Pagination:** If `pageInfo.hasNextPage` is true, paginate using `after: "{endCursor}"` until all threads are fetched, as in Step 1. Inner thread replies are limited to 100; if a thread has >100 replies, the last replies may be truncated — treat unresolvable threads with high reply counts conservatively.
 
 Compare against Step 1 data:
 - **Threads now resolved that were open before**: Check the author's reply — they may have addressed the concern. Drop any planned replies to these threads.

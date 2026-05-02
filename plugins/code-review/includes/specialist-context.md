@@ -4,9 +4,9 @@ Determine the base branch, then gather the diff and changed files yourself.
 
 ### Determine base branch
 
-1. If `$ARGUMENTS` is provided and non-empty, extract the base branch from it. It may be a bare branch name or a structured prompt containing `Base branch: <ref>` — extract the ref either way.
+1. If `$ARGUMENTS` is provided and non-empty, extract the base branch from it. If a `Base branch: <ref>` line is present, extract the ref after the colon. Otherwise, treat the entire value of `$ARGUMENTS` as a bare branch name.
 2. `gh pr view --json baseRefName -q .baseRefName 2>/dev/null`
-3. `git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's|refs/remotes/origin/||'`
+3. Run `git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null` and strip the `refs/remotes/origin/` prefix from the output
 4. Fall back to `main`
 
 Store as `$BASE`.

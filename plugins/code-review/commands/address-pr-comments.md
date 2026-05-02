@@ -38,7 +38,7 @@ gh api graphql -f query='
           isResolved
           isOutdated
           path
-          comments(first: 50) {
+          comments(first: 100) {
             nodes {
               databaseId
               isMinimized
@@ -101,10 +101,12 @@ Follow the `gh --jq` guidance in `includes/gh-jq-pitfalls.md` — in particular,
 ### 8. Reply to each comment thread
 Reply **after** pushing so that references to committed code are accurate.
 
-Create a reply to a review comment:
+Before posting a reply, check the comment's `line` and `original_line` fields to determine which template to use. The `commit_id`, `path`, `line`, `side`, `original_line`, `original_commit_id`, and `original_side` values are available from the comment data fetched in steps 2a and 2b. Use `--input -` with a heredoc for the body to avoid shell quoting issues.
+
+**If `line` is not null** — the comment maps to a current diff position:
 ```bash
 gh api repos/{owner}/{repo}/pulls/{number}/comments \
-  -X POST \
+  --method POST \
   -f commit_id='{head_sha}' \
   -f path='{file_path}' \
   -F line={line_number} \
@@ -114,12 +116,12 @@ gh api repos/{owner}/{repo}/pulls/{number}/comments \
 Your reply text
 BODY
 ```
-The `commit_id`, `path`, `line`, and `side` values are available from the comment data fetched in steps 2a and 2b. Use the comment's `side` field (`'LEFT'` for deleted lines, `'RIGHT'` for added/unchanged lines) — do not hardcode. Use `--input -` with a heredoc for the body to avoid shell quoting issues.
+Use the comment's `side` field (`'LEFT'` for deleted lines, `'RIGHT'` for added/unchanged lines) — do not hardcode.
 
-**Outdated threads:** For threads flagged as `isOutdated` in step 2a, the `line` field in the REST comment data may be `null` (the diff position no longer exists on the current head commit). When `line` is null, omit `-F line` and `-f side` from the API call and use `original_line`, `original_commit_id`, and `side` from the REST comment data instead. Use the comment's `side` field (not hardcoded 'RIGHT') — comments on deleted lines have `side: 'LEFT'`:
+**If `line` is null but `original_line` is not null** — outdated thread (diff position no longer exists on current head commit):
 ```bash
 gh api repos/{owner}/{repo}/pulls/{number}/comments \
-  -X POST \
+  --method POST \
   -f commit_id='{original_commit_id}' \
   -f path='{file_path}' \
   -F original_line={original_line} \
@@ -129,7 +131,9 @@ gh api repos/{owner}/{repo}/pulls/{number}/comments \
 Your reply text
 BODY
 ```
-If both `line` and `original_line` are null, post a general PR comment instead of an inline reply.
+Use the comment's original `side` field (not hardcoded 'RIGHT') — comments on deleted lines have `side: 'LEFT'`.
+
+**If both `line` and `original_line` are null** — post a general PR comment instead of an inline reply.
 - If addressed: explain what was changed, reference the commit if helpful
 - If skipped: explain the rationale (e.g., "dev-only code", "implementation detail", "low value")
 - Do NOT resolve/dismiss comments — leave that decision to the developer

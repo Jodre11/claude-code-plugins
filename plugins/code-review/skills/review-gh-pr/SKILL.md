@@ -51,15 +51,10 @@ Follow the `gh --jq` guidance in `includes/gh-jq-pitfalls.md`.
 
 ### Detect self-re-review
 
-Determine the current GitHub user, then check for prior reviews:
+Determine the current GitHub user, then check for prior reviews. Run these two commands **sequentially** — the second depends on the output of the first:
 
-```bash
-GH_USER=$(gh api user --jq .login)
-```
-
-```bash
-gh pr view "$ARGUMENTS" --json reviews | jq --arg user "$GH_USER" '.reviews[] | select(.author.login == $user) | {state, submittedAt}'
-```
+1. Run `gh api user --jq .login` and capture the output as the current user's login.
+2. Run `gh pr view "$ARGUMENTS" --json reviews --jq '.reviews[]'` and filter the results to entries where `.author.login` matches the captured login. Extract `{state, submittedAt}` from any matches.
 
 If a prior review by the current user exists, this is a **self-re-review**. Switch to re-review mode (see below). Otherwise, proceed with standard full review.
 

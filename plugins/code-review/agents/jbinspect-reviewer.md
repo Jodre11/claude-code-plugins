@@ -35,13 +35,15 @@ The repo may contain multiple `.sln` files. You must determine which solutions a
 
 ## Step 3: Run InspectCode
 
+First, check that `$CLAUDE_TEMP_DIR` is present in your prompt (the path from `Use <path> for temporary files`). If it is not, report the omission and stop — do not fall back to bare `/tmp/`.
+
 For each affected solution, run:
 
 ```
 jb inspectcode <solution.sln> --output=$CLAUDE_TEMP_DIR/inspectcode-<solution-name>.xml --format=Xml --severity=WARNING
 ```
 
-Where `$CLAUDE_TEMP_DIR` is the path from `Use <path> for temporary files` at the end of your prompt, and `<solution-name>` is the solution filename without extension (to avoid collisions when multiple solutions are inspected). If `$CLAUDE_TEMP_DIR` is not in your prompt, report the omission and stop — do not fall back to bare `/tmp/`.
+Where `<solution-name>` is the solution filename without extension (to avoid collisions when multiple solutions are inspected).
 
 If `jb` is not installed or not on PATH, report:
 `## JetBrains InspectCode Findings\n\nSkipped — jb inspectcode not available on PATH.`

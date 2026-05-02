@@ -87,7 +87,7 @@ Check for non-empty `body` fields on reviews where `state` is not `APPROVED` and
 - Apply **all** changes before proceeding to step 6. Do not interleave changes with replies.
 
 ### 6. Verify changes
-- Run `dotnet build` (or appropriate build command)
+- Determine the project's build command from the repository structure (e.g., `dotnet build` for .NET, `npm run build` for Node.js, `cargo build` for Rust, `make` for C/C++) and run it
 - Run tests if available
 - If verification fails, fix the issue before proceeding. Do not post replies for changes that don't build or pass tests.
 
@@ -114,14 +114,14 @@ BODY
 ```
 The `commit_id`, `path`, `line`, and `side` values are available from the comment data fetched in steps 2a and 2b. Use `--input -` with a heredoc for the body to avoid shell quoting issues.
 
-**Outdated threads:** For threads flagged as `isOutdated` in step 2a, the `line` field in the REST comment data may be `null` (the diff position no longer exists on the current head commit). When `line` is null, omit `-F line` and `-f side` from the API call and use `original_line` and `original_commit_id` from the REST comment data instead:
+**Outdated threads:** For threads flagged as `isOutdated` in step 2a, the `line` field in the REST comment data may be `null` (the diff position no longer exists on the current head commit). When `line` is null, omit `-F line` and `-f side` from the API call and use `original_line`, `original_commit_id`, and `side` from the REST comment data instead. Use the comment's `side` field (not hardcoded 'RIGHT') — comments on deleted lines have `side: 'LEFT'`:
 ```bash
 gh api repos/{owner}/{repo}/pulls/{number}/comments \
   -X POST \
   -f commit_id='{original_commit_id}' \
   -f path='{file_path}' \
   -F original_line={original_line} \
-  -f side='RIGHT' \
+  -f side='{original_side}' \
   -F in_reply_to={comment_id} \
   --input -  <<'BODY'
 Your reply text
@@ -142,13 +142,4 @@ If both `line` and `original_line` are null, post a general PR comment instead o
 - A PR may have multiple bot reviews (e.g., Copilot re-reviews after new commits) — handle all of them
 - Each API reply creates a separate review card on the Conversation tab; this is normal GitHub behaviour
 
-## `gh --jq` pitfalls
-`gh` uses `gojq` (Go jq), which does **not** support `!=`. The `!` is also mangled by zsh shell escaping. Use the `| not` idiom instead:
-```jq
-# WRONG — will error or silently break:
-select(.state != "APPROVED")
-
-# CORRECT:
-select(.state == "APPROVED" | not)
-```
-Apply this to all `--jq` filters used in the steps above.
+Follow the `gh --jq` guidance in `includes/gh-jq-pitfalls.md`. Apply this to all `--jq` filters used in the steps above.

@@ -1,7 +1,7 @@
 {
   "name": "code-review",
-  "description": "12 specialist, cross-review, and synthesis agents with review pipeline, PR review skill, pre-review and address-pr-comments commands",
-  "version": "2.0.3",
+  "description": "Multi-agent code review with specialist, cross-review, and synthesis agents — includes review pipeline, PR review skill, pre-review and address-pr-comments commands",
+  "version": "2.0.4",
   "author": {
     "name": "Christian Haddrell"
   },

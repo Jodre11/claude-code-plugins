@@ -11,7 +11,7 @@ Determine the base branch, then gather the diff and changed files yourself.
 
 Store as `$BASE`.
 
-If a `Head SHA: <sha>` line is present in `$ARGUMENTS`, extract it and store as `$HEAD_SHA`. Otherwise, run `git rev-parse HEAD` and store as `$HEAD_SHA`. Using a pinned SHA ensures all agents review the same commit even if new commits land during the review.
+If a `Head SHA: <sha>` line is present in `$ARGUMENTS`, extract it and store as `$HEAD_SHA`. Otherwise, run `git rev-parse HEAD` and store as `$HEAD_SHA` — but log a warning: "Head SHA not found in prompt — using current HEAD; results may differ from pipeline's measurement." Using a pinned SHA ensures all agents review the same commit even if new commits land during the review.
 
 ### Gather context
 

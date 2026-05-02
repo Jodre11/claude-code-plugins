@@ -27,7 +27,7 @@ gh api graphql -f query='query {
         pageInfo { hasNextPage endCursor }
         nodes {
           isResolved
-          comments(first: 10) {
+          comments(first: 50) {
             nodes {
               databaseId
               path
@@ -43,20 +43,11 @@ gh api graphql -f query='query {
 ```
 
 The third command fetches existing review comments to avoid duplication.
-The fourth command fetches the resolution status and **all replies** for each review thread via GraphQL. Read author replies on resolved threads carefully — the author may have already addressed the concern.
+The fourth command fetches the resolution status and **up to 50 replies** per review thread via GraphQL. Read author replies on resolved threads carefully — the author may have already addressed the concern. Threads with >50 replies are rare; if encountered, the last replies may be truncated.
 
 If `pageInfo.hasNextPage` is true, paginate using `after: "{endCursor}"` until all threads are fetched. PRs with >50 threads silently lose overflow without pagination.
 
-### `gh --jq` pitfalls
-
-`gh` uses `gojq` (Go jq), which does **not** support `!=`. The `!` is also mangled by zsh shell escaping. Use the `| not` idiom instead:
-```jq
-# WRONG — will error or silently break:
-select(.state != "APPROVED")
-
-# CORRECT:
-select(.state == "APPROVED" | not)
-```
+Follow the `gh --jq` guidance in `includes/gh-jq-pitfalls.md`.
 
 ### Detect self-re-review
 
@@ -154,7 +145,7 @@ gh api graphql -f query='query {
         pageInfo { hasNextPage endCursor }
         nodes {
           isResolved
-          comments(first: 10) {
+          comments(first: 50) {
             nodes {
               databaseId
               body

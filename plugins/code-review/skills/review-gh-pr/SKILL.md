@@ -28,6 +28,7 @@ gh api graphql -f query='query {
         nodes {
           isResolved
           comments(first: 100) {
+            pageInfo { hasNextPage }
             nodes {
               databaseId
               path
@@ -43,7 +44,7 @@ gh api graphql -f query='query {
 ```
 
 The third command fetches existing review comments to avoid duplication.
-The fourth command fetches the resolution status and **up to 100 replies** per review thread via GraphQL. Read author replies on resolved threads carefully — the author may have already addressed the concern. Threads with >100 replies are rare; if encountered, the last replies may be truncated.
+The fourth command fetches the resolution status and **up to 100 replies** per review thread via GraphQL. This query has variants in Step 4 below and in `commands/address-pr-comments.md` Step 2a — keep all three in sync when modifying the schema. Read author replies on resolved threads carefully — the author may have already addressed the concern. If a thread's inner `comments.pageInfo.hasNextPage` is true, the last replies are truncated — treat such threads conservatively (assume the author may have already replied).
 
 If `pageInfo.hasNextPage` is true, paginate using `after: "{endCursor}"` until all threads are fetched. PRs with >50 threads silently lose overflow without pagination.
 
@@ -53,8 +54,8 @@ Follow the `gh --jq` guidance in `includes/gh-jq-pitfalls.md`.
 
 Determine the current GitHub user, then check for prior reviews. Run these two commands **sequentially** — the second depends on the output of the first:
 
-1. Run `gh api user --jq .login` and capture the output as the current user's login.
-2. Run `gh pr view "$ARGUMENTS" --json reviews --jq '.reviews[]'` and filter the results to entries where `.author.login` matches the captured login. Extract `{state, submittedAt}` from any matches.
+1. Run `gh api user --jq .login` and capture the output as the current user's login. If this call fails, warn the user that GitHub authentication may be required and stop.
+2. Run `gh pr view "$ARGUMENTS" --json reviews --jq '.reviews[]'` and filter the results to entries where `.author.login` matches the captured login. Extract `{state, submittedAt, commit: .commit.oid}` from any matches. Store the `commit` value from the most recent match as `$LAST_REVIEW_SHA`.
 
 If a prior review by the current user exists, this is a **self-re-review**. Switch to re-review mode (see below). Otherwise, proceed with standard full review.
 
@@ -64,7 +65,7 @@ When re-reviewing a PR you have previously reviewed, the scope is deliberately n
 
 1. **Verify fixes**: Check that issues raised in your prior review have been addressed. Confirm resolved threads are genuinely fixed. If something was not addressed, re-raise it.
 2. **Blockers only on new/existing code**: If you notice a genuine blocker in the full diff that you missed on your first pass, raise it. But do NOT raise fresh nitpicks, suggestions, or minor issues on code you already saw and chose not to flag. The author acted in good faith on your original feedback — do not start a new cycle of diminishing findings.
-3. **Diff since last review**: Focus attention on commits pushed after your last review (`git log {last_review_sha}..HEAD`). These are the changes made in response to your feedback.
+3. **Diff since last review**: Focus attention on commits pushed after your last review (`git log $LAST_REVIEW_SHA..HEAD`). These are the changes made in response to your feedback.
 
 The expected outcome is usually short and affirming: previous comments addressed, no new blockers, approved.
 
@@ -141,6 +142,7 @@ gh api graphql -f query='query {
         nodes {
           isResolved
           comments(first: 100) {
+            pageInfo { hasNextPage }
             nodes {
               databaseId
               body
@@ -178,13 +180,13 @@ gh api repos/{owner}/{repo}/pulls/{pr}/comments \
   -f commit_id='{head_sha}' \
   -f path='{file_path}' \
   -F line={line_number} \
-  -f side='RIGHT' \
+  -f side='{side}' \
   --input -  <<'BODY'
 {comment_body}
 BODY
 ```
 
-Note: Use `-F` (not `-f`) for the `line` parameter to pass it as an integer. Use `--input -` with a heredoc for the body to avoid shell quoting issues — comment bodies routinely contain single quotes, backticks, and other shell metacharacters from code snippets. The `--input` flag sends stdin as the `body` field.
+Determine `{side}` from the diff hunk: use `'LEFT'` when the finding targets a deleted line (prefixed with `-` in the diff), `'RIGHT'` for added or unchanged context lines. Use `-F` (not `-f`) for the `line` parameter to pass it as an integer. Use `--input -` with a heredoc for the body to avoid shell quoting issues — comment bodies routinely contain single quotes, backticks, and other shell metacharacters from code snippets. The `--input` flag sends stdin as the `body` field.
 
 **For replies to existing comments**, use `in_reply_to` with the original comment's line positioning:
 

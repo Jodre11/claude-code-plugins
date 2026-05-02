@@ -40,7 +40,7 @@ First, check that `$CLAUDE_TEMP_DIR` is present in your prompt (the path from `U
 For each affected solution, run:
 
 ```
-jb inspectcode <solution.sln> --output=$CLAUDE_TEMP_DIR/inspectcode-<solution-name>.xml --format=Xml --severity=WARNING
+jb inspectcode <solution.sln> --output="$CLAUDE_TEMP_DIR/inspectcode-<solution-name>.xml" --format=Xml --severity=WARNING
 ```
 
 Where `<solution-name>` is the solution filename without extension (to avoid collisions when multiple solutions are inspected).

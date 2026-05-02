@@ -1,7 +1,6 @@
 {
   "name": "pdf-reader",
   "description": "Extract text from any PDF — native text via poppler, scanned/image via tesseract OCR",
-  "version": "1.0.1",
   "author": {
     "name": "Christian Haddrell"
   },

@@ -1,7 +1,6 @@
 {
   "name": "web-search",
   "description": "Web search via SearXNG — no API key, no tracking",
-  "version": "3.0.1",
   "author": {
     "name": "Christian Haddrell"
   },

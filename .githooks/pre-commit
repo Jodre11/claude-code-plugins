@@ -1,0 +1,78 @@
+#!/usr/bin/env bash
+# Pre-commit hook: blocks commits containing org-specific or personal sensitive patterns.
+# Escape hatch: SKIP_SECRET_SCAN=1 git commit
+set -euo pipefail
+
+if [ "${SKIP_SECRET_SCAN:-0}" = "1" ]; then
+    echo "⚠ SKIP_SECRET_SCAN=1 — bypassing secret scan" >&2
+    exit 0
+fi
+
+# --- Pattern scan (generic + local org-specific patterns) ---
+
+# Generic format-based patterns (safe to commit publicly)
+PATTERNS=(
+    '[0-9]{12}\.dkr\.ecr\.[a-z0-9-]+\.amazonaws\.com'
+    '-----BEGIN.*PRIVATE KEY-----'
+)
+
+# Load org-specific patterns from local file (not committed to git)
+HOOK_DIR="$(cd "$(dirname "$0")" && pwd)"
+PATTERNS_FILE="$HOOK_DIR/patterns.local"
+if [ -f "$PATTERNS_FILE" ]; then
+    while IFS= read -r line; do
+        line="${line%%#*}"
+        line="${line#"${line%%[![:space:]]*}"}"
+        line="${line%"${line##*[![:space:]]}"}"
+        [ -n "$line" ] && PATTERNS+=("$line")
+    done < "$PATTERNS_FILE"
+fi
+
+if [ "${#PATTERNS[@]}" -le 2 ]; then
+    echo "⚠ No local patterns loaded (.githooks/patterns.local not found)" >&2
+    echo "  Copy patterns.local.example to patterns.local and populate it." >&2
+fi
+
+# Build a combined regex from the pattern array
+COMBINED=$(IFS='|'; echo "${PATTERNS[*]}")
+
+# Files that necessarily contain the guarded patterns — excluded from scanning
+EXCLUSIONS=(
+    ':!.githooks/patterns.local'
+    ':!.gitleaks.toml'
+    ':!.claude-plugin/marketplace.json'
+    ':!README.md'
+    ':!plugins/*/README.md'
+    ':!plugins/*/.claude-plugin/plugin.json'
+)
+
+# Scan staged file contents (not filenames) for matches
+STAGED_DIFF=$(git diff --cached --diff-filter=ACMR -U0 -- . "${EXCLUSIONS[@]}" || true)
+
+if [ -n "$STAGED_DIFF" ]; then
+    MATCHES=$(echo "$STAGED_DIFF" | grep -inE "$COMBINED" || true)
+    if [ -n "$MATCHES" ]; then
+        echo "❌ Pre-commit: sensitive pattern detected in staged changes:" >&2
+        echo "" >&2
+        echo "$MATCHES" >&2
+        echo "" >&2
+        echo "If this is a false positive (e.g. documenting the guard patterns themselves):" >&2
+        echo "  SKIP_SECRET_SCAN=1 git commit" >&2
+        exit 1
+    fi
+fi
+
+# --- Gitleaks scan (generic secret detection) ---
+
+if command -v gitleaks &>/dev/null; then
+    if ! gitleaks protect --staged --no-banner --exit-code 1; then
+        echo "" >&2
+        echo "❌ Pre-commit: gitleaks detected secrets in staged changes." >&2
+        echo "Fix the issues above, or use SKIP_SECRET_SCAN=1 git commit to bypass." >&2
+        exit 1
+    fi
+else
+    echo "⚠ gitleaks not found — skipping generic secret scan. Install: brew install gitleaks" >&2
+fi
+
+echo "✔ Pre-commit: no sensitive patterns detected." >&2

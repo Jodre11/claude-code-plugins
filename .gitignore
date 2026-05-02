@@ -1,0 +1,13 @@
+# OS
+.DS_Store
+Thumbs.db
+
+# Local secrets (not committed — see .githooks/patterns.local.example)
+.githooks/patterns.local
+
+# Editors
+.idea/
+.vscode/
+*.swp
+*.swo
+*~

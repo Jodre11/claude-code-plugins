@@ -1,0 +1,24 @@
+{
+  "name": "code-review",
+  "description": "12 specialist, cross-review, and synthesis agents with review pipeline, PR review skill, pre-review and address-pr-comments commands",
+  "version": "2.0.3",
+  "author": {
+    "name": "Christian Haddrell"
+  },
+  "license": "MIT",
+  "keywords": [
+    "code-review",
+    "agents",
+    "security",
+    "correctness",
+    "consistency",
+    "style",
+    "archaeology",
+    "reuse",
+    "efficiency",
+    "jetbrains",
+    "accessibility",
+    "ui",
+    "synthesis"
+  ]
+}

@@ -1,0 +1,28 @@
+title = "claude-code-plugins gitleaks config"
+
+# Generic format-based rules (supplement the built-in rules).
+# Org-specific patterns are loaded by the pre-commit hook from
+# .githooks/patterns.local (gitignored — not committed to the repo).
+
+[[rules]]
+id = "aws-ecr-registry"
+description = "AWS ECR registry URL"
+regex = '''\d{12}\.dkr\.ecr\.[a-z0-9-]+\.amazonaws\.com'''
+tags = ["aws"]
+
+[[rules]]
+id = "ssh-private-key"
+description = "SSH private key"
+regex = '''-----BEGIN.*PRIVATE KEY-----'''
+tags = ["secret"]
+
+# Global allowlist — files that may reference guarded patterns
+[allowlist]
+paths = [
+    '''.githooks/patterns.local''',
+    '''.gitleaks.toml''',
+    '''.claude-plugin/marketplace.json''',
+    '''README.md''',
+    '''plugins/.*/README.md''',
+    '''plugins/.*/.claude-plugin/plugin.json''',
+]

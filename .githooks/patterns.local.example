@@ -1,0 +1,10 @@
+# Local sensitive patterns — one extended regex per line.
+# Copy this file to patterns.local and populate with org-specific values.
+# Lines starting with # are ignored. Blank lines are ignored.
+# The pre-commit hook combines all lines into a single grep -iE pattern.
+#
+# Example entries:
+# 123456789012
+# myorg\.awsapps\.com
+# InternalProjectName
+# @mycompany\.com

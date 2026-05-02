@@ -46,6 +46,7 @@ Announce: `> X files, Y lines changed — using lightweight review (code-analysi
 Dispatch the `code-analysis` agent with the base branch as its argument:
 ```
 Agent({
+    description: "Lightweight code analysis",
     subagent_type: "code-review:code-analysis",
     name: "code-analysis",
     mode: "auto",
@@ -68,6 +69,7 @@ Define `$SPECIALIST_PROMPT` = `"Base branch: $BASE — Head SHA: $HEAD_SHA — r
 
 ```
 Agent({
+    description: "Security review",
     subagent_type: "code-review:security-reviewer",
     name: "security-reviewer",
     mode: "auto",
@@ -75,6 +77,7 @@ Agent({
     prompt: $SPECIALIST_PROMPT
 })
 Agent({
+    description: "Correctness review",
     subagent_type: "code-review:correctness-reviewer",
     name: "correctness-reviewer",
     mode: "auto",
@@ -82,6 +85,7 @@ Agent({
     prompt: $SPECIALIST_PROMPT
 })
 Agent({
+    description: "Consistency review",
     subagent_type: "code-review:consistency-reviewer",
     name: "consistency-reviewer",
     mode: "auto",
@@ -89,6 +93,7 @@ Agent({
     prompt: $SPECIALIST_PROMPT
 })
 Agent({
+    description: "Style review",
     subagent_type: "code-review:style-reviewer",
     name: "style-reviewer",
     mode: "auto",
@@ -96,6 +101,7 @@ Agent({
     prompt: $SPECIALIST_PROMPT
 })
 Agent({
+    description: "Archaeology review",
     subagent_type: "code-review:archaeology-reviewer",
     name: "archaeology-reviewer",
     mode: "auto",
@@ -103,6 +109,7 @@ Agent({
     prompt: $SPECIALIST_PROMPT
 })
 Agent({
+    description: "Reuse review",
     subagent_type: "code-review:reuse-reviewer",
     name: "reuse-reviewer",
     mode: "auto",
@@ -110,6 +117,7 @@ Agent({
     prompt: $SPECIALIST_PROMPT
 })
 Agent({
+    description: "Efficiency review",
     subagent_type: "code-review:efficiency-reviewer",
     name: "efficiency-reviewer",
     mode: "auto",
@@ -123,6 +131,7 @@ Agent({
 If `$CSHARP_DETECTED`, also dispatch:
 ```
 Agent({
+    description: "JetBrains InspectCode review",
     subagent_type: "code-review:jbinspect-reviewer",
     name: "jbinspect-reviewer",
     mode: "auto",
@@ -134,6 +143,7 @@ Agent({
 If `$UI_DETECTED`, also dispatch:
 ```
 Agent({
+    description: "UI/UX review",
     subagent_type: "code-review:ui-reviewer",
     name: "ui-reviewer",
     mode: "auto",
@@ -198,6 +208,7 @@ Use `$CROSS_REVIEW_COUNT` (not `$SPECIALIST_COUNT`) as the total count `R` count
 
 ```
 Agent({
+    description: "Cross-review <domain>",
     subagent_type: "code-review:cross-reviewer",
     name: "cross-review-<domain>",
     mode: "auto",
@@ -226,6 +237,7 @@ Dispatch the synthesiser. Replace `$BASE`, `$HEAD_SHA`, `$CHANGED_FILES`, `$ALL_
 
 ```
 Agent({
+    description: "Synthesise review findings",
     subagent_type: "code-review:review-synthesiser",
     name: "review-synthesiser",
     mode: "auto",

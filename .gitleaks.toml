@@ -19,6 +19,7 @@ tags = ["secret"]
 # Global allowlist — files that may reference guarded patterns
 [allowlist]
 paths = [
+    '''.githooks/pre-commit''',
     '''.githooks/patterns.local''',
     '''.gitleaks.toml''',
     '''.claude-plugin/marketplace.json''',

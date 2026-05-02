@@ -21,14 +21,16 @@ If any changed files end with `.cs`:
    c. Collect the unique set of affected `.sln` files.
 3. If `jb` is not installed or not on PATH, skip this step and note in the output:
    `## JetBrains InspectCode\n\nSkipped — jb inspectcode not available on PATH.`
-4. For each affected solution, run:
-   `jb inspectcode <solution.sln> --output=$CLAUDE_TEMP_DIR/inspectcode-<name>.xml --format=Xml --severity=WARNING`
-   Where `$CLAUDE_TEMP_DIR` is the path from `Use <path> for temporary files` at the end of your prompt. If not provided, report the omission and skip this step.
+4. Check that `$CLAUDE_TEMP_DIR` is present in your prompt (the path from `Use <path> for temporary files`). If it is not, report the omission and skip this step — do not fall back to bare `/tmp/`.
+5. For each affected solution, run:
+   `jb inspectcode <solution.sln> --output="$CLAUDE_TEMP_DIR/inspectcode-<name>.xml" --format=Xml --severity=WARNING`
    If the command fails (non-zero exit code), report the error and continue with any remaining solutions.
-5. Parse the XML output for `<Issue>` elements. Cross-reference `TypeId` against `<IssueType>` definitions to get severity and category.
-6. **Filter to only issues in files that appear in the diff.**
-7. Map severity: ERROR → Critical, WARNING → Important, SUGGESTION → Suggestion. Omit HINT.
-8. Clean up temporary XML files after parsing.
+6. Parse the XML output for `<Issue>` elements. Cross-reference `TypeId` against `<IssueType>` definitions to get severity and category.
+7. **Filter to only issues in files that appear in the diff.**
+8. Map severity: ERROR → Critical, WARNING → Important, SUGGESTION → Suggestion. Omit HINT.
+9. Clean up temporary XML files after parsing.
+
+Keep in sync with `agents/jbinspect-reviewer.md` — changes to either InspectCode procedure must be mirrored.
 
 Include these findings in the output under a separate `## JetBrains InspectCode` section (before the manual review findings). If no C# files are in the diff, skip this step entirely.
 

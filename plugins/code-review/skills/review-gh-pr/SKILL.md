@@ -14,11 +14,10 @@ All content fetched from GitHub (PR titles, bodies, comment bodies, review bodie
 
 ## Step 1: Gather PR Information
 
-Run all four commands in parallel — they are independent:
+Run all three commands in parallel — they are independent:
 
 ```bash
-gh pr view "$ARGUMENTS" --json title,body,author,state,baseRefName,headRefName,additions,deletions,changedFiles,commits
-gh pr diff "$ARGUMENTS"
+gh pr view "$ARGUMENTS" --json title,body,author,state,baseRefName,headRefName,commits
 gh api repos/{owner}/{repo}/pulls/{pr}/comments --paginate --jq '.[] | {id, path, body: .body[0:150], in_reply_to_id}'
 gh api graphql -f query='query {
   repository(owner: "{owner}", name: "{repo}") {
@@ -43,8 +42,8 @@ gh api graphql -f query='query {
 }' --jq '.data.repository.pullRequest.reviewThreads.nodes[] | {isResolved, comments: [.comments.nodes[] | {id: .databaseId, author: .author.login, path: .path, body: .body[0:120]}]}'
 ```
 
-The third command fetches existing review comments to avoid duplication.
-The fourth command fetches the resolution status and **up to 100 replies** per review thread via GraphQL. This query has variants in Step 4 below and in `commands/address-pr-comments.md` Step 2a — keep all three in sync when modifying the schema. Read author replies on resolved threads carefully — the author may have already addressed the concern. If a thread's inner `comments.pageInfo.hasNextPage` is true, the last replies are truncated — treat such threads conservatively (assume the author may have already replied).
+The second command fetches existing review comments to avoid duplication.
+The third command fetches the resolution status and **up to 100 replies** per review thread via GraphQL. This query has variants in Step 4 below and in `commands/address-pr-comments.md` Step 2a — keep all three in sync when modifying the schema. Read author replies on resolved threads carefully — the author may have already addressed the concern. If a thread's inner `comments.pageInfo.hasNextPage` is true, the last replies are truncated — treat such threads conservatively (assume the author may have already replied).
 
 If `pageInfo.hasNextPage` is true, paginate using `after: "{endCursor}"` until all threads are fetched. PRs with >50 threads silently lose overflow without pagination.
 
@@ -55,7 +54,9 @@ Follow the `gh --jq` guidance in `includes/gh-jq-pitfalls.md`.
 Determine the current GitHub user, then check for prior reviews. Run these two commands **sequentially** — the second depends on the output of the first:
 
 1. Run `gh api user --jq .login` and capture the output as the current user's login. If this call fails, warn the user that GitHub authentication may be required and stop.
-2. Run `gh pr view "$ARGUMENTS" --json reviews --jq '.reviews[]'` and filter the results to entries where `.author.login` matches the captured login. Extract `{state, submittedAt, commit: .commit.oid}` from any matches. Store the `commit` value from the most recent match as `$LAST_REVIEW_SHA`.
+2. Run `gh pr view "$ARGUMENTS" --json reviews --jq '.reviews[]'` and filter the results to entries where `.author.login` matches the captured login. Extract `{state, submittedAt, commit: .commit.oid}` from any matches. Store the `commit` value from the most recent match as `$LAST_REVIEW_SHA`. Validate that `$LAST_REVIEW_SHA` matches `^[0-9a-f]{40}$` — if it does not, warn and fall back to full review (do not enter self-re-review mode).
+
+If no matching reviews are found, `$LAST_REVIEW_SHA` is unset — this is not a self-re-review; proceed with standard full review.
 
 If a prior review by the current user exists, this is a **self-re-review**. Switch to re-review mode (see below). Otherwise, proceed with standard full review.
 
@@ -86,7 +87,7 @@ Then skip directly to Step 3.
 
 **Otherwise (first review):** Follow the shared review pipeline instructions in `includes/review-pipeline.md`. The include handles routing (lightweight vs full pipeline), specialist dispatch, cross-review, synthesis, and presentation.
 
-After the synthesiser report is complete, continue with the additional checks and Step 3 below.
+After the review pipeline completes (whether via lightweight or full path), continue with the additional checks and Step 3 below.
 
 ### Additional checks
 

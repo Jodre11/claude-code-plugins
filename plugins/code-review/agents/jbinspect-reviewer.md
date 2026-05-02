@@ -105,3 +105,5 @@ If no findings after filtering: `## JetBrains InspectCode Findings\n\n0 findings
 - Be precise with file paths and line numbers.
 - Clean up temporary XML files after parsing.
 - Focus exclusively on static analysis findings. Leave security, style, and correctness judgement to other reviewers.
+
+Keep in sync with the InspectCode section in `agents/code-analysis.md` — changes to either procedure must be mirrored.

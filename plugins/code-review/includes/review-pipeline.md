@@ -12,7 +12,7 @@ Where `<Xs>` is seconds since that agent was dispatched, and `R` counts down to 
 
 ### Step 1: Determine base branch
 
-This duplicates the logic in `specialist-context.md` intentionally — the pipeline orchestrator must resolve `$BASE` before dispatching specialists. Specialists also resolve `$BASE` independently so they work standalone. Keep both in sync.
+This duplicates the logic in `specialist-context.md` intentionally — the pipeline orchestrator must resolve `$BASE` before dispatching specialists. Specialists also resolve `$BASE` independently so they work standalone. Steps 1–4 here must match `specialist-context.md` "Determine base branch" steps 1–4. Changes to either must be mirrored.
 
 Try these in order:
 1. If `$ARGUMENTS` is provided and non-empty, extract the base branch from it. If a `Base branch: <ref>` line is present, extract the ref after the colon. Otherwise, treat the entire value of `$ARGUMENTS` as a bare branch name.
@@ -192,21 +192,24 @@ Use `$CROSS_REVIEW_COUNT` (not `$SPECIALIST_COUNT`) as the total count `R` count
 | efficiency | N+1, redundant work, missed concurrency, hot-path bloat |
 | ui | semantic HTML, ARIA, keyboard nav, responsive, WCAG 2.2 AA |
 
-**Prompt assembly** — for each cross-reviewer:
+**Prompt assembly** — sub-steps for clarity:
 
-1. Collect ALL specialist findings into a single string, labelled by domain:
-   ```
-   ### security-reviewer findings
-   <security findings>
+**5.1 Collect findings:** Concatenate ALL specialist findings into a single string, labelled by domain:
+```
+### security-reviewer findings
+<security findings>
 
-   ### correctness-reviewer findings
-   <correctness findings>
-   ...
-   ```
+### correctness-reviewer findings
+<correctness findings>
+...
+```
+
+**5.2 Build per-domain prompt:** For each cross-reviewer:
+1. Copy the collected findings string
 2. Remove the block whose heading matches `### <domain>-reviewer findings` (i.e. the cross-reviewer's own domain)
 3. Include jbinspect findings (if present) for ALL cross-reviewers — jbinspect is excluded from receiving cross-review, not from being reviewed. Omit the `### jbinspect-reviewer findings` block entirely if `$CSHARP_DETECTED` is false — do not include a placeholder
-4. Announce: `> Dispatching $CROSS_REVIEW_COUNT cross-review agents...`
-5. Note the dispatch timestamp, then assemble the prompt and dispatch:
+
+**5.3 Dispatch:** Announce `> Dispatching $CROSS_REVIEW_COUNT cross-review agents...`, note the dispatch timestamp, then dispatch all cross-reviewers in parallel:
 
 ```
 Agent({

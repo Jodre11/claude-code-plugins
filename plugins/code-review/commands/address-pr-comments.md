@@ -106,13 +106,13 @@ gh api repos/{owner}/{repo}/pulls/{number}/comments \
   -f commit_id='{head_sha}' \
   -f path='{file_path}' \
   -F line={line_number} \
-  -f side='RIGHT' \
+  -f side='{side}' \
   -F in_reply_to={comment_id} \
   --input -  <<'BODY'
 Your reply text
 BODY
 ```
-The `commit_id`, `path`, `line`, and `side` values are available from the comment data fetched in steps 2a and 2b. Use `--input -` with a heredoc for the body to avoid shell quoting issues.
+The `commit_id`, `path`, `line`, and `side` values are available from the comment data fetched in steps 2a and 2b. Use the comment's `side` field (`'LEFT'` for deleted lines, `'RIGHT'` for added/unchanged lines) — do not hardcode. Use `--input -` with a heredoc for the body to avoid shell quoting issues.
 
 **Outdated threads:** For threads flagged as `isOutdated` in step 2a, the `line` field in the REST comment data may be `null` (the diff position no longer exists on the current head commit). When `line` is null, omit `-F line` and `-f side` from the API call and use `original_line`, `original_commit_id`, and `side` from the REST comment data instead. Use the comment's `side` field (not hardcoded 'RIGHT') — comments on deleted lines have `side: 'LEFT'`:
 ```bash

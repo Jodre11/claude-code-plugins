@@ -42,11 +42,11 @@ pdf-text --info document.pdf
 
 1. If the user provides a URL, download the PDF first:
 
-       curl -sL -o /tmp/claude-{session}/document.pdf "URL"
+       curl -sL -o $CLAUDE_TEMP_DIR/document.pdf "URL"
 
 2. Run `pdf-text` to extract content:
 
-       pdf-text /tmp/claude-{session}/document.pdf
+       pdf-text $CLAUDE_TEMP_DIR/document.pdf
 
 3. For large PDFs, extract in page ranges to avoid overwhelming context:
 

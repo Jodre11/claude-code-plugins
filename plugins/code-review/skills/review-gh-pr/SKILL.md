@@ -191,7 +191,7 @@ BODY
 
 Note: Use `-F` (not `-f`) for the `line` parameter to pass it as an integer. Use `--input -` with a heredoc for the body to avoid shell quoting issues — comment bodies routinely contain single quotes, backticks, and other shell metacharacters from code snippets. The `--input` flag sends stdin as the `body` field.
 
-**For replies to existing comments**, use `in_reply_to` with the same line positioning:
+**For replies to existing comments**, use `in_reply_to` with the original comment's line positioning:
 
 ```bash
 gh api repos/{owner}/{repo}/pulls/{pr}/comments \
@@ -199,12 +199,14 @@ gh api repos/{owner}/{repo}/pulls/{pr}/comments \
   -f commit_id='{head_sha}' \
   -f path='{file_path}' \
   -F line={line_number} \
-  -f side='RIGHT' \
+  -f side='{side}' \
   -F in_reply_to={existing_comment_id} \
   --input -  <<'BODY'
 {reply_body}
 BODY
 ```
+
+Use the original comment's `side` field (`'LEFT'` for deleted lines, `'RIGHT'` for added/unchanged lines) — do not hardcode.
 
 **Important:**
 - Each comment must be a separate API call (enables independent resolution)

@@ -70,11 +70,14 @@ def get_cached(conn, key, ttl):
     return row[0] if row else None
 
 
-def store_cached(conn, key, query_str, result):
+def store_cached(conn, key, query_str, result, ttl):
     conn.execute(
         "INSERT OR REPLACE INTO cache (key, query, result, created) VALUES (?, ?, ?, ?)",
         (key, query_str, result, time.time()),
     )
+    # Evict expired entries ~5% of the time to bound cache growth
+    if random.random() < 0.05:
+        conn.execute("DELETE FROM cache WHERE ? - created > ?", (time.time(), ttl))
 
 
 def search_searxng(query, num_results):
@@ -220,11 +223,9 @@ def _run(conn, args, ttl, max_retries):
         try:
             results = search_searxng(query_str, num_results)
             output = json.dumps(results, indent=2)
-            store_cached(conn, key, query_str, output)
+            store_cached(conn, key, query_str, output, ttl)
             print(output)
             return
-        except urllib.error.URLError as exc:
-            error_msg = str(exc)
         except Exception as exc:
             error_msg = str(exc)
 
@@ -241,9 +242,10 @@ def _run(conn, args, ttl, max_retries):
     bump_stat(conn, "failures")
     emit_error(
         f"Search failed after {max_retries} retries for query: {query_str}",
-        f"Check that SearXNG is reachable at {SEARXNG_BASE_URL}. "
-        "Verify network connectivity to the configured SEARXNG_URL.",
+        "Check that SearXNG is reachable at the configured SEARXNG_URL. "
+        "Verify network connectivity.",
     )
+    sys.exit(1)
 
 
 if __name__ == "__main__":

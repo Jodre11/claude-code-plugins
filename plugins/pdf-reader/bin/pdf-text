@@ -97,16 +97,21 @@ done
 check_dependency pdftotext poppler
 check_dependency pdfinfo poppler
 
-get_page_count() {
-    pdfinfo "$PDF_FILE" 2>/dev/null | grep -i "^Pages:" | awk '{print $2}'
+PDF_METADATA=""
+get_pdf_metadata() {
+    if [[ -z "$PDF_METADATA" ]]; then
+        PDF_METADATA=$(pdfinfo "$PDF_FILE" 2>/dev/null)
+    fi
+    printf '%s\n' "$PDF_METADATA"
 }
 
-get_pdf_metadata() {
-    pdfinfo "$PDF_FILE" 2>/dev/null
+get_page_count() {
+    get_pdf_metadata | grep -i "^Pages:" | awk '{print $2}'
 }
 
 # Classify PDF as text-based or image-based by sampling native text extraction.
-# Returns 0 (true) if the PDF has extractable text, 1 (false) if image-based.
+# Sets SAMPLE_TEXT with the extracted sample. Returns 0 if text-based, 1 if image-based.
+SAMPLE_TEXT=""
 has_native_text() {
     local sample_first="${FIRST_PAGE:-1}"
     local sample_last="${LAST_PAGE:-3}"
@@ -117,12 +122,10 @@ has_native_text() {
         sample_last="$page_count"
     fi
 
-    local sample_text
-    sample_text=$(pdftotext -f "$sample_first" -l "$sample_last" "$PDF_FILE" - 2>/dev/null)
+    SAMPLE_TEXT=$(pdftotext -f "$sample_first" -l "$sample_last" "$PDF_FILE" - 2>/dev/null)
 
-    # Strip whitespace and form feeds, then check if anything remains
     local stripped
-    stripped=$(printf '%s' "$sample_text" | tr -d '[:space:]\f')
+    stripped=$(printf '%s' "$SAMPLE_TEXT" | tr -d '[:space:]\f')
 
     # Threshold: at least 50 non-whitespace characters suggests real text
     [[ ${#stripped} -ge 50 ]]
@@ -157,24 +160,22 @@ extract_ocr() {
 
     pdftoppm "${ppm_args[@]}" 2>/dev/null
 
-    local output=""
     local page_files
-    page_files=$(find "$OCR_TMPDIR" -name "page-*.ppm" -o -name "page-*.pgm" | sort)
+    page_files=$(find "$OCR_TMPDIR" \( -name "page-*.ppm" -o -name "page-*.pgm" \) | sort)
 
     if [[ -z "$page_files" ]]; then
         die "pdftoppm produced no images — the PDF may be empty or corrupted"
     fi
 
+    local first=1
     while IFS= read -r img; do
-        local page_text
-        page_text=$(tesseract "$img" stdout 2>/dev/null)
-        if [[ -n "$output" ]]; then
-            output+=$'\f\n'
+        if [[ "$first" -eq 1 ]]; then
+            first=0
+        else
+            printf '\f\n'
         fi
-        output+="$page_text"
+        tesseract "$img" stdout 2>/dev/null
     done <<< "$page_files"
-
-    printf '%s\n' "$output"
 }
 
 # --info mode
@@ -196,7 +197,12 @@ if [[ "$FORCE_OCR" -eq 1 ]]; then
     echo "[pdf-text] Forced OCR mode — rendering pages and running tesseract..." >&2
     extract_ocr
 elif has_native_text; then
-    extract_native
+    # When --pages is specified, has_native_text sampled exactly that range — reuse it
+    if [[ -n "$FIRST_PAGE" ]]; then
+        printf '%s\n' "$SAMPLE_TEXT"
+    else
+        extract_native
+    fi
 else
     echo "[pdf-text] No native text detected — falling back to OCR..." >&2
     extract_ocr

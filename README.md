@@ -10,6 +10,7 @@ Personal plugin marketplace for [Claude Code](https://docs.anthropic.com/en/docs
 | [web-search](plugins/web-search/) | Web search via local SearXNG — self-hosted, no API key, no tracking |
 | [playwright-cli](plugins/playwright-cli/) | Browser automation via `playwright-cli` — testing, form filling, screenshots, data extraction |
 | [md-to-clipboard](plugins/md-to-clipboard/) | Convert Markdown to rich text on the macOS clipboard for pasting into Teams, Slack, Outlook |
+| [pdf-reader](plugins/pdf-reader/) | Extract text from any PDF — native text via poppler, scanned/image via tesseract OCR |
 
 ## Installation
 
@@ -48,6 +49,15 @@ manual reinstall required. Each plugin's `bin/` directory is added to PATH autom
 | web-search | Docker Desktop + SearXNG container (`searxng-ctl.sh start`), `jq` (`brew install jq`) |
 | playwright-cli | `playwright-cli` (`brew install playwright-cli` or `npx playwright-cli`) |
 | md-to-clipboard | `pandoc` (`brew install pandoc`), `md2clip` (ships with plugin — see [setup](plugins/md-to-clipboard/README.md)) |
+
+## Versioning
+
+This marketplace does not use explicit version fields in `plugin.json`. Claude Code resolves
+plugin versions from the git commit SHA, so every push to `main` is automatically a new version.
+Users receive updates on their next session start without any manual version bumps.
+
+See [Version resolution](https://code.claude.com/docs/en/plugin-marketplaces#version-resolution-and-release-channels)
+in the Claude Code docs for details.
 
 ## Licence
 

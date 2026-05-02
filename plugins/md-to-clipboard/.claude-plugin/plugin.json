@@ -1,7 +1,7 @@
 {
   "name": "md-to-clipboard",
   "description": "Convert Markdown to Teams-compatible rich text on the macOS clipboard",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "author": {
     "name": "Christian Haddrell"
   },

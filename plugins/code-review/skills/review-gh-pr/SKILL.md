@@ -279,11 +279,17 @@ Ask the user to confirm the verdict before submitting.
 Submit the review with:
 
 ```bash
-gh pr review "$ARGUMENTS" --approve --body "Review summary here"
+gh pr review "$ARGUMENTS" --approve --input - <<'EOF_REVIEW_BODY'
+Review summary here
+EOF_REVIEW_BODY
 # or
-gh pr review "$ARGUMENTS" --request-changes --body "Review summary here"
+gh pr review "$ARGUMENTS" --request-changes --input - <<'EOF_REVIEW_BODY'
+Review summary here
+EOF_REVIEW_BODY
 # or
-gh pr review "$ARGUMENTS" --comment --body "Review summary here"
+gh pr review "$ARGUMENTS" --comment --input - <<'EOF_REVIEW_BODY'
+Review summary here
+EOF_REVIEW_BODY
 ```
 
 **Review body guidelines:**

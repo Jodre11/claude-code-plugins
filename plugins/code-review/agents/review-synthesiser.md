@@ -30,7 +30,7 @@ If a `Head SHA: <sha>` line is present, extract it and store as `$HEAD_SHA`. Oth
 
 If an `Empty tree mode: true` line is present in your prompt, set `$EMPTY_TREE_MODE = true`. Otherwise set `$EMPTY_TREE_MODE = false`.
 
-If a `Path scope: <pathspec>` line is present in your prompt, extract the pathspec after the colon and store as `$PATH_SCOPE`. If not present, leave `$PATH_SCOPE` empty. Validate that `$PATH_SCOPE` matches `^[a-zA-Z0-9/_.\-*]+$` — if it does not, report "Invalid path scope: $PATH_SCOPE" and stop. When `$PATH_SCOPE` is set, append `-- "$PATH_SCOPE"` after all flags in every `git diff` command below (quotes prevent shell glob expansion of `*`).
+If a `Path scope: <pathspec>` line is present in your prompt, extract the pathspec after the colon and store as `$PATH_SCOPE`. If not present, leave `$PATH_SCOPE` empty. Validate that `$PATH_SCOPE` matches `^[a-zA-Z0-9/_.\-*]+$` — if it does not, report "Invalid path scope: $PATH_SCOPE" and stop. Additionally, if `$PATH_SCOPE` contains `..` as a substring, report "Invalid path scope (directory traversal): $PATH_SCOPE" and stop. When `$PATH_SCOPE` is set, append `-- "$PATH_SCOPE"` after all flags in every `git diff` command below (quotes prevent shell glob expansion of `*`).
 
 Read the diff and changed files yourself for independent analysis:
 1. Run `git diff` to get the full diff (append `-- "$PATH_SCOPE"` if set). Use the diff syntax determined by `$EMPTY_TREE_MODE` (two-arg when true, three-dot when false).

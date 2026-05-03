@@ -16,7 +16,8 @@ Follow the PR argument validation instructions in `includes/pr-arg-validation.md
 ## Instructions
 
 ### 1. Resolve repository and branch context
-- Infer `{owner}/{repo}` from the current git remote, or extract from a PR URL if provided.
+- Extract `$PR_NUMBER` from `$ARGUMENTS` — if it is a URL, take the final path segment; if it is already a bare integer, use it directly. Use `$PR_NUMBER` in place of `{number}` in all subsequent API calls.
+- Infer `$OWNER` and `$REPO` from the current git remote (`gh repo view --json owner,name --jq '.owner.login,.name'`), or extract from a PR URL if provided. Use these in place of `{owner}` and `{repo}` in all subsequent API calls.
 - Determine the current authenticated user: `gh api user --jq .login` — store as `$CURRENT_USER`. If this call fails, warn the user that GitHub authentication may be required and stop.
 - Run `git fetch` and check whether the local branch is behind its remote tracking branch. If behind, warn the user and ask whether to proceed — addressing comments on stale code risks merge conflicts.
 

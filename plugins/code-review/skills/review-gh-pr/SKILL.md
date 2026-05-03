@@ -184,6 +184,8 @@ If the plan changes materially, present the updated findings table to the user b
 
 **IMPORTANT:** Only reply to **open (unresolved)** comment threads. Never reply to resolved threads — replies to resolved threads remain hidden and will be ignored. If a resolved thread contains an issue that is still present in the code, create a new standalone comment instead.
 
+**Comment API conventions:** Use `--input -` with a heredoc for the body to avoid shell quoting issues — comment bodies routinely contain single quotes, backticks, and other shell metacharacters from code snippets. The `--input` flag sends stdin as the `body` field. The heredoc uses a collision-resistant delimiter (`EOF_COMMENT_BODY`) to avoid premature termination if the comment body contains a common word like `BODY` on its own line. Use `-F` (not `-f`) for integer parameters (`line`, `in_reply_to`).
+
 **For new comments**, attach to a specific line to show the code hunk context:
 
 ```bash
@@ -198,7 +200,7 @@ gh api repos/{owner}/{repo}/pulls/{pr}/comments \
 EOF_COMMENT_BODY
 ```
 
-Determine `{side}` from the diff hunk: use `'LEFT'` when the finding targets a deleted line (prefixed with `-` in the diff), `'RIGHT'` for added or unchanged context lines. Use `-F` (not `-f`) for the `line` parameter to pass it as an integer. Use `--input -` with a heredoc for the body to avoid shell quoting issues — comment bodies routinely contain single quotes, backticks, and other shell metacharacters from code snippets. The `--input` flag sends stdin as the `body` field. The heredoc uses a collision-resistant delimiter (`EOF_COMMENT_BODY`) to avoid premature termination if the comment body contains a common word like `BODY` on its own line.
+Determine `{side}` from the diff hunk: use `'LEFT'` when the finding targets a deleted line (prefixed with `-` in the diff), `'RIGHT'` for added or unchanged context lines.
 
 **For replies to existing comments**, use `in_reply_to` with the original comment's line positioning:
 

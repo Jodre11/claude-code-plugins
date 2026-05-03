@@ -4,7 +4,7 @@ Determine the base branch, then gather the diff and changed files yourself.
 
 ### Determine base branch
 
-This duplicates the logic in `includes/review-pipeline.md` "Step 1: Determine base branch" intentionally — specialists must resolve `$BASE` independently so they work standalone. Steps 1–5 here must match `review-pipeline.md` Step 1 items 1–5. Changes to any of these locations must be mirrored in the others; see also `agents/review-synthesiser.md` Context Gathering which has a parallel (but prompt-extracted) version.
+This duplicates the logic in `includes/review-pipeline.md` "Step 1: Determine base branch" intentionally — specialists must resolve `$BASE` independently so they work standalone. Items 1–5 here must match `review-pipeline.md` Step 1 items 1–5. Changes to any of these locations must be mirrored in the others; see also `agents/review-synthesiser.md` Context Gathering which has a parallel (but prompt-extracted) version.
 
 1. If `$ARGUMENTS` is provided and non-empty, extract the base branch from it. If a `Base branch: <ref>` line is present, extract the ref after the colon. Otherwise, treat the entire value of `$ARGUMENTS` as a bare branch name.
 2. `gh pr view --json baseRefName -q .baseRefName 2>/dev/null`
@@ -19,13 +19,13 @@ Validate that `$BASE` matches `^[a-zA-Z0-9/_.\-]+$` — if it does not, report "
 
 **Diff syntax:** When `$EMPTY_TREE_MODE` is true, use two-arg `git diff $BASE $HEAD_SHA` instead of `git diff "$BASE"..."$HEAD_SHA"` for ALL diff commands. When false, use three-dot syntax as normal.
 
-5. If a `Path scope: <pathspec>` line is present in `$ARGUMENTS`, extract the pathspec after the colon and store as `$PATH_SCOPE`. If not present, leave `$PATH_SCOPE` empty. Validate that `$PATH_SCOPE` matches `^[a-zA-Z0-9/_.\-*]+$` — if it does not, report "Invalid path scope: $PATH_SCOPE" and stop. When `$PATH_SCOPE` is set, append `-- "$PATH_SCOPE"` after all flags in every `git diff` command (use the diff syntax determined by `$EMPTY_TREE_MODE`). The quotes prevent shell glob expansion of `*` before git receives the pathspec.
+5. If a `Path scope: <pathspec>` line is present in `$ARGUMENTS`, extract the pathspec after the colon and store as `$PATH_SCOPE`. If not present, leave `$PATH_SCOPE` empty. Validate that `$PATH_SCOPE` matches `^[a-zA-Z0-9/_.\-*]+$` — if it does not, report "Invalid path scope: $PATH_SCOPE" and stop. Additionally, if `$PATH_SCOPE` contains `..` as a substring, report "Invalid path scope (directory traversal): $PATH_SCOPE" and stop. When `$PATH_SCOPE` is set, append `-- "$PATH_SCOPE"` after all flags in every `git diff` command (use the diff syntax determined by `$EMPTY_TREE_MODE`). The quotes prevent shell glob expansion of `*` before git receives the pathspec.
 
 If a `Head SHA: <sha>` line is present in `$ARGUMENTS`, extract it and store as `$HEAD_SHA`. Otherwise, run `git rev-parse HEAD` and store as `$HEAD_SHA` — but log a warning: "Head SHA not found in prompt — using current HEAD; results may differ from pipeline's measurement." Using a pinned SHA ensures all agents review the same commit even if new commits land during the review. Validate that `$HEAD_SHA` matches `^[0-9a-f]{40}$` — if it does not, report "Invalid HEAD SHA: $HEAD_SHA" and stop.
 
 ### Gather context
 
-1. Run `git diff` to get changed files (append `-- "$PATH_SCOPE"` if set). Use the diff syntax determined by `$EMPTY_TREE_MODE` (two-arg when true, three-dot when false). If empty, report "No changes found against $BASE" and stop.
+1. Run `git diff --name-only` to get changed files (append `-- "$PATH_SCOPE"` if set). Use the diff syntax determined by `$EMPTY_TREE_MODE` (two-arg when true, three-dot when false). If empty, report "No changes found against $BASE" and stop.
 2. Run `git diff` to get the full diff (append `-- "$PATH_SCOPE"` if set). Use the same diff syntax as above.
 3. Read `CLAUDE.md` in the repo root (if it exists) for project conventions.
 4. Read `includes/severity-definitions.md` (if it exists) for the severity classification definitions to apply when assigning severity to findings.

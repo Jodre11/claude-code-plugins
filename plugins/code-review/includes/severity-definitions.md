@@ -16,7 +16,7 @@ The defect will cause **observable incorrect behaviour, a runtime error, or sile
 
 Litmus test: if this ships, will someone file a bug?
 
-Examples: wrong boolean condition that inverts a filter, unclosed resource in a long-lived process, missing error propagation that swallows failures the caller needs, race condition on shared state in a concurrent code path.
+Examples: wrong boolean condition that inverts a filter, unclosed resource in a long-lived process, missing error propagation that swallows failures the caller needs, race condition on shared state in a concurrent code path, N+1 query pattern in a production request handler, exact duplicate of an actively-maintained utility that will predictably diverge.
 
 **Not Important** (downgrade to Suggestion): documentation wording, naming improvements, defensive hardening against unreachable conditions, stylistic consistency, cross-reference maintenance, missing comments, redundant-but-harmless code.
 

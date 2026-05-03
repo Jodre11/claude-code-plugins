@@ -20,4 +20,5 @@ If a `Head SHA: <sha>` line is present in `$ARGUMENTS`, extract it and store as 
 1. `git diff "$BASE"..."$HEAD_SHA" --name-only` — changed files. If empty, report "No changes found against $BASE" and stop.
 2. `git diff "$BASE"..."$HEAD_SHA"` — full diff.
 3. Read `CLAUDE.md` in the repo root (if it exists) for project conventions.
-4. Read each changed file for full context. If more than 20 files changed, prioritise non-test source files with the largest diffs. Skip generated files, lock files, and vendored dependencies.
+4. Read `includes/severity-definitions.md` (if it exists) for the severity classification definitions to apply when assigning severity to findings.
+5. Read each changed file for full context. If more than 20 files changed, prioritise non-test source files with the largest diffs. Skip generated files, lock files, and vendored dependencies.

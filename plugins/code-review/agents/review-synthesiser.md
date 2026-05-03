@@ -99,11 +99,13 @@ X file(s) changed | Y finding(s) | Z contested
 - **Confidence:** 95
 - **Description:** What is wrong and why it matters
 - **Suggested fix:** Concrete code change or approach
+- **Reclassified:** Important → Suggestion — [one-line reason] *(omit if no reclassification)*
 - **Synthesiser:** Your assessment — agree/amplify with additional context, downstream impact, or nuance
 
 ### Important
 #### Finding #2 — [short title] [correctness]
 ...
+- **Reclassified:** *(omit if no reclassification)*
 - **Synthesiser:** ...
 
 ### Suggestions

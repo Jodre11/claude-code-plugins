@@ -43,7 +43,11 @@ gh api graphql -f query='query {
 ```
 
 The second command fetches existing review comments to avoid duplication.
-The third command fetches the resolution status and **up to 100 replies** per review thread via GraphQL. This query has variants in Step 4 below and in `commands/address-pr-comments.md` Step 2a — keep all three in sync when modifying the schema. Read author replies on resolved threads carefully — the author may have already addressed the concern. If a thread's inner `comments.pageInfo.hasNextPage` is true, the last replies are truncated — treat such threads conservatively (assume the author may have already replied).
+The third command fetches the resolution status and **up to 100 replies** per review thread via GraphQL. This query has two variants that must be kept in sync:
+- **Step 4 below** (lines ~140-159) — intentionally omits `path` from inner comments (only needs resolution state and reply content)
+- **`commands/address-pr-comments.md` Step 2a** (lines ~30-53) — adds `isOutdated`, `isMinimized`, `totalCount` fields
+
+When modifying the schema in any of these three locations, update the other two. Read author replies on resolved threads carefully — the author may have already addressed the concern. If a thread's inner `comments.pageInfo.hasNextPage` is true, the last replies are truncated — treat such threads conservatively (assume the author may have already replied).
 
 If `pageInfo.hasNextPage` is true, paginate using `after: "{endCursor}"` until all threads are fetched. PRs with >50 threads silently lose overflow without pagination.
 
@@ -62,7 +66,7 @@ If a prior review by the current user exists, this is a **self-re-review**. Swit
 
 ### Self-re-review mode
 
-Resolve `$HEAD_SHA` by running `git rev-parse HEAD` before beginning the review. Validate that it matches `^[0-9a-f]{40}$`. Use `$HEAD_SHA` in all subsequent diff and log commands.
+Resolve `$HEAD_SHA` by running `git rev-parse HEAD` before beginning the review. Validate that it matches `^[0-9a-f]{40}$` — if it does not, report "Invalid HEAD SHA: $HEAD_SHA" and stop. Use `$HEAD_SHA` in all subsequent diff and log commands.
 
 When re-reviewing a PR you have previously reviewed, the scope is deliberately narrow:
 
@@ -160,7 +164,7 @@ gh api graphql -f query='query {
 gh pr view "$ARGUMENTS" --json headRefOid -q '.headRefOid'
 ```
 
-**Note:** This GraphQL query is a variant of the Step 1 query — it intentionally omits `path` from inner comments because Step 4 only needs resolution state and reply content, not file positions. If the Step 1 query schema changes (e.g. new fields), update this variant to match where applicable. A related query also exists in `commands/address-pr-comments.md` Step 2a — keep all three in sync when modifying the schema.
+**Note:** This GraphQL query is a variant of the Step 1 query (lines ~22-42) — it intentionally omits `path` from inner comments because Step 4 only needs resolution state and reply content, not file positions. A related query also exists in `commands/address-pr-comments.md` Step 2a (lines ~30-53) which adds `isOutdated`, `isMinimized`, `totalCount`. When modifying the schema in any of these three locations, update the other two where applicable.
 
 **Pagination:** If `pageInfo.hasNextPage` is true, paginate using `after: "{endCursor}"` until all threads are fetched, as in Step 1. Inner thread replies are limited to 100; if a thread has >100 replies, the last replies may be truncated — treat unresolvable threads with high reply counts conservatively.
 
@@ -184,12 +188,12 @@ gh api repos/{owner}/{repo}/pulls/{pr}/comments \
   -f path='{file_path}' \
   -F line={line_number} \
   -f side='{side}' \
-  --input -  <<'BODY'
+  --input -  <<'EOF_COMMENT_BODY'
 {comment_body}
-BODY
+EOF_COMMENT_BODY
 ```
 
-Determine `{side}` from the diff hunk: use `'LEFT'` when the finding targets a deleted line (prefixed with `-` in the diff), `'RIGHT'` for added or unchanged context lines. Use `-F` (not `-f`) for the `line` parameter to pass it as an integer. Use `--input -` with a heredoc for the body to avoid shell quoting issues — comment bodies routinely contain single quotes, backticks, and other shell metacharacters from code snippets. The `--input` flag sends stdin as the `body` field.
+Determine `{side}` from the diff hunk: use `'LEFT'` when the finding targets a deleted line (prefixed with `-` in the diff), `'RIGHT'` for added or unchanged context lines. Use `-F` (not `-f`) for the `line` parameter to pass it as an integer. Use `--input -` with a heredoc for the body to avoid shell quoting issues — comment bodies routinely contain single quotes, backticks, and other shell metacharacters from code snippets. The `--input` flag sends stdin as the `body` field. The heredoc uses a collision-resistant delimiter (`EOF_COMMENT_BODY`) to avoid premature termination if the comment body contains a common word like `BODY` on its own line.
 
 **For replies to existing comments**, use `in_reply_to` with the original comment's line positioning:
 
@@ -201,9 +205,9 @@ gh api repos/{owner}/{repo}/pulls/{pr}/comments \
   -F line={line_number} \
   -f side='{side}' \
   -F in_reply_to={existing_comment_id} \
-  --input -  <<'BODY'
+  --input -  <<'EOF_COMMENT_BODY'
 {reply_body}
-BODY
+EOF_COMMENT_BODY
 ```
 
 Use the original comment's `side` field (`'LEFT'` for deleted lines, `'RIGHT'` for added/unchanged lines) — do not hardcode.

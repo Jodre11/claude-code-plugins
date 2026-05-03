@@ -25,7 +25,11 @@ Examine a GitHub PR for unresolved review comments and address them systematical
 After step 1 completes (ensuring `$CURRENT_USER` is available), run steps 2a, 2b, and 2c in parallel — they are independent of each other.
 
 #### 2a. Get thread resolution state via GraphQL
-The REST API does not expose `isResolved`, `isOutdated`, or `isMinimized`. Use GraphQL to get the `databaseId` of the root comment in each thread along with its state. Related queries exist in `skills/review-gh-pr/SKILL.md` Steps 1 and 4 — keep in sync when modifying the schema:
+The REST API does not expose `isResolved`, `isOutdated`, or `isMinimized`. Use GraphQL to get the `databaseId` of the root comment in each thread along with its state. This query has two variants that must be kept in sync:
+- **`skills/review-gh-pr/SKILL.md` Step 1** (lines ~22-42) — omits `isOutdated`, `isMinimized`, `totalCount`; adds `path` and `body` on inner comments
+- **`skills/review-gh-pr/SKILL.md` Step 4** (lines ~140-159) — omits `path` from inner comments (only needs resolution state and reply content)
+
+When modifying the schema in any of these three locations, update the other two:
 ```bash
 gh api graphql -f query='
 {
@@ -67,7 +71,13 @@ Inline comments are attached to diff lines. Reviewers can also leave feedback in
 ```bash
 gh api repos/{owner}/{repo}/pulls/{number}/reviews --paginate
 ```
-Check for non-empty `body` fields on reviews where `select(.state == "APPROVED" | not)` and where `.user.login` does not match the resolved `$CURRENT_USER` value. Substitute the actual login string into the jq filter (e.g., `select(.user.login == "actuallogin" | not)`) — do not pass `$CURRENT_USER` inside single-quoted jq where the shell cannot interpolate it. Include these as additional actionable items (they won't have a `path` or `line` — treat them as general feedback).
+Check for non-empty `body` fields on reviews where `select(.state == "APPROVED" | not)` and where `.user.login` does not match the resolved `$CURRENT_USER` value. Use the `--arg` mechanism to inject the login into jq safely:
+```bash
+gh api repos/{owner}/{repo}/pulls/{number}/reviews --paginate \
+  --jq '[.[] | select(.body != null and .body != "")]' \
+  | jq --arg user "$CURRENT_USER" '[.[] | select(.state != "APPROVED") | select(.user.login != $user)]'
+```
+Do not pass `$CURRENT_USER` inside single-quoted `--jq` where the shell cannot interpolate it — the `--arg` pattern avoids both the interpolation problem and jq injection risk from unexpected characters in the username. Include these as additional actionable items (they won't have a `path` or `line` — treat them as general feedback).
 
 ### 3. Filter to actionable comments
 - From the REST comments (step 2b), keep only root comments (`in_reply_to_id: null`) whose `id` is in the actionable set from step 2a. (REST `id` and GraphQL `databaseId` are the same integer identifier.) If the join yields no matches despite both queries returning data, warn the user about the discrepancy rather than silently proceeding with zero comments.
@@ -111,9 +121,9 @@ gh api repos/{owner}/{repo}/pulls/{number}/comments \
   -F line={line_number} \
   -f side='{side}' \
   -F in_reply_to={comment_id} \
-  --input -  <<'BODY'
+  --input -  <<'EOF_COMMENT_BODY'
 Your reply text
-BODY
+EOF_COMMENT_BODY
 ```
 Use the comment's `side` field (`'LEFT'` for deleted lines, `'RIGHT'` for added/unchanged lines) — do not hardcode.
 
@@ -126,9 +136,9 @@ gh api repos/{owner}/{repo}/pulls/{number}/comments \
   -F original_line={original_line} \
   -f side='{original_side}' \
   -F in_reply_to={comment_id} \
-  --input -  <<'BODY'
+  --input -  <<'EOF_COMMENT_BODY'
 Your reply text
-BODY
+EOF_COMMENT_BODY
 ```
 Use the comment's original `side` field (not hardcoded 'RIGHT') — comments on deleted lines have `side: 'LEFT'`.
 

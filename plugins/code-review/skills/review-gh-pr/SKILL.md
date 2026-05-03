@@ -19,7 +19,7 @@ Follow the PR argument validation instructions in `includes/pr-arg-validation.md
 Run all three commands in parallel — they are independent:
 
 ```bash
-gh pr view "$ARGUMENTS" --json title,body,author,state,baseRefName,headRefName,commits
+gh pr view "$ARGUMENTS" --json title,body,author,state,baseRefName,headRefName,headRefOid,commits
 gh api repos/{owner}/{repo}/pulls/{pr}/comments --paginate --jq '.[] | {id, path, body: .body[0:150], in_reply_to_id}'
 gh api graphql -f query='query {
   repository(owner: "{owner}", name: "{repo}") {
@@ -69,7 +69,9 @@ If a prior review by the current user exists, this is a **self-re-review**. Swit
 
 ### Self-re-review mode
 
-Resolve `$BASE` from the `baseRefName` field of the Step 1 PR data. Validate that `$BASE` matches `^[a-zA-Z0-9/_.\-]+$` — if it does not, report "Invalid base branch ref: $BASE" and stop. Resolve `$HEAD_SHA` by running `git rev-parse HEAD` before beginning the review. Validate that `$HEAD_SHA` matches `^[0-9a-f]{40}$` — if it does not, report "Invalid HEAD SHA: $HEAD_SHA" and stop. Use `$BASE` and `$HEAD_SHA` in all subsequent diff and log commands.
+Resolve `$BASE` from the `baseRefName` field of the Step 1 PR data. Validate that `$BASE` matches `^[a-zA-Z0-9/_.\-]+$` — if it does not, report "Invalid base branch ref: $BASE" and stop.
+
+Resolve `$HEAD_SHA` from the `headRefOid` field of the Step 1 PR data (available via `gh pr view "$ARGUMENTS" --json headRefOid -q .headRefOid`). If `headRefOid` is unavailable, fall back to `git rev-parse HEAD` and log a warning: "headRefOid not available — using local HEAD; results may differ from remote." Validate that `$HEAD_SHA` matches `^[0-9a-f]{40}$` — if it does not, report "Invalid HEAD SHA: $HEAD_SHA" and stop. Use `$BASE` and `$HEAD_SHA` in all subsequent diff and log commands.
 
 When re-reviewing a PR you have previously reviewed, the scope is deliberately narrow:
 

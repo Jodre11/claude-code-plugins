@@ -65,7 +65,7 @@ gh api graphql -f query='
   - Root comment `isMinimized == false`
   - Root comment author is not `$CURRENT_USER`
   - `$CURRENT_USER` has not already replied (check `author.login` values in `comments.nodes`)
-  - Thread's inner `comments.pageInfo.hasNextPage` is false (if true, treat conservatively — assume the current user may have already replied and exclude it)
+  - Thread's inner `comments.pageInfo.hasNextPage` is false (if true, treat conservatively — assume the current user may have already replied and exclude it). This is stricter than the review-gh-pr skill's equivalent check, which includes truncated threads with a warning — the difference is intentional: acting on a thread (replying, making code changes) carries higher risk than passively reviewing it, so the address workflow excludes ambiguous threads.
 - Also note which actionable threads have `isOutdated == true` — these need special handling in step 4 (the diff position no longer exists, but the concern may still be valid).
 - If `pageInfo.hasNextPage == true`, paginate using `after: "{endCursor}"` until all threads are fetched.
 
@@ -96,7 +96,7 @@ Never interpolate `$CURRENT_USER` directly into a jq filter string — always us
 
 ### 4. Analyse each actionable comment
 - Determine if the concern is valid and accurate
-- Categorize: code change needed, documentation needed, or skip with justification
+- Categorise: code change needed, documentation needed, or skip with justification
 - Consider effort vs value tradeoff
 - Prioritize: security > correctness > consistency > style
 - For **outdated** threads (flagged in step 2a): check whether the code has already been changed to address the concern. If so, reply noting it's already addressed. If the concern is still conceptually valid despite the diff change, treat it normally.

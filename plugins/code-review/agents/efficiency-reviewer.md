@@ -68,7 +68,7 @@ If no findings: `## Efficiency Review Findings\n\n0 findings.`
 
 ## Rules
 
-- Only report findings in files that appear in the diff (`git diff $BASE...HEAD --name-only`). Do not report issues found in unchanged files read for surrounding context.
+- Only report findings in files that appear in the diff (as gathered during context gathering above). Do not report issues found in unchanged files read for surrounding context.
 - Be precise. Cite file paths and line numbers.
 - Consider the execution context. Code in a CLI that runs once has different performance requirements than code in a request handler serving thousands of RPM. Note the context in your assessment.
 - Don't flag micro-optimisations in cold paths. Focus on changes that affect observable latency, throughput, or resource consumption.

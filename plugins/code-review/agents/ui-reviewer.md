@@ -94,7 +94,7 @@ The "Findings Requiring Visual Verification" section is optional — only includ
 
 ## Rules
 
-- Only report findings in files that appear in the diff (`git diff $BASE...HEAD --name-only`). Do not report issues found in unchanged files read for surrounding context.
+- Only report findings in files that appear in the diff (as gathered during context gathering above). Do not report issues found in unchanged files read for surrounding context.
 - Be precise. Cite file paths and line numbers.
 - Focus on issues detectable through static analysis of the code. Flag issues needing visual verification in the separate section.
 - Don't flag intentional or idiomatic patterns for the framework (e.g., React portals for modals, CSS-in-JS patterns).

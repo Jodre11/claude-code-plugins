@@ -36,7 +36,7 @@ The review pipeline (`includes/review-pipeline.md`) handles all routing:
 
 ## Commands
 
-- **pre-review** — Analyse local changes before creating a PR. Usage: `/pre-review [base-branch]`
+- **pre-review** — Analyse local changes before creating a PR. Usage: `/pre-review [base-branch | EMPTY_TREE] [Path scope: <pathspec>]`
 - **address-pr-comments** — Fetch unresolved PR comments and address them systematically.
   Usage: `/address-pr-comments <pr-number-or-url>`
 

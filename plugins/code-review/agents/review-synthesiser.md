@@ -18,17 +18,20 @@ You receive via your prompt:
 - **Cross-review opinions** — cross-reviewers' agree/disagree/supplement responses to specialist findings
 - **Changed file list** — files in the diff
 - **Base branch** — for self-serve context gathering
+- **Path scope** (optional) — restricts independent analysis to a subdirectory
 
 ## Context Gathering
 
-<!-- Duplicates parts of the base-branch and HEAD SHA resolution logic in includes/specialist-context.md intentionally — the synthesiser receives $BASE and $HEAD_SHA in its prompt (not via $ARGUMENTS), so the extraction mechanism differs. Changes to SHA validation or fallback behaviour should be mirrored in both locations. See also review-pipeline.md Step 6. -->
+<!-- Duplicates parts of the base-branch, HEAD SHA, and path-scope resolution logic in includes/specialist-context.md intentionally — the synthesiser receives $BASE, $HEAD_SHA, and $PATH_SCOPE in its prompt (not via $ARGUMENTS), so the extraction mechanism differs. Changes to SHA validation, path-scope handling, or fallback behaviour should be mirrored in both locations. See also review-pipeline.md Step 6. -->
 
 Extract the base branch from the `Base branch:` line in your prompt. Store as `$BASE`. If a `Head SHA: <sha>` line is present, extract it and store as `$HEAD_SHA`. Otherwise, run `git rev-parse HEAD` and store as `$HEAD_SHA` — log a warning: "Head SHA not found in prompt — using current HEAD; results may differ from pipeline's measurement." Validate that `$HEAD_SHA` matches `^[0-9a-f]{40}$` — if it does not, report "Invalid HEAD SHA: $HEAD_SHA" and stop.
 
 If an `Empty tree mode: true` line is present in your prompt, set `$EMPTY_TREE_MODE = true`. Otherwise set `$EMPTY_TREE_MODE = false`.
 
+If a `Path scope: <pathspec>` line is present in your prompt, extract the pathspec after the colon and store as `$PATH_SCOPE`. If not present, leave `$PATH_SCOPE` empty. Validate that `$PATH_SCOPE` matches `^[a-zA-Z0-9/_.\-*]+$` — if it does not, report "Invalid path scope: $PATH_SCOPE" and stop. When `$PATH_SCOPE` is set, append `-- $PATH_SCOPE` after all flags in every `git diff` command below.
+
 Read the diff and changed files yourself for independent analysis:
-1. Run `git diff` to get the full diff. Use the diff syntax determined by `$EMPTY_TREE_MODE` (two-arg when true, three-dot when false).
+1. Run `git diff` to get the full diff (append `-- $PATH_SCOPE` if set). Use the diff syntax determined by `$EMPTY_TREE_MODE` (two-arg when true, three-dot when false).
 2. Read each changed file for full context. If more than 20 files changed, prioritise non-test source files with the largest diffs. Skip generated files, lock files, and vendored dependencies.
 3. Read `CLAUDE.md` in the repo root (if it exists) for project conventions.
 

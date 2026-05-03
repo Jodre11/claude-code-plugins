@@ -45,7 +45,7 @@ If no findings: `## Security Review Findings\n\n0 findings.`
 
 ## Rules
 
-- Only report findings in files that appear in the diff (`git diff $BASE...HEAD --name-only`). Do not report issues found in unchanged files read for surrounding context.
+- Only report findings in files that appear in the diff (as gathered during context gathering above). Do not report issues found in unchanged files read for surrounding context.
 - Be precise. Cite file paths and line numbers.
 - Note certainty level and reasoning for each finding.
 - Don't flag intentional or idiomatic patterns (e.g., test fixtures with dummy credentials).

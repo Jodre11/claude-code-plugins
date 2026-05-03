@@ -95,7 +95,7 @@ If no significant deletions or all deletions are clearly safe:
 
 ## Rules
 
-- Only report findings in files that appear in the diff (`git diff $BASE...HEAD --name-only`). Do not report issues found in unchanged files read for surrounding context.
+- Only report findings in files that appear in the diff (as gathered during context gathering above). Do not report issues found in unchanged files read for surrounding context.
 - Be precise. Cite file paths, line numbers, and commit hashes.
 - Investigate the git history. Do not speculate about intent when you can look it up.
 - If `git log -S` finds nothing, say so — "unable to determine original intent" is a valid and important signal. Undocumented deletions of non-trivial code are inherently risky.

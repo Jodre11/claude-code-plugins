@@ -69,7 +69,7 @@ If no findings: `## Reuse Review Findings\n\n0 findings.`
 
 ## Rules
 
-- Only report findings in files that appear in the diff (`git diff $BASE...HEAD --name-only`). Do not report issues found in unchanged files read for surrounding context.
+- Only report findings in files that appear in the diff (as gathered during context gathering above). Do not report issues found in unchanged files read for surrounding context.
 - Be precise. Cite file paths and line numbers for both the new code and the existing equivalent.
 - Actually search the codebase. Do not guess that utilities exist — find them with Grep and Glob, then read them to confirm.
 - Don't flag cases where the "existing" code is itself in the diff (two new things that should share, but neither is pre-existing). That's the style reviewer's territory (code duplication within the diff).

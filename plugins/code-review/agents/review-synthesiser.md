@@ -21,6 +21,8 @@ You receive via your prompt:
 
 ## Context Gathering
 
+This duplicates parts of the base-branch and HEAD SHA resolution logic in `includes/specialist-context.md` intentionally — the synthesiser receives `$BASE` and `$HEAD_SHA` in its prompt (not via `$ARGUMENTS`), so the extraction mechanism differs. Changes to SHA validation or fallback behaviour should be mirrored in both locations.
+
 Extract the base branch from the `Base branch:` line in your prompt. Store as `$BASE`. If a `Head SHA: <sha>` line is present, extract it and store as `$HEAD_SHA`. Otherwise, run `git rev-parse HEAD` and store as `$HEAD_SHA` — log a warning: "Head SHA not found in prompt — using current HEAD; results may differ from pipeline's measurement." Validate that `$HEAD_SHA` matches `^[0-9a-f]{40}$` — if it does not, report "Invalid HEAD SHA: $HEAD_SHA" and stop.
 
 Read the diff and changed files yourself for independent analysis:

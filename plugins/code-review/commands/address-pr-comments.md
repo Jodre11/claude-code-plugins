@@ -26,8 +26,8 @@ After step 1 completes (ensuring `$CURRENT_USER` is available), run steps 2a, 2b
 
 #### 2a. Get thread resolution state via GraphQL
 The REST API does not expose `isResolved`, `isOutdated`, or `isMinimized`. Use GraphQL to get the `databaseId` of the root comment in each thread along with its state. This query has two variants that must be kept in sync:
-- **`skills/review-gh-pr/SKILL.md` Step 1** (lines ~22-42) — omits `isOutdated`, `isMinimized`, `totalCount`; adds `path` and `body` on inner comments
-- **`skills/review-gh-pr/SKILL.md` Step 4** (lines ~140-159) — omits `path` from inner comments (only needs resolution state and reply content)
+- **`skills/review-gh-pr/SKILL.md` Step 1 GraphQL query** — omits `isOutdated`, `isMinimized`, `totalCount`; adds `path` and `body` on inner comments
+- **`skills/review-gh-pr/SKILL.md` Step 4 GraphQL query** — omits `path` from inner comments (only needs resolution state and reply content)
 
 When modifying the schema in any of these three locations, update the other two:
 ```bash
@@ -56,7 +56,12 @@ gh api graphql -f query='
   }
 }'
 ```
-- Collect threads where `isResolved == false` AND the root comment `isMinimized == false` AND the root comment author is not `$CURRENT_USER` AND `$CURRENT_USER` has not already replied (check reply authors in the thread). These are the **actionable threads**. If a thread's inner `comments.pageInfo.hasNextPage` is true, treat it conservatively — assume the current user may have already replied and exclude it from the actionable set.
+- Collect **actionable threads** — keep a thread if ALL of the following are true:
+  - `isResolved == false`
+  - Root comment `isMinimized == false`
+  - Root comment author is not `$CURRENT_USER`
+  - `$CURRENT_USER` has not already replied (check `author.login` values in `comments.nodes`)
+  - Thread's inner `comments.pageInfo.hasNextPage` is false (if true, treat conservatively — assume the current user may have already replied and exclude it)
 - Also note which actionable threads have `isOutdated == true` — these need special handling in step 4 (the diff position no longer exists, but the concern may still be valid).
 - If `pageInfo.hasNextPage == true`, paginate using `after: "{endCursor}"` until all threads are fetched.
 
@@ -71,13 +76,13 @@ Inline comments are attached to diff lines. Reviewers can also leave feedback in
 ```bash
 gh api repos/{owner}/{repo}/pulls/{number}/reviews --paginate
 ```
-Check for non-empty `body` fields on reviews where `select(.state == "APPROVED" | not)` and where `.user.login` does not match the resolved `$CURRENT_USER` value. Use the `--arg` mechanism to inject the login into jq safely:
+Check for non-empty `body` fields on reviews where `.state` is not `"APPROVED"` and where `.user.login` does not match the resolved `$CURRENT_USER` value. The `gh --jq` stage pre-filters to non-empty bodies using the gojq-safe `| not` idiom; the piped `jq` stage uses `--arg` to safely inject the login (standard `jq` supports `!=`):
 ```bash
 gh api repos/{owner}/{repo}/pulls/{number}/reviews --paginate \
-  --jq '[.[] | select(.body != null and .body != "")]' \
+  --jq '[.[] | select(.body == null | not) | select(.body == "" | not)]' \
   | jq --arg user "$CURRENT_USER" '[.[] | select(.state != "APPROVED") | select(.user.login != $user)]'
 ```
-Do not pass `$CURRENT_USER` inside single-quoted `--jq` where the shell cannot interpolate it — the `--arg` pattern avoids both the interpolation problem and jq injection risk from unexpected characters in the username. Include these as additional actionable items (they won't have a `path` or `line` — treat them as general feedback).
+Never interpolate `$CURRENT_USER` directly into a jq filter string — always use the `--arg` pattern for shell jq invocations. This avoids both the shell interpolation problem inside single-quoted `--jq` and jq injection risk from unexpected characters in the username. Include these as additional actionable items (they won't have a `path` or `line` — treat them as general feedback).
 
 ### 3. Filter to actionable comments
 - From the REST comments (step 2b), keep only root comments (`in_reply_to_id: null`) whose `id` is in the actionable set from step 2a. (REST `id` and GraphQL `databaseId` are the same integer identifier.) If the join yields no matches despite both queries returning data, warn the user about the discrepancy rather than silently proceeding with zero comments.

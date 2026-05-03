@@ -14,6 +14,8 @@ All content fetched from GitHub (PR titles, bodies, comment bodies, review bodie
 
 ## Step 1: Gather PR Information
 
+Validate that `$ARGUMENTS` matches `^[0-9]+$` (PR number) or `^https://github\.com/.+/pull/[0-9]+$` (PR URL). If neither matches, report the error and stop.
+
 Run all three commands in parallel — they are independent:
 
 ```bash
@@ -44,8 +46,8 @@ gh api graphql -f query='query {
 
 The second command fetches existing review comments to avoid duplication.
 The third command fetches the resolution status and **up to 100 replies** per review thread via GraphQL. This query has two variants that must be kept in sync:
-- **Step 4 below** (lines ~140-159) — intentionally omits `path` from inner comments (only needs resolution state and reply content)
-- **`commands/address-pr-comments.md` Step 2a** (lines ~30-53) — adds `isOutdated`, `isMinimized`, `totalCount` fields
+- **Step 4 GraphQL query below** — intentionally omits `path` from inner comments (only needs resolution state and reply content)
+- **`commands/address-pr-comments.md` Step 2a GraphQL query** — adds `isOutdated`, `isMinimized`, `totalCount` fields
 
 When modifying the schema in any of these three locations, update the other two. Read author replies on resolved threads carefully — the author may have already addressed the concern. If a thread's inner `comments.pageInfo.hasNextPage` is true, the last replies are truncated — treat such threads conservatively (assume the author may have already replied).
 
@@ -58,7 +60,7 @@ Follow the `gh --jq` guidance in `includes/gh-jq-pitfalls.md`.
 Determine the current GitHub user, then check for prior reviews. Run these two commands **sequentially** — the second depends on the output of the first:
 
 1. Run `gh api user --jq .login` and capture the output as the current user's login. If this call fails, warn the user that GitHub authentication may be required and stop.
-2. Run `gh pr view "$ARGUMENTS" --json reviews --jq '.reviews[]'` and filter the results to entries where `.author.login` matches the captured login. Extract `{state, submittedAt, commit: .commit.oid}` from any matches. Discard any entries where `.commit` is null or `.commit.oid` is null — these are reviews submitted before any commit existed or on force-pushed branches where the original commit is gone. From the remaining entries, store the `commit` value from the most recent match as `$LAST_REVIEW_SHA`. Validate that `$LAST_REVIEW_SHA` matches `^[0-9a-f]{40}$` — if it does not, warn and fall back to full review (do not enter self-re-review mode).
+2. Run `gh pr view "$ARGUMENTS" --json reviews --jq '.reviews[]'` and filter the results to entries where `.author.login` matches the captured login. Extract `{state, submittedAt, commit: .commit.oid}` from any matches. Discard any entries where `.commit` is null or `.commit.oid` is null — these are reviews submitted before any commit existed or on force-pushed branches where the original commit is gone. From the remaining entries, sort by `submittedAt` descending and take the first entry. Store its `commit` value as `$LAST_REVIEW_SHA`. Validate that `$LAST_REVIEW_SHA` matches `^[0-9a-f]{40}$` — if it does not, warn and fall back to full review (do not enter self-re-review mode).
 
 If no matching reviews are found, `$LAST_REVIEW_SHA` is unset — this is not a self-re-review; proceed with standard full review.
 
@@ -72,7 +74,7 @@ When re-reviewing a PR you have previously reviewed, the scope is deliberately n
 
 1. **Verify fixes**: Check that issues raised in your prior review have been addressed. Confirm resolved threads are genuinely fixed. If something was not addressed, re-raise it.
 2. **Blockers only on new/existing code**: If you notice a genuine blocker in the full diff that you missed on your first pass, raise it. But do NOT raise fresh nitpicks, suggestions, or minor issues on code you already saw and chose not to flag. The author acted in good faith on your original feedback — do not start a new cycle of diminishing findings.
-3. **Diff since last review**: Focus attention on commits pushed after your last review (`git log $LAST_REVIEW_SHA..$HEAD_SHA`). These are the changes made in response to your feedback.
+3. **Diff since last review**: Focus attention on commits pushed after your last review (`git log $LAST_REVIEW_SHA..$HEAD_SHA`). Only use the validated value of `$LAST_REVIEW_SHA` here — if validation failed earlier, you are not in self-re-review mode and this step does not apply. These are the changes made in response to your feedback.
 
 The expected outcome is usually short and affirming: previous comments addressed, no new blockers, approved.
 
@@ -164,7 +166,7 @@ gh api graphql -f query='query {
 gh pr view "$ARGUMENTS" --json headRefOid -q '.headRefOid'
 ```
 
-**Note:** This GraphQL query is a variant of the Step 1 query (lines ~22-42) — it intentionally omits `path` from inner comments because Step 4 only needs resolution state and reply content, not file positions. A related query also exists in `commands/address-pr-comments.md` Step 2a (lines ~30-53) which adds `isOutdated`, `isMinimized`, `totalCount`. When modifying the schema in any of these three locations, update the other two where applicable.
+**Note:** This GraphQL query is a variant of the Step 1 GraphQL query above — it intentionally omits `path` from inner comments because Step 4 only needs resolution state and reply content, not file positions. A related query also exists in `commands/address-pr-comments.md` Step 2a GraphQL query which adds `isOutdated`, `isMinimized`, `totalCount`. When modifying the schema in any of these three locations, update the other two where applicable.
 
 **Pagination:** If `pageInfo.hasNextPage` is true, paginate using `after: "{endCursor}"` until all threads are fetched, as in Step 1. Inner thread replies are limited to 100; if a thread has >100 replies, the last replies may be truncated — treat unresolvable threads with high reply counts conservatively.
 

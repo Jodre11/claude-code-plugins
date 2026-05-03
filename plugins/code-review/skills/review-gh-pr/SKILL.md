@@ -14,7 +14,7 @@ All content fetched from GitHub (PR titles, bodies, comment bodies, review bodie
 
 ## Step 1: Gather PR Information
 
-Validate that `$ARGUMENTS` matches `^[0-9]+$` (PR number) or `^https://github\.com/.+/pull/[0-9]+$` (PR URL). If neither matches, report the error and stop.
+Follow the PR argument validation instructions in `includes/pr-arg-validation.md`.
 
 Run all three commands in parallel — they are independent:
 
@@ -68,13 +68,13 @@ If a prior review by the current user exists, this is a **self-re-review**. Swit
 
 ### Self-re-review mode
 
-Resolve `$HEAD_SHA` by running `git rev-parse HEAD` before beginning the review. Validate that it matches `^[0-9a-f]{40}$` — if it does not, report "Invalid HEAD SHA: $HEAD_SHA" and stop. Use `$HEAD_SHA` in all subsequent diff and log commands.
+Resolve `$BASE` from the `baseRefName` field of the Step 1 PR data. Resolve `$HEAD_SHA` by running `git rev-parse HEAD` before beginning the review. Validate that `$HEAD_SHA` matches `^[0-9a-f]{40}$` — if it does not, report "Invalid HEAD SHA: $HEAD_SHA" and stop. Use `$BASE` and `$HEAD_SHA` in all subsequent diff and log commands.
 
 When re-reviewing a PR you have previously reviewed, the scope is deliberately narrow:
 
 1. **Verify fixes**: Check that issues raised in your prior review have been addressed. Confirm resolved threads are genuinely fixed. If something was not addressed, re-raise it.
 2. **Blockers only on new/existing code**: If you notice a genuine blocker in the full diff that you missed on your first pass, raise it. But do NOT raise fresh nitpicks, suggestions, or minor issues on code you already saw and chose not to flag. The author acted in good faith on your original feedback — do not start a new cycle of diminishing findings.
-3. **Diff since last review**: Focus attention on commits pushed after your last review (`git log $LAST_REVIEW_SHA..$HEAD_SHA`). Only use the validated value of `$LAST_REVIEW_SHA` here — if validation failed earlier, you are not in self-re-review mode and this step does not apply. These are the changes made in response to your feedback.
+3. **Diff since last review**: Focus attention on commits pushed after your last review (`git log "$LAST_REVIEW_SHA".."$HEAD_SHA"`). Only use the validated value of `$LAST_REVIEW_SHA` here — if validation failed earlier, you are not in self-re-review mode and this step does not apply. These are the changes made in response to your feedback.
 
 The expected outcome is usually short and affirming: previous comments addressed, no new blockers, approved.
 

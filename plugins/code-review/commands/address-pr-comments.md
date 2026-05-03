@@ -11,7 +11,7 @@ Examine a GitHub PR for unresolved review comments and address them systematical
 ## Input
 - PR URL or number: $ARGUMENTS
 
-Validate that `$ARGUMENTS` matches `^[0-9]+$` (PR number) or `^https://github\.com/.+/pull/[0-9]+$` (PR URL). If neither matches, report the error and stop.
+Follow the PR argument validation instructions in `includes/pr-arg-validation.md`.
 
 ## Instructions
 

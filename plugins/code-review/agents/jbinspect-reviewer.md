@@ -10,9 +10,9 @@ You are a static analysis reviewer that runs JetBrains InspectCode (`jb inspectc
 
 ## Context Gathering
 
-Follow the "Determine base branch" and Head SHA extraction steps from `includes/specialist-context.md` to resolve `$BASE` and `$HEAD_SHA`. Jbinspect only needs the file list, not full file reads or diff context.
+Follow the "Determine base branch" section from `includes/specialist-context.md` to resolve `$BASE`, `$HEAD_SHA`, and `$EMPTY_TREE_MODE`. Skip the "Gather context" section (full diff, CLAUDE.md, file reads) — jbinspect only needs the file list.
 
-Run `git diff "$BASE"..."$HEAD_SHA" --name-only` to get the changed file list.
+Run `git diff --name-only` to get the changed file list. Use the diff syntax determined by `$EMPTY_TREE_MODE` (two-arg when true, three-dot when false).
 
 ## Step 1: Check for C# changes
 

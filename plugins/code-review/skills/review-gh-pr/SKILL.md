@@ -45,11 +45,12 @@ gh api graphql -f query='query {
 ```
 
 The second command fetches existing review comments to avoid duplication.
-The third command fetches the resolution status and **up to 100 replies** per review thread via GraphQL. This query has two variants that must be kept in sync:
-- **Step 4 GraphQL query below** — intentionally omits `path` from inner comments (only needs resolution state and reply content)
-- **`commands/address-pr-comments.md` Step 2a GraphQL query** — adds `isOutdated`, `isMinimized`, `totalCount` fields
+The third command fetches the resolution status and **up to 100 replies** per review thread via GraphQL. Read author replies on resolved threads carefully — the author may have already addressed the concern. If a thread's inner `comments.pageInfo.hasNextPage` is true, the last replies are truncated — treat such threads conservatively (assume the author may have already replied).
 
-When modifying the schema in any of these three locations, update the other two. Read author replies on resolved threads carefully — the author may have already addressed the concern. If a thread's inner `comments.pageInfo.hasNextPage` is true, the last replies are truncated — treat such threads conservatively (assume the author may have already replied).
+<!-- Sync note: this GraphQL query has two variants that must be kept in sync:
+     - Step 4 GraphQL query below — intentionally omits path from inner comments (only needs resolution state and reply content)
+     - commands/address-pr-comments.md Step 2a GraphQL query — adds isOutdated, isMinimized, totalCount fields
+     When modifying the schema in any of these three locations, update the other two. -->
 
 If `pageInfo.hasNextPage` is true, paginate using `after: "{endCursor}"` until all threads are fetched. PRs with >50 threads silently lose overflow without pagination.
 
@@ -68,7 +69,7 @@ If a prior review by the current user exists, this is a **self-re-review**. Swit
 
 ### Self-re-review mode
 
-Resolve `$BASE` from the `baseRefName` field of the Step 1 PR data. Resolve `$HEAD_SHA` by running `git rev-parse HEAD` before beginning the review. Validate that `$HEAD_SHA` matches `^[0-9a-f]{40}$` — if it does not, report "Invalid HEAD SHA: $HEAD_SHA" and stop. Use `$BASE` and `$HEAD_SHA` in all subsequent diff and log commands.
+Resolve `$BASE` from the `baseRefName` field of the Step 1 PR data. Validate that `$BASE` matches `^[a-zA-Z0-9/_.\-]+$` — if it does not, report "Invalid base branch ref: $BASE" and stop. Resolve `$HEAD_SHA` by running `git rev-parse HEAD` before beginning the review. Validate that `$HEAD_SHA` matches `^[0-9a-f]{40}$` — if it does not, report "Invalid HEAD SHA: $HEAD_SHA" and stop. Use `$BASE` and `$HEAD_SHA` in all subsequent diff and log commands.
 
 When re-reviewing a PR you have previously reviewed, the scope is deliberately narrow:
 
@@ -112,9 +113,9 @@ Before adding comments, cross-reference findings against existing comments from 
 
 Resolved threads are hidden on the PR conversation page. Replying to a resolved thread will not make it visible again, so replies to resolved threads will likely be ignored by the author.
 
-**Resolved threads:**
+**Resolved threads** (replies to resolved threads remain hidden — see the open-thread-only rule in Step 5):
 - **If the underlying issue has been fixed**: Do nothing — the thread was correctly resolved.
-- **If the underlying issue is still present**: Do NOT reply to the resolved thread. Instead, create a **new standalone comment** on the current head commit at the relevant line. Include full context and reasoning in the new comment since the old thread is hidden.
+- **If the underlying issue is still present**: Create a **new standalone comment** on the current head commit at the relevant line. Include full context and reasoning since the old thread is hidden.
 - **If the existing comment was inaccurate but the thread is resolved**: Do nothing — there is no value in correcting hidden feedback that has already been dismissed.
 
 **Open (unresolved) threads:**
@@ -166,12 +167,12 @@ gh api graphql -f query='query {
 gh pr view "$ARGUMENTS" --json headRefOid -q '.headRefOid'
 ```
 
-**Note:** This GraphQL query is a variant of the Step 1 GraphQL query above — it intentionally omits `path` from inner comments because Step 4 only needs resolution state and reply content, not file positions. A related query also exists in `commands/address-pr-comments.md` Step 2a GraphQL query which adds `isOutdated`, `isMinimized`, `totalCount`. When modifying the schema in any of these three locations, update the other two where applicable.
+<!-- Sync note: this GraphQL query is a variant of the Step 1 query above — it omits path from inner comments (only needs resolution state and reply content). A related query exists in commands/address-pr-comments.md Step 2a which adds isOutdated, isMinimized, totalCount. When modifying the schema in any of these three locations, update the other two. -->
 
 **Pagination:** If `pageInfo.hasNextPage` is true, paginate using `after: "{endCursor}"` until all threads are fetched, as in Step 1. Inner thread replies are limited to 100; if a thread has >100 replies, the last replies may be truncated — treat unresolvable threads with high reply counts conservatively.
 
 Compare against Step 1 data:
-- **Threads now resolved that were open before**: Check the author's reply — they may have addressed the concern. Drop any planned replies to these threads.
+- **Threads now resolved that were open before**: Check the author's reply — they may have addressed the concern. Drop any planned replies (per the open-thread-only rule in Step 5).
 - **New commits pushed**: If `headRefOid` differs from the SHA used during Step 1, update `{head_sha}` to the new `headRefOid` value for all subsequent comment `commit_id` fields in Step 5. Re-fetch the diff and re-evaluate findings against the new head.
 - **New comments added**: Adjust planned comments to avoid duplicates or stale feedback.
 

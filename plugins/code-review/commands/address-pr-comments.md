@@ -27,11 +27,7 @@ Follow the PR argument validation instructions in `includes/pr-arg-validation.md
 After step 1 completes (ensuring `$CURRENT_USER` is available), run steps 2a, 2b, and 2c in parallel — they are independent of each other.
 
 #### 2a. Get thread resolution state via GraphQL
-The REST API does not expose `isResolved`, `isOutdated`, or `isMinimized`. Use GraphQL to get the `databaseId` of the root comment in each thread along with its state. This query has two variants that must be kept in sync:
-- **`skills/review-gh-pr/SKILL.md` Step 1 GraphQL query** — omits `isOutdated`, `isMinimized`, `totalCount`; adds `path` and `body` on inner comments
-- **`skills/review-gh-pr/SKILL.md` Step 4 GraphQL query** — omits `path` from inner comments (only needs resolution state and reply content)
-
-When modifying the schema in any of these three locations, update the other two:
+The REST API does not expose `isResolved`, `isOutdated`, or `isMinimized`. Use GraphQL to get the `databaseId` of the root comment in each thread along with its state:
 ```bash
 gh api graphql -f query='
 {
@@ -58,6 +54,12 @@ gh api graphql -f query='
   }
 }'
 ```
+
+<!-- Sync note: this query has two variants that must be kept in sync:
+     - skills/review-gh-pr/SKILL.md Step 1 GraphQL query — omits isOutdated, isMinimized, totalCount; adds path and body on inner comments
+     - skills/review-gh-pr/SKILL.md Step 4 GraphQL query — omits path from inner comments (only needs resolution state and reply content)
+     When modifying the schema in any of these three locations, update the other two. -->
+
 - Collect **actionable threads** — keep a thread if ALL of the following are true:
   - `isResolved == false`
   - Root comment `isMinimized == false`
@@ -87,6 +89,7 @@ gh api repos/{owner}/{repo}/pulls/{number}/reviews --paginate \
 Never interpolate `$CURRENT_USER` directly into a jq filter string — always use the `--arg` pattern for shell jq invocations. This avoids both the shell interpolation problem inside single-quoted `--jq` and jq injection risk from unexpected characters in the username. Include these as additional actionable items (they won't have a `path` or `line` — treat them as general feedback).
 
 ### 3. Filter to actionable comments
+- If either step 2a or step 2b returned zero results, warn the user before proceeding — a PR with review comments should have data from both sources; an empty result likely indicates an API failure or pagination issue.
 - From the REST comments (step 2b), keep only root comments (`in_reply_to_id: null`) whose `id` is in the actionable set from step 2a. (REST `id` and GraphQL `databaseId` are the same integer identifier.) If the join yields no matches despite both queries returning data, warn the user about the discrepancy rather than silently proceeding with zero comments.
 - From the review bodies (step 2c), keep non-empty bodies from other users on non-approved reviews.
 - Present a summary to the user: **"Found N actionable inline threads (M outdated) and K review-level comments. Proceed?"** Wait for confirmation before continuing. This prevents wasted effort on PRs with many comments where manual triage may be preferred.

@@ -21,12 +21,14 @@ You receive via your prompt:
 
 ## Context Gathering
 
-This duplicates parts of the base-branch and HEAD SHA resolution logic in `includes/specialist-context.md` intentionally — the synthesiser receives `$BASE` and `$HEAD_SHA` in its prompt (not via `$ARGUMENTS`), so the extraction mechanism differs. Changes to SHA validation or fallback behaviour should be mirrored in both locations.
+<!-- Duplicates parts of the base-branch and HEAD SHA resolution logic in includes/specialist-context.md intentionally — the synthesiser receives $BASE and $HEAD_SHA in its prompt (not via $ARGUMENTS), so the extraction mechanism differs. Changes to SHA validation or fallback behaviour should be mirrored in both locations. See also review-pipeline.md Step 6. -->
 
 Extract the base branch from the `Base branch:` line in your prompt. Store as `$BASE`. If a `Head SHA: <sha>` line is present, extract it and store as `$HEAD_SHA`. Otherwise, run `git rev-parse HEAD` and store as `$HEAD_SHA` — log a warning: "Head SHA not found in prompt — using current HEAD; results may differ from pipeline's measurement." Validate that `$HEAD_SHA` matches `^[0-9a-f]{40}$` — if it does not, report "Invalid HEAD SHA: $HEAD_SHA" and stop.
 
+If an `Empty tree mode: true` line is present in your prompt, set `$EMPTY_TREE_MODE = true`. Otherwise set `$EMPTY_TREE_MODE = false`.
+
 Read the diff and changed files yourself for independent analysis:
-1. `git diff "$BASE"..."$HEAD_SHA"` — full diff
+1. Run `git diff` to get the full diff. Use the diff syntax determined by `$EMPTY_TREE_MODE` (two-arg when true, three-dot when false).
 2. Read each changed file for full context. If more than 20 files changed, prioritise non-test source files with the largest diffs. Skip generated files, lock files, and vendored dependencies.
 3. Read `CLAUDE.md` in the repo root (if it exists) for project conventions.
 

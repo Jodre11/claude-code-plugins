@@ -19,7 +19,7 @@ Validate that `$BASE` matches `^[a-zA-Z0-9/_.\-]+$` — if it does not, report "
 
 **Diff syntax:** When `$EMPTY_TREE_MODE` is true, use two-arg `git diff $BASE $HEAD_SHA` instead of `git diff "$BASE"..."$HEAD_SHA"` for ALL diff commands. When false, use three-dot syntax as normal.
 
-5. If a `Path scope: <pathspec>` line is present in `$ARGUMENTS`, extract the pathspec after the colon and store as `$PATH_SCOPE`. If not present, leave `$PATH_SCOPE` empty. When `$PATH_SCOPE` is set, append `-- $PATH_SCOPE` after all flags in every `git diff` command (e.g., `git diff "$BASE"..."$HEAD_SHA" --name-only -- $PATH_SCOPE`).
+5. If a `Path scope: <pathspec>` line is present in `$ARGUMENTS`, extract the pathspec after the colon and store as `$PATH_SCOPE`. If not present, leave `$PATH_SCOPE` empty. Validate that `$PATH_SCOPE` matches `^[a-zA-Z0-9/_.\-*]+$` — if it does not, report "Invalid path scope: $PATH_SCOPE" and stop. When `$PATH_SCOPE` is set, append `-- $PATH_SCOPE` after all flags in every `git diff` command (use the diff syntax determined by `$EMPTY_TREE_MODE`).
 
 If a `Head SHA: <sha>` line is present in `$ARGUMENTS`, extract it and store as `$HEAD_SHA`. Otherwise, run `git rev-parse HEAD` and store as `$HEAD_SHA` — but log a warning: "Head SHA not found in prompt — using current HEAD; results may differ from pipeline's measurement." Using a pinned SHA ensures all agents review the same commit even if new commits land during the review. Validate that `$HEAD_SHA` matches `^[0-9a-f]{40}$` — if it does not, report "Invalid HEAD SHA: $HEAD_SHA" and stop.
 

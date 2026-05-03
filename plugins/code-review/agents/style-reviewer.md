@@ -30,7 +30,7 @@ Return findings in this exact format:
 ### Finding — [short title]
 - **File:** path/to/file:42
 - **Confidence:** 0-100
-- **Severity:** Critical | Important | Suggestion
+- **Severity:** Critical | Important | Suggestion (see `includes/severity-definitions.md`)
 - **Description:** What the readability/maintainability issue is
 - **Suggested fix:** Concrete code change or approach
 ```

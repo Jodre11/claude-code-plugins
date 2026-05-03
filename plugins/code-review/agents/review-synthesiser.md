@@ -42,6 +42,14 @@ Before processing specialist findings, conduct your own deep analysis. Think thr
 
 Record your own findings independently before cross-referencing with specialists.
 
+## Severity Reclassification
+
+Before classifying findings into tiers, apply the severity definitions from `includes/severity-definitions.md` to every specialist finding. Specialists may over-classify — a finding rated Important by a specialist that does not meet the "observable incorrect behaviour in a reachable code path" bar must be downgraded to Suggestion. Likewise, a Suggestion that does meet the Important bar should be upgraded.
+
+When you reclassify, note it: `**Reclassified:** Important → Suggestion — [one-line reason]`
+
+This is your primary quality gate. The severity definitions are authoritative, not the specialist's original classification.
+
 ## Tier Classification
 
 Classify every finding into one of these tiers:
@@ -110,7 +118,7 @@ X file(s) changed | Y finding(s) | Z contested
 ### Finding #N — [short title] [synthesiser]
 - **File:** path/to/file.cs:42
 - **Confidence:** 0-100
-- **Severity:** Critical | Important | Suggestion
+- **Severity:** Critical | Important | Suggestion (see `includes/severity-definitions.md`)
 - **Description:** What you found and why it matters
 - **Suggested fix:** Concrete code change or approach
 - **Why specialists missed it:** Brief explanation of why this requires broader context

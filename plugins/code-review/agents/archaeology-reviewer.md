@@ -81,7 +81,7 @@ Return findings in this exact format:
 - **File:** path/to/file:42
 - **Deleted code:** Brief description or short quote of what was removed
 - **Confidence:** 0-100
-- **Severity:** Critical | Important | Suggestion
+- **Severity:** Critical | Important | Suggestion (see `includes/severity-definitions.md`)
 - **Introduced in:** <commit hash> — <commit message> (or "unable to determine")
 - **Historical context:** What the commit history reveals about why this code existed
 - **Risk:** What could go wrong if this deletion reintroduces the original problem

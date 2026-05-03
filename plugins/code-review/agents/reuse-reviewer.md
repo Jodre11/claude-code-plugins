@@ -58,15 +58,10 @@ Return findings in this exact format:
 - **New code:** Brief description of what was written
 - **Existing equivalent:** path/to/existing:line — description of what already exists
 - **Confidence:** 0-100
-- **Severity:** Critical | Important | Suggestion
+- **Severity:** Critical | Important | Suggestion (see `includes/severity-definitions.md`)
 - **Description:** Why the existing code should be used instead
 - **Suggested fix:** How to replace the new code with the existing utility
 ```
-
-### Severity guide
-- **Critical** — Exact duplicate of a well-established utility. Using both will cause maintenance divergence.
-- **Important** — Near-duplicate that covers the same use case with minor differences that could be reconciled.
-- **Suggestion** — Partial overlap. The existing code could be extended or the new code could delegate to it for part of its logic.
 
 Report ALL findings regardless of confidence level.
 

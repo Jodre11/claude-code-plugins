@@ -86,7 +86,7 @@ Return findings in this exact format:
 ### Finding — [short title derived from Message]
 - **File:** path/to/file.cs:line
 - **Confidence:** 100
-- **Severity:** Critical | Important | Suggestion
+- **Severity:** Critical | Important | Suggestion (see `includes/severity-definitions.md`)
 - **Rule:** TypeId (Category)
 - **Description:** The issue message from InspectCode
 - **Suggested fix:** Concrete suggestion based on the rule and context

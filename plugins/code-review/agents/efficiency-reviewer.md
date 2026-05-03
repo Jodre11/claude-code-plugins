@@ -56,16 +56,11 @@ Return findings in this exact format:
 ### Finding — [short title]
 - **File:** path/to/file:42
 - **Confidence:** 0-100
-- **Severity:** Critical | Important | Suggestion
+- **Severity:** Critical | Important | Suggestion (see `includes/severity-definitions.md`)
 - **Category:** Unnecessary work | Missed concurrency | Hot-path | No-op update | TOCTOU | Memory | Overly broad
 - **Description:** What the performance issue is and its likely impact
 - **Suggested fix:** Concrete code change or approach
 ```
-
-### Severity guide
-- **Critical** — Will cause measurable performance degradation in production: N+1 in a request path, unbounded memory growth, blocking I/O on startup.
-- **Important** — Wasteful but impact depends on scale: missed parallelism, redundant computations in moderate-frequency paths, resource leaks in long-lived processes.
-- **Suggestion** — Minor inefficiency or optimisation opportunity. Correct but could be better.
 
 Report ALL findings regardless of confidence level.
 

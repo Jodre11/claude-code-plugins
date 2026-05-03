@@ -48,7 +48,7 @@ Assign each finding a confidence score 0–100. **Only report findings with conf
 
 ### Format output
 
-Return findings grouped by severity. Use this format:
+Return findings grouped by severity (see `includes/severity-definitions.md`). Use this format:
 
 ```
 ## Summary
@@ -60,7 +60,7 @@ X file(s) changed, Y finding(s)
 ### Finding #1 — [short title]
 - **File:** path/to/file.cs:42
 - **Rule:** TypeId (Category)
-- **Severity:** Critical | Important | Suggestion
+- **Severity:** Critical | Important | Suggestion (see `includes/severity-definitions.md`)
 - **Description:** The issue message from InspectCode
 - **Suggested fix:** Concrete suggestion based on the rule and context
 

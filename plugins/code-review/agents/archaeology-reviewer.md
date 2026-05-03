@@ -68,6 +68,8 @@ Look for patterns that suggest the deleted code was a workaround. The following 
 - Comments like "don't remove", "needed because", "workaround for", "HACK", "XXX", "TODO"
 - Code that catches a very specific exception type and handles it differently
 
+Suspicion level determines investigation priority — what to investigate first. Severity (Critical/Important/Suggestion) is determined by the risk assessment in Step 3, not by suspicion level alone. A "Highest suspicion" deletion may turn out to be a Suggestion after investigation reveals the original problem no longer applies.
+
 ## Output Format
 
 Return findings in this exact format:

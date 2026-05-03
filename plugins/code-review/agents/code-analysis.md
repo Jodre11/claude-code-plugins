@@ -24,6 +24,7 @@ If any changed files end with `.cs`:
 4. Check that `$CLAUDE_TEMP_DIR` is present in your prompt (the path from `Use <path> for temporary files`). If it is not, report the omission and skip this step — do not fall back to bare `/tmp/`.
 5. For each affected solution, run:
    `jb inspectcode <solution.sln> --output="$CLAUDE_TEMP_DIR/inspectcode-<name>.xml" --format=Xml --severity=WARNING`
+   Where `<name>` is the basename of the solution file without extension — not the full path.
    If the command fails (non-zero exit code), report the error and continue with any remaining solutions.
 6. Parse the XML output for `<Issue>` elements. Cross-reference `TypeId` against `<IssueType>` definitions to get severity and category.
 7. **Filter to only issues in files that appear in the diff.**

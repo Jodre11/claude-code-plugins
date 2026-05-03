@@ -69,10 +69,8 @@ gh api repos/{owner}/{repo}/pulls/{number}/reviews --paginate
 ```
 Check for non-empty `body` fields on reviews where `select(.state == "APPROVED" | not)` and where `.user.login` does not match the resolved `$CURRENT_USER` value. Substitute the actual login string into the jq filter (e.g., `select(.user.login == "actuallogin" | not)`) — do not pass `$CURRENT_USER` inside single-quoted jq where the shell cannot interpolate it. Include these as additional actionable items (they won't have a `path` or `line` — treat them as general feedback).
 
-Follow the `gh --jq` guidance in `includes/gh-jq-pitfalls.md` — in particular, `gojq` does not support `!=`; use `select(.field == "value" | not)` instead.
-
 ### 3. Filter to actionable comments
-- From the REST comments (step 2b), keep only root comments (`in_reply_to_id: null`) whose `id` is in the actionable set from step 2a.
+- From the REST comments (step 2b), keep only root comments (`in_reply_to_id: null`) whose `id` is in the actionable set from step 2a. (REST `id` and GraphQL `databaseId` are the same integer identifier.) If the join yields no matches despite both queries returning data, warn the user about the discrepancy rather than silently proceeding with zero comments.
 - From the review bodies (step 2c), keep non-empty bodies from other users on non-approved reviews.
 - Present a summary to the user: **"Found N actionable inline threads (M outdated) and K review-level comments. Proceed?"** Wait for confirmation before continuing. This prevents wasted effort on PRs with many comments where manual triage may be preferred.
 

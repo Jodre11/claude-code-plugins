@@ -54,7 +54,7 @@ Follow the `gh --jq` guidance in `includes/gh-jq-pitfalls.md`.
 Determine the current GitHub user, then check for prior reviews. Run these two commands **sequentially** — the second depends on the output of the first:
 
 1. Run `gh api user --jq .login` and capture the output as the current user's login. If this call fails, warn the user that GitHub authentication may be required and stop.
-2. Run `gh pr view "$ARGUMENTS" --json reviews --jq '.reviews[]'` and filter the results to entries where `.author.login` matches the captured login. Extract `{state, submittedAt, commit: .commit.oid}` from any matches. Store the `commit` value from the most recent match as `$LAST_REVIEW_SHA`. Validate that `$LAST_REVIEW_SHA` matches `^[0-9a-f]{40}$` — if it does not, warn and fall back to full review (do not enter self-re-review mode).
+2. Run `gh pr view "$ARGUMENTS" --json reviews --jq '.reviews[]'` and filter the results to entries where `.author.login` matches the captured login. Extract `{state, submittedAt, commit: .commit.oid}` from any matches. Discard any entries where `.commit` is null or `.commit.oid` is null — these are reviews submitted before any commit existed or on force-pushed branches where the original commit is gone. From the remaining entries, store the `commit` value from the most recent match as `$LAST_REVIEW_SHA`. Validate that `$LAST_REVIEW_SHA` matches `^[0-9a-f]{40}$` — if it does not, warn and fall back to full review (do not enter self-re-review mode).
 
 If no matching reviews are found, `$LAST_REVIEW_SHA` is unset — this is not a self-re-review; proceed with standard full review.
 
@@ -62,11 +62,13 @@ If a prior review by the current user exists, this is a **self-re-review**. Swit
 
 ### Self-re-review mode
 
+Resolve `$HEAD_SHA` by running `git rev-parse HEAD` before beginning the review. Validate that it matches `^[0-9a-f]{40}$`. Use `$HEAD_SHA` in all subsequent diff and log commands.
+
 When re-reviewing a PR you have previously reviewed, the scope is deliberately narrow:
 
 1. **Verify fixes**: Check that issues raised in your prior review have been addressed. Confirm resolved threads are genuinely fixed. If something was not addressed, re-raise it.
 2. **Blockers only on new/existing code**: If you notice a genuine blocker in the full diff that you missed on your first pass, raise it. But do NOT raise fresh nitpicks, suggestions, or minor issues on code you already saw and chose not to flag. The author acted in good faith on your original feedback — do not start a new cycle of diminishing findings.
-3. **Diff since last review**: Focus attention on commits pushed after your last review (`git log $LAST_REVIEW_SHA..HEAD`). These are the changes made in response to your feedback.
+3. **Diff since last review**: Focus attention on commits pushed after your last review (`git log $LAST_REVIEW_SHA..$HEAD_SHA`). These are the changes made in response to your feedback.
 
 The expected outcome is usually short and affirming: previous comments addressed, no new blockers, approved.
 
@@ -85,7 +87,7 @@ The expected outcome is usually short and affirming: previous comments addressed
 
 Then skip directly to Step 3.
 
-**Otherwise (first review):** Follow the shared review pipeline instructions in `includes/review-pipeline.md`. The include handles routing (lightweight vs full pipeline), specialist dispatch, cross-review, synthesis, and presentation.
+**Otherwise (standard full review):** Follow the shared review pipeline instructions in `includes/review-pipeline.md`. The include handles routing (lightweight vs full pipeline), specialist dispatch, cross-review, synthesis, and presentation.
 
 After the review pipeline completes (whether via lightweight or full path), continue with the additional checks and Step 3 below.
 
@@ -131,7 +133,7 @@ Present this to the user and ask if they want to proceed.
 
 There may be a significant delay between gathering PR information (Step 1) and posting comments (now). The author or other reviewers may have replied, resolved threads, or pushed new commits in the meantime.
 
-**Before posting any comments or submitting a review**, re-fetch:
+**Before posting any comments or submitting a review**, re-fetch. Run all three commands in parallel — they are independent:
 
 ```bash
 gh api repos/{owner}/{repo}/pulls/{pr}/comments --paginate --jq '.[] | {id, path, body: .body[0:150], in_reply_to_id}'
@@ -164,7 +166,7 @@ gh pr view "$ARGUMENTS" --json headRefOid -q '.headRefOid'
 
 Compare against Step 1 data:
 - **Threads now resolved that were open before**: Check the author's reply — they may have addressed the concern. Drop any planned replies to these threads.
-- **New commits pushed**: Re-fetch the diff and re-evaluate findings. The head SHA for comment attachment may have changed.
+- **New commits pushed**: If `headRefOid` differs from the SHA used during Step 1, update `{head_sha}` to the new `headRefOid` value for all subsequent comment `commit_id` fields in Step 5. Re-fetch the diff and re-evaluate findings against the new head.
 - **New comments added**: Adjust planned comments to avoid duplicates or stale feedback.
 
 If the plan changes materially, present the updated findings table to the user before proceeding.

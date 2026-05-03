@@ -21,7 +21,7 @@ You receive via your prompt:
 
 ## Context Gathering
 
-Extract the base branch from the `Base branch:` line in your prompt. Store as `$BASE`. If a `Head SHA: <sha>` line is present, extract it and store as `$HEAD_SHA`. Otherwise, run `git rev-parse HEAD` and store as `$HEAD_SHA` — log a warning: "Head SHA not found in prompt — using current HEAD; results may differ from pipeline's measurement."
+Extract the base branch from the `Base branch:` line in your prompt. Store as `$BASE`. If a `Head SHA: <sha>` line is present, extract it and store as `$HEAD_SHA`. Otherwise, run `git rev-parse HEAD` and store as `$HEAD_SHA` — log a warning: "Head SHA not found in prompt — using current HEAD; results may differ from pipeline's measurement." Validate that `$HEAD_SHA` matches `^[0-9a-f]{40}$` — if it does not, report "Invalid HEAD SHA: $HEAD_SHA" and stop.
 
 Read the diff and changed files yourself for independent analysis:
 1. `git diff "$BASE"..."$HEAD_SHA"` — full diff
@@ -60,7 +60,7 @@ Cross-review opinions explicitly surface these: a finding where 3 specialists ag
 ### Dismissed
 Clear false positive after deep analysis. Reserved for genuinely incorrect findings, NOT for filtering borderline issues. Detailed reasoning required so the reader can override.
 
-### Synthesiser-only
+### Synthesiser Findings
 Issues you identified that no specialist caught. These are often the most valuable: cross-cutting concerns, subtle interaction bugs, architectural issues, or problems that require understanding the bigger picture.
 
 ## Output Philosophy

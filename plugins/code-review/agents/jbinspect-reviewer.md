@@ -43,7 +43,7 @@ For each affected solution, run:
 jb inspectcode <solution.sln> --output="$CLAUDE_TEMP_DIR/inspectcode-<solution-name>.xml" --format=Xml --severity=WARNING
 ```
 
-Where `<solution-name>` is the solution filename without extension (to avoid collisions when multiple solutions are inspected).
+Where `<solution-name>` is the basename of the solution file without extension — not the full path (to avoid path traversal and collisions when multiple solutions are inspected).
 
 If `jb` is not installed or not on PATH, report:
 `## JetBrains InspectCode Findings\n\nSkipped — jb inspectcode not available on PATH.`

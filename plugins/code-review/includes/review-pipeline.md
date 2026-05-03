@@ -37,7 +37,7 @@ Store as `$BASE`. Validate that `$BASE` matches `[a-zA-Z0-9/_.\-]+` — if it do
 
 ### Step 3: Route
 
-**Lightweight path** — when ALL of these are true:
+**Lightweight path** (the code-analysis agent filters to confidence ≥ 80 and covers all domains in a single pass, trading depth for lower noise on small diffs) — when ALL of these are true:
 - `$FILE_COUNT` ≤ 5
 - `$LINE_COUNT` ≤ 150
 - `$SIGNIFICANT_DELETIONS` is false

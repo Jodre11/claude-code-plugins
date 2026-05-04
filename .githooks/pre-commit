@@ -38,9 +38,8 @@ fi
 COMBINED=$(IFS='|'; echo "${PATTERNS[*]}")
 
 # Validate the combined regex — grep exits 2 on invalid pattern, 1 on no match
-echo "" | grep -iE "$COMBINED" >/dev/null 2>&1
-regex_rc=$?
-if [ "$regex_rc" -eq 2 ]; then
+echo "" | grep -iE "$COMBINED" >/dev/null 2>&1 || regex_rc=$?
+if [[ "${regex_rc:-0}" -eq 2 ]]; then
     echo "❌ Pre-commit: invalid regex in patterns — check .githooks/patterns.local" >&2
     exit 1
 fi

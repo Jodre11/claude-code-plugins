@@ -17,10 +17,6 @@ DEFAULT_TTL = 3600
 DEFAULT_MAX_RETRIES = 3
 DEFAULT_BASE_DELAY = 2.0
 SEARXNG_BASE_URL = os.environ.get("SEARXNG_URL", "http://localhost:8888")
-_parsed = urllib.parse.urlparse(SEARXNG_BASE_URL)
-if _parsed.scheme not in ("http", "https") or not _parsed.netloc:
-    print(f"Invalid SEARXNG_URL: scheme must be http or https", file=sys.stderr)
-    sys.exit(2)
 CACHE_DIR = os.path.join(os.path.expanduser("~"), ".cache", "web-search")
 CACHE_DB = os.path.join(CACHE_DIR, "cache.db")
 
@@ -171,6 +167,15 @@ def parse_args(argv):
 def main():
     args = parse_args(sys.argv[1:])
 
+    if not args.clear_cache and not args.cache_stats:
+        _parsed = urllib.parse.urlparse(SEARXNG_BASE_URL)
+        if _parsed.scheme not in ("http", "https") or not _parsed.netloc:
+            print(
+                f"Invalid SEARXNG_URL ({SEARXNG_BASE_URL}): scheme must be http or https",
+                file=sys.stderr,
+            )
+            sys.exit(2)
+
     ttl = (
         args.cache_ttl
         if args.cache_ttl is not None
@@ -186,6 +191,7 @@ def main():
     conn = sqlite3.connect(CACHE_DB)
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA busy_timeout=5000")
+    rc = 1
     try:
         rc = _run(conn, args, ttl, max_retries)
         conn.commit()

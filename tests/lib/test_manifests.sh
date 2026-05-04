@@ -63,7 +63,10 @@ test_plugin_json_schema() {
         pass "$plugin_dir: plugin.json is valid JSON"
 
         local fields_json
-        fields_json=$(jq -r '[.name // "", .description // "", (.author // "" | tostring), .license // "", (.keywords // "" | tostring)] | @tsv' "$pj")
+        fields_json=$(jq -r '
+            [.name // "", .description // "", (.author // "" | tostring),
+             .license // "", (.keywords // "" | tostring)] | @tsv
+        ' "$pj")
         local idx=0
         for field in name description author license keywords; do
             local val

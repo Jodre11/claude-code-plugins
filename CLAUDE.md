@@ -32,6 +32,14 @@ plugins/<name>/
 - Plugins cannot reference files outside their directory — the plugin cache copies only the
   plugin subtree. Use symlinks for shared files if needed.
 
+## Testing
+
+Run `tests/run.sh` to validate plugin structure. The test suite checks:
+- Manifest schema (marketplace.json + plugin.json fields, no version field)
+- Conventions (LF line endings, indentation, final newlines, executable bits)
+- Cross-references (include paths resolve, expected directories populated)
+- Sync-note consistency (validation regexes and base-branch steps match across files)
+
 ## Secret Scanning
 
 A pre-commit hook runs pattern-based secret scanning on staged changes. The CI gitleaks workflow

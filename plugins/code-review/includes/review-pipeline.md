@@ -292,6 +292,8 @@ Then on completion: `> ✓ synthesis complete — presenting report`
 
 ### Step 7: Present results
 
-Present the synthesiser's formatted report to the user.
+Present the synthesiser's formatted report to the user **verbatim**. Do not re-summarise, editorially triage, or selectively omit findings. The synthesiser has already dismissed weak findings and contested ambiguous ones — its report is the finished product.
+
+Do not add a "next steps" section that cherry-picks which findings to fix. The synthesiser's tiers (Important, Suggestion, Contested, Dismissed) are the triage. For `pre-review` and `review-gh-pr`, all surviving findings (Important and Suggestions) should be addressed — the synthesiser already filtered out the noise. Re-review after a review cycle is the exception: only new or explicitly called-out findings need action.
 
 **Optional Playwright verification:** If the ui-reviewer produced a "Findings Requiring Visual Verification" section AND the `playwright-cli` skill is available, verify those specific findings in the browser. Append verification results to the report.

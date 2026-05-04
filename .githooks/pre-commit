@@ -5,6 +5,7 @@ set -euo pipefail
 
 if [ "${SKIP_SECRET_SCAN:-0}" = "1" ]; then
     echo "⚠ SKIP_SECRET_SCAN=1 — bypassing secret scan" >&2
+    echo "  Prefer adding false positives to .gitleaks.toml allowlist instead." >&2
     exit 0
 fi
 
@@ -35,6 +36,14 @@ fi
 
 # Build a combined regex from the pattern array
 COMBINED=$(IFS='|'; echo "${PATTERNS[*]}")
+
+# Validate the combined regex — grep exits 2 on invalid pattern, 1 on no match
+echo "" | grep -iE "$COMBINED" >/dev/null 2>&1
+regex_rc=$?
+if [ "$regex_rc" -eq 2 ]; then
+    echo "❌ Pre-commit: invalid regex in patterns — check .githooks/patterns.local" >&2
+    exit 1
+fi
 
 # Files that necessarily contain the guarded patterns — excluded from scanning
 EXCLUSIONS=(

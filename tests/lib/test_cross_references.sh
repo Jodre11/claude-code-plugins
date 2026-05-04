@@ -1,56 +1,39 @@
 #!/usr/bin/env bash
 # Cross-reference integrity tests — include references resolve, expected files exist.
 
+_check_include_refs() {
+    local plugin_dir="$1"
+    local plugin_name="$2"
+    local grep_path="$3"
+    local filter="${4:-}"
+
+    while IFS=: read -r file match; do
+        local ref_path
+        ref_path=$(echo "$match" | grep -oE 'includes/[a-zA-Z0-9_-]+\.md' | head -1)
+        if [[ -z "$ref_path" ]]; then
+            continue
+        fi
+        local full_path="$plugin_dir/$ref_path"
+        local rel_file="${file#"$REPO_ROOT/"}"
+        if [[ -f "$full_path" ]]; then
+            pass "$plugin_name: $ref_path referenced from $(basename "$rel_file")"
+        else
+            fail "$plugin_name: $ref_path referenced from $(basename "$rel_file")" "file not found: $full_path"
+        fi
+    done < <(grep -rn 'includes/[a-zA-Z0-9_-]*\.md' "$grep_path" \
+        --include='*.md' 2>/dev/null | { if [[ -n "$filter" ]]; then grep -v "$filter"; else cat; fi; } | head -50)
+}
+
 test_include_references_resolve() {
-    # Find all backtick-quoted references to includes/ in plugin Markdown files
     while IFS= read -r plugin_dir; do
         local plugin_name
         plugin_name=$(basename "$plugin_dir")
-        local refs_found=false
 
-        while IFS=: read -r file match; do
-            refs_found=true
-            # Extract path from backtick-quoted reference like `includes/foo.md`
-            local ref_path
-            ref_path=$(echo "$match" | grep -oE 'includes/[a-zA-Z0-9_-]+\.md' | head -1)
-            if [[ -z "$ref_path" ]]; then
-                continue
-            fi
+        _check_include_refs "$plugin_dir" "$plugin_name" "$plugin_dir" "^$plugin_dir/includes/"
 
-            local full_path="$plugin_dir/$ref_path"
-            local rel_file
-            rel_file=$(echo "$file" | sed "s|^$REPO_ROOT/||")
-            if [[ -f "$full_path" ]]; then
-                pass "$plugin_name: $ref_path referenced from $(basename "$rel_file")"
-            else
-                fail "$plugin_name: $ref_path referenced from $(basename "$rel_file")" "file not found: $full_path"
-            fi
-        done < <(grep -rn 'includes/[a-zA-Z0-9_-]*\.md' "$plugin_dir" \
-            --include='*.md' 2>/dev/null | grep -v 'includes/' | head -50)
-        # Note: the grep -v 'includes/' excludes self-references within includes/ dir itself;
-        # we re-include them below
-
-        # Also check references FROM includes/ files to other includes/ files
         if [[ -d "$plugin_dir/includes" ]]; then
-            while IFS=: read -r file match; do
-                refs_found=true
-                local ref_path
-                ref_path=$(echo "$match" | grep -oE 'includes/[a-zA-Z0-9_-]+\.md' | head -1)
-                if [[ -z "$ref_path" ]]; then
-                    continue
-                fi
-                local full_path="$plugin_dir/$ref_path"
-                local rel_file
-                rel_file=$(echo "$file" | sed "s|^$REPO_ROOT/||")
-                if [[ -f "$full_path" ]]; then
-                    pass "$plugin_name: $ref_path referenced from $(basename "$rel_file")"
-                else
-                    fail "$plugin_name: $ref_path referenced from $(basename "$rel_file")" "not found"
-                fi
-            done < <(grep -rn 'includes/[a-zA-Z0-9_-]*\.md' "$plugin_dir/includes" \
-                --include='*.md' 2>/dev/null | head -50)
+            _check_include_refs "$plugin_dir" "$plugin_name" "$plugin_dir/includes"
         fi
-
     done < <(find "$REPO_ROOT/plugins" -mindepth 1 -maxdepth 1 -type d)
 }
 

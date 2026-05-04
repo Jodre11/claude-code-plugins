@@ -1,5 +1,6 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # md2clip - Convert Markdown to Teams-compatible HTML and copy to macOS clipboard.
+# macOS only (uses osascript and BSD sed).
 # Usage: md2clip <file.md>
 #        echo "**bold**" | md2clip
 #

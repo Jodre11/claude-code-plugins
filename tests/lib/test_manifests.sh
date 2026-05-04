@@ -1,8 +1,19 @@
 #!/usr/bin/env bash
 # Manifest schema and cross-validation tests.
 
+_MP="$REPO_ROOT/.claude-plugin/marketplace.json"
+_MP_SOURCES=()
+_mp_sources_loaded=0
+
+_load_mp_sources() {
+    if (( _mp_sources_loaded == 0 )); then
+        mapfile -t _MP_SOURCES < <(jq -r '.plugins[].source' "$_MP")
+        _mp_sources_loaded=1
+    fi
+}
+
 test_marketplace_json_valid() {
-    local mp="$REPO_ROOT/.claude-plugin/marketplace.json"
+    local mp="$_MP"
     if ! jq empty "$mp" 2>/dev/null; then
         fail "marketplace.json is valid JSON"
         return
@@ -27,11 +38,9 @@ test_marketplace_json_valid() {
 }
 
 test_marketplace_plugin_sources_exist() {
-    local mp="$REPO_ROOT/.claude-plugin/marketplace.json"
-    local sources
-    mapfile -t sources < <(jq -r '.plugins[].source' "$mp")
+    _load_mp_sources
 
-    for src in "${sources[@]}"; do
+    for src in "${_MP_SOURCES[@]}"; do
         # Sources are relative paths like ./plugins/foo
         local resolved="${src#./}"
         assert_dir_exists "$resolved/.claude-plugin" "marketplace source exists: $resolved"
@@ -39,11 +48,9 @@ test_marketplace_plugin_sources_exist() {
 }
 
 test_plugin_json_schema() {
-    local mp="$REPO_ROOT/.claude-plugin/marketplace.json"
-    local sources
-    mapfile -t sources < <(jq -r '.plugins[].source' "$mp")
+    _load_mp_sources
 
-    for src in "${sources[@]}"; do
+    for src in "${_MP_SOURCES[@]}"; do
         local resolved="${src#./}"
         local pj="$REPO_ROOT/$resolved/.claude-plugin/plugin.json"
         local plugin_dir
@@ -55,24 +62,26 @@ test_plugin_json_schema() {
         fi
         pass "$plugin_dir: plugin.json is valid JSON"
 
+        local fields_json
+        fields_json=$(jq -r '[.name // "", .description // "", (.author // "" | tostring), .license // "", (.keywords // "" | tostring)] | @tsv' "$pj")
+        local idx=0
         for field in name description author license keywords; do
             local val
-            val=$(jq -r ".$field // empty" "$pj")
+            val=$(echo "$fields_json" | cut -f$((idx + 1)))
             if [[ -n "$val" ]]; then
                 pass "$plugin_dir: plugin.json has .$field"
             else
                 fail "$plugin_dir: plugin.json has .$field"
             fi
+            idx=$((idx + 1))
         done
     done
 }
 
 test_plugin_json_no_version_field() {
-    local mp="$REPO_ROOT/.claude-plugin/marketplace.json"
-    local sources
-    mapfile -t sources < <(jq -r '.plugins[].source' "$mp")
+    _load_mp_sources
 
-    for src in "${sources[@]}"; do
+    for src in "${_MP_SOURCES[@]}"; do
         local resolved="${src#./}"
         local pj="$REPO_ROOT/$resolved/.claude-plugin/plugin.json"
         local plugin_dir
@@ -89,11 +98,9 @@ test_plugin_json_no_version_field() {
 }
 
 test_plugin_name_matches_directory() {
-    local mp="$REPO_ROOT/.claude-plugin/marketplace.json"
-    local sources
-    mapfile -t sources < <(jq -r '.plugins[].source' "$mp")
+    _load_mp_sources
 
-    for src in "${sources[@]}"; do
+    for src in "${_MP_SOURCES[@]}"; do
         local resolved="${src#./}"
         local pj="$REPO_ROOT/$resolved/.claude-plugin/plugin.json"
         local dir_name
@@ -107,15 +114,14 @@ test_plugin_name_matches_directory() {
 }
 
 test_plugin_name_matches_marketplace() {
-    local mp="$REPO_ROOT/.claude-plugin/marketplace.json"
     local count
-    count=$(jq '.plugins | length' "$mp")
+    count=$(jq '.plugins | length' "$_MP")
 
     for ((i = 0; i < count; i++)); do
         local mp_name
-        mp_name=$(jq -r ".plugins[$i].name" "$mp")
+        mp_name=$(jq -r ".plugins[$i].name" "$_MP")
         local src
-        src=$(jq -r ".plugins[$i].source" "$mp")
+        src=$(jq -r ".plugins[$i].source" "$_MP")
         local resolved="${src#./}"
         local pj="$REPO_ROOT/$resolved/.claude-plugin/plugin.json"
 

@@ -43,9 +43,9 @@ test_final_newline() {
         local full="$REPO_ROOT/$f"
         # File must be non-empty and end with a newline
         if [[ -s "$full" ]]; then
-            local last_byte
-            last_byte=$(tail -c 1 "$full" | xxd -p)
-            if [[ "$last_byte" != "0a" ]]; then
+            local last_char
+            last_char=$(tail -c 1 "$full")
+            if [[ -n "$last_char" ]]; then
                 bad_files+=("$f")
             fi
         fi
@@ -61,11 +61,10 @@ test_final_newline() {
 }
 
 test_executables_have_x_bit() {
-    local found_any=false
+    local found_any=0
     while IFS= read -r f; do
-        found_any=true
-        local rel
-        rel=$(echo "$f" | sed "s|^$REPO_ROOT/||")
+        found_any=1
+        local rel="${f#"$REPO_ROOT/"}"
         if [[ -x "$f" ]]; then
             pass "executable: $rel"
         else
@@ -74,7 +73,7 @@ test_executables_have_x_bit() {
     done < <(find "$REPO_ROOT/plugins" -type f \( -path '*/bin/*' -o -path '*/tools/*' \) \
         -not -path '*/.git/*')
 
-    if [[ "$found_any" == "false" ]]; then
+    if (( found_any == 0 )); then
         skip "executable bit check" "no bin/ or tools/ files found"
     fi
 }

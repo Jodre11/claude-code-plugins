@@ -124,14 +124,12 @@ test_sync_base_branch_steps_match() {
     if [[ "$pipeline_steps" == "$specialist_steps" ]]; then
         pass "base-branch resolution steps 1-4 match between pipeline and specialist"
     else
-        local tmp1 tmp2
-        tmp1=$(mktemp)
-        tmp2=$(mktemp)
-        echo "$pipeline_steps" > "$tmp1"
-        echo "$specialist_steps" > "$tmp2"
         local diff_output
-        diff_output=$(diff -u --label review-pipeline.md --label specialist-context.md "$tmp1" "$tmp2" || true)
-        rm -f "$tmp1" "$tmp2"
+        diff_output=$(diff -u \
+            --label review-pipeline.md \
+            --label specialist-context.md \
+            <(echo "$pipeline_steps") \
+            <(echo "$specialist_steps") || true)
         fail "base-branch resolution steps 1-4 match between pipeline and specialist" "$diff_output"
     fi
 }

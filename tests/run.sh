@@ -21,4 +21,5 @@ for fn in "${test_functions[@]}"; do
     "$fn"
 done
 
+# summary returns 1 on failure — must be the last call (set -e exits here)
 summary

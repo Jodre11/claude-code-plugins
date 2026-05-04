@@ -17,6 +17,10 @@ DEFAULT_TTL = 3600
 DEFAULT_MAX_RETRIES = 3
 DEFAULT_BASE_DELAY = 2.0
 SEARXNG_BASE_URL = os.environ.get("SEARXNG_URL", "http://localhost:8888")
+_parsed = urllib.parse.urlparse(SEARXNG_BASE_URL)
+if _parsed.scheme not in ("http", "https") or not _parsed.netloc:
+    print(f"Invalid SEARXNG_URL: scheme must be http or https", file=sys.stderr)
+    sys.exit(2)
 CACHE_DIR = os.path.join(os.path.expanduser("~"), ".cache", "web-search")
 CACHE_DB = os.path.join(CACHE_DIR, "cache.db")
 
@@ -183,10 +187,12 @@ def main():
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA busy_timeout=5000")
     try:
-        _run(conn, args, ttl, max_retries)
+        rc = _run(conn, args, ttl, max_retries)
         conn.commit()
     finally:
         conn.close()
+    if rc:
+        sys.exit(rc)
 
 
 def _run(conn, args, ttl, max_retries):
@@ -194,18 +200,18 @@ def _run(conn, args, ttl, max_retries):
 
     if args.clear_cache:
         clear_cache(conn)
-        return
+        return 0
 
     if args.cache_stats:
         show_cache_stats(conn)
-        return
+        return 0
 
     if not args.query:
         emit_error(
             "No search query provided.",
             "Provide search keywords: web-search -n 5 'your query here'",
         )
-        sys.exit(1)
+        return 1
 
     query_str = " ".join(args.query)
     num_results = args.num
@@ -215,7 +221,7 @@ def _run(conn, args, ttl, max_retries):
     if cached is not None:
         bump_stat(conn, "hits")
         print(cached)
-        return
+        return 0
 
     bump_stat(conn, "misses")
 
@@ -225,7 +231,7 @@ def _run(conn, args, ttl, max_retries):
             output = json.dumps(results, indent=2)
             store_cached(conn, key, query_str, output, ttl)
             print(output)
-            return
+            return 0
         except Exception as exc:
             error_msg = str(exc)
 
@@ -241,11 +247,11 @@ def _run(conn, args, ttl, max_retries):
 
     bump_stat(conn, "failures")
     emit_error(
-        f"Search failed after {max_retries} retries for query: {query_str}",
+        f"Search failed after {max_retries} retries.",
         "Check that SearXNG is reachable at the configured SEARXNG_URL. "
         "Verify network connectivity.",
     )
-    sys.exit(1)
+    return 1
 
 
 if __name__ == "__main__":

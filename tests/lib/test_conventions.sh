@@ -4,7 +4,7 @@
 test_lf_line_endings() {
     local bad_files=()
     while IFS= read -r f; do
-        if grep -Plq '\r\n' "$REPO_ROOT/$f" 2>/dev/null; then
+        if grep -ql $'\r' "$REPO_ROOT/$f" 2>/dev/null; then
             bad_files+=("$f")
         fi
     done < <(find "$REPO_ROOT/plugins" "$REPO_ROOT/.claude-plugin" -type f \
@@ -23,7 +23,7 @@ test_md_json_indentation() {
     while IFS= read -r f; do
         # Check for lines indented with tabs or odd-space indentation (not multiple of 2)
         # Only check lines that start with whitespace
-        if grep -Pn '^\t' "$REPO_ROOT/$f" >/dev/null 2>&1; then
+        if grep -n $'^\t' "$REPO_ROOT/$f" >/dev/null 2>&1; then
             bad_files+=("$f (tabs)")
         fi
     done < <(find "$REPO_ROOT/plugins" "$REPO_ROOT/.claude-plugin" -type f \
@@ -82,7 +82,7 @@ test_executables_have_x_bit() {
 test_no_trailing_whitespace_in_structured_files() {
     local bad_files=()
     while IFS= read -r f; do
-        if grep -Pn '\s+$' "$REPO_ROOT/$f" >/dev/null 2>&1; then
+        if grep -En '[[:space:]]+$' "$REPO_ROOT/$f" >/dev/null 2>&1; then
             bad_files+=("$f")
         fi
     done < <(find "$REPO_ROOT/plugins" "$REPO_ROOT/.claude-plugin" -type f \

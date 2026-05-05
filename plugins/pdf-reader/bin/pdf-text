@@ -1,0 +1,209 @@
+#!/usr/bin/env bash
+# Extract text from PDF files — native text via poppler, scanned/image via tesseract OCR.
+set -euo pipefail
+
+VERSION="1.0.0"
+OCR_TMPDIR=""
+cleanup() { if [[ -n "$OCR_TMPDIR" ]]; then rm -rf "$OCR_TMPDIR"; fi; }
+trap cleanup EXIT
+
+usage() {
+    cat <<'EOF'
+Usage: pdf-text [OPTIONS] <file.pdf>
+
+Extract text from a PDF file. Auto-detects native text vs scanned/image PDFs
+and falls back to OCR when needed.
+
+Options:
+    --pages N-M    Extract pages N through M (inclusive, 1-based)
+    --pages N      Extract a single page
+    --ocr          Force OCR even if native text is detected
+    --info         Show PDF metadata and text/image classification
+    --version      Show version
+    -h, --help     Show this help
+
+Examples:
+    pdf-text document.pdf
+    pdf-text --pages 1-5 document.pdf
+    pdf-text --ocr scanned.pdf
+    pdf-text --info document.pdf
+EOF
+}
+
+die() {
+    printf 'Error: %s\n' "$1" >&2
+    exit 1
+}
+
+check_dependency() {
+    command -v "$1" >/dev/null 2>&1 || die "$1 is not installed. Run: brew install $2"
+}
+
+# Parse arguments
+PAGES_FLAG=""
+FIRST_PAGE=""
+LAST_PAGE=""
+FORCE_OCR=0
+INFO_MODE=0
+PDF_FILE=""
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --pages)
+            shift
+            [[ $# -eq 0 ]] && die "--pages requires an argument (e.g. 1-5 or 3)"
+            PAGES_FLAG="$1"
+            if [[ "$PAGES_FLAG" =~ ^([0-9]+)-([0-9]+)$ ]]; then
+                FIRST_PAGE="${BASH_REMATCH[1]}"
+                LAST_PAGE="${BASH_REMATCH[2]}"
+            elif [[ "$PAGES_FLAG" =~ ^([0-9]+)$ ]]; then
+                FIRST_PAGE="${BASH_REMATCH[1]}"
+                LAST_PAGE="${BASH_REMATCH[1]}"
+            else
+                die "Invalid --pages format: $PAGES_FLAG (expected N or N-M)"
+            fi
+            shift
+            ;;
+        --ocr)
+            FORCE_OCR=1
+            shift
+            ;;
+        --info)
+            INFO_MODE=1
+            shift
+            ;;
+        --version)
+            echo "pdf-text $VERSION"
+            exit 0
+            ;;
+        -h|--help)
+            usage
+            exit 0
+            ;;
+        -*)
+            die "Unknown option: $1"
+            ;;
+        *)
+            [[ -n "$PDF_FILE" ]] && die "Multiple files not supported. Got: $PDF_FILE and $1"
+            PDF_FILE="$1"
+            shift
+            ;;
+    esac
+done
+
+[[ -z "$PDF_FILE" ]] && die "No PDF file specified. Run: pdf-text --help"
+[[ -f "$PDF_FILE" ]] || die "File not found: $PDF_FILE"
+
+check_dependency pdftotext poppler
+check_dependency pdfinfo poppler
+
+PDF_METADATA=""
+get_pdf_metadata() {
+    if [[ -z "$PDF_METADATA" ]]; then
+        PDF_METADATA=$(pdfinfo "$PDF_FILE" 2>/dev/null)
+    fi
+    printf '%s\n' "$PDF_METADATA"
+}
+
+get_page_count() {
+    get_pdf_metadata | grep -i "^Pages:" | awk '{print $2}'
+}
+
+# Classify PDF as text-based or image-based by sampling native text extraction.
+# Sets SAMPLE_TEXT with the extracted sample. Returns 0 if text-based, 1 if image-based.
+SAMPLE_TEXT=""
+has_native_text() {
+    local sample_first="${FIRST_PAGE:-1}"
+    local sample_last="${LAST_PAGE:-3}"
+    local page_count
+    page_count=$(get_page_count)
+
+    if [[ -n "$page_count" ]] && [[ "$sample_last" -gt "$page_count" ]]; then
+        sample_last="$page_count"
+    fi
+
+    SAMPLE_TEXT=$(pdftotext -f "$sample_first" -l "$sample_last" "$PDF_FILE" - 2>/dev/null)
+
+    local stripped
+    stripped=$(printf '%s' "$SAMPLE_TEXT" | tr -d '[:space:]\f')
+
+    # Threshold: at least 50 non-whitespace characters suggests real text
+    [[ ${#stripped} -ge 50 ]]
+}
+
+extract_native() {
+    local args=()
+    if [[ -n "$FIRST_PAGE" ]]; then
+        args+=(-f "$FIRST_PAGE")
+    fi
+    if [[ -n "$LAST_PAGE" ]]; then
+        args+=(-l "$LAST_PAGE")
+    fi
+    args+=(-layout "$PDF_FILE" -)
+    pdftotext "${args[@]}" 2>/dev/null
+}
+
+extract_ocr() {
+    check_dependency tesseract tesseract
+    check_dependency pdftoppm poppler
+
+    OCR_TMPDIR=$(mktemp -d)
+
+    local ppm_args=(-r 300)
+    if [[ -n "$FIRST_PAGE" ]]; then
+        ppm_args+=(-f "$FIRST_PAGE")
+    fi
+    if [[ -n "$LAST_PAGE" ]]; then
+        ppm_args+=(-l "$LAST_PAGE")
+    fi
+    ppm_args+=("$PDF_FILE" "$OCR_TMPDIR/page")
+
+    pdftoppm "${ppm_args[@]}" 2>/dev/null
+
+    local page_files
+    page_files=$(find "$OCR_TMPDIR" \( -name "page-*.ppm" -o -name "page-*.pgm" \) | sort)
+
+    if [[ -z "$page_files" ]]; then
+        die "pdftoppm produced no images — the PDF may be empty or corrupted"
+    fi
+
+    local first=1
+    while IFS= read -r img; do
+        if [[ "$first" -eq 1 ]]; then
+            first=0
+        else
+            printf '\f\n'
+        fi
+        tesseract "$img" stdout 2>/dev/null
+    done <<< "$page_files"
+}
+
+# --info mode
+if [[ "$INFO_MODE" -eq 1 ]]; then
+    echo "=== PDF Metadata ==="
+    get_pdf_metadata
+    echo ""
+    echo "=== Classification ==="
+    if has_native_text; then
+        echo "Type: text-based (native text extractable via pdftotext)"
+    else
+        echo "Type: image-based (requires OCR via tesseract)"
+    fi
+    exit 0
+fi
+
+# Extraction
+if [[ "$FORCE_OCR" -eq 1 ]]; then
+    echo "[pdf-text] Forced OCR mode — rendering pages and running tesseract..." >&2
+    extract_ocr
+elif has_native_text; then
+    # When --pages is specified, has_native_text sampled exactly that range — reuse it
+    if [[ -n "$FIRST_PAGE" ]]; then
+        printf '%s\n' "$SAMPLE_TEXT"
+    else
+        extract_native
+    fi
+else
+    echo "[pdf-text] No native text detected — falling back to OCR..." >&2
+    extract_ocr
+fi

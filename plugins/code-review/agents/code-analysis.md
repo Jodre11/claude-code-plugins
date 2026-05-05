@@ -39,12 +39,27 @@ Include these findings in the output under a separate `## JetBrains InspectCode`
 
 Review every change against the following priorities (highest first):
 
-1. **Security** — injection, auth bypass, secrets, unsafe deserialization, OWASP top 10
+1. **Security** — injection (SQL, command, XSS, template, NoSQL, XXE), auth/authz bypass, secrets/credentials, unsafe deserialisation, OWASP top 10, cryptographic misuse, path traversal, SSRF (host/protocol control only), RCE via eval/dynamic execution
 2. **Correctness** — logic errors, off-by-one, null derefs, race conditions, resource leaks, error handling gaps
 3. **Consistency** — violations of project conventions from CLAUDE.md, naming, patterns already in the codebase
 4. **Style** — formatting, readability, unnecessary complexity
 
-Assign each finding a confidence score 0–100. **Only report findings with confidence ≥ 80.**
+Assign each finding a confidence score 0–100. **Only report findings with confidence >= 80.**
+
+Each security finding MUST include a concrete exploit scenario. If you cannot articulate a specific attack path, do not report the finding.
+
+**Security false-positive exclusions** — do NOT report:
+- DoS, resource exhaustion, or rate limiting concerns
+- React/Angular XSS unless using unsafe innerHTML assignment methods
+- Command injection in scripts receiving only trusted input (env vars, CLI flags)
+- Input validation on non-security-critical fields without a proven exploit path
+- Absence of hardening measures (only flag concrete vulnerabilities)
+- Race conditions or timing attacks that are theoretical
+- Issues only in test files unless they indicate a production pattern
+- SSRF where attacker controls only the path, not host/protocol
+- User-controlled content in AI system prompts
+- Client-side permission/auth checks (server enforces)
+- UUIDs used as identifiers (unguessable)
 
 ### Format output
 

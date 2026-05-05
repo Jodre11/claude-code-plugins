@@ -1,7 +1,6 @@
 {
   "name": "code-review",
-  "description": "10 specialist code review agents with orchestrator, PR review skill, pre-review and address-pr-comments commands",
-  "version": "1.0.0",
+  "description": "Multi-agent code review with specialist, cross-review, and synthesis agents — includes review pipeline, PR review skill, pre-review and address-pr-comments commands",
   "author": {
     "name": "Christian Haddrell"
   },
@@ -16,6 +15,9 @@
     "archaeology",
     "reuse",
     "efficiency",
-    "jetbrains"
+    "jetbrains",
+    "accessibility",
+    "ui",
+    "synthesis"
   ]
 }

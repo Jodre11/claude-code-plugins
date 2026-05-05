@@ -13,20 +13,17 @@ fi
 PATTERNS=(
     # AWS account IDs
     '123456789012'
-    '123456789012'
-    '123456789012'
-    '123456789012'
-    '123456789012'
-    '123456789012'
+    '234567890123'
+    '345678901234'
 
     # SSO / infrastructure
     'yourorg\.awsapps\.com'
     '[0-9]{12}\.dkr\.ecr\.[a-z0-9-]+\.amazonaws\.com'
 
     # Bedrock inference profile ARN fragments
-    'your-profile-id'
-    'your-profile-id'
-    'your-profile-id'
+    'your-profile-id-1'
+    'your-profile-id-2'
+    'your-profile-id-3'
 
     # SSH private key markers
     '-----BEGIN.*PRIVATE KEY-----'
@@ -50,11 +47,11 @@ PATTERNS=(
     'internal-project-5'
 
     # Personal
-    'Jodre11'
+    'YourGitHubUser'
     '@your-company\.com'
-    '@haddrell\.co\.uk'
-    'christian\.haddrell'
-    '/Users/jodre11/'
+    '@your-email\.co\.uk'
+    'your\.name'
+    '/Users/yourusername/'
 )
 
 # Build a combined regex from the pattern array

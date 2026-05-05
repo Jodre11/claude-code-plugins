@@ -1,7 +1,7 @@
 # S3 Search Plugin
 
-Search and list files in Amazon S3 buckets via the `internal-project-5` global .NET tool. Wraps
-`internal-project-5 ls` and `internal-project-5 grep` with environment-specific defaults stored in auto-memory.
+Search and list files in Amazon S3 buckets via the `s3search` global .NET tool. Wraps
+`s3search ls` and `s3search grep` with environment-specific defaults stored in auto-memory.
 
 ## Usage
 
@@ -10,7 +10,7 @@ be invoked explicitly with `/s3-search`.
 
 ## Prerequisites
 
-- `internal-project-5` global .NET tool (v1.1.0+)
+- `s3search` global .NET tool (v1.1.0+)
 - AWS SSO session authenticated for the target profile
 
 ## Installation

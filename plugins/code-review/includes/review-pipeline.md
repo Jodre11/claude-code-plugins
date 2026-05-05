@@ -40,7 +40,7 @@ Validate that `$BASE` matches `^[a-zA-Z0-9/_.\-]+$` — if it does not, report "
    - **C# detection:** if any file ends with `.cs`, set `$CSHARP_DETECTED = true`
    - **UI detection:** if any file ends with `.html`, `.css`, `.scss`, `.less`, `.jsx`, `.tsx`, `.vue`, `.svelte`, `.axaml`, `.xaml`, or matches UI framework config patterns, set `$UI_DETECTED = true`
 2.6. Scan `$FULL_DIFF` hunks for **significant deletions:** if any single hunk contains 10+ contiguous deleted lines, set `$SIGNIFICANT_DELETIONS = true`
-2.7. Scan changed file paths and `$FULL_DIFF` content for **security-sensitive areas** (auth, crypto, input validation, SQL, API endpoints, secrets management). If found, set `$SECURITY_SENSITIVE = true`
+2.7. Scan changed file paths and `$FULL_DIFF` content for **security-sensitive areas** (auth, crypto, input validation, SQL, API endpoints, secrets management, deserialisation, JWT, session, token, eval, exec, spawn, certificate, CORS). If found, set `$SECURITY_SENSITIVE = true`
 
 #### 2.8. Build agent prompt
 
@@ -216,7 +216,7 @@ Use `$CROSS_REVIEW_COUNT` (not `$SPECIALIST_COUNT`) as the total count `R` count
 
 | Domain | Focus |
 |---|---|
-| security | injection, auth bypass, secrets, OWASP, crypto, SSRF, supply-chain |
+| security | injection (SQL, command, XSS, template, NoSQL, XXE), auth/authz bypass, secrets, OWASP, crypto, SSRF, supply-chain, deserialisation, JWT, session management, RCE |
 | correctness | logic errors, null derefs, race conditions, resource leaks, error handling |
 | consistency | CLAUDE.md violations, naming, config, architectural patterns |
 | style | readability, complexity, dead code, naming clarity |

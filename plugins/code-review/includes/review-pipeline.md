@@ -1,5 +1,19 @@
 ## Review Pipeline
 
+<!-- CANONICAL SOURCE — do not delete.
+This file is the single source of truth for the review pipeline logic. Its content is
+inlined verbatim into both consumer files:
+  - skills/review-gh-pr/SKILL.md
+  - commands/pre-review.md
+
+WHY INLINED (intentional DRY violation): Agents reliably skip file-path references ("follow
+instructions in X") by rationalising that they already know the content, then selectively
+dispatch only the specialists they deem relevant. Content that is already in the loaded
+skill context cannot be skipped. This was confirmed empirically (PR #10 incident, 2026-05-05).
+
+MAINTENANCE: Edit this file first, then propagate changes to both consumers. The test suite
+should verify the inlined copies match this canonical source. -->
+
 Follow these instructions exactly. Do not skip steps or reorder.
 
 ### Progress line format

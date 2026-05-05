@@ -10,7 +10,7 @@ Personal plugin marketplace for [Claude Code](https://docs.anthropic.com/en/docs
 | [web-search](plugins/web-search/) | Web search via local SearXNG — self-hosted, no API key, no tracking |
 | [playwright-cli](plugins/playwright-cli/) | Browser automation via `playwright-cli` — testing, form filling, screenshots, data extraction |
 | [md-to-clipboard](plugins/md-to-clipboard/) | Convert Markdown to rich text on the macOS clipboard for pasting into Teams, Slack, Outlook |
-| [s3-search](plugins/s3-search/) | S3 bucket search via `internal-project-5` — list, grep, and analyse files in S3 |
+| [s3-search](plugins/s3-search/) | S3 bucket search via `s3search` — list, grep, and analyse files in S3 |
 
 ## Installation
 
@@ -50,7 +50,7 @@ manual reinstall required. Each plugin's `bin/` directory is added to PATH autom
 | web-search | Docker Desktop + SearXNG container (`searxng-ctl.sh start`), `jq` (`brew install jq`) |
 | playwright-cli | `playwright-cli` (`brew install playwright-cli` or `npx playwright-cli`) |
 | md-to-clipboard | `pandoc` (`brew install pandoc`), `md2clip` (ships with plugin — see [setup](plugins/md-to-clipboard/README.md)) |
-| s3-search | `internal-project-5` global .NET tool — contact your platform team for installation |
+| s3-search | `s3search` global .NET tool — contact your platform team for installation |
 
 ## Licence
 

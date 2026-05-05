@@ -5,7 +5,7 @@ description: Use when the user asks about S3 bucket contents, file deliveries, d
 
 # S3 Search
 
-Search and list files in Amazon S3 buckets via `internal-project-5`, a global .NET CLI tool with
+Search and list files in Amazon S3 buckets via `s3search`, a global .NET CLI tool with
 grep-like features.
 
 ## Defaults
@@ -19,7 +19,7 @@ the bucket name and AWS profile.
 ### List files
 
 ```bash
-internal-project-5 ls <bucket> [--profile <profile>] [options]
+s3search ls <bucket> [--profile <profile>] [options]
 ```
 
 | Flag | Purpose |
@@ -31,7 +31,7 @@ internal-project-5 ls <bucket> [--profile <profile>] [options]
 ### Search file contents
 
 ```bash
-internal-project-5 grep <bucket> <regex> [--profile <profile>] [options]
+s3search grep <bucket> <regex> [--profile <profile>] [options]
 ```
 
 | Flag | Purpose |
@@ -49,19 +49,19 @@ internal-project-5 grep <bucket> <regex> [--profile <profile>] [options]
 ### Check authentication
 
 ```bash
-internal-project-5 auth status
+s3search auth status
 ```
 
 ## Command Selection Guide
 
 | Need | Command |
 |------|---------|
-| What files are in a prefix? | `internal-project-5 ls` with `--prefix` |
-| How is the bucket organised? | `internal-project-5 ls --tree` |
-| How many files match a pattern? | `internal-project-5 ls` with `--include`, count in summary |
-| Find specific content in files | `internal-project-5 grep` |
-| Which files contain a value? | `internal-project-5 grep -l` |
-| Which files are missing a value? | `internal-project-5 grep -L` |
+| What files are in a prefix? | `s3search ls` with `--prefix` |
+| How is the bucket organised? | `s3search ls --tree` |
+| How many files match a pattern? | `s3search ls` with `--include`, count in summary |
+| Find specific content in files | `s3search grep` |
+| Which files contain a value? | `s3search grep -l` |
+| Which files are missing a value? | `s3search grep -L` |
 
 ## Output Handling
 
@@ -78,5 +78,5 @@ If authentication fails, tell the user to run `aws sso login` with the appropria
 
 ## Prerequisites
 
-- `internal-project-5` global .NET tool (v1.1.0+): `dotnet tool list -g | grep internal-project-5`
+- `s3search` global .NET tool (v1.1.0+): `dotnet tool list -g | grep s3search`
 - AWS SSO session authenticated for the target profile

@@ -11,7 +11,7 @@
     },
     {
       "name": "web-search",
-      "description": "Web search via local SearXNG — self-hosted, no API key, no tracking",
+      "description": "Web search via SearXNG — no API key, no tracking",
       "source": "./plugins/web-search"
     },
     {
@@ -23,6 +23,11 @@
       "name": "md-to-clipboard",
       "description": "Convert Markdown to Teams-compatible rich text on the macOS clipboard",
       "source": "./plugins/md-to-clipboard"
+    },
+    {
+      "name": "pdf-reader",
+      "description": "Extract text from any PDF — native text via poppler, scanned/image via tesseract OCR",
+      "source": "./plugins/pdf-reader"
     }
   ]
 }

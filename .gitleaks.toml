@@ -45,6 +45,12 @@ regex = '''(?i)(internal-project-1|internal-project-2|internal-project-3|interna
 tags = ["corporate"]
 
 [[rules]]
+id = "org-s3-defaults"
+description = "Organisation S3 bucket and profile names"
+regex = '''(your-bucket-name|your-profile-name)'''
+tags = ["corporate", "aws"]
+
+[[rules]]
 id = "personal-identity"
 description = "Personal identity markers"
 regex = '''(Jodre11|christian\.haddrell|@your-company\.com|@haddrell\.co\.uk|/Users/jodre11/)'''

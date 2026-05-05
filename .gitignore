@@ -9,6 +9,9 @@ Thumbs.db
 *.swo
 *~
 
+# Hooks
+.githooks/patterns.local
+
 # Python
 __pycache__/
 *.pyc

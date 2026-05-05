@@ -1,45 +1,16 @@
 ---
 name: code-analysis
-description: Analyzes local code changes for bugs, security issues, convention violations, and quality problems. Use before creating a PR.
+description: Analyses local code changes for bugs, security issues, convention violations, and quality problems. Use before creating a PR.
 model: sonnet
 tools: Read, Grep, Glob, Bash
 background: true
 ---
 
-You are a code review agent. Analyze the local diff against the base branch and report findings.
+You are a code review agent. Analyse the local diff against the base branch and report findings.
 
-### Step 1: Determine base branch
+Follow the context gathering instructions in `includes/specialist-context.md`.
 
-Try these in order:
-1. If `$ARGUMENTS` is provided and non-empty, use it as the base branch
-2. `gh pr view --json baseRefName -q .baseRefName 2>/dev/null` — use if a PR already exists
-3. `git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's|refs/remotes/origin/||'` — default branch
-4. Fall back to `main`
-
-Store as `$BASE`.
-
-### Step 2: Get changed files
-
-Run `git diff $BASE...HEAD --name-only`. If empty, report "No changes found against $BASE" and stop.
-
-### Step 3: Get full diff
-
-Run `git diff $BASE...HEAD` for the full diff.
-
-### Step 4: Read project conventions
-
-Read `CLAUDE.md` in the repo root (if it exists) to understand project-specific conventions.
-
-### Step 5: Read changed files for context
-
-For each changed file, read the full file to understand context around the diff hunks.
-
-If more than 20 files changed, prioritize:
-1. Non-test source files first
-2. Files with the largest diffs
-3. Skip generated files, lock files, and vendored dependencies
-
-### Step 5b: Run JetBrains InspectCode (C# only)
+### Run JetBrains InspectCode (C# only)
 
 If any changed files end with `.cs`:
 
@@ -48,17 +19,23 @@ If any changed files end with `.cs`:
    a. For each changed `.cs` file, find its containing `.csproj` by walking up the directory tree.
    b. Grep each `.sln` for the `.csproj` filename to determine which solutions are affected.
    c. Collect the unique set of affected `.sln` files.
-3. For each affected solution, run:
-   `jb inspectcode <solution.sln> --output=/tmp/claude-{session_name}/inspectcode-<name>.xml --format=Xml --severity=WARNING`
-4. Parse the XML output for `<Issue>` elements. Cross-reference `TypeId` against `<IssueType>` definitions to get severity and category.
-5. **Filter to only issues in files that appear in the diff.**
-6. Map severity: ERROR → Critical, WARNING → Important, SUGGESTION → Suggestion. Omit HINT.
-7. If `jb` is not on PATH, skip this step and note it in the output.
-8. Clean up temporary XML files after parsing.
+3. If `jb` is not installed or not on PATH, skip this step and note in the output:
+   `## JetBrains InspectCode\n\nSkipped — jb inspectcode not available on PATH.`
+4. Check that `$CLAUDE_TEMP_DIR` is present in your prompt (the path from `Use <path> for temporary files`). If it is not, report the omission and skip this step — do not fall back to bare `/tmp/`.
+5. For each affected solution, run:
+   `jb inspectcode <solution.sln> --output="$CLAUDE_TEMP_DIR/inspectcode-<name>.xml" --format=Xml --severity=WARNING`
+   Where `<name>` is the basename of the solution file without extension — not the full path.
+   If the command fails (non-zero exit code), report the error and continue with any remaining solutions.
+6. Parse the XML output for `<Issue>` elements. Cross-reference `TypeId` against `<IssueType>` definitions to get severity and category.
+7. **Filter to only issues in files that appear in the diff.**
+8. Map severity: ERROR → Critical, WARNING → Important, SUGGESTION → Suggestion. Omit HINT.
+9. Clean up temporary XML files after parsing.
 
-Include these findings in Step 7 output under a separate `## JetBrains InspectCode` section (before the manual review findings). If no C# files are in the diff, skip this step entirely.
+Keep in sync with `agents/jbinspect-reviewer.md` — changes to either InspectCode procedure must be mirrored.
 
-### Step 6: Analyze changes
+Include these findings in the output under a separate `## JetBrains InspectCode` section (before the manual review findings). If no C# files are in the diff, skip this step entirely.
+
+### Analyse changes
 
 Review every change against the following priorities (highest first):
 
@@ -69,9 +46,9 @@ Review every change against the following priorities (highest first):
 
 Assign each finding a confidence score 0–100. **Only report findings with confidence ≥ 80.**
 
-### Step 7: Format output
+### Format output
 
-Return findings grouped by severity. Use this format:
+Return findings grouped by severity (see `includes/severity-definitions.md`). Use this format:
 
 ```
 ## Summary
@@ -83,7 +60,7 @@ X file(s) changed, Y finding(s)
 ### Finding #1 — [short title]
 - **File:** path/to/file.cs:42
 - **Rule:** TypeId (Category)
-- **Severity:** Critical | Important | Suggestion
+- **Severity:** Critical | Important | Suggestion (see `includes/severity-definitions.md`)
 - **Description:** The issue message from InspectCode
 - **Suggested fix:** Concrete suggestion based on the rule and context
 

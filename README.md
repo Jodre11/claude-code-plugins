@@ -10,7 +10,7 @@ Personal plugin marketplace for [Claude Code](https://docs.anthropic.com/en/docs
 | [web-search](plugins/web-search/) | Web search via local SearXNG — self-hosted, no API key, no tracking |
 | [playwright-cli](plugins/playwright-cli/) | Browser automation via `playwright-cli` — testing, form filling, screenshots, data extraction |
 | [md-to-clipboard](plugins/md-to-clipboard/) | Convert Markdown to rich text on the macOS clipboard for pasting into Teams, Slack, Outlook |
-| [s3-search](plugins/s3-search/) | S3 bucket search via `s3search` — list, grep, and analyse files in S3 |
+| [pdf-reader](plugins/pdf-reader/) | Extract text from any PDF — native text via poppler, scanned/image via tesseract OCR |
 
 ## Installation
 
@@ -24,8 +24,7 @@ each session start:
     "code-review@jodre11-plugins": true,
     "web-search@jodre11-plugins": true,
     "playwright-cli@jodre11-plugins": true,
-    "md-to-clipboard@jodre11-plugins": true,
-    "s3-search@jodre11-plugins": true
+    "md-to-clipboard@jodre11-plugins": true
   },
   "extraKnownMarketplaces": {
     "jodre11-plugins": {
@@ -50,7 +49,15 @@ manual reinstall required. Each plugin's `bin/` directory is added to PATH autom
 | web-search | Docker Desktop + SearXNG container (`searxng-ctl.sh start`), `jq` (`brew install jq`) |
 | playwright-cli | `playwright-cli` (`brew install playwright-cli` or `npx playwright-cli`) |
 | md-to-clipboard | `pandoc` (`brew install pandoc`), `md2clip` (ships with plugin — see [setup](plugins/md-to-clipboard/README.md)) |
-| s3-search | `s3search` global .NET tool — contact your platform team for installation |
+
+## Versioning
+
+This marketplace does not use explicit version fields in `plugin.json`. Claude Code resolves
+plugin versions from the git commit SHA, so every push to `main` is automatically a new version.
+Users receive updates on their next session start without any manual version bumps.
+
+See [Version resolution](https://code.claude.com/docs/en/plugin-marketplaces#version-resolution-and-release-channels)
+in the Claude Code docs for details.
 
 ## Licence
 

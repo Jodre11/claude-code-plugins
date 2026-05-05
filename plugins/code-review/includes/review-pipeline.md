@@ -92,6 +92,18 @@ Continue to Step 4.
 
 ### Step 4: Dispatch specialists
 
+> **MANDATORY DISPATCH CONSTRAINT — READ BEFORE PROCEEDING**
+>
+> You MUST dispatch ALL 7 core specialists listed below. No exceptions. Do not selectively
+> drop, skip, or defer specialists based on PR size, perceived relevance, file types, or any
+> other heuristic. The routing decision in Step 3 already accounts for PR characteristics —
+> once you reach Step 4, all 7 core specialists fire unconditionally. Dispatching fewer than
+> 7 core specialists is a pipeline violation.
+>
+> If the platform limits concurrent background agents, dispatch in two batches (4 then 3)
+> rather than dropping specialists. Wait for the first batch to complete before dispatching
+> the second.
+
 Discard `$FULL_DIFF` from working memory — specialists fetch their own diffs independently.
 
 #### 4.1 Specialist prompt
@@ -100,7 +112,7 @@ Use `$AGENT_PROMPT` (defined in Step 2.8) as the prompt for all specialist agent
 
 #### 4.2 Dispatch
 
-Dispatch all 7 core specialists **in parallel** as background agents. Each specialist self-serves all context (diff, files, conventions) from the base branch.
+Dispatch ALL 7 core specialists **in parallel** as background agents — no exceptions, no selective omission. Each specialist self-serves all context (diff, files, conventions) from the base branch.
 
 ```
 Agent({
@@ -187,7 +199,24 @@ Agent({
 })
 ```
 
+**Batching fallback:** If the platform rejects or silently drops agent dispatches beyond a concurrency limit, split into two batches:
+- **Batch 1** (dispatch first, wait for completion): security-reviewer, correctness-reviewer, consistency-reviewer, style-reviewer
+- **Batch 2** (dispatch after batch 1 completes): archaeology-reviewer, reuse-reviewer, efficiency-reviewer, plus any conditional specialists
+
+This is a fallback only — prefer a single parallel dispatch when possible. Never use batching as a justification to skip specialists entirely.
+
 Store `$SPECIALIST_COUNT` = number of specialists dispatched (7 core only, 8 with C# or UI, 9 with both) and note the dispatch timestamp.
+
+#### 4.3 Verify dispatch completeness
+
+Immediately after dispatching, perform this self-check:
+
+1. List every specialist agent you just dispatched by name
+2. Compare against the mandatory set: `security-reviewer`, `correctness-reviewer`, `consistency-reviewer`, `style-reviewer`, `archaeology-reviewer`, `reuse-reviewer`, `efficiency-reviewer` (plus `jbinspect-reviewer` if `$CSHARP_DETECTED`, plus `ui-reviewer` if `$UI_DETECTED`)
+3. If any mandatory specialist is missing, dispatch it now before proceeding
+4. Announce: `> Dispatch verified: $SPECIALIST_COUNT/$SPECIALIST_COUNT specialists launched`
+
+If you dispatched fewer than 7 core specialists and cannot identify why, STOP and report the error to the user rather than continuing with incomplete coverage.
 
 **Progress reporting:** As each specialist completes, output a status line using the progress line format defined above.
 

@@ -53,7 +53,7 @@ tags = ["corporate", "aws"]
 [[rules]]
 id = "personal-identity"
 description = "Personal identity markers"
-regex = '''(Jodre11|christian\.haddrell|@your-company\.com|@haddrell\.co\.uk|/Users/jodre11/)'''
+regex = '''(YourGitHubUser|your\.name|@your-company\.com|@your-email\.co\.uk|/Users/yourusername/)'''
 tags = ["personal"]
 
 [[rules]]

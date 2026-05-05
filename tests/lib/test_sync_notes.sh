@@ -91,6 +91,67 @@ test_sync_path_scope_traversal_check_present() {
     done
 }
 
+test_sync_pipeline_inline_matches_canonical() {
+    local cr
+    cr=$(_cr_dir)
+    if [[ ! -d "$cr" ]]; then
+        skip "pipeline inline sync" "code-review plugin not found"
+        return
+    fi
+
+    local canonical="$cr/includes/review-pipeline.md"
+
+    # Extract the pipeline body from canonical (strip leading comment block)
+    local canonical_body
+    canonical_body=$(sed -n '/^Follow these instructions exactly/,$ p' "$canonical")
+
+    if [[ -z "$canonical_body" ]]; then
+        fail "pipeline inline sync: canonical body extracted" "no body found in $canonical"
+        return
+    fi
+
+    # Check each consumer file contains the canonical body verbatim
+    local consumer
+    for consumer in \
+        "$cr/skills/review-gh-pr/SKILL.md" \
+        "$cr/commands/pre-review.md"; do
+
+        local basename_consumer
+        basename_consumer=$(basename "$(dirname "$consumer")")/$(basename "$consumer")
+
+        if grep -qF "Follow these instructions exactly. Do not skip steps or reorder." "$consumer" 2>/dev/null; then
+            # Extract the same range from the consumer
+            local consumer_body
+            consumer_body=$(sed -n '/^Follow these instructions exactly/,/^Present the synthesiser.*formatted report to the user\.$/ p' "$consumer")
+
+            if [[ -z "$consumer_body" ]]; then
+                fail "pipeline inline sync: $basename_consumer" "pipeline body not found"
+                continue
+            fi
+
+            # Compare just the canonical range from both
+            local canonical_range
+            canonical_range=$(sed -n '/^Follow these instructions exactly/,/^Present the synthesiser.*formatted report to the user\.$/ p' "$canonical")
+
+            if [[ "$canonical_range" == "$consumer_body" ]]; then
+                pass "pipeline inline sync: $basename_consumer matches canonical"
+            else
+                local tmp1 tmp2
+                tmp1=$(mktemp)
+                tmp2=$(mktemp)
+                echo "$canonical_range" > "$tmp1"
+                echo "$consumer_body" > "$tmp2"
+                local diff_output
+                diff_output=$(diff -u --label "canonical" --label "$basename_consumer" "$tmp1" "$tmp2" | head -30 || true)
+                rm -f "$tmp1" "$tmp2"
+                fail "pipeline inline sync: $basename_consumer matches canonical" "$diff_output"
+            fi
+        else
+            fail "pipeline inline sync: $basename_consumer" "pipeline body not inlined"
+        fi
+    done
+}
+
 test_sync_base_branch_steps_match() {
     local cr
     cr=$(_cr_dir)

@@ -17,11 +17,11 @@ Copies Markdown as Teams-compatible rich text to the macOS clipboard using `md2c
 
 1. **Get the Markdown content.** Either:
    - The user points to an existing `.md` file, OR
-   - Write the content to a temp file: `/tmp/claude-{session_name}/clipboard-export.md`
+   - Write the content to a temp file: `$CLAUDE_TEMP_DIR/clipboard-export.md`
 
 2. **Run `md2clip`:**
 
-       md2clip /tmp/claude-{session_name}/clipboard-export.md
+       md2clip $CLAUDE_TEMP_DIR/clipboard-export.md
 
    The script handles all sanitisation, HTML conversion, post-processing, and clipboard copy.
 

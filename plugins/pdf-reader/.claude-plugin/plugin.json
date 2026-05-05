@@ -1,0 +1,15 @@
+{
+  "name": "pdf-reader",
+  "description": "Extract text from any PDF — native text via poppler, scanned/image via tesseract OCR",
+  "author": {
+    "name": "Christian Haddrell"
+  },
+  "license": "MIT",
+  "keywords": [
+    "pdf",
+    "text-extraction",
+    "ocr",
+    "poppler",
+    "tesseract"
+  ]
+}

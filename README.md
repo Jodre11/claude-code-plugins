@@ -50,7 +50,7 @@ manual reinstall required. Each plugin's `bin/` directory is added to PATH autom
 | web-search | Docker Desktop + SearXNG container (`searxng-ctl.sh start`), `jq` (`brew install jq`) |
 | playwright-cli | `playwright-cli` (`brew install playwright-cli` or `npx playwright-cli`) |
 | md-to-clipboard | `pandoc` (`brew install pandoc`), `md2clip` (ships with plugin — see [setup](plugins/md-to-clipboard/README.md)) |
-| s3-search | `internal-project-5` global .NET tool (`dotnet tool install -g S3Search --add-source nupkg/` from [app-your-s3-search-tool](https://github.com/YourOrg/your-s3-search-tool)) |
+| s3-search | `internal-project-5` global .NET tool — contact your platform team for installation |
 
 ## Licence
 

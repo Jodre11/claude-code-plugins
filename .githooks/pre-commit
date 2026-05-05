@@ -11,19 +11,17 @@ fi
 # --- Pattern scan (custom org/personal patterns) ---
 
 PATTERNS=(
-    # AWS account IDs
-    '123456789012'
-    '234567890123'
-    '345678901234'
+    # AWS account IDs (contextual — catches IDs in ARNs, SSO config, etc.)
+    'arn:aws[a-z-]*:[a-z0-9-]+:[a-z0-9-]*:[0-9]{12}:'
+    'sso_account_id\s*=\s*[0-9]{12}'
+    'account[_-]?id["'"'"'\s:=]+[0-9]{12}'
 
     # SSO / infrastructure
     'yourorg\.awsapps\.com'
     '[0-9]{12}\.dkr\.ecr\.[a-z0-9-]+\.amazonaws\.com'
 
     # Bedrock inference profile ARN fragments
-    'your-profile-id-1'
-    'your-profile-id-2'
-    'your-profile-id-3'
+    'application-inference-profile/[a-z0-9]{10,16}'
 
     # SSH private key markers
     '-----BEGIN.*PRIVATE KEY-----'
@@ -65,7 +63,7 @@ for p in "${PATTERNS[@]}"; do
 done
 
 # Scan staged file contents (not filenames) for matches
-STAGED_DIFF=$(git diff --cached --diff-filter=ACMR -U0 -- . ':!.githooks/pre-commit' ':!.gitleaks.toml' ':!.claude-plugin/marketplace.json' ':!README.md' ':!plugins/*/README.md' ':!plugins/*/.claude-plugin/plugin.json' || true)
+STAGED_DIFF=$(git diff --cached --diff-filter=ACMR -U0 -- . ':!.githooks/pre-commit' ':!.gitleaks.toml' ':!.claude-plugin/marketplace.json' ':!plugins/*/.claude-plugin/plugin.json' || true)
 
 if [ -n "$STAGED_DIFF" ]; then
     MATCHES=$(echo "$STAGED_DIFF" | grep -inE "$COMBINED" || true)

@@ -473,10 +473,9 @@ Resolved threads are hidden on the PR conversation page. Replying to a resolved 
 
 ### Reconciliation table
 
-Build a row for **every numbered finding** in the synthesiser report (or, on the
-lightweight path, every finding from the code-analysis agent). Do not start from a
-"comments I plan to post" list — start from the findings list. This ordering is
-deliberate: it makes dropped findings visible as empty rows rather than absences.
+Build a row for **every numbered finding** in the synthesiser report. Do not start
+from a "comments I plan to post" list — start from the findings list. This ordering
+is deliberate: it makes dropped findings visible as empty rows rather than absences.
 
 | Finding # | Source domain | File:line | Outgoing comment ID | Rationale |
 |-----------|---------------|-----------|---------------------|-----------|
@@ -492,8 +491,9 @@ Rules for the table:
   `dismissed-by-synthesiser`. No other rationale is permitted.
 - For `dedup-with-#N`, row #N must point at the same `Outgoing comment ID` AND that
   comment's body must name both source domains. Verify before posting.
-- For `dismissed-by-synthesiser`, the finding number must appear in the synthesiser's
-  `Dismissed Findings` section. If it does not, you cannot dismiss it.
+- For `dismissed-by-synthesiser`, the token `#N` (where `N` is the finding number)
+  must appear in the synthesiser's `Dismissed Findings` section. If it does not, you
+  cannot dismiss it.
 - Outgoing comment IDs are arbitrary local labels (C1, C2, …) that you will map to
   GitHub comment IDs after posting in Step 5.
 
@@ -632,7 +632,7 @@ Before submitting the verdict in Step 6, verify mechanically that nothing was si
 dropped during posting. This is a hard check, not an estimate.
 
 Compute these counts:
-- `F` = number of numbered findings in the synthesiser report (or code-analysis findings on the lightweight path)
+- `F` = number of numbered findings in the synthesiser report
 - `R` = number of rows in the reconciliation table from Step 3
 - `C` = number of comments actually posted in Step 5 (count successful `gh api ... pulls/{pr}/comments` calls — store the IDs as you post and count them here)
 - `D` = number of rows whose rationale is `dedup-with-#N`
@@ -642,7 +642,7 @@ Assertions — ALL must hold:
 1. `R == F` — every finding has a row.
 2. `C == R - D - X` — every non-deduped, non-dismissed row produced exactly one comment.
 3. Every `dedup-with-#N` row's outgoing comment body cites both source domains by name.
-4. Every `dismissed-by-synthesiser` row's finding number appears verbatim in the synthesiser's `Dismissed Findings` section.
+4. Every `dismissed-by-synthesiser` row's finding number `N` appears as the token `#N` in the synthesiser's `Dismissed Findings` section (e.g. `#3` for finding 3, matching the synthesiser's `### Finding #N — ...` header format).
 
 If any assertion fails, STOP. Do not submit the verdict. Report the specific gap to
 the user (e.g. `R=26, C=20, D=4, X=0 — expected C=22, missing 2 comments`) and fix

@@ -73,8 +73,12 @@ are found, it classifies the PDF as image-based and falls back to OCR via `tesse
 
 ## Prerequisites
 
-- `poppler` — `brew install poppler` (provides `pdftotext`, `pdfinfo`, `pdftoppm`)
-- `tesseract` — `brew install tesseract` (OCR engine, only needed for scanned PDFs)
+- `poppler` — provides `pdftotext`, `pdfinfo`, `pdftoppm` (required)
+- `tesseract` — OCR engine (required only for scanned/image-based PDFs)
+
+Install per platform (macOS: `brew install poppler tesseract`; Debian/Ubuntu:
+`apt install poppler-utils tesseract-ocr`; Fedora/RHEL: `dnf install poppler-utils tesseract`).
+See plugin README for Arch and Windows.
 
 ## Common Mistakes
 

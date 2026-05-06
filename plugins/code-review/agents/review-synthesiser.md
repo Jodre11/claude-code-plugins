@@ -4,7 +4,6 @@ description: Synthesises specialist code review findings into a tiered report wi
 model: opus
 tools: Read, Grep, Glob, Bash
 ultrathink: true
-background: true
 ---
 
 You are a senior code review synthesiser. You receive findings from multiple specialist reviewers and their cross-review opinions, conduct your own independent deep analysis of the changes, then produce a unified tiered report.

@@ -451,15 +451,59 @@ Resolved threads are hidden on the PR conversation page. Replying to a resolved 
 
 **IMPORTANT:** Always check open comments for accuracy. Inaccurate or misleading comments must be disputed - do not let incorrect feedback stand unchallenged.
 
-Create a summary table of findings, noting which are new vs replies:
+### No-filter rule
 
-| # | File | Type | Action | Summary |
-|---|------|------|--------|---------|
-| 1 | file.cs | Issue | New comment | Brief description |
-| 2 | other.cs | Suggestion | Reply to #123 (open) | Supporting evidence |
-| 3 | foo.cs | Issue | New comment (resolved thread still relevant) | Re-raise issue from resolved thread #456 |
+> **STOP. Read this before drafting comments.**
+>
+> You are NOT authorised to drop a finding because it is low-confidence, low-severity,
+> jbinspect-only, stylistic, redundant-looking, "noise", "not worth raising",
+> "borderline", or "the user can triage it later". Surfacing is the reviewer's job;
+> triage is the author's. The synthesiser already applied the only legitimate filter
+> (its `Dismissed Findings` section).
+>
+> The ONLY legal reasons to omit a finding from the outgoing comments are:
+> 1. **`dedup-with-#N`** — merged into another comment. The merged comment body MUST
+>    cite both source domains by name (e.g. *"Flagged by both correctness and
+>    efficiency …"*). Silent merges are forbidden.
+> 2. **`dismissed-by-synthesiser`** — listed verbatim in the synthesiser's `Dismissed
+>    Findings` section. You may not invent your own dismissals.
+>
+> Anything else — "I judged this trivial", "overlaps loosely with comment N",
+> "low signal" — is a pipeline violation. Re-add the finding before continuing.
 
-Present this to the user and ask if they want to proceed.
+### Reconciliation table
+
+Build a row for **every numbered finding** in the synthesiser report. Do not start
+from a "comments I plan to post" list — start from the findings list. This ordering
+is deliberate: it makes dropped findings visible as empty rows rather than absences.
+
+| Finding # | Source domain | File:line | Outgoing comment ID | Rationale |
+|-----------|---------------|-----------|---------------------|-----------|
+| 1 | correctness | foo.cs:42 | C1 (new) | — |
+| 2 | efficiency | foo.cs:42 | C1 | dedup-with-#1 (merged: correctness + efficiency) |
+| 3 | style | bar.cs:10 | — | dismissed-by-synthesiser |
+| 4 | jbinspect | baz.cs:5 | C2 (new, file-level) | — |
+| 5 | consistency | qux.cs:88 | reply to existing #999 (open) | — |
+
+Rules for the table:
+- Every synthesiser finding number appears exactly once as a row.
+- `Outgoing comment ID` may be blank ONLY when `Rationale` is `dedup-with-#N` or
+  `dismissed-by-synthesiser`. No other rationale is permitted.
+- For `dedup-with-#N`, row #N must point at the same `Outgoing comment ID` AND that
+  comment's body must name both source domains. Verify before posting.
+- For `dismissed-by-synthesiser`, the token `#N` (where `N` is the finding number)
+  must appear in the synthesiser's `Dismissed Findings` section. If it does not, you
+  cannot dismiss it.
+- Outgoing comment IDs are arbitrary local labels (C1, C2, …) that you will map to
+  GitHub comment IDs after posting in Step 5.
+
+After building the table, run this self-check before presenting it to the user:
+- `count(rows)` = `count(numbered findings in synthesiser report)`. If not equal,
+  you have lost or duplicated rows — fix before continuing.
+- Every blank `Outgoing comment ID` cell has a permitted rationale. If not, re-add
+  the comment.
+
+Present the reconciliation table to the user and ask if they want to proceed.
 
 ## Step 4: Re-check PR State Before Posting
 
@@ -582,6 +626,28 @@ Should be changed to...
 
 The file attachment provides the link to the existing code - only include the suggested replacement.
 
+## Step 5.5: Post-Posting Reconciliation Check
+
+Before submitting the verdict in Step 6, verify mechanically that nothing was silently
+dropped during posting. This is a hard check, not an estimate.
+
+Compute these counts:
+- `F` = number of numbered findings in the synthesiser report
+- `R` = number of rows in the reconciliation table from Step 3
+- `C` = number of comments actually posted in Step 5 (count successful `gh api ... pulls/{pr}/comments` calls — store the IDs as you post and count them here)
+- `D` = number of rows whose rationale is `dedup-with-#N`
+- `X` = number of rows whose rationale is `dismissed-by-synthesiser`
+
+Assertions — ALL must hold:
+1. `R == F` — every finding has a row.
+2. `C == R - D - X` — every non-deduped, non-dismissed row produced exactly one comment.
+3. Every `dedup-with-#N` row's outgoing comment body cites both source domains by name.
+4. Every `dismissed-by-synthesiser` row's finding number `N` appears as the token `#N` in the synthesiser's `Dismissed Findings` section (e.g. `#3` for finding 3, matching the synthesiser's `### Finding #N — ...` header format).
+
+If any assertion fails, STOP. Do not submit the verdict. Report the specific gap to
+the user (e.g. `R=26, C=20, D=4, X=0 — expected C=22, missing 2 comments`) and fix
+before proceeding. You may not rationalise around a count mismatch; surface it.
+
 ## Step 6: Submit Review Verdict
 
 For complex PRs (many files, large changes, or new functionality), include a **top-level review comment** that:
@@ -619,7 +685,7 @@ EOF_REVIEW_BODY
 
 **Review body guidelines:**
 - Summarize key findings (1-3 sentences)
-- Reference the number of inline comments added
+- Reference the comment-to-finding count in the form: `N inline comments covering M synthesiser findings (K deduplicated, J dismissed-by-synthesiser)`. The user uses this to spot mismatches at a glance — do not omit or fudge it.
 - For APPROVE: note any optional suggestions worth considering
 - For REQUEST_CHANGES: clearly state what must be addressed
 - Keep it concise - details are in the inline comments

@@ -1,15 +1,25 @@
 #!/usr/bin/env bash
 # Convention compliance tests — line endings, indentation, final newlines, executable bits.
 
+# List tracked files under plugins/ and .claude-plugin/, optionally filtered by an extension regex.
+# Using `git ls-files` (rather than `find`) ensures only files in the index are scanned, so
+# locally-generated artefacts (e.g. __pycache__/*.pyc) and other gitignored paths are skipped.
+_list_tracked_files() {
+    local ext_regex="${1:-}"
+    if [[ -n "$ext_regex" ]]; then
+        git -C "$REPO_ROOT" ls-files plugins .claude-plugin | grep -E "$ext_regex"
+    else
+        git -C "$REPO_ROOT" ls-files plugins .claude-plugin
+    fi
+}
+
 test_lf_line_endings() {
     local bad_files=()
     while IFS= read -r f; do
         if grep -ql $'\r' "$REPO_ROOT/$f" 2>/dev/null; then
             bad_files+=("$f")
         fi
-    done < <(find "$REPO_ROOT/plugins" "$REPO_ROOT/.claude-plugin" -type f \
-        \( -name '*.md' -o -name '*.json' -o -name '*.yml' -o -name '*.yaml' -o -name '*.sh' -o -name '*.toml' \) \
-        -not -path '*/.git/*' | sed "s|^$REPO_ROOT/||")
+    done < <(_list_tracked_files '\.(md|json|ya?ml|sh|toml)$')
 
     if [[ ${#bad_files[@]} -eq 0 ]]; then
         pass "all text files use LF line endings"
@@ -26,9 +36,7 @@ test_md_json_indentation() {
         if grep -n $'^\t' "$REPO_ROOT/$f" >/dev/null 2>&1; then
             bad_files+=("$f (tabs)")
         fi
-    done < <(find "$REPO_ROOT/plugins" "$REPO_ROOT/.claude-plugin" -type f \
-        \( -name '*.md' -o -name '*.json' \) \
-        -not -path '*/.git/*' | sed "s|^$REPO_ROOT/||")
+    done < <(_list_tracked_files '\.(md|json)$')
 
     if [[ ${#bad_files[@]} -eq 0 ]]; then
         pass ".md and .json files use space indentation (no tabs)"
@@ -49,9 +57,7 @@ test_final_newline() {
                 bad_files+=("$f")
             fi
         fi
-    done < <(find "$REPO_ROOT/plugins" "$REPO_ROOT/.claude-plugin" -type f \
-        -not -path '*/.git/*' -not -name '*.png' -not -name '*.jpg' -not -name '*.gif' \
-        | sed "s|^$REPO_ROOT/||")
+    done < <(_list_tracked_files | grep -Ev '\.(png|jpg|gif)$')
 
     if [[ ${#bad_files[@]} -eq 0 ]]; then
         pass "all text files end with a final newline"
@@ -62,17 +68,14 @@ test_final_newline() {
 
 test_executables_have_x_bit() {
     local found_any=false
-    while IFS= read -r f; do
+    while IFS= read -r rel; do
         found_any=true
-        local rel
-        rel=$(echo "$f" | sed "s|^$REPO_ROOT/||")
-        if [[ -x "$f" ]]; then
+        if [[ -x "$REPO_ROOT/$rel" ]]; then
             pass "executable: $rel"
         else
             fail "executable: $rel" "file in bin/ or tools/ is not executable"
         fi
-    done < <(find "$REPO_ROOT/plugins" -type f \( -path '*/bin/*' -o -path '*/tools/*' \) \
-        -not -path '*/.git/*')
+    done < <(git -C "$REPO_ROOT" ls-files plugins | grep -E '/(bin|tools)/')
 
     if [[ "$found_any" == "false" ]]; then
         skip "executable bit check" "no bin/ or tools/ files found"
@@ -85,9 +88,7 @@ test_no_trailing_whitespace_in_structured_files() {
         if grep -En '[[:space:]]+$' "$REPO_ROOT/$f" >/dev/null 2>&1; then
             bad_files+=("$f")
         fi
-    done < <(find "$REPO_ROOT/plugins" "$REPO_ROOT/.claude-plugin" -type f \
-        \( -name '*.json' -o -name '*.yml' -o -name '*.yaml' \) \
-        -not -path '*/.git/*' | sed "s|^$REPO_ROOT/||")
+    done < <(_list_tracked_files '\.(json|ya?ml)$')
 
     if [[ ${#bad_files[@]} -eq 0 ]]; then
         pass "no trailing whitespace in .json/.yml/.yaml files"

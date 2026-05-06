@@ -11,8 +11,17 @@ invoked explicitly with `/pdf-reader`.
 
 ## Prerequisites
 
-- `poppler` — `brew install poppler` (provides `pdftotext`, `pdfinfo`, `pdftoppm`)
-- `tesseract` — `brew install tesseract` (OCR engine for scanned PDFs)
+`poppler` provides `pdftotext`, `pdfinfo`, and `pdftoppm` (required for all extraction).
+`tesseract` provides OCR (required only for scanned/image-based PDFs).
+
+| Platform              | Poppler                    | Tesseract                  |
+|-----------------------|----------------------------|----------------------------|
+| macOS (Homebrew)      | `brew install poppler`     | `brew install tesseract`   |
+| Debian / Ubuntu       | `apt install poppler-utils`| `apt install tesseract-ocr`|
+| Fedora / RHEL         | `dnf install poppler-utils`| `dnf install tesseract`    |
+| Arch Linux            | `pacman -S poppler`        | `pacman -S tesseract`      |
+| Windows (Chocolatey)  | `choco install poppler`    | `choco install tesseract`  |
+| Windows (Scoop)       | `scoop install poppler`    | `scoop install tesseract`  |
 
 ## Installation
 

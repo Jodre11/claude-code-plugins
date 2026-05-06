@@ -36,7 +36,16 @@ die() {
 }
 
 check_dependency() {
-    command -v "$1" >/dev/null 2>&1 || die "$1 is not installed. Run: brew install $2"
+    local cmd="$1"
+    local brew_pkg="$2"
+    local apt_pkg="$3"
+    if ! command -v "$cmd" >/dev/null 2>&1; then
+        die "$cmd is not installed. Install via:
+    macOS (Homebrew):    brew install $brew_pkg
+    Debian/Ubuntu:       apt install $apt_pkg
+    Fedora/RHEL:         dnf install $apt_pkg
+    See plugin README for other platforms."
+    fi
 }
 
 # Parse arguments
@@ -94,8 +103,8 @@ done
 [[ -z "$PDF_FILE" ]] && die "No PDF file specified. Run: pdf-text --help"
 [[ -f "$PDF_FILE" ]] || die "File not found: $PDF_FILE"
 
-check_dependency pdftotext poppler
-check_dependency pdfinfo poppler
+check_dependency pdftotext poppler poppler-utils
+check_dependency pdfinfo poppler poppler-utils
 
 PDF_METADATA=""
 get_pdf_metadata() {
@@ -144,8 +153,8 @@ extract_native() {
 }
 
 extract_ocr() {
-    check_dependency tesseract tesseract
-    check_dependency pdftoppm poppler
+    check_dependency tesseract tesseract tesseract-ocr
+    check_dependency pdftoppm poppler poppler-utils
 
     OCR_TMPDIR=$(mktemp -d)
 

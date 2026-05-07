@@ -92,6 +92,7 @@ Never interpolate `$CURRENT_USER` directly into a jq filter string — always us
 - Present a summary to the user: **"Found N actionable inline threads (M outdated) and K review-level comments. Proceed?"** Wait for confirmation before continuing. This prevents wasted effort on PRs with many comments where manual triage may be preferred.
 
 ### 4. Analyse each actionable comment
+- If the `superpowers:receiving-code-review` skill is available, invoke it now and apply its evaluation rubric to each comment (verify against the codebase, YAGNI-check "professional" suggestions, push back with technical reasoning where the suggestion is wrong, no performative agreement). The remaining bullets in this step are the minimum to apply when that skill is not available.
 - Determine if the concern is valid and accurate
 - Categorise: code change needed, documentation needed, or skip with justification
 - Consider effort vs value tradeoff

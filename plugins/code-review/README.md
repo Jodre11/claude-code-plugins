@@ -48,9 +48,10 @@ version-safety check escalates it to Important or Critical via the security path
 
 The review pipeline (`includes/review-pipeline.md`) handles all routing:
 
-1. **Inline prep** — base branch determination, diff measurement, C#/UI/deletion/security detection
-2. **Lightweight path** — small diffs (≤5 files, ≤150 lines, no significant deletions, no security-sensitive areas) route to the `code-analysis` agent
-3. **Full review pipeline** — larger diffs dispatch 8-10 specialist agents in parallel, then fresh cross-review agents evaluate peer findings, then a synthesiser produces a tiered report
+1. **Inline prep** — Phase 0 intent ledger, Phase 0.6 CI status gate, base branch determination, diff measurement, C#/UI/deletion/security detection
+2. **Trivial-mode (Phase 0.7)** — orchestrator-only mini-review for docs/config-only diffs (≤3 files, ≤30 lines, allow-listed extensions, excluding load-bearing prompt paths under `plugins/*/agents|skills|commands|includes/`). Hard cap of 3 inline comments and a user-confirm gate before posting. Override with the `--force` argument or `intent.skip_trivial_check = true` in `.claude/code-review.toml`. Falls through to the lightweight or full path when the bar is not met.
+3. **Lightweight path** — small diffs (≤5 files, ≤150 lines, no significant deletions, no security-sensitive areas) route to the `code-analysis` agent
+4. **Full review pipeline** — larger diffs dispatch 8-10 specialist agents in parallel, then fresh cross-review agents evaluate peer findings, then a synthesiser produces a tiered report
 
 ## Agents
 

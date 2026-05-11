@@ -257,6 +257,183 @@ Use this format for all progress reporting (Steps 4 and 5):
 
 Where `<Xs>` is seconds since that agent was dispatched, and `R` counts down to 0.
 
+## Phase 0.7: Trivial-mode early exit
+
+Run Phase 0.7 AFTER Phase 0.6 and BEFORE Step 1. Phase 0.7 is an orchestrator-only
+short-circuit for diffs that are clearly low-risk (docs-only / config-only edits). It
+saves tokens and wall-clock time by avoiding agent dispatch entirely on the high-volume
+tail of trivial PRs (typo fixes, version bumps, README edits).
+
+The bar is deliberately conservative — when in doubt, fall through to Step 1 and let
+the full pipeline (or lightweight path) handle the diff. Trivial-mode is not a routing
+optimisation; it is an early exit for cases where dispatching even one specialist is
+overkill.
+
+### 0.7.1 Skip if overridden
+
+If `$ARGUMENTS` contains the bare token `--force` (matching as a whitespace-delimited
+word, not as a substring), skip Phase 0.7 entirely and continue to Step 1. The
+`--force` token signals the user wants the full pipeline regardless of diff size.
+
+If `.claude/code-review.toml` exists and contains
+`intent.skip_trivial_check = true`, skip Phase 0.7 entirely and continue to Step 1.
+Skip silently if the file is missing or malformed — this is optional configuration.
+
+### 0.7.2 Resolve $TRIVIAL_BASE
+
+To evaluate the trivial bar before Step 1's full base-branch resolution, Phase 0.7
+must resolve `$BASE` itself. Apply the same priority order as Step 1 (items 1-4):
+
+1. If `$ARGUMENTS` is provided and contains a `Base branch: <ref>` line, extract the
+   ref after the colon. Otherwise skip this item — do NOT treat `$ARGUMENTS` itself
+   as a bare branch name. In `review-gh-pr` mode `$ARGUMENTS` is a PR number or URL,
+   not a branch ref; in `pre-review` mode the priority chain handles bare-branch
+   arguments via items 2-4 below (PR exists, default branch, or `main` fallback).
+   The pipeline does not pass `$ARGUMENTS` directly to a `git diff <ref>` command at
+   this stage — that would silently produce a wrong diff or fail.
+2. `gh pr view --json baseRefName -q .baseRefName 2>/dev/null` — use if a PR already
+   exists.
+3. Run `git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null` and strip the
+   `refs/remotes/origin/` prefix from the output — default branch.
+4. Fall back to `main`.
+
+Store as `$TRIVIAL_BASE`. Validate that `$TRIVIAL_BASE` matches
+`^[a-zA-Z0-9/_.\-]+$` — if it does not, skip Phase 0.7 and continue to Step 1
+(Step 1's own validation will surface the error to the user there).
+
+If `$TRIVIAL_BASE` is exactly `EMPTY_TREE`, resolve it by running
+`git hash-object -t tree /dev/null` and set `$TRIVIAL_EMPTY_TREE_MODE = true`.
+Otherwise set `$TRIVIAL_EMPTY_TREE_MODE = false`. Use two-arg diff syntax
+(`git diff $TRIVIAL_BASE HEAD`) when `$TRIVIAL_EMPTY_TREE_MODE` is true, three-dot
+syntax (`git diff "$TRIVIAL_BASE"...HEAD`) otherwise, for ALL diff commands in
+0.7.3 and 0.7.6 below.
+
+### 0.7.3 Measure for the trivial bar
+
+Run these commands using the diff syntax determined by `$TRIVIAL_EMPTY_TREE_MODE`:
+
+```
+git diff --name-only [diff-syntax]    # store as $TRIVIAL_FILES (one path per line)
+git diff --shortstat [diff-syntax]    # parse to $TRIVIAL_FILE_COUNT, $TRIVIAL_LINE_COUNT
+```
+
+`$TRIVIAL_FILE_COUNT` is the count from `X file(s) changed`. `$TRIVIAL_LINE_COUNT` is
+insertions + deletions from the same shortstat line. If only insertions or only
+deletions appear, treat the absent count as 0. If `$TRIVIAL_FILES` is empty (no diff),
+skip Phase 0.7 — Step 1 will then halt with "No changes found".
+
+### 0.7.4 Apply the allow-list
+
+The trivial-mode allow-list is configurable via `.claude/code-review.toml` under
+`intent.trivial_paths.allow_extensions` (array of extensions, with leading dot, e.g.
+`[".md", ".json"]`) and `intent.trivial_paths.exclude_paths` (array of glob patterns).
+If either key is absent or malformed, fall back to the default list below.
+
+**Default allow-list (extensions):** `.md`, `.markdown`, `.json`, `.toml`, `.yaml`,
+`.yml`, `.txt`, `.gitignore`, `.gitattributes`, `.editorconfig`. Plus bare-name match
+for `LICENSE` (any path whose basename is exactly `LICENSE`).
+
+**Default exclude paths (load-bearing prompts — these files have `.md` extensions but
+they are code, not docs):**
+- `plugins/*/agents/`
+- `plugins/*/skills/`
+- `plugins/*/commands/`
+- `plugins/*/includes/`
+
+For each file in `$TRIVIAL_FILES`:
+
+1. If the file path matches any exclude pattern (using glob semantics), the trivial
+   bar fails — skip to "Trivial bar failed" below.
+2. If the file's extension (or bare name, for `LICENSE`) is not in the allow list,
+   the trivial bar fails — skip to "Trivial bar failed".
+
+If every file in `$TRIVIAL_FILES` passes both checks, continue to 0.7.5.
+
+### 0.7.5 Apply the size bar
+
+The bar passes only if both:
+
+- `$TRIVIAL_FILE_COUNT <= 3`
+- `$TRIVIAL_LINE_COUNT <= 30`
+
+If either is false, the trivial bar fails.
+
+### 0.7.6 Check for significant deletions
+
+Run `git diff [diff-syntax]` and scan hunks for any single hunk with 10+ contiguous
+deleted lines. This duplicates Step 2.6's `$SIGNIFICANT_DELETIONS` logic; the
+duplication is intentional to keep Phase 0.7 self-contained as a fast-path pre-check.
+
+If any such hunk exists, the trivial bar fails — fall through to Step 1.
+
+### Trivial bar failed
+
+If any of 0.7.4 / 0.7.5 / 0.7.6 caused the bar to fail, announce
+`> Trivial-mode bar not met — continuing to Step 1` and continue to Step 1. The
+values measured in 0.7.3 are NOT reused by Step 2 — Step 2 re-measures
+independently. The cost of re-measuring is one or two extra `git diff` calls
+(negligible).
+
+### 0.7.7 Trigger trivial-mode mini-review
+
+If the bar passed (allow-listed paths, ≤3 files, ≤30 lines, no significant
+deletions, no override), enter the mini-review.
+
+Announce:
+`> Trivial-mode triggered: $TRIVIAL_FILE_COUNT files, $TRIVIAL_LINE_COUNT lines (docs/config only)`
+
+Read each file in `$TRIVIAL_FILES` and run `git diff [diff-syntax]` to see the full
+hunks. Form an opinion on what changed and why.
+
+Draft a structured mini-review:
+
+- **Verdict:** `APPROVE` if everything looks fine, `COMMENT` if minor observations are
+  worth surfacing, `REQUEST_CHANGES` if anything is wrong.
+- **Top-level body (2-3 sentences):** Explain what changed and why the diff qualifies
+  for trivial-mode. End the body with the verbatim line:
+  `Reviewed via trivial-mode fast path: docs/config diff under the size bar.`
+- **Inline comments (HARD CAP of 3):** Only if any are warranted. Each one attached
+  to a specific `file:line`. If you would naturally have more than 3 issues, do NOT
+  truncate silently — instead, fail the bar (announce `> Trivial-mode aborted: more
+  than 3 issues warrant comment — falling through to Step 1` and continue to Step 1).
+  Same tone guidelines as full reviews (use "Consider…", "Would it be worth…", etc).
+
+### 0.7.8 User confirmation
+
+Present the draft mini-review to the user (verdict + body + inline comments) and ask:
+
+```
+> Trivial-mode mini-review complete. Verdict: <VERDICT>. <N> inline comments.
+> Review the draft above. Submit? [y/N]
+```
+
+Read one line. If the answer begins with `y` or `Y`, continue to 0.7.9. Otherwise
+halt cleanly with `> Trivial-mode halt: user declined` and stop the pipeline. Do
+NOT fall through to Step 1 (the user's "no" applies to the whole review, not just
+trivial-mode — they can re-invoke with `--force` if they want the full pipeline).
+
+### 0.7.9 Post the mini-review
+
+**Mode `pr`:**
+
+For each inline comment, post via the `gh api repos/{owner}/{repo}/pulls/{pr}/comments`
+pattern documented in Step 5 of `skills/review-gh-pr/SKILL.md` (use `--input -`
+heredoc for the body, `-F` for integer parameters, `-f side='LEFT|RIGHT'` based on
+diff polarity).
+
+After all inline comments post, submit the verdict via `gh pr review` using
+`--approve`, `--request-changes`, or `--comment` per the verdict, with `--input -`
+heredoc for the body.
+
+**Mode `local`:**
+
+Print the full mini-review to stdout (verdict header + body + each inline comment
+prefixed with `file:line —`). Do NOT post anything to GitHub.
+
+After posting (or printing) succeeds, announce
+`> Trivial-mode review complete — pipeline exited without dispatching specialists`
+and stop the pipeline cleanly. Do not proceed to Step 1.
+
 ### Step 1: Determine base branch
 
 This duplicates the logic in `includes/specialist-context.md` "Determine base branch" intentionally — the pipeline orchestrator must resolve `$BASE` before dispatching specialists. Specialists also resolve `$BASE` independently so they work standalone. Step 1 items 1–5 here must match `specialist-context.md` items 1–5. Changes to any of these locations must be mirrored in the others; see also `agents/review-synthesiser.md` Context Gathering which has a parallel (but prompt-extracted) version.

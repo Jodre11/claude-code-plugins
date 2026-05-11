@@ -10,7 +10,8 @@ WHY INLINED: same rationale as review-pipeline.md — agents skip file-path refe
 must see the rule in context. PR #10 incident, 2026-05-05.
 
 MAINTENANCE: Edit this file first, then propagate changes to both consumers. The test suite
-verifies the inlined copies match this canonical source. -->
+verifies the inlined copies match this canonical source. Heading levels are relative — H2
+here renders as H2 in consumers; do not change without auditing both. -->
 
 Run Phase 0 BEFORE Step 1 (Determine base branch). The pipeline must not enter Step 1
 unless Phase 0 succeeds.

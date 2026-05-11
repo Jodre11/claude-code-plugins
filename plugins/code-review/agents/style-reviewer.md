@@ -97,7 +97,14 @@ If no findings: `## Style Review Findings\n\n0 findings.`
 
 ## Rules
 
-- Only report findings in files that appear in the diff (as gathered during context gathering above). Do not report issues found in unchanged files read for surrounding context.
+- Only report findings on lines listed in `$CHANGED_LINES` for that file
+  (parsed from the `Changed lines:` block in your prompt). Do NOT emit
+  findings on unchanged lines, even FYI — pre-existing issues are out of
+  scope. You may still *read* unchanged context to understand the change,
+  but the finding's `File:` line must reference a `file:line` whose line
+  appears in `$CHANGED_LINES[file]`. Files appearing in the `Changed lines:`
+  block with `(empty — rename only)` accept no findings at all (the rename
+  itself is the only change).
 - Be precise. Cite file paths and line numbers.
 - Don't flag formatting-only issues unless they violate explicit config. Formatting tools handle those.
 - Focus on substantive readability and maintainability, not cosmetic preferences.

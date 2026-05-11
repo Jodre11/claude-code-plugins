@@ -27,7 +27,7 @@ If any changed files end with `.cs`:
    Where `<name>` is the basename of the solution file without extension — not the full path.
    If the command fails (non-zero exit code), report the error and continue with any remaining solutions.
 6. Parse the XML output for `<Issue>` elements. Cross-reference `TypeId` against `<IssueType>` definitions to get severity and category.
-7. **Filter to only issues in files that appear in the diff.**
+7. **Filter at parse time to only lines listed in `$CHANGED_LINES`.** After cross-referencing `TypeId` against `<IssueType>` definitions, intersect each `<Issue>`'s `Line` attribute against `$CHANGED_LINES[<File>]`. Drop non-matching issues. Issues on files not in `$CHANGED_LINES` are also dropped. Files in `$CHANGED_LINES` with `(empty — rename only)` accept no findings.
 8. Map severity: ERROR → Critical, WARNING → Important, SUGGESTION → Suggestion. Omit HINT.
 9. Clean up temporary XML files after parsing.
 
@@ -60,6 +60,8 @@ Each security finding MUST include a concrete exploit scenario. If you cannot ar
 - User-controlled content in AI system prompts
 - Client-side permission/auth checks (server enforces)
 - UUIDs used as identifiers (unguessable)
+
+**Line-level filter (all manual-review findings):** Only report findings on lines listed in `$CHANGED_LINES` for that file (parsed from the `Changed lines:` block in your prompt). Do NOT emit findings on unchanged lines, even FYI — pre-existing issues are out of scope. You may still *read* unchanged context to understand the change, but the finding's `File:` line must reference a `file:line` whose line appears in `$CHANGED_LINES[file]`. Files appearing as `(empty — rename only)` accept no findings.
 
 ### Format output
 

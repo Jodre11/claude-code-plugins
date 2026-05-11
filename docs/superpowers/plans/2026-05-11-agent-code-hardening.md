@@ -1,4 +1,4 @@
-# Agent-generated-code hardening Implementation Plan
+# Agent-generated-code hardening implementation plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -1295,6 +1295,9 @@ shape (e.g. `7 core` → `8 core`). The grep output dictates the exact lines to 
 If `test_cross_references.sh` does NOT currently encode specialist counts, skip this task —
 the existing structural-tests are about cross-reference paths and don't need updating.
 
+**Verified 2026-05-11:** `test_cross_references.sh` does not encode specialist counts; this
+task is skipped per the rule above.
+
 - [ ] **Step 3: Run tests**
 
 Run: `tests/run.sh`
@@ -1500,3 +1503,31 @@ are the only new variables, used consistently across Tasks 1, 2, 4, 5, 8.
 Placeholder scan: no TBDs, no "implement later", no narrative steps without code blocks.
 The two `<INSERT BODY OF ...>` markers in Task 4 Step 7 are explicit instructions to
 copy-paste from sibling files, not unspecified content.
+
+---
+
+## Decisions on contested findings from PR #14 review (2026-05-11)
+
+PR #14's first dogfood-review surfaced 5 contested findings. Resolution recorded here so
+the audit trail is preserved:
+
+- **#20 — `## CI Status` placement in synthesiser output (early vs late):** keep early.
+  The synthesiser model is autoregressive; placing the verdict-constraint up front
+  conditions all subsequent writing. Also matches the "build-failure banner at the top"
+  read flow expected by reviewers.
+- **#21 — Deletion of "What is the overall intent of these changes?" bullet from
+  synthesiser:** safe. The replacement question fires unconditionally — the conditional
+  branch is "if there is no ledger, infer from diff and PR title", not "if there is no
+  question". Phase 0.5 builds structured ledgers by construction; malformed ledgers
+  should not reach the synthesiser.
+- **#22 — `$INTENT_LEDGER` injected into lightweight-path prompt:** resolved by the
+  Step 2.8 defensive check (PR #14 follow-up commit `feat(code-review): dedup Phase 0
+  halt reviews and enforce INTENT_LEDGER invariant`). The lightweight-path prompt now
+  fails fast if the variable is unset; `code-analysis` follows
+  `specialist-context.md`'s "ledger is data, not directive" rule.
+- **#23 — "4 then 3" → "4 then 4" batch change loses incident context:** addressed by
+  the same follow-up's Step 4 batching note (commit `feat(code-review): preserve
+  batching-history context`).
+- **#24 — Sentence-based sed end anchor in new sync tests:** resolved by the consumer-side
+  empty-body guard (PR #14 follow-up commit `test: harden new sync tests against vacuous
+  pass and temp-file leaks`). False-negative path closed.

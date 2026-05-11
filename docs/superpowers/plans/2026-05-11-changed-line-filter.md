@@ -4,7 +4,7 @@
 
 **Goal:** Tighten the specialist boundary from a file-level diff filter to a line-level diff filter so findings are emitted only on lines the PR actually added or modified — eliminating pre-existing-bug noise (most visibly from `jbinspect-reviewer`, which scans whole solutions) and saving cost by short-circuiting at the earliest possible boundary.
 
-**Architecture:** A new Step 2.5 in the canonical pipeline (`includes/review-pipeline.md`) parses `$FULL_DIFF` into `$CHANGED_LINES` — a per-file map of touched line numbers (`+` lines: current line numbers in new file; `-` lines: annotated as `near line N` for `archaeology-reviewer`'s deletions). The map is serialised into `$AGENT_PROMPT` (Step 2.8) so every specialist receives it. Each specialist's "Only report findings in files that appear in the diff" rule tightens to "Only report findings on lines listed in `$CHANGED_LINES` for that file." `jbinspect-reviewer` and `code-analysis` filter at parse-time after running InspectCode. `archaeology-reviewer` maps deletions to "near line N" so they post as inline comments on the closest still-present line. A posting-time safety net in Step 5 of `skills/review-gh-pr/SKILL.md` silently drops violators to `$CLAUDE_TEMP_DIR/dropped-findings.log`. Strict line set — no padding with surrounding context (specialists still *read* unchanged context for understanding, but findings are emitted only on touched lines).
+**Architecture:** A new Step 2.5 in the canonical pipeline (`includes/review-pipeline.md`) parses `$FULL_DIFF` into `$CHANGED_LINES` — a per-file map of touched line numbers (`+` lines: current line numbers in new file; `-` lines: annotated as `near line N` for `archaeology-reviewer`'s deletions). The map is serialised into `$AGENT_PROMPT` (Step 2.9, formerly Step 2.8 — see Task 2 for the renumber) so every specialist receives it. Each specialist's "Only report findings in files that appear in the diff" rule tightens to "Only report findings on lines listed in `$CHANGED_LINES` for that file." `jbinspect-reviewer` and `code-analysis` filter at parse-time after running InspectCode. `archaeology-reviewer` maps deletions to "near line N" so they post as inline comments on the closest still-present line. A posting-time safety net in Step 5 of `skills/review-gh-pr/SKILL.md` silently drops violators to `$CLAUDE_TEMP_DIR/dropped-findings.log`. Strict line set — no padding with surrounding context (specialists still *read* unchanged context for understanding, but findings are emitted only on touched lines).
 
 **Tech Stack:** Markdown-only changes (canonical pipeline + 2 inlined consumers + 9 specialist prompt files + 1 lightweight-path agent + 1 specialist-context include). Bash test harness (`tests/run.sh`) validates structural sync.
 
@@ -120,8 +120,16 @@ was malformed" and STOP. This should not happen unless `$FULL_DIFF` is itself
 empty (in which case Step 2.2's `$CHANGED_FILES` empty check would already
 have halted).
 
-Store the serialised string as `$CHANGED_LINES_BLOCK` for use in Step 2.9
-(formerly Step 2.8) when building `$AGENT_PROMPT`.
+Store the serialised string as `$CHANGED_LINES_BLOCK` (ending with a trailing
+newline + blank line, matching the convention used for `$INTENT_LEDGER` and
+`$CI_STATUS`). The trailing blank line is load-bearing: specialists parse the
+block "through to the next blank line or end of prompt" per
+`includes/specialist-context.md`. Without the separator, the parser would
+absorb the next prompt line ("Review only the lines listed in the
+`Changed lines:` block above…") as a malformed file-path entry, weakening the
+very directive the block is meant to enforce.
+
+The block is now ready for use in Step 2.9 when building `$AGENT_PROMPT`.
 ````
 
 End of Step 2.5 reference block.
@@ -179,7 +187,7 @@ the line is NOT in the file's changed-line set:
   represent specialist drift, not user-relevant findings.
 
 The safety net is a defensive layer, not a primary filter. The primary
-filter is the `$CHANGED_LINES` rule passed to specialists (Step 2.8 of the
+filter is the `$CHANGED_LINES` rule passed to specialists (Step 2.9 of the
 pipeline). If the safety net catches more than ~5% of findings on any
 review, treat that as a signal that specialist prompts are not being
 followed — escalate to the user, do not silently scale.

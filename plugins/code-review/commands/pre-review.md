@@ -468,6 +468,8 @@ Agent({
 - **Batch 1** (dispatch first, wait for completion): security-reviewer, correctness-reviewer, consistency-reviewer, style-reviewer
 - **Batch 2** (dispatch after batch 1 completes): archaeology-reviewer, reuse-reviewer, efficiency-reviewer, alignment-reviewer, plus any conditional specialists
 
+Batch composition was tuned after a documented incident where the model dispatched only 3 of 7 specialists and fabricated justification for selective omission (commit eb0bbda, 2026-05). Do not reduce batch sizes or reorder splits without re-running that scenario — the explicit dispatch enumeration is the safety net.
+
 This is a fallback only — prefer a single parallel dispatch when possible. Never use batching as a justification to skip specialists entirely.
 
 Store `$SPECIALIST_COUNT` = number of specialists dispatched (8 core only, 9 with C# or UI, 10 with both) and note the dispatch timestamp.

@@ -1077,6 +1077,19 @@ If the plan changes materially, present the updated findings table to the user b
 
 **IMPORTANT:** Only reply to **open (unresolved)** comment threads. Never reply to resolved threads — replies to resolved threads remain hidden and will be ignored. If a resolved thread contains an issue that is still present in the code, create a new standalone comment instead.
 
+**Posting-time safety net.** Before posting each inline comment, intersect the `file:line` against `$CHANGED_LINES` (still in scope from Step 2.5 of the pipeline). If the line is NOT in the file's changed-line set:
+
+- Drop the comment silently — do NOT post it
+- Append a record to `$CLAUDE_TEMP_DIR/dropped-findings.log` in this format:
+  `(specialist=<domain>, file=<path>, line=<N>, title=<finding-title>, reason=line-not-in-CHANGED_LINES)`
+- The reconciliation table from Step 3 still includes the row. The user-facing summary in Step 6 must NOT mention dropped comments — they represent specialist drift, not user-relevant findings.
+
+For `archaeology-reviewer` findings only, the `near N` token in `$CHANGED_LINES[file]` IS a valid anchor — when posting, use line `N` directly (the deletion-anchor line number) and the comment will land on the closest still-present line.
+
+The safety net is a defensive layer, not a primary filter. The primary filter is the `$CHANGED_LINES` rule passed to specialists (Step 2.9 of the pipeline). If the safety net catches more than ~5% of findings on any review, treat that as a signal that specialist prompts are not being followed — escalate to the user, do not silently scale.
+
+Note: in self-re-review mode (see Step 1 of this skill), Step 2.5 is not run and `$CHANGED_LINES` is unset — the safety net is a no-op in that case. The user's own review provides the line-anchoring discipline.
+
 **Comment API conventions:** Use `--input -` with a heredoc for the body to avoid shell quoting issues — comment bodies routinely contain single quotes, backticks, and other shell metacharacters from code snippets. The `--input` flag sends stdin as the `body` field. The heredoc uses a collision-resistant delimiter (`EOF_COMMENT_BODY`) to avoid premature termination if the comment body contains a common word like `BODY` on its own line. Use `-F` (not `-f`) for integer parameters (`line`, `in_reply_to`).
 
 **For new comments**, attach to a specific line to show the code hunk context:

@@ -874,10 +874,12 @@ synthesiser as a `## Cost` section.
 Group records by `phase`. For each phase, list one row per agent with thousand-separated
 token count and one-decimal-second duration. Then a phase subtotal. Then a final
 `review_subtotal:` summing specialists + cross-review (the synthesiser row is filled in
-later). Then a literal `orchestrator:` row stating the limitation:
+later). Then a literal `orchestrator:` row stating the limitation. The block does NOT
+include a leading `Token usage:` line — that header is the parsing key emitted by Step
+6.2's prompt template, not part of the block body. Embedding it inside the block would
+produce a doubled-prefix when the synthesiser parses through the key:
 
 ```
-Token usage:
 specialists:
   <agent-1>: <N1> tokens (<K1> tool uses, <X1>s)
   <agent-2>: <N2> tokens (<K2> tool uses, <X2>s)
@@ -897,20 +899,26 @@ Format rules:
 - Durations are seconds with one decimal place (`20513` ms → `20.5s`).
 - A row whose `tokens` field is `null` reads `<name>: not measurable (parse failed) — <reason>` instead of the standard format.
 - The `synthesiser:` row is intentionally a placeholder at this point — the synthesiser
-  hasn't run yet. The synthesiser will fill it in if it can determine its own token
-  count; otherwise the placeholder stands and the orchestrator appends the real
-  synthesiser record to `tokens.jsonl` after dispatch.
+  hasn't run yet. The synthesiser will fill it in (and recompute `review_subtotal:`) if
+  it can determine its own token count; otherwise the placeholder stands and the
+  orchestrator appends the real synthesiser record to `tokens.jsonl` after dispatch.
 
-Store the assembled string as `$TOKEN_USAGE_BLOCK`.
+Store the assembled string as `$TOKEN_USAGE_BLOCK`, ending with a trailing newline +
+blank line — matching the convention used for `$INTENT_LEDGER`, `$CI_STATUS`, and
+`$CHANGED_LINES_BLOCK`. The trailing blank line is load-bearing: the synthesiser parses
+the block "through to the next blank line or end of prompt"; without the separator, the
+parser would absorb the next prompt line (`Use $CLAUDE_TEMP_DIR for temporary files.`)
+as a malformed token-usage row.
 
 If `$CLAUDE_TEMP_DIR/tokens.jsonl` is missing or empty (e.g. all dispatches failed
 silently), set `$TOKEN_USAGE_BLOCK` to:
 
 ```
-Token usage: not available — no per-agent records captured.
+not available — no per-agent records captured.
 orchestrator: not measurable from within the session — check `/context` for the running total
 ```
 
+(Same no-leading-`Token usage:` rule as the normal path; same trailing blank line.)
 This is graceful degradation: the synthesiser still runs and renders the Cost section
 with the unavailable note rather than failing.
 

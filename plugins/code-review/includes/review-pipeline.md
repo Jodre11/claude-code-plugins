@@ -112,8 +112,19 @@ Before review, please add a paragraph at the top of the PR body explaining what 
 (This is a structural check — no AI was used to evaluate the body's quality. Any narrative paragraph that meets the bar will let the review proceed.)
 ```
 
-Submit using `gh pr review "$ARGUMENTS" --request-changes --input -` with the body above
-via heredoc. Do not post any inline comments. Announce
+Before posting, fetch the most recent review by the current user:
+
+```
+gh api user --jq .login                            # capture as $CURRENT_USER
+gh pr view "$ARGUMENTS" --json reviews --jq '.reviews | map(select(.author.login == "'"$CURRENT_USER"'")) | sort_by(.submittedAt) | reverse | .[0]'
+```
+
+If the most recent review by `$CURRENT_USER` exists, has `state == "CHANGES_REQUESTED"`,
+and its `body` matches the canned text above verbatim, do NOT post a duplicate. Announce
+`> Phase 0 halt: existing REQUEST_CHANGES review still active — no new review posted` and
+stop the pipeline cleanly. Otherwise, submit using
+`gh pr review "$ARGUMENTS" --request-changes --input -` with the body above via heredoc.
+Do not post any inline comments. Announce
 `> Phase 0 halt: REQUEST_CHANGES posted (no narrative description)` and stop the pipeline
 cleanly.
 
@@ -272,6 +283,11 @@ Validate that `$BASE` matches `^[a-zA-Z0-9/_.\-]+$` — if it does not, report "
 2.7. Scan changed file paths and `$FULL_DIFF` content for **security-sensitive areas** (auth, crypto, input validation, SQL, API endpoints, secrets management, deserialisation, JWT, session, token, eval, exec, spawn, certificate, CORS). If found, set `$SECURITY_SENSITIVE = true`
 
 #### 2.8. Build agent prompt
+
+**Defensive check:** if `$INTENT_LEDGER` is empty or unset at this point, this is a
+pipeline bug — Phase 0 must have built it or halted. STOP and report
+`Pipeline error: $INTENT_LEDGER missing at Step 2.8 — Phase 0 was bypassed or failed
+to halt`.
 
 Define `$AGENT_PROMPT` with the following lines, replacing all variables with their resolved values:
 

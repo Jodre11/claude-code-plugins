@@ -79,6 +79,17 @@ Review every change for:
 - **Type mismatches** — implicit conversions, wrong generic parameters, narrowing casts
 - **Incorrect API usage** — wrong method signatures, deprecated APIs, misunderstood contracts
 - **Async/await pitfalls** — fire-and-forget tasks, missing ConfigureAwait where required, deadlocks from sync-over-async, unawaited disposables, cancelled token not propagated
+- **Hallucinated APIs / wrong signatures / wrong API versions** — when the diff calls a
+  library or framework function, verify the signature against the version pinned in the
+  project's lockfile or manifest (read the lockfile if present, e.g. `package-lock.json`,
+  `*.csproj`, `requirements.txt`, `go.sum`). When in doubt, web-fetch the current docs for
+  that version. Flag confident-looking calls that don't exist or whose signature doesn't
+  match the pinned version.
+- **Comment-truth verification** — read each new or modified comment, docstring, or `///`
+  summary against the code it describes. Flag claims that don't match the actual behaviour
+  (e.g. a docstring says "returns null on missing key" but the implementation throws).
+  This is a Critical or Important finding only when the inaccurate documentation would
+  mislead a caller into writing wrong code; otherwise Suggestion.
 
 ## Output Format
 

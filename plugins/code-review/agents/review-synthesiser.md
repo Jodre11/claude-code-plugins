@@ -110,9 +110,10 @@ X file(s) changed | Y finding(s) | Z contested
 > This is your independent expert assessment before diving into individual findings.
 
 ## CI Status
-> Always rendered when `$CI_STATUS_BODY` is present. Definitive failures constrain the
-> final verdict (no APPROVE). Transient failures (timeouts) flag a rerun-may-resolve
-> caveat but do not block on their own.
+
+*(Render this section only when `$CI_STATUS_BODY` is present. Definitive failures constrain
+the final verdict — no APPROVE. Transient failures (timeouts) flag a rerun-may-resolve
+caveat but do not block on their own.)*
 
 - **Definitive failures:** <list from $CI_STATUS_BODY definitive_failures>
 - **Transient failures:** <list from $CI_STATUS_BODY transient_failures>

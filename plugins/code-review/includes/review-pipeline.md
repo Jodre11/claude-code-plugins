@@ -284,10 +284,13 @@ Skip silently if the file is missing or malformed — this is optional configura
 To evaluate the trivial bar before Step 1's full base-branch resolution, Phase 0.7
 must resolve `$BASE` itself. Apply the same priority order as Step 1 (items 1-4):
 
-1. If `$ARGUMENTS` is provided and non-empty, extract the base branch from it. If a
-   `Base branch: <ref>` line is present, extract the ref after the colon. Otherwise,
-   treat the entire value of `$ARGUMENTS` (with `--force` stripped if present) as a
-   bare branch name.
+1. If `$ARGUMENTS` is provided and contains a `Base branch: <ref>` line, extract the
+   ref after the colon. Otherwise skip this item — do NOT treat `$ARGUMENTS` itself
+   as a bare branch name. In `review-gh-pr` mode `$ARGUMENTS` is a PR number or URL,
+   not a branch ref; in `pre-review` mode the priority chain handles bare-branch
+   arguments via items 2-4 below (PR exists, default branch, or `main` fallback).
+   The pipeline does not pass `$ARGUMENTS` directly to a `git diff <ref>` command at
+   this stage — that would silently produce a wrong diff or fail.
 2. `gh pr view --json baseRefName -q .baseRefName 2>/dev/null` — use if a PR already
    exists.
 3. Run `git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null` and strip the

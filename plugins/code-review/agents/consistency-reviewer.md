@@ -80,6 +80,14 @@ Review every change for:
 - **CONTRIBUTING.md violations** — process or code guidelines defined in CONTRIBUTING.md
 - **Naming inconsistencies** — names that don't match the conventions used in the existing codebase
 - **Architectural pattern violations** — using a different pattern than the rest of the codebase (e.g., different error handling approach, different DI pattern, different file organisation)
+- **Generic best practice vs codebase convention** — flag patterns that look like default
+  textbook style when the surrounding codebase consistently uses a different convention.
+  Common cases: introduced logging that uses `console.log`/`logger.info` when the codebase
+  uses a specific framework (`Serilog`, `winston`, etc.); error handling that wraps in
+  generic `try/catch` when the codebase has a specific propagation idiom; tests that use
+  `assert` when the codebase uses xUnit Theories or Verify snapshots; naming that uses
+  `userId` when the rest of the file uses `user_id`. The signal is *consistency with the
+  surrounding code*, not what is "generally good".
 
 ## Output Format
 

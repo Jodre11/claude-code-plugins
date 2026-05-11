@@ -7,6 +7,9 @@ or modified dependency / GitHub Action versions are current.
 A live web fetch is required — cached or trained-knowledge answers do not count. Re-fetch
 each time the reviewer runs.
 
+When verifying multiple dependencies in a single review, issue registry fetches in parallel.
+Cap at 10 concurrent fetches to avoid registry rate-limits.
+
 | Ecosystem        | Manifest                              | Endpoint pattern                                                                |
 |------------------|---------------------------------------|---------------------------------------------------------------------------------|
 | npm              | `package.json`, `package-lock.json`   | `https://registry.npmjs.org/<package>` (read `dist-tags.latest`)                |

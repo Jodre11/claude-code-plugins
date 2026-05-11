@@ -126,7 +126,8 @@ Do NOT report the following — they generate noise and waste the author's time:
 8. Race conditions or timing attacks that are theoretical rather than practically exploitable.
 9. Outdated third-party library versions WITHOUT a known advisory — handle these via the
    version-freshness Focus Area (Suggestion-level, never Critical). Vulnerable old versions
-   ARE in scope via version-safety.
+   ARE in scope via version-safety. Note: when both this path and the version-freshness
+   Focus Area surface a finding for the same dependency, the synthesiser deduplicates.
 10. Memory safety issues in memory-safe languages (Rust, Go, Java, C#, Python, JS/TS).
 11. Issues only in test files unless they indicate a production vulnerability pattern.
 12. Log spoofing or unsanitised output to logs (not a vulnerability).

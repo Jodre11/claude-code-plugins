@@ -8,6 +8,13 @@
 
 **Tech Stack:** Markdown-only changes (canonical pipeline + 2 inlined consumers). Bash test harness in `tests/run.sh` validates structural sync.
 
+**Path conventions used in this plan:**
+
+- `$REPO_ROOT` — the repository root, resolved as `$(git rev-parse --show-toplevel)`. All shell snippets below use `$REPO_ROOT/<relative-path>` so the plan re-executes correctly from any working directory or machine.
+- `$CLAUDE_TEMP_DIR` — per-session temp directory injected by the SessionStart hook (see `~/.claude/CLAUDE.md`). All commit-message bodies and intermediate files are written here.
+
+Resolve `$REPO_ROOT` once at the start of execution — e.g. `REPO_ROOT="$(git rev-parse --show-toplevel)"` — then run subsequent commands with that variable in scope. `$CLAUDE_TEMP_DIR` is already set by the harness.
+
 ---
 
 ## File Structure
@@ -215,9 +222,9 @@ End of Phase 0.7 block.
 
 Run:
 ```
-git -C /Users/jodre11/.claude/plugins/marketplaces/jodre11-plugins switch main
-git -C /Users/jodre11/.claude/plugins/marketplaces/jodre11-plugins pull --ff-only
-git -C /Users/jodre11/.claude/plugins/marketplaces/jodre11-plugins status
+git -C "$(git rev-parse --show-toplevel)" switch main
+git -C "$(git rev-parse --show-toplevel)" pull --ff-only
+git -C "$(git rev-parse --show-toplevel)" status
 ```
 
 Expected: on `main`, up to date with `origin/main`, working tree clean (untracked file `docs/superpowers/plans/2026-05-05-restore-orphaned-improvements.md` is allowed and unrelated).
@@ -226,7 +233,7 @@ Expected: on `main`, up to date with `origin/main`, working tree clean (untracke
 
 Run:
 ```
-git -C /Users/jodre11/.claude/plugins/marketplaces/jodre11-plugins switch -c feat/trivial-mode-early-exit
+git -C "$(git rev-parse --show-toplevel)" switch -c feat/trivial-mode-early-exit
 ```
 
 Expected: switched to new branch `feat/trivial-mode-early-exit`.
@@ -235,7 +242,7 @@ Expected: switched to new branch `feat/trivial-mode-early-exit`.
 
 Run:
 ```
-bash /Users/jodre11/.claude/plugins/marketplaces/jodre11-plugins/tests/run.sh
+bash $REPO_ROOT/tests/run.sh
 ```
 
 Expected: `103 tests: 103 passed`. (Output may include skip lines if dev tools are missing — only count passes/fails.) If any test fails on the unmodified branch, STOP and investigate before proceeding.
@@ -281,7 +288,7 @@ Use the Edit tool to perform a unique-string replacement:
 
 Run:
 ```
-grep -n "^## Phase\|^### Step" /Users/jodre11/.claude/plugins/marketplaces/jodre11-plugins/plugins/code-review/includes/review-pipeline.md
+grep -n "^## Phase\|^### Step" $REPO_ROOT/plugins/code-review/includes/review-pipeline.md
 ```
 
 Expected output (in this order):
@@ -304,7 +311,7 @@ If `Phase 0.7` is missing or in the wrong position, fix and re-run.
 
 Run:
 ```
-bash /Users/jodre11/.claude/plugins/marketplaces/jodre11-plugins/tests/run.sh 2>&1 | grep -A1 "pipeline inline sync"
+bash $REPO_ROOT/tests/run.sh 2>&1 | grep -A1 "pipeline inline sync"
 ```
 
 Expected: `pipeline inline sync: review-gh-pr/SKILL.md matches canonical` and `pipeline inline sync: commands/pre-review.md matches canonical` BOTH FAIL with diff output. This confirms the test is doing its job — the consumers haven't been updated yet, so they should diverge.
@@ -315,7 +322,7 @@ If the test shows PASS, the canonical didn't actually change — re-check Step 2
 
 Run:
 ```
-git -C /Users/jodre11/.claude/plugins/marketplaces/jodre11-plugins add plugins/code-review/includes/review-pipeline.md
+git -C "$(git rev-parse --show-toplevel)" add plugins/code-review/includes/review-pipeline.md
 ```
 
 Then commit with a body file at `${CLAUDE_TEMP_DIR}/commit-msg-task2.txt`:
@@ -340,7 +347,7 @@ test to passing.
 
 Then run:
 ```
-git -C /Users/jodre11/.claude/plugins/marketplaces/jodre11-plugins commit -F /tmp/claude-d1a19abe-84bb-47de-9b5c-1401ec8a4696/commit-msg-task2.txt
+git -C "$(git rev-parse --show-toplevel)" commit -F $CLAUDE_TEMP_DIR/commit-msg-task2.txt
 ```
 
 Expected: pre-commit hooks pass; one new commit on `feat/trivial-mode-early-exit`.
@@ -373,7 +380,7 @@ Use the Edit tool with the SAME `old_string` and `new_string` as Task 2 Step 2. 
 
 Run:
 ```
-grep -n "^## Phase\|^### Step 1\|^### Step 2\|^### Step 3" /Users/jodre11/.claude/plugins/marketplaces/jodre11-plugins/plugins/code-review/skills/review-gh-pr/SKILL.md
+grep -n "^## Phase\|^### Step 1\|^### Step 2\|^### Step 3" $REPO_ROOT/plugins/code-review/skills/review-gh-pr/SKILL.md
 ```
 
 Expected: Phase 0.7 line appears between Phase 0.6 and Step 1, in the inlined pipeline section. (The file also has its own `## Step 1: Gather PR Information`, `## Step 3: Plan Comments`, etc. at `##` level — those are the SKILL's own outer steps, not the inlined pipeline.)
@@ -382,14 +389,14 @@ Expected: Phase 0.7 line appears between Phase 0.6 and Step 1, in the inlined pi
 
 Run:
 ```
-bash /Users/jodre11/.claude/plugins/marketplaces/jodre11-plugins/tests/run.sh 2>&1 | grep "pipeline inline sync"
+bash $REPO_ROOT/tests/run.sh 2>&1 | grep "pipeline inline sync"
 ```
 
 Expected: `pipeline inline sync: review-gh-pr/SKILL.md matches canonical` PASSES. `pipeline inline sync: commands/pre-review.md matches canonical` should still FAIL (pre-review hasn't been propagated yet).
 
 If review-gh-pr fails, the inlined block isn't byte-identical — diff the canonical and consumer to find the discrepancy:
 ```
-diff <(sed -n '/^Follow these instructions exactly/,/^Present the synthesiser.*formatted report to the user\.$/p' /Users/jodre11/.claude/plugins/marketplaces/jodre11-plugins/plugins/code-review/includes/review-pipeline.md) <(sed -n '/^Follow these instructions exactly/,/^Present the synthesiser.*formatted report to the user\.$/p' /Users/jodre11/.claude/plugins/marketplaces/jodre11-plugins/plugins/code-review/skills/review-gh-pr/SKILL.md)
+diff <(sed -n '/^Follow these instructions exactly/,/^Present the synthesiser.*formatted report to the user\.$/p' $REPO_ROOT/plugins/code-review/includes/review-pipeline.md) <(sed -n '/^Follow these instructions exactly/,/^Present the synthesiser.*formatted report to the user\.$/p' $REPO_ROOT/plugins/code-review/skills/review-gh-pr/SKILL.md)
 ```
 
 - [ ] **Step 5: Commit**
@@ -407,8 +414,8 @@ next commit.
 
 Run:
 ```
-git -C /Users/jodre11/.claude/plugins/marketplaces/jodre11-plugins add plugins/code-review/skills/review-gh-pr/SKILL.md
-git -C /Users/jodre11/.claude/plugins/marketplaces/jodre11-plugins commit -F /tmp/claude-d1a19abe-84bb-47de-9b5c-1401ec8a4696/commit-msg-task3.txt
+git -C "$(git rev-parse --show-toplevel)" add plugins/code-review/skills/review-gh-pr/SKILL.md
+git -C "$(git rev-parse --show-toplevel)" commit -F $CLAUDE_TEMP_DIR/commit-msg-task3.txt
 ```
 
 ---
@@ -435,7 +442,7 @@ Use the Edit tool with the same `old_string` and `new_string` as Tasks 2 and 3. 
 
 Run:
 ```
-bash /Users/jodre11/.claude/plugins/marketplaces/jodre11-plugins/tests/run.sh
+bash $REPO_ROOT/tests/run.sh
 ```
 
 Expected: `103 tests: 103 passed` — back to the baseline. All sync tests now pass; Phase 0.7 is in all three pipeline files byte-identical.
@@ -460,8 +467,8 @@ test_sync_pipeline_inline_matches_canonical sync test passes again.
 
 Run:
 ```
-git -C /Users/jodre11/.claude/plugins/marketplaces/jodre11-plugins add plugins/code-review/commands/pre-review.md
-git -C /Users/jodre11/.claude/plugins/marketplaces/jodre11-plugins commit -F /tmp/claude-d1a19abe-84bb-47de-9b5c-1401ec8a4696/commit-msg-task4.txt
+git -C "$(git rev-parse --show-toplevel)" add plugins/code-review/commands/pre-review.md
+git -C "$(git rev-parse --show-toplevel)" commit -F $CLAUDE_TEMP_DIR/commit-msg-task4.txt
 ```
 
 ---
@@ -489,7 +496,7 @@ If the README has no obvious section for routing/tiers, place the paragraph next
 
 Run:
 ```
-bash /Users/jodre11/.claude/plugins/marketplaces/jodre11-plugins/tests/run.sh
+bash $REPO_ROOT/tests/run.sh
 ```
 
 Expected: still 103 tests passing.
@@ -506,8 +513,8 @@ override flag.
 
 Run:
 ```
-git -C /Users/jodre11/.claude/plugins/marketplaces/jodre11-plugins add plugins/code-review/README.md
-git -C /Users/jodre11/.claude/plugins/marketplaces/jodre11-plugins commit -F /tmp/claude-d1a19abe-84bb-47de-9b5c-1401ec8a4696/commit-msg-task5.txt
+git -C "$(git rev-parse --show-toplevel)" add plugins/code-review/README.md
+git -C "$(git rev-parse --show-toplevel)" commit -F $CLAUDE_TEMP_DIR/commit-msg-task5.txt
 ```
 
 If the README has no relevant section to amend, skip this task (no commit) and note it in the PR body.
@@ -523,7 +530,7 @@ If the README has no relevant section to amend, skip this task (no commit) and n
 
 Run:
 ```
-git -C /Users/jodre11/.claude/plugins/marketplaces/jodre11-plugins push -u origin feat/trivial-mode-early-exit
+git -C "$(git rev-parse --show-toplevel)" push -u origin feat/trivial-mode-early-exit
 ```
 
 - [ ] **Step 2: Draft PR body**
@@ -551,7 +558,7 @@ Write the body to `${CLAUDE_TEMP_DIR}/trivial-mode-pr-body.md`. Body structure (
 
 Run:
 ```
-gh pr create --base main --head feat/trivial-mode-early-exit --title "feat(code-review): add Phase 0.7 trivial-mode early exit" --body-file /tmp/claude-d1a19abe-84bb-47de-9b5c-1401ec8a4696/trivial-mode-pr-body.md
+gh pr create --base main --head feat/trivial-mode-early-exit --title "feat(code-review): add Phase 0.7 trivial-mode early exit" --body-file $CLAUDE_TEMP_DIR/trivial-mode-pr-body.md
 ```
 
 Capture the resulting PR URL — the next task uses the PR number.

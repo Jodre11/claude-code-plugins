@@ -99,7 +99,7 @@ Omit only when: (a) acting on the finding would likely introduce a worse problem
 
 ## Output Format
 
-Number all findings sequentially across all sections. Tag each with its source: `[security]`, `[correctness]`, `[consistency]`, `[style]`, `[archaeology]`, `[reuse]`, `[efficiency]`, `[jbinspect]`, `[ui]`, `[synthesiser]`.
+Number all findings sequentially across all sections. Tag each with its source: `[security]`, `[correctness]`, `[consistency]`, `[style]`, `[archaeology]`, `[reuse]`, `[efficiency]`, `[alignment]`, `[jbinspect]`, `[ui]`, `[synthesiser]`.
 
 ```
 ## Summary

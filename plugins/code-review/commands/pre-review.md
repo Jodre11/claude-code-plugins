@@ -50,6 +50,10 @@ For each candidate, read the **added** content (lines starting with `+` in the d
 excluding the file-header lines). Concatenate all added prose from all candidates as a
 single string `$DOC_PROSE`.
 
+The `--diff-filter=AM` here differs from Step 2.2's unfiltered `git diff --name-only` —
+AM-only excludes deletions because a deleted prose document cannot be a candidate intent
+source. Consolidating the two calls is cosmetic only; the semantic difference is intentional.
+
 **Source 2 — Verbatim prompt block.**
 
 Search the PR body (mode `pr`) and most recent commit message subject + body for a fenced
@@ -62,6 +66,9 @@ quoted/fenced block). Also look for prompt artifacts in the diff: any added file
 
 Mode `pr` only. Run `gh pr view "$ARGUMENTS" --json body --jq .body` and store as
 `$PR_BODY`. Strip HTML comments (`<!-- ... -->`) and leading/trailing whitespace.
+
+If mode is `pr`, you may issue this `gh pr view` and Phase 0.6.2's `gh pr checks` in
+parallel — they have no data dependency.
 
 **Source 4 — Branch commit subjects.**
 

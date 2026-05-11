@@ -4,26 +4,67 @@ Deep code review using specialist agents, cross-review agents, and a frontier-mo
 synthesiser. Includes a PR review skill and commands for pre-review analysis and
 addressing PR comments.
 
+### Phase 0: intent ledger and CI status
+
+Before any specialists run, the pipeline captures the change's intent and CI status.
+
+**Intent ledger:** the pipeline reads (in priority order) any in-diff prose document
+(`docs/`, `design/`, `specs/`, `rfcs/`, `proposals/`, `adr/`, or repo-configured paths via
+`.claude/code-review.toml`), a verbatim prompt block (`Prompt:` section in the PR body or
+commit message), the PR body itself, and (for local pre-review only) the branch commit
+subjects. The first source containing a narrative paragraph (≥ 2 sentences, > 7 words,
+not a verbatim PR template) becomes the ledger. Without a sufficient source, the pipeline
+halts with `REQUEST_CHANGES` (PR mode) or an inline prompt (local mode) — no specialists
+fan out, no synthesiser is dispatched.
+
+**CI status (PR mode only):** after the body check, the pipeline fetches `gh pr checks`.
+Definitive failures (`FAILURE`, `ERROR`, `ACTION_REQUIRED`) and transient failures
+(`TIMED_OUT`) prompt for explicit reviewer acknowledgement before fan-out. `CANCELLED` is
+not treated as a failure (multi-trigger workflows legitimately cancel one trigger when
+another takes over). The synthesiser constrains the verdict to `REQUEST_CHANGES` or
+`COMMENT` whenever definitive failures are present — it never recommends `APPROVE`.
+
+### Specialists
+
+The full review path dispatches 8 core specialists (10 with both C# and UI files):
+`security-reviewer`, `correctness-reviewer`, `consistency-reviewer`, `style-reviewer`,
+`archaeology-reviewer`, `reuse-reviewer`, `efficiency-reviewer`, `alignment-reviewer`, plus
+the conditional `jbinspect-reviewer` (C#) and `ui-reviewer` (UI). The new
+`alignment-reviewer` reasons inversely from the intent ledger to the diff, flagging intent
+drift and over-scope.
+
+### Version-freshness rule
+
+For dependencies and GitHub Actions newly introduced or modified by the diff, the
+`security-reviewer` verifies against the live registry that the chosen version is current.
+Older versions always produce a Suggestion finding. With clear justification (inline
+comment, commit message, or PR body explaining *why* this version is required), the finding
+is framed as "noted, no action required" — the version is still recorded so the reasoning
+appears in the review trail. Without justification, the framing is "consider upgrading or
+document the constraint". When a stale version also has a known advisory, the
+version-safety check escalates it to Important or Critical via the security path.
+
 ## Architecture
 
 The review pipeline (`includes/review-pipeline.md`) handles all routing:
 
 1. **Inline prep** — base branch determination, diff measurement, C#/UI/deletion/security detection
 2. **Lightweight path** — small diffs (≤5 files, ≤150 lines, no significant deletions, no security-sensitive areas) route to the `code-analysis` agent
-3. **Full review pipeline** — larger diffs dispatch 7-9 specialist agents in parallel, then fresh cross-review agents evaluate peer findings, then a synthesiser produces a tiered report
+3. **Full review pipeline** — larger diffs dispatch 8-10 specialist agents in parallel, then fresh cross-review agents evaluate peer findings, then a synthesiser produces a tiered report
 
 ## Agents
 
 | Agent | Focus |
 |---|---|
 | `code-analysis` | Lightweight single-agent review (small diffs) |
-| `security-reviewer` | Injection, auth bypass, secrets, OWASP top 10, supply-chain risks, SSRF, path traversal |
+| `security-reviewer` | Injection, auth bypass, secrets, OWASP top 10, version safety/pinning/freshness, SSRF, path traversal |
 | `correctness-reviewer` | Logic errors, off-by-one, null derefs, race conditions, async/await pitfalls |
 | `consistency-reviewer` | Violations of project conventions (CLAUDE.md, .editorconfig, linting configs) |
 | `style-reviewer` | Readability, unnecessary complexity, dead code, naming clarity |
 | `archaeology-reviewer` | Investigates deleted/modified code for hidden historical intent |
 | `reuse-reviewer` | Missed reuse of existing utilities, helpers, and patterns |
 | `efficiency-reviewer` | Performance issues, N+1 patterns, missed concurrency, resource leaks |
+| `alignment-reviewer` | Intent drift and scope creep against the captured intent ledger |
 | `jbinspect-reviewer` | JetBrains InspectCode static analysis for C# (conditional — `.cs` files only) |
 | `ui-reviewer` | UI/UX quality, accessibility, usability (conditional — visual component files only) |
 | `cross-reviewer` | Domain-focused cross-review — evaluates peer findings through a single domain lens |

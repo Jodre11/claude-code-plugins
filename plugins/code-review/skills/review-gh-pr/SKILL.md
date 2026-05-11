@@ -570,10 +570,13 @@ lines within changed files are out of scope.
 Initialise an empty associative map: `$CHANGED_LINES = {}` keyed by file path,
 value = list of integer line numbers (in the **new** file's coordinate space).
 
-Walk `$FULL_DIFF` line-by-line. Maintain three pieces of state:
+Walk `$FULL_DIFF` line-by-line. Maintain four pieces of state:
 
 - `$current_file` — the path being processed, set when a `+++ b/<path>` header
   is seen
+- `$pending_original_path` — the original path captured from the `diff --git
+  a/X b/Y` header (`X` with the `a/` prefix stripped); used by the deletion
+  branch when `+++ b/<path>` is `/dev/null`
 - `$new_line_no` — the current line number in the new file, set from the
   `@@ -A,B +C,D @@` hunk header (`$new_line_no = C`) and incremented per
   context/added line
@@ -584,9 +587,9 @@ For each diff line:
 
 | Diff line prefix | Action |
 |---|---|
-| `diff --git a/X b/Y` | Reset `$current_file` to empty (path resolved at next `+++` line) |
+| `diff --git a/X b/Y` | Reset `$current_file` to empty; capture `X` (strip the `a/` prefix) as `$pending_original_path` for use by the deletion branch below |
 | `--- a/<path>` | Ignore (Y comes from the `+++` line below) |
-| `+++ b/<path>` | Set `$current_file = <path>`; if path is `/dev/null` (file deleted), set `$current_file = a/<original-path>` so deletions still map; reset `$new_line_no = 0` |
+| `+++ b/<path>` | Set `$current_file = <path>`; if path is `/dev/null` (file deleted), set `$current_file = a/$pending_original_path` so deletions still map; reset `$new_line_no = 0` |
 | `@@ -A,B +C,D @@` | Parse `C` from the new-file range; set `$new_line_no = C`; reset `$deletion_anchor = C` |
 | Line starting with ` ` (space, context) | Increment `$new_line_no`; update `$deletion_anchor = $new_line_no` (the next deletion run starts at this point) |
 | Line starting with `+` (and NOT `+++`) | Append `$new_line_no` to `$CHANGED_LINES[$current_file]`; increment `$new_line_no` |
@@ -630,8 +633,16 @@ was malformed` and STOP. This should not happen unless `$FULL_DIFF` is itself
 empty (in which case Step 2.2's `$CHANGED_FILES` empty check would already
 have halted).
 
-Store the serialised string as `$CHANGED_LINES_BLOCK` for use in Step 2.9
-when building `$AGENT_PROMPT`.
+Store the serialised string as `$CHANGED_LINES_BLOCK` (ending with a trailing
+newline + blank line, matching the convention used for `$INTENT_LEDGER` and
+`$CI_STATUS`). The trailing blank line is load-bearing: specialists parse the
+block "through to the next blank line or end of prompt" per
+`includes/specialist-context.md`. Without the separator, the parser would
+absorb the next prompt line ("Review only the lines listed in the
+`Changed lines:` block above…") as a malformed file-path entry, weakening the
+very directive the block is meant to enforce.
+
+The block is now ready for use in Step 2.9 when building `$AGENT_PROMPT`.
 
 2.6. Scan the changed file list:
    - **C# detection:** if any file ends with `.cs`, set `$CSHARP_DETECTED = true`
@@ -678,7 +689,7 @@ This prompt is used by both the lightweight path (Step 3) and the full pipeline 
 
 Announce: `> X files, Y lines changed — using lightweight review (code-analysis)`
 
-Dispatch the `code-analysis` agent using `$AGENT_PROMPT` (defined in Step 2.8):
+Dispatch the `code-analysis` agent using `$AGENT_PROMPT` (defined in Step 2.9):
 ```
 Agent({
     description: "Lightweight code analysis",
@@ -716,7 +727,7 @@ Discard `$FULL_DIFF` from working memory — specialists fetch their own diffs i
 
 #### 4.1 Specialist prompt
 
-Use `$AGENT_PROMPT` (defined in Step 2.8) as the prompt for all specialist agents below. The variable is already resolved — do not redefine it.
+Use `$AGENT_PROMPT` (defined in Step 2.9) as the prompt for all specialist agents below. The variable is already resolved — do not redefine it.
 
 #### 4.2 Dispatch
 
@@ -920,7 +931,7 @@ After cross-review completes, construct the synthesiser inputs:
 2. Reuse `$ALL_SPECIALIST_REPORTS` assembled in Step 5.1 (each specialist's block truncated to 4000 characters — same version used for cross-review)
 3. Concatenate all cross-review opinions into `$ALL_CROSS_REVIEW_OPINIONS`
 
-Dispatch the synthesiser. Build the prompt with the following lines, replacing all variables with their resolved values. Apply the same conditional omission rules as `$AGENT_PROMPT` in Step 2.8:
+Dispatch the synthesiser. Build the prompt with the following lines, replacing all variables with their resolved values. Apply the same conditional omission rules as `$AGENT_PROMPT` in Step 2.9:
 
 ```
 Agent({

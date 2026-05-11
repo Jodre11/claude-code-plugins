@@ -6,11 +6,15 @@ verbatim into both consumer files:
   - skills/review-gh-pr/SKILL.md
   - commands/pre-review.md
 
+WHY INLINED: same rationale as review-pipeline.md — agents skip file-path references and
+must see the rule in context. PR #10 incident, 2026-05-05.
+
 In mode `local` this section is a no-op (no PR exists). In mode `pr` it gates fan-out on
 explicit reviewer acknowledgement when CI is failing.
 
 MAINTENANCE: Edit this file first, then propagate to both consumers. The test suite verifies
-the inlined copies match this canonical source. -->
+the inlined copies match this canonical source. Heading levels are relative — H2 here
+renders as H2 in consumers; do not change without auditing both. -->
 
 ### 0.6.1 Skip in local mode
 

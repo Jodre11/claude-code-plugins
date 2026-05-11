@@ -194,12 +194,21 @@ test_sync_intent_ledger_inline_matches_canonical() {
             local consumer_body
             consumer_body=$(sed -n '/^Run Phase 0 BEFORE Step 1/,/continue to Phase 0\.6\.$/p' "$consumer")
 
+            # Guard against vacuous pass: an empty extraction signals the sed end-anchor
+            # has drifted in the consumer. Without this, [[ "" == "" ]] would silently
+            # pass and false-negative on real divergence.
+            if [[ -z "$consumer_body" ]]; then
+                fail "intent-ledger inline sync: $basename_consumer" "consumer body extraction empty (sed anchors may need updating)"
+                continue
+            fi
+
             if [[ "$canonical_body" == "$consumer_body" ]]; then
                 pass "intent-ledger inline sync: $basename_consumer matches canonical"
             else
                 local tmp1 tmp2
                 tmp1=$(mktemp)
                 tmp2=$(mktemp)
+                trap 'rm -f "$tmp1" "$tmp2"' RETURN
                 echo "$canonical_body" > "$tmp1"
                 echo "$consumer_body" > "$tmp2"
                 local diff_output
@@ -254,12 +263,19 @@ test_sync_ci_status_gate_inline_matches_canonical() {
             local consumer_body
             consumer_body=$(sed -n '/^### 0.6.1 Skip in local mode/,/see `agents\/review-synthesiser\.md`\.$/p' "$consumer")
 
+            # Guard against vacuous pass: see notes on the intent-ledger sync test.
+            if [[ -z "$consumer_body" ]]; then
+                fail "ci-status-gate inline sync: $basename_consumer" "consumer body extraction empty (sed anchors may need updating)"
+                continue
+            fi
+
             if [[ "$canonical_body" == "$consumer_body" ]]; then
                 pass "ci-status-gate inline sync: $basename_consumer matches canonical"
             else
                 local tmp1 tmp2
                 tmp1=$(mktemp)
                 tmp2=$(mktemp)
+                trap 'rm -f "$tmp1" "$tmp2"' RETURN
                 echo "$canonical_body" > "$tmp1"
                 echo "$consumer_body" > "$tmp2"
                 local diff_output

@@ -32,6 +32,13 @@ If an `Empty tree mode: true` line is present in your prompt, set `$EMPTY_TREE_M
 
 If a `Path scope: <pathspec>` line is present in your prompt, extract the pathspec after the colon and store as `$PATH_SCOPE`. If not present, leave `$PATH_SCOPE` empty. Validate that `$PATH_SCOPE` matches `^[a-zA-Z0-9/_.\-*]+$` — if it does not, report "Invalid path scope: $PATH_SCOPE" and stop. Additionally, if `$PATH_SCOPE` contains `..` as a substring, report "Invalid path scope (directory traversal): $PATH_SCOPE" and stop. When `$PATH_SCOPE` is set, append `-- "$PATH_SCOPE"` after all flags in every `git diff` command below (quotes prevent shell glob expansion of `*`).
 
+If an `Intent ledger:` block is present in your prompt, store the body that follows
+(through to the next blank line) as `$INTENT_LEDGER_BODY`. Use this in the Severity
+Reclassification, Independent Analysis, and Output sections below.
+
+If a `CI status:` block is present in your prompt, store the body that follows as
+`$CI_STATUS_BODY`. Use this in the Output Format section below.
+
 Read the diff and changed files yourself for independent analysis:
 1. Run `git diff` to get the full diff (append `-- "$PATH_SCOPE"` if set). Use the diff syntax determined by `$EMPTY_TREE_MODE` (two-arg when true, three-dot when false).
 2. Read each changed file for full context. If more than 20 files changed, prioritise non-test source files with the largest diffs. Skip generated files, lock files, and vendored dependencies.
@@ -39,8 +46,12 @@ Read the diff and changed files yourself for independent analysis:
 
 ## Independent Analysis
 
-Before processing specialist findings, conduct your own deep analysis. Think through:
-- What is the overall intent of these changes? Does the implementation actually achieve it?
+Before processing specialist findings, conduct your own deep analysis. The intent ledger
+(if present) tells you what the change is *meant* to do — read it before forming your own
+view. Think through:
+- Does the implementation actually achieve the goal stated in `$INTENT_LEDGER_BODY`? If
+  there is no ledger, infer intent from the diff and PR title.
+- Are any of the changes outside the stated scope (`files_in_scope` or `non_goals`)?
 - What are the subtle interactions between changed files?
 - Are there systemic issues that a file-by-file review would miss?
 - What would break in production that looks fine in a diff?
@@ -97,6 +108,15 @@ X file(s) changed | Y finding(s) | Z contested
 ## Synthesiser Assessment
 > High-level analysis of the changes: intent, risk profile, areas of concern, and overall impression.
 > This is your independent expert assessment before diving into individual findings.
+
+## CI Status
+> Always rendered when `$CI_STATUS_BODY` is present. Definitive failures constrain the
+> final verdict (no APPROVE). Transient failures (timeouts) flag a rerun-may-resolve
+> caveat but do not block on their own.
+
+- **Definitive failures:** <list from $CI_STATUS_BODY definitive_failures>
+- **Transient failures:** <list from $CI_STATUS_BODY transient_failures>
+- **Verdict constraint:** APPROVE blocked | rerun may resolve | no constraint
 
 ## Consensus Findings
 
@@ -179,3 +199,12 @@ X file(s) changed | 0 findings — LGTM
 - You are NOT the final arbiter on contested items. Present your position alongside the specialists' positions and let the reader decide. Your assessment carries weight but doesn't override.
 - The Summary header counts MUST match the body. Count findings after assembling the full report — do not estimate. `Y finding(s)` = total numbered findings across Consensus + Synthesiser + Contested (not Dismissed). `Z contested` = findings in the Contested section only.
 - Do not quote raw secrets, credentials, or API keys verbatim in the report — describe the location and nature of the exposure instead.
+- When `$CI_STATUS_BODY` indicates one or more definitive failures, the synthesiser MUST NOT
+  recommend `APPROVE` in any summary or guidance to the consumer. Recommend `REQUEST_CHANGES`
+  or `COMMENT` only.
+- When `$CI_STATUS_BODY` indicates only transient failures (no definitive), recommend
+  `COMMENT` and add a "rerun-may-resolve" note alongside the verdict guidance. Do not block
+  the review from completing.
+- When the intent ledger states a `goal` and one or more findings indicate the goal is not
+  achieved, escalate the most central such finding to Important severity at minimum, even
+  if the originating specialist filed it lower.

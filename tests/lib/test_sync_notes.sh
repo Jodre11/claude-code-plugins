@@ -152,6 +152,127 @@ test_sync_pipeline_inline_matches_canonical() {
     done
 }
 
+test_sync_intent_ledger_inline_matches_canonical() {
+    local cr
+    cr=$(_cr_dir)
+    if [[ ! -d "$cr" ]]; then
+        skip "intent-ledger inline sync" "code-review plugin not found"
+        return
+    fi
+
+    local canonical="$cr/includes/intent-ledger.md"
+    if [[ ! -f "$canonical" ]]; then
+        skip "intent-ledger inline sync" "canonical file not found"
+        return
+    fi
+
+    # Extract a range bounded by markers that appear verbatim in both the canonical and
+    # each consumer. The HTML maintenance comment in the canonical lives outside this range,
+    # so we compare just the prose body.
+    local canonical_body
+    canonical_body=$(sed -n '/^Run Phase 0 BEFORE Step 1/,/continue to Phase 0\.6\.$/p' "$canonical")
+
+    if [[ -z "$canonical_body" ]]; then
+        fail "intent-ledger inline sync: canonical body extracted" "no body found"
+        return
+    fi
+
+    local consumer
+    for consumer in \
+        "$cr/skills/review-gh-pr/SKILL.md" \
+        "$cr/commands/pre-review.md"; do
+
+        local basename_consumer
+        basename_consumer=$(basename "$(dirname "$consumer")")/$(basename "$consumer")
+
+        if [[ ! -f "$consumer" ]]; then
+            fail "intent-ledger inline sync: $basename_consumer" "file not found"
+            continue
+        fi
+
+        if grep -qF "## Phase 0: Intent Ledger" "$consumer" 2>/dev/null; then
+            local consumer_body
+            consumer_body=$(sed -n '/^Run Phase 0 BEFORE Step 1/,/continue to Phase 0\.6\.$/p' "$consumer")
+
+            if [[ "$canonical_body" == "$consumer_body" ]]; then
+                pass "intent-ledger inline sync: $basename_consumer matches canonical"
+            else
+                local tmp1 tmp2
+                tmp1=$(mktemp)
+                tmp2=$(mktemp)
+                echo "$canonical_body" > "$tmp1"
+                echo "$consumer_body" > "$tmp2"
+                local diff_output
+                diff_output=$(diff -u --label "canonical" --label "$basename_consumer" "$tmp1" "$tmp2" | head -30 || true)
+                rm -f "$tmp1" "$tmp2"
+                fail "intent-ledger inline sync: $basename_consumer matches canonical" "$diff_output"
+            fi
+        else
+            fail "intent-ledger inline sync: $basename_consumer" "Phase 0 not inlined"
+        fi
+    done
+}
+
+test_sync_ci_status_gate_inline_matches_canonical() {
+    local cr
+    cr=$(_cr_dir)
+    if [[ ! -d "$cr" ]]; then
+        skip "ci-status-gate inline sync" "code-review plugin not found"
+        return
+    fi
+
+    local canonical="$cr/includes/ci-status-gate.md"
+    if [[ ! -f "$canonical" ]]; then
+        skip "ci-status-gate inline sync" "canonical file not found"
+        return
+    fi
+
+    # Same range-marker approach as intent-ledger sync. Markers chosen to exist verbatim
+    # in both canonical and consumer, with the HTML maintenance comment falling outside.
+    local canonical_body
+    canonical_body=$(sed -n '/^### 0.6.1 Skip in local mode/,/(Task 8)\.$/p' "$canonical")
+
+    if [[ -z "$canonical_body" ]]; then
+        fail "ci-status-gate inline sync: canonical body extracted" "no body found"
+        return
+    fi
+
+    local consumer
+    for consumer in \
+        "$cr/skills/review-gh-pr/SKILL.md" \
+        "$cr/commands/pre-review.md"; do
+
+        local basename_consumer
+        basename_consumer=$(basename "$(dirname "$consumer")")/$(basename "$consumer")
+
+        if [[ ! -f "$consumer" ]]; then
+            fail "ci-status-gate inline sync: $basename_consumer" "file not found"
+            continue
+        fi
+
+        if grep -qF "## Phase 0.6: CI Status Gate" "$consumer" 2>/dev/null; then
+            local consumer_body
+            consumer_body=$(sed -n '/^### 0.6.1 Skip in local mode/,/(Task 8)\.$/p' "$consumer")
+
+            if [[ "$canonical_body" == "$consumer_body" ]]; then
+                pass "ci-status-gate inline sync: $basename_consumer matches canonical"
+            else
+                local tmp1 tmp2
+                tmp1=$(mktemp)
+                tmp2=$(mktemp)
+                echo "$canonical_body" > "$tmp1"
+                echo "$consumer_body" > "$tmp2"
+                local diff_output
+                diff_output=$(diff -u --label "canonical" --label "$basename_consumer" "$tmp1" "$tmp2" | head -30 || true)
+                rm -f "$tmp1" "$tmp2"
+                fail "ci-status-gate inline sync: $basename_consumer matches canonical" "$diff_output"
+            fi
+        else
+            fail "ci-status-gate inline sync: $basename_consumer" "Phase 0.6 not inlined"
+        fi
+    done
+}
+
 test_sync_cross_review_mode_inline_matches_canonical() {
     local cr
     cr=$(_cr_dir)

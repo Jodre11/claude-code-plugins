@@ -66,7 +66,9 @@ Cross-reference the `TypeId` against the `<IssueType>` definitions in the XML he
 - `Category` — the inspection category
 - `Description` — human-readable rule description
 
-**Filter findings to only files in the diff.** Ignore issues in files that were not changed — the goal is to review the diff, not audit the entire solution.
+**Filter findings at parse time to only lines listed in `$CHANGED_LINES`.** After cross-referencing `TypeId` against `<IssueType>` definitions (and before composing findings), intersect each `<Issue>` element's `Line` attribute against `$CHANGED_LINES[<File>]`. Drop non-matching issues — they never enter the pipeline. Issues on files not in `$CHANGED_LINES` at all are also dropped. Files in `$CHANGED_LINES` with `(empty — rename only)` accept no findings.
+
+The line-level filter eliminates noise on pre-existing issues that InspectCode flags in changed files. Without it, jbinspect-reviewer's whole-solution scan reports findings on every issue in every changed file — the goal is to review what the PR introduced, not audit the rest.
 
 ## Step 5: Map severity
 

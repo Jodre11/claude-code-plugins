@@ -564,6 +564,21 @@ If you dispatched fewer than 8 core specialists and cannot identify why, STOP an
 
 After all complete: `> N/$SPECIALIST_COUNT specialists complete [, K failed] (X raw findings)`
 
+#### 4.4 Self-re-review carve-outs
+
+When the caller is in self-re-review mode (the caller-side check for an existing review
+by the current user, see `skills/review-gh-pr/SKILL.md` Step 1), the `alignment-reviewer`
+is NOT dispatched. Intent and scope have already been evaluated on the prior review pass —
+re-raising alignment findings on a re-run produces the demoralising "diminishing returns"
+cycle that re-review mode exists to prevent. All other core specialists still dispatch
+(intent drift is rare; bugs, regressions, and security issues introduced by fix commits
+are not). `pre-review` (local diff) has no re-review concept and this carve-out does not
+apply there.
+
+This carve-out lives here in the canonical so the rule is co-located with the dispatch
+list — the inline-vs-canonical mechanism (PR #10 incident) was specifically designed to
+prevent dispatch logic drifting between consumers.
+
 ### Step 5: Cross-review
 
 Dispatch fresh cross-review agents in parallel — one per domain, EXCLUDING jbinspect (jbinspect reports static analysis tool output that doesn't benefit from cross-domain evaluation).

@@ -230,7 +230,7 @@ test_sync_ci_status_gate_inline_matches_canonical() {
     # Same range-marker approach as intent-ledger sync. Markers chosen to exist verbatim
     # in both canonical and consumer, with the HTML maintenance comment falling outside.
     local canonical_body
-    canonical_body=$(sed -n '/^### 0.6.1 Skip in local mode/,/(Task 8)\.$/p' "$canonical")
+    canonical_body=$(sed -n '/^### 0.6.1 Skip in local mode/,/see `agents\/review-synthesiser\.md`\.$/p' "$canonical")
 
     if [[ -z "$canonical_body" ]]; then
         fail "ci-status-gate inline sync: canonical body extracted" "no body found"
@@ -252,7 +252,7 @@ test_sync_ci_status_gate_inline_matches_canonical() {
 
         if grep -qF "## Phase 0.6: CI Status Gate" "$consumer" 2>/dev/null; then
             local consumer_body
-            consumer_body=$(sed -n '/^### 0.6.1 Skip in local mode/,/(Task 8)\.$/p' "$consumer")
+            consumer_body=$(sed -n '/^### 0.6.1 Skip in local mode/,/see `agents\/review-synthesiser\.md`\.$/p' "$consumer")
 
             if [[ "$canonical_body" == "$consumer_body" ]]; then
                 pass "ci-status-gate inline sync: $basename_consumer matches canonical"

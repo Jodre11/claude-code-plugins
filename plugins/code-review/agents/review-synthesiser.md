@@ -33,8 +33,8 @@ If an `Empty tree mode: true` line is present in your prompt, set `$EMPTY_TREE_M
 If a `Path scope: <pathspec>` line is present in your prompt, extract the pathspec after the colon and store as `$PATH_SCOPE`. If not present, leave `$PATH_SCOPE` empty. Validate that `$PATH_SCOPE` matches `^[a-zA-Z0-9/_.\-*]+$` — if it does not, report "Invalid path scope: $PATH_SCOPE" and stop. Additionally, if `$PATH_SCOPE` contains `..` as a substring, report "Invalid path scope (directory traversal): $PATH_SCOPE" and stop. When `$PATH_SCOPE` is set, append `-- "$PATH_SCOPE"` after all flags in every `git diff` command below (quotes prevent shell glob expansion of `*`).
 
 If an `Intent ledger:` block is present in your prompt, store the body that follows
-(through to the next blank line) as `$INTENT_LEDGER_BODY`. Use this in the Severity
-Reclassification, Independent Analysis, and Output sections below.
+(through to the next blank line or end of prompt) as `$INTENT_LEDGER_BODY`. Use this in
+the Severity Reclassification, Independent Analysis, and Output sections below.
 
 If a `CI status:` block is present in your prompt, store the body that follows as
 `$CI_STATUS_BODY`. Use this in the Output Format section below.

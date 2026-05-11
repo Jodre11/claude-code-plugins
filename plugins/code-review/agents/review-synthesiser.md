@@ -39,6 +39,14 @@ the Severity Reclassification, Independent Analysis, and Output sections below.
 If a `CI status:` block is present in your prompt, store the body that follows as
 `$CI_STATUS_BODY`. Use this in the Output Format section below.
 
+If a `Token usage:` block is present in your prompt, store the body that follows
+(through to the next blank line or end of prompt) as `$TOKEN_USAGE_BLOCK_BODY`. Use
+this in the `## Cost` section of the Output Format below. The block is mostly opaque
+to the synthesiser — render every row verbatim **except** the `synthesiser:`
+placeholder and `review_subtotal:` rows, which the synthesiser may update if it can
+determine its own token count (see Output Format). The orchestrator built the block
+from `$CLAUDE_TEMP_DIR/tokens.jsonl`.
+
 Read the diff and changed files yourself for independent analysis:
 1. Run `git diff` to get the full diff (append `-- "$PATH_SCOPE"` if set). Use the diff syntax determined by `$EMPTY_TREE_MODE` (two-arg when true, three-dot when false).
 2. Read each changed file for full context. If more than 20 files changed, prioritise non-test source files with the largest diffs. Skip generated files, lock files, and vendored dependencies.
@@ -174,6 +182,29 @@ caveat but do not block on their own.)*
 - **Original confidence:** 65
 - **Dismissed because:** Detailed reasoning for why this is a false positive,
   including what you checked to verify
+
+## Cost
+
+*(Render this section only when `$TOKEN_USAGE_BLOCK_BODY` is present in the prompt.
+Render every row of the block verbatim **except** the `synthesiser:` placeholder
+and `review_subtotal:` rows, which you may update if you can determine your own
+token count (see below). All other rows must remain byte-identical to the input;
+do not re-format the numbers or re-order the rows. The orchestrator built the
+block from `$CLAUDE_TEMP_DIR/tokens.jsonl`. The orchestrator's own tokens are not
+visible from inside the session — the `orchestrator:` row is deliberately set to
+`not measurable from within the session — check /context for the running total`.)*
+
+Render the block inside a fenced code block:
+
+    $TOKEN_USAGE_BLOCK_BODY
+
+If you can determine your own (synthesiser) token count from your context, replace
+the placeholder line `synthesiser: <pending — orchestrator fills in after dispatch>`
+with `synthesiser: <your-tokens> tokens (<your-tool-uses> tool uses, <your-duration>s)`,
+then set `review_subtotal:` = `specialists_subtotal + cross_review_subtotal +
+<your-synthesiser-tokens>` (sum tool uses and durations the same way). Otherwise
+leave both rows as the orchestrator wrote them; the orchestrator will append the
+real synthesiser row to `$CLAUDE_TEMP_DIR/tokens.jsonl` after you return.
 ```
 
 If a tier has no findings, omit that tier's section entirely (except Synthesiser Assessment, which is always present).
@@ -209,3 +240,15 @@ X file(s) changed | 0 findings — LGTM
 - When the intent ledger states a `goal` and one or more findings indicate the goal is not
   achieved, escalate the most central such finding to Important severity at minimum, even
   if the originating specialist filed it lower.
+- The `## Cost` section is rendered only when `$TOKEN_USAGE_BLOCK_BODY` is present.
+  Render the block verbatim — do not re-format numbers, re-order rows, or remove the
+  `orchestrator:` caveat row. The block is the orchestrator's authoritative aggregation;
+  re-formatting risks loss of data.
+- If you can determine your own token count from context (rare, but possible if the
+  prompt includes a token-usage hint), you may replace the placeholder line
+  `synthesiser: <pending — orchestrator fills in after dispatch>` (verbatim) with
+  your actual count, then set `review_subtotal:` = `specialists_subtotal +
+  cross_review_subtotal + <your-synthesiser-tokens>` (and likewise for tool uses
+  and durations). If you cannot determine your own count, leave both rows as the
+  orchestrator wrote them — the orchestrator will append the real record to
+  `tokens.jsonl` after dispatch.

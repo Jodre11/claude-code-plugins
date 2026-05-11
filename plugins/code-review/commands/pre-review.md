@@ -230,7 +230,7 @@ Read one line. If the answer begins with `y` or `Y`, announce
 continue to Step 1. Otherwise halt cleanly with
 `> Phase 0 halt: CI failures not acknowledged`.
 
-The synthesiser later constrains the verdict based on `$CI_STATUS` (Task 8).
+The synthesiser later constrains the verdict based on `$CI_STATUS` — see `agents/review-synthesiser.md`.
 
 ### Progress line format
 

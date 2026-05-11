@@ -298,6 +298,7 @@ test_sync_cross_review_mode_inline_matches_canonical() {
 
     local agent
     for agent in \
+        "$cr/agents/alignment-reviewer.md" \
         "$cr/agents/archaeology-reviewer.md" \
         "$cr/agents/consistency-reviewer.md" \
         "$cr/agents/correctness-reviewer.md" \

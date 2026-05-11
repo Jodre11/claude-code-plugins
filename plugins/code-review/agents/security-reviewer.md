@@ -77,7 +77,22 @@ Review every change for:
 - **Cryptographic misuse** — weak algorithms, improper key handling, insecure random, hardcoded IVs/salts, certificate validation bypasses
 - **Path traversal** — user input used in file paths without sanitisation
 - **SSRF** — server-side request forgery via user-controlled URLs (only when attacker controls host or protocol, not just path)
-- **Supply-chain risks** — new dependencies with known CVEs, pinning to mutable tags, overly broad dependency ranges, importing from untrusted registries
+- **Version safety (#6a)** — new dependencies with known CVEs or advisories. Read the
+  lockfile or manifest, identify newly-introduced or modified entries, and check at least
+  one advisory source (e.g. GitHub Advisory Database for the relevant ecosystem) for the
+  pinned version. Use Important or Critical severity when an advisory hits.
+- **Version pinning (#6b)** — lockfile hygiene. Mutable tags (`@latest`, floating
+  semver ranges where the project elsewhere pins exactly), missing lockfile updates after
+  a manifest change, importing from untrusted registries.
+- **Version freshness (#7)** — for newly introduced or modified dependencies and GitHub
+  Actions, verify against the live registry that the chosen version is current. Use
+  `includes/version-freshness-cookbook.md` for endpoints per ecosystem. Always emit a
+  **Suggestion finding** for stale versions; framing differs by whether justification is
+  present (see the cookbook). Severity is intentionally low — staleness alone is a smell,
+  not a defect. When a stale version *also* has a known vulnerability, escalate via
+  version-safety, not freshness.
+  - Live web fetch is required; do not rely on cached or trained-knowledge answers.
+  - Do not flag versions the diff did not touch.
 - **Sensitive data exposure** — logging PII/secrets, returning internal errors to clients, overly verbose error messages
 - **Remote code execution** — eval injection, dynamic code execution with untrusted input
 
@@ -109,7 +124,10 @@ Do NOT report the following — they generate noise and waste the author's time:
 6. GitHub Action workflow issues unless clearly triggerable via untrusted input with a specific attack path.
 7. Absence of hardening measures — only flag concrete vulnerabilities, not missing defence-in-depth.
 8. Race conditions or timing attacks that are theoretical rather than practically exploitable.
-9. Outdated third-party library versions (managed separately).
+9. Outdated third-party library versions WITHOUT a known advisory — handle these via the
+   version-freshness Focus Area (Suggestion-level, never Critical). Vulnerable old versions
+   ARE in scope via version-safety. Note: when both this path and the version-freshness
+   Focus Area surface a finding for the same dependency, the synthesiser deduplicates.
 10. Memory safety issues in memory-safe languages (Rust, Go, Java, C#, Python, JS/TS).
 11. Issues only in test files unless they indicate a production vulnerability pattern.
 12. Log spoofing or unsanitised output to logs (not a vulnerability).

@@ -2,7 +2,13 @@
 Edit this file first, then propagate to all specialist agents:
 archaeology-reviewer.md, consistency-reviewer.md, correctness-reviewer.md,
 efficiency-reviewer.md, reuse-reviewer.md, security-reviewer.md,
-style-reviewer.md, ui-reviewer.md. -->
+style-reviewer.md, ui-reviewer.md.
+
+Static-analysis specialists (jbinspect, eslint, ruff, trivy) DO NOT inline
+this file and MUST NOT participate in cross-review-mode dispatch. Their
+findings are visible to other cross-reviewers via Step 5.2 sub-step 3 of the
+pipeline, but they are never re-invoked with `Mode: cross-review`. See
+includes/static-analysis-context.md §8. -->
 
 > **MODE SWITCH — MANDATORY**
 >

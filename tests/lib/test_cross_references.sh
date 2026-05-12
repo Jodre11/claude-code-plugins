@@ -115,3 +115,26 @@ test_static_analysis_context_exists() {
     assert_file_exists "plugins/code-review/includes/static-analysis-context.md" \
         "code-review: static-analysis-context.md exists"
 }
+
+test_static_analysis_specialists_cite_include() {
+    local cr="$REPO_ROOT/plugins/code-review"
+    if [[ ! -d "$cr" ]]; then
+        skip "static-analysis citation" "code-review plugin not found"
+        return
+    fi
+
+    local agent
+    for agent in eslint-reviewer.md ruff-reviewer.md trivy-reviewer.md jbinspect-reviewer.md; do
+        local path="$cr/agents/$agent"
+        if [[ ! -f "$path" ]]; then
+            fail "static-analysis citation: $agent" "file not found"
+            continue
+        fi
+        if grep -qF 'includes/static-analysis-context.md' "$path"; then
+            pass "static-analysis citation: $agent cites includes/static-analysis-context.md"
+        else
+            fail "static-analysis citation: $agent cites includes/static-analysis-context.md" \
+                "literal token 'includes/static-analysis-context.md' not found"
+        fi
+    done
+}

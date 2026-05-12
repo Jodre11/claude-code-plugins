@@ -401,3 +401,63 @@ test_sync_base_branch_steps_match() {
         fail "base-branch resolution steps 1-4 match between pipeline and specialist" "$diff_output"
     fi
 }
+
+test_dispatcher_includes_new_static_analysis_flags() {
+    local cr
+    cr=$(_cr_dir)
+    if [[ ! -d "$cr" ]]; then
+        skip "static-analysis dispatcher flags" "code-review plugin not found"
+        return
+    fi
+
+    local file
+    for file in skills/review-gh-pr/SKILL.md commands/pre-review.md; do
+        local path="$cr/$file"
+        if [[ ! -f "$path" ]]; then
+            fail "static-analysis dispatcher flags: $file" "file not found"
+            continue
+        fi
+
+        local flag
+        for flag in '$JS_DETECTED' '$PY_DETECTED' '$IAC_DETECTED'; do
+            if grep -qF "$flag" "$path"; then
+                pass "static-analysis dispatcher flags: $file contains $flag"
+            else
+                fail "static-analysis dispatcher flags: $file contains $flag" \
+                    "flag literal not found"
+            fi
+        done
+    done
+}
+
+test_static_analysis_specialists_have_required_severity_mapping() {
+    local cr
+    cr=$(_cr_dir)
+    if [[ ! -d "$cr" ]]; then
+        skip "static-analysis severity literals" "code-review plugin not found"
+        return
+    fi
+
+    local agent
+    for agent in eslint-reviewer.md ruff-reviewer.md trivy-reviewer.md jbinspect-reviewer.md; do
+        local path="$cr/agents/$agent"
+        if [[ ! -f "$path" ]]; then
+            fail "static-analysis severity literals: $agent" "file not found"
+            continue
+        fi
+
+        if grep -qF 'Confidence: 100' "$path"; then
+            pass "static-analysis severity literals: $agent contains 'Confidence: 100'"
+        else
+            fail "static-analysis severity literals: $agent contains 'Confidence: 100'" \
+                "literal not found"
+        fi
+
+        if grep -qE '^## .* Findings$' "$path"; then
+            pass "static-analysis severity literals: $agent has '## <name> Findings' heading"
+        else
+            fail "static-analysis severity literals: $agent has '## <name> Findings' heading" \
+                "no heading matching '## .* Findings$' found"
+        fi
+    done
+}

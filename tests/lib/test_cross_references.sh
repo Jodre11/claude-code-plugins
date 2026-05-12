@@ -109,3 +109,9 @@ test_command_directories_have_commands() {
         fi
     done < <(find "$REPO_ROOT/plugins" -mindepth 1 -maxdepth 1 -type d)
 }
+
+test_static_analysis_context_exists() {
+    local cr="$REPO_ROOT/plugins/code-review"
+    assert_file_exists "plugins/code-review/includes/static-analysis-context.md" \
+        "code-review: static-analysis-context.md exists"
+}

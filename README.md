@@ -6,7 +6,7 @@ Personal plugin marketplace for [Claude Code](https://docs.anthropic.com/en/docs
 
 | Plugin | Description |
 |---|---|
-| [code-review](plugins/code-review/) | 10 specialist code review agents, PR review skill, pre-review and address-pr-comments commands |
+| [code-review](plugins/code-review/) | 13 specialist code review agents (ESLint, Ruff, Trivy IaC, JetBrains InspectCode + 9 LLM specialists), PR review skill, pre-review and address-pr-comments commands |
 | [web-search](plugins/web-search/) | Web search via local SearXNG — self-hosted, no API key, no tracking |
 | [playwright-cli](plugins/playwright-cli/) | Browser automation via `playwright-cli` — testing, form filling, screenshots, data extraction |
 | [md-to-clipboard](plugins/md-to-clipboard/) | Convert Markdown to rich text on the macOS clipboard for pasting into Teams, Slack, Outlook |
@@ -45,7 +45,7 @@ manual reinstall required. Each plugin's `bin/` directory is added to PATH autom
 
 | Plugin | Dependencies |
 |---|---|
-| code-review | `jb` (JetBrains CLI) — optional, only for C# projects |
+| code-review | `jb` (JetBrains CLI) — optional, only for C# projects; `eslint` or `biome` (project-local via `npm install`) — optional, only for JS/TS projects; `ruff` (`brew install ruff`) — optional, only for Python projects (`nbqa` only if Ruff < 0.6.0); `trivy` (`brew install trivy`) — optional, only for IaC repos |
 | web-search | Docker Desktop + SearXNG container (`searxng-ctl.sh start`), `jq` (`brew install jq`) |
 | playwright-cli | `playwright-cli` (`brew install playwright-cli` or `npx playwright-cli`) |
 | md-to-clipboard | `pandoc` (`brew install pandoc`), `md2clip` (ships with plugin — see [setup](plugins/md-to-clipboard/README.md)) |

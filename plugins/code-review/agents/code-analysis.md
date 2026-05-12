@@ -12,28 +12,11 @@ Follow the context gathering instructions in `includes/specialist-context.md`.
 
 ### Run JetBrains InspectCode (C# only)
 
-If any changed files end with `.cs`:
+If any changed files end with `.cs`, follow the procedure in `agents/jbinspect-reviewer.md` (file-extension filter, solution discovery, tool invocation, parse + filter, severity mapping, cleanup) — that file cites `includes/static-analysis-context.md` for the cross-cutting parts.
 
-1. Find all `.sln` files: `find . -name '*.sln' -not -path '*/bin/*' -not -path '*/obj/*'`
-2. If exactly one `.sln` exists, use it. If multiple exist, scope to affected solutions:
-   a. For each changed `.cs` file, find its containing `.csproj` by walking up the directory tree.
-   b. Grep each `.sln` for the `.csproj` filename to determine which solutions are affected.
-   c. Collect the unique set of affected `.sln` files.
-3. If `jb` is not installed or not on PATH, skip this step and note in the output:
-   `## JetBrains InspectCode\n\nSkipped — jb inspectcode not available on PATH.`
-4. Check that `$CLAUDE_TEMP_DIR` is present in your prompt (the path from `Use <path> for temporary files`). If it is not, report the omission and skip this step — do not fall back to bare `/tmp/`.
-5. For each affected solution, run:
-   `jb inspectcode <solution.sln> --output="$CLAUDE_TEMP_DIR/inspectcode-<name>.xml" --format=Xml --severity=WARNING`
-   Where `<name>` is the basename of the solution file without extension — not the full path.
-   If the command fails (non-zero exit code), report the error and continue with any remaining solutions.
-6. Parse the XML output for `<Issue>` elements. Cross-reference `TypeId` against `<IssueType>` definitions to get severity and category.
-7. **Filter at parse time to only lines listed in `$CHANGED_LINES`.** After cross-referencing `TypeId` against `<IssueType>` definitions, intersect each `<Issue>`'s `Line` attribute against `$CHANGED_LINES[<File>]`. Drop non-matching issues. Issues on files not in `$CHANGED_LINES` are also dropped. Files in `$CHANGED_LINES` with `(empty — rename only)` accept no findings.
-8. Map severity: ERROR → Critical, WARNING → Important, SUGGESTION → Suggestion. Omit HINT.
-9. Clean up temporary XML files after parsing.
+Include InspectCode findings in the output under a separate `## JetBrains InspectCode` section (before the manual review findings). If no C# files are in the diff, skip this step entirely.
 
-Keep in sync with `agents/jbinspect-reviewer.md` — changes to either InspectCode procedure must be mirrored.
-
-Include these findings in the output under a separate `## JetBrains InspectCode` section (before the manual review findings). If no C# files are in the diff, skip this step entirely.
+Keep in sync with `agents/jbinspect-reviewer.md` — changes to the C#-specific InspectCode procedure must be mirrored. (The cross-cutting bits live in `includes/static-analysis-context.md`.)
 
 ### Analyse changes
 

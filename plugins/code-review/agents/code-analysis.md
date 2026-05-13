@@ -14,7 +14,7 @@ Follow the context gathering instructions in `includes/specialist-context.md`.
 
 If any changed files end with `.cs`, follow the procedure in `agents/jbinspect-reviewer.md` (file-extension filter, solution discovery, tool invocation, parse + filter, severity mapping, cleanup) — that file cites `includes/static-analysis-context.md` for the cross-cutting parts.
 
-Include InspectCode findings in the output under a separate `## JetBrains InspectCode` section (before the manual review findings). If no C# files are in the diff, skip this step entirely.
+Include InspectCode findings in the output under a separate `## JetBrains InspectCode Findings` section (before the manual review findings). If no C# files are in the diff, skip this step entirely.
 
 Keep in sync with `agents/jbinspect-reviewer.md` — changes to the C#-specific InspectCode procedure must be mirrored. (The cross-cutting bits live in `includes/static-analysis-context.md`.)
 
@@ -54,11 +54,12 @@ Return findings grouped by severity (see `includes/severity-definitions.md`). Us
 ## Summary
 X file(s) changed, Y finding(s)
 
-## JetBrains InspectCode
+## JetBrains InspectCode Findings
 > Only present if C# files were in the diff and jb inspectcode ran.
 
 ### Finding #1 — [short title]
 - **File:** path/to/file.cs:42
+- **Confidence:** 100
 - **Rule:** TypeId (Category)
 - **Severity:** Critical | Important | Suggestion (see `includes/severity-definitions.md`)
 - **Description:** The issue message from InspectCode

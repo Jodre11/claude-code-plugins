@@ -6,7 +6,7 @@
   "plugins": [
     {
       "name": "code-review",
-      "description": "10 specialist code review agents with orchestrator, PR review skill, pre-review and address-pr-comments commands",
+      "description": "13 specialist code review agents (incl. ESLint, Ruff, Trivy IaC, JetBrains InspectCode), shared static-analysis include, PR review skill, pre-review and address-pr-comments commands",
       "source": "./plugins/code-review"
     },
     {

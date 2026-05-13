@@ -647,6 +647,9 @@ The block is now ready for use in Step 2.9 when building `$AGENT_PROMPT`.
 2.6. Scan the changed file list:
    - **C# detection:** if any file ends with `.cs`, set `$CSHARP_DETECTED = true`
    - **UI detection:** if any file ends with `.html`, `.css`, `.scss`, `.less`, `.jsx`, `.tsx`, `.vue`, `.svelte`, `.axaml`, `.xaml`, or matches UI framework config patterns, set `$UI_DETECTED = true`
+   - **JS/TS detection:** if any file ends with `.js`, `.jsx`, `.mjs`, `.cjs`, `.ts`, `.tsx`, `.mts`, `.cts`, `.vue`, or `.svelte`, set `$JS_DETECTED = true`
+   - **Python detection:** if any file ends with `.py` or `.ipynb`, set `$PY_DETECTED = true`
+   - **IaC detection:** if any file ends with `.tf`, `.tfvars`, or `.dockerfile`; has basename `Dockerfile` or `Dockerfile.*`; sits under any of `k8s/`, `kubernetes/`, `helm/`, `manifests/`, `chart/`, `charts/` and ends in `.yaml` or `.yml`; or has extension `.cfn.yaml`, `.cfn.yml`, `.template.json`, or `.template.yaml`, set `$IAC_DETECTED = true`
 2.7. Scan `$FULL_DIFF` hunks for **significant deletions:** if any single hunk contains 10+ contiguous deleted lines, set `$SIGNIFICANT_DELETIONS = true`
 2.8. Scan changed file paths and `$FULL_DIFF` content for **security-sensitive areas** (auth, crypto, input validation, SQL, API endpoints, secrets management, deserialisation, JWT, session, token, eval, exec, spawn, certificate, CORS). If found, set `$SECURITY_SENSITIVE = true`
 
@@ -832,22 +835,58 @@ Agent({
 })
 ```
 
+If `$JS_DETECTED`, also dispatch:
+```
+Agent({
+    description: "ESLint/Biome review",
+    subagent_type: "code-review:eslint-reviewer",
+    name: "eslint-reviewer",
+    mode: "auto",
+    run_in_background: true,
+    prompt: $AGENT_PROMPT
+})
+```
+
+If `$PY_DETECTED`, also dispatch:
+```
+Agent({
+    description: "Ruff review",
+    subagent_type: "code-review:ruff-reviewer",
+    name: "ruff-reviewer",
+    mode: "auto",
+    run_in_background: true,
+    prompt: $AGENT_PROMPT
+})
+```
+
+If `$IAC_DETECTED`, also dispatch:
+```
+Agent({
+    description: "Trivy IaC security review",
+    subagent_type: "code-review:trivy-reviewer",
+    name: "trivy-reviewer",
+    mode: "auto",
+    run_in_background: true,
+    prompt: $AGENT_PROMPT
+})
+```
+
 **Batching fallback:** If the platform rejects or silently drops agent dispatches beyond a concurrency limit, split into two batches:
 - **Batch 1** (dispatch first, wait for completion): security-reviewer, correctness-reviewer, consistency-reviewer, style-reviewer
-- **Batch 2** (dispatch after batch 1 completes): archaeology-reviewer, reuse-reviewer, efficiency-reviewer, alignment-reviewer, plus any conditional specialists
+- **Batch 2** (dispatch after batch 1 completes): archaeology-reviewer, reuse-reviewer, efficiency-reviewer, alignment-reviewer, plus any conditional specialists (jbinspect, ui, eslint, ruff, trivy — up to 5)
 
 Batch composition was tuned after a documented incident where the model dispatched only 3 of 7 specialists and fabricated justification for selective omission (commit eb0bbda, 2026-05). Do not reduce batch sizes or reorder splits without re-running that scenario — the explicit dispatch enumeration is the safety net.
 
 This is a fallback only — prefer a single parallel dispatch when possible. Never use batching as a justification to skip specialists entirely.
 
-Store `$SPECIALIST_COUNT` = number of specialists dispatched (8 core only, 9 with C# or UI, 10 with both) and note the dispatch timestamp.
+Store `$SPECIALIST_COUNT` = number of specialists dispatched (8 core only; 9–13 with conditionals: +1 each for `$CSHARP_DETECTED`, `$UI_DETECTED`, `$JS_DETECTED`, `$PY_DETECTED`, `$IAC_DETECTED`) and note the dispatch timestamp.
 
 #### 4.3 Verify dispatch completeness
 
 Immediately after dispatching, perform this self-check:
 
 1. List every specialist agent you just dispatched by name
-2. Compare against the mandatory set: `security-reviewer`, `correctness-reviewer`, `consistency-reviewer`, `style-reviewer`, `archaeology-reviewer`, `reuse-reviewer`, `efficiency-reviewer`, `alignment-reviewer` (plus `jbinspect-reviewer` if `$CSHARP_DETECTED`, plus `ui-reviewer` if `$UI_DETECTED`)
+2. Compare against the mandatory set: `security-reviewer`, `correctness-reviewer`, `consistency-reviewer`, `style-reviewer`, `archaeology-reviewer`, `reuse-reviewer`, `efficiency-reviewer`, `alignment-reviewer` (plus `jbinspect-reviewer` if `$CSHARP_DETECTED`, plus `ui-reviewer` if `$UI_DETECTED`, plus `eslint-reviewer` if `$JS_DETECTED`, plus `ruff-reviewer` if `$PY_DETECTED`, plus `trivy-reviewer` if `$IAC_DETECTED`)
 3. If any mandatory specialist is missing, dispatch it now before proceeding
 4. Announce: `> Dispatch verified: $SPECIALIST_COUNT/$SPECIALIST_COUNT specialists launched`
 
@@ -904,18 +943,18 @@ The fallback is graceful — one parse failure does not break aggregation in Ste
 
 ### Step 5: Cross-review
 
-Dispatch fresh cross-review agents in parallel — one per domain, EXCLUDING jbinspect (jbinspect reports static analysis tool output that doesn't benefit from cross-domain evaluation).
+Dispatch fresh cross-review agents in parallel — one per domain, EXCLUDING the four static-analysis specialists (`jbinspect`, `eslint`, `ruff`, `trivy`). Static-analysis tool output does not benefit from cross-domain evaluation — see `includes/static-analysis-context.md` §8.
 
 **Conditional dispatch:** If `$UI_DETECTED`, also dispatch `cross-review-ui`. Do not dispatch `cross-review-ui` when `$UI_DETECTED` is false — there are no ui-reviewer findings to cross-review.
 
-Store `$CROSS_REVIEW_COUNT` = number of cross-review agents per this table (jbinspect is excluded — static analysis output, no cross-domain benefit):
+Store `$CROSS_REVIEW_COUNT` = number of cross-review agents per this table (the four static-analysis specialists are excluded — tool output, no cross-domain benefit):
 
-| Scenario     | `$SPECIALIST_COUNT` | `$CROSS_REVIEW_COUNT` |
-|--------------|---------------------|-----------------------|
-| No C#, no UI | 8                   | 8                     |
-| C# only      | 9                   | 8                     |
-| UI only      | 9                   | 9                     |
-| C# and UI    | 10                  | 9                     |
+| Scenario                | `$CROSS_REVIEW_COUNT` |
+|-------------------------|-----------------------|
+| `$UI_DETECTED` is false | 8                     |
+| `$UI_DETECTED` is true  | 9                     |
+
+Static-analysis specialists never contribute to `$CROSS_REVIEW_COUNT` regardless of how many fire. `$SPECIALIST_COUNT` is unaffected by this table — it still includes static-analysis specialists.
 
 Use `$CROSS_REVIEW_COUNT` (not `$SPECIALIST_COUNT`) as the total count `R` counts down from in progress reporting below.
 
@@ -934,7 +973,7 @@ Use `$CROSS_REVIEW_COUNT` (not `$SPECIALIST_COUNT`) as the total count `R` count
 **5.2 Build per-domain prompt:** For each cross-reviewer:
 1. Copy the collected findings string
 2. Remove the block whose heading matches `### <domain>-reviewer findings` (i.e. the cross-reviewer's own domain). This exclusion is intentional — it limits prompt-injection propagation by ensuring each cross-reviewer only sees findings from other domains, and it prevents self-reinforcement bias where a domain's own findings inflate its confidence.
-3. Include jbinspect findings (if present) for ALL cross-reviewers — jbinspect is excluded from receiving cross-review, not from being reviewed. Omit the `### jbinspect-reviewer findings` block entirely if `$CSHARP_DETECTED` is false — do not include a placeholder
+3. Include findings from any static-analysis specialist (`jbinspect`, `eslint`, `ruff`, `trivy`) for ALL cross-reviewers — they are excluded from receiving cross-review, not from being reviewed. Omit any `### <name>-reviewer findings` block whose corresponding detection flag is false (`$CSHARP_DETECTED`, `$JS_DETECTED`, `$PY_DETECTED`, `$IAC_DETECTED` respectively) — do not include placeholders
 
 **5.3 Dispatch:** Announce `> Dispatching $CROSS_REVIEW_COUNT cross-review agents...`, note the dispatch timestamp, then dispatch all cross-reviewers in parallel. Each cross-reviewer uses the SAME `subagent_type` as the original specialist — the `Mode: cross-review` line in the prompt switches the agent to cross-review behaviour:
 

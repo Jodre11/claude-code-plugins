@@ -19,3 +19,6 @@ __pycache__/
 # Node
 node_modules/
 package-lock.json
+
+# Test artefacts
+tests/lib/.static-analysis-smoke-results.json

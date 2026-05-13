@@ -782,6 +782,8 @@ Batch composition was tuned after a documented incident where the model dispatch
 
 This is a fallback only — prefer a single parallel dispatch when possible. Never use batching as a justification to skip specialists entirely.
 
+**Polyglot fallback:** if all five conditional specialists fire on a single diff, Batch 2 carries 9 dispatches — above the typical concurrency ceiling. Split Batch 2 further: keep the 4 core specialists in Batch 2, dispatch the 5 conditionals as Batch 3 after Batch 2 completes. The verify-completeness self-check in Step 4.3 still gates whether all expected specialists ran, regardless of batch count.
+
 Store `$SPECIALIST_COUNT` = number of specialists dispatched (8 core only; 9–13 with conditionals: +1 each for `$CSHARP_DETECTED`, `$UI_DETECTED`, `$JS_DETECTED`, `$PY_DETECTED`, `$IAC_DETECTED`) and note the dispatch timestamp.
 
 #### 4.3 Verify dispatch completeness

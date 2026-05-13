@@ -14,9 +14,9 @@ Follow the cross-cutting static-analysis procedure in `includes/static-analysis-
 
 Filter the changed file list to IaC files. A file qualifies if any of these match:
 
-- Extension `.tf`, `.tfvars`, or `.dockerfile`
-- Basename `Dockerfile` or matching `Dockerfile.*`
-- Path-prefix any of `k8s/`, `kubernetes/`, `helm/`, `manifests/`, `chart/`, or `charts/`, **and** extension `.yaml` or `.yml`. (Restricting YAML to those paths avoids noise from unrelated YAML.)
+- Extension `.tf`, `.tfvars`, `.tf.json`, `.tfplan`, or `.dockerfile`
+- Basename `Dockerfile`, matching `Dockerfile.*`, or basename `Containerfile` (Podman/Buildah)
+- Any path segment equals `k8s`, `kubernetes`, `helm`, `manifests`, `chart`, or `charts`, **and** extension `.yaml`, `.yml`, or `.tpl` (Helm template). (Restricting YAML to those paths avoids noise from unrelated YAML; e.g. `infra/k8s/deployment.yaml` matches, `tests/fixtures/mock-data.yaml` does not.)
 - Extension `.cfn.yaml`, `.cfn.yml`, `.template.json`, or `.template.yaml`
 
 If none match, emit the canonical zero-state and stop:

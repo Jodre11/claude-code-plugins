@@ -537,7 +537,7 @@ test_sync_static_analysis_severity_lock() {
             pass "static-analysis severity lock: synthesiser lists tag $tag"
         else
             fail "static-analysis severity lock: synthesiser lists tag $tag" \
-                "tag literal \`$tag\` not found"
+                "tag literal \`$tag\` not found in $synthesiser"
         fi
     done
 }
@@ -561,7 +561,7 @@ test_sync_static_analysis_critical_allowlist_present() {
             pass "static-analysis critical-allow-list: $agent contains 'Critical-allow-list:'"
         else
             fail "static-analysis critical-allow-list: $agent contains 'Critical-allow-list:'" \
-                "heading literal not found"
+                "heading literal not found in $path"
         fi
     done
 }

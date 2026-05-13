@@ -20,12 +20,16 @@
 # Assertions
 # ----------
 # When CLAUDE_CODE_E2E_TESTS=1 and the file exists, the test asserts:
-#   - schema_version == 1
+#   - schema_version == 2 (bumped from 1 in Phase 2 of the severity-locked +
+#     capped-confidence policy spec, 2026-05-13 — see results-schema.md)
 #   - run_at parseable as ISO 8601 and within FRESHNESS_DAYS (default 30)
 #   - all four specialists present in `specialists`
 #   - each specialist has all three sub-checks
 #   - each sub-check passed all 3 iterations (or up to 5 per the spec's
 #     temperature-tolerance rule)
+#   - synthesiser.synthesiser_severity_lock present and passed all iterations,
+#     with no Dismissed tier placement, all confidences >= 50, all severities
+#     == Important (defensive per-iteration checks)
 #   - overall_pass == true
 #
 # On any assertion failure the test fails loudly so the spec's "all-pass
@@ -72,9 +76,12 @@ test_static_analysis_behavioural_smoke() {
 
     local schema_version
     schema_version="$(jq -r '.schema_version // empty' "$results_file")"
-    _smoke_assert "smoke: schema_version is 1" \
-        "$([[ "$schema_version" == "1" ]] && echo true || echo false)" \
-        "expected 1, got '$schema_version'"
+    # Schema 2 added the top-level `synthesiser` block (Phase 2 of the
+    # severity-locked + capped-confidence policy spec, 2026-05-13). Older
+    # results files must be re-generated against schema 2 to be valid.
+    _smoke_assert "smoke: schema_version is 2" \
+        "$([[ "$schema_version" == "2" ]] && echo true || echo false)" \
+        "expected 2, got '$schema_version'"
 
     local run_at
     run_at="$(jq -r '.run_at // empty' "$results_file")"
@@ -133,4 +140,47 @@ test_static_analysis_behavioural_smoke() {
             fi
         done
     done
+
+    # Synthesiser severity-lock sub-check (schema_version >= 2)
+    local synth_present
+    synth_present="$(jq -r '.synthesiser != null' "$results_file")"
+    if [[ "$synth_present" != "true" ]]; then
+        fail "smoke: synthesiser block present" \
+            "synthesiser block missing in $results_file (schema_version 2 requires it)"
+        return
+    fi
+
+    local synth_total synth_passed
+    synth_total="$(jq -r '.synthesiser.synthesiser_severity_lock.iterations // 0' "$results_file")"
+    synth_passed="$(jq -r '.synthesiser.synthesiser_severity_lock.passed // 0' "$results_file")"
+
+    if [[ "$synth_total" -ge 3 && "$synth_passed" -eq "$synth_total" ]]; then
+        pass "smoke: synthesiser/synthesiser_severity_lock $synth_passed/$synth_total iterations passed"
+    else
+        local synth_reason
+        synth_reason="$(jq -r '.synthesiser.synthesiser_severity_lock.failure_reason // "no failure_reason recorded"' "$results_file")"
+        fail "smoke: synthesiser/synthesiser_severity_lock $synth_passed/$synth_total iterations passed" \
+            "spec requires all-pass over ≥ 3 iterations; failure_reason: $synth_reason"
+    fi
+
+    # Defensive per-iteration checks: any Dismissed placement or sub-50 confidence
+    # is an outright fail even if `passed` field claims otherwise. Catches a driver
+    # bug where `passed` was incorrectly computed against the underlying observations.
+    local dismissed_count
+    dismissed_count="$(jq -r '.synthesiser.synthesiser_severity_lock.tier_placements // [] | map(select(. == "Dismissed")) | length' "$results_file")"
+    _smoke_assert "smoke: synthesiser tier_placements has no Dismissed entries" \
+        "$([[ "$dismissed_count" -eq 0 ]] && echo true || echo false)" \
+        "found $dismissed_count Dismissed placement(s) — policy violated"
+
+    local sub_50_count
+    sub_50_count="$(jq -r '.synthesiser.synthesiser_severity_lock.observed_confidences // [] | map(select(. < 50)) | length' "$results_file")"
+    _smoke_assert "smoke: synthesiser observed_confidences all >= 50 (floor)" \
+        "$([[ "$sub_50_count" -eq 0 ]] && echo true || echo false)" \
+        "found $sub_50_count observation(s) with confidence < 50 — floor breached"
+
+    local non_important_count
+    non_important_count="$(jq -r '.synthesiser.synthesiser_severity_lock.observed_severities // [] | map(select(. != "Important")) | length' "$results_file")"
+    _smoke_assert "smoke: synthesiser observed_severities all == Important (lock)" \
+        "$([[ "$non_important_count" -eq 0 ]] && echo true || echo false)" \
+        "found $non_important_count observation(s) with severity != Important — severity lock violated"
 }

@@ -110,6 +110,10 @@ of the pipeline) — `security-cross-review` etc. may flag a static-analysis fin
 angle — but the static-analysis specialist itself sits out the cross-review phase. The exclusion
 generalises the existing jbinspect carve-out to the new specialists.
 
+Specialists report only their tool's findings. Leave security, style, and correctness judgement
+to peer reviewers — the cross-review machinery in Step 5 of the pipeline already triangulates
+those domains.
+
 ## 9. Cleanup
 
 Remove the tool's intermediate output files from `$CLAUDE_TEMP_DIR` after parsing. Skip cleanup

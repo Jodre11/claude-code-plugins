@@ -12,7 +12,7 @@ Follow the cross-cutting static-analysis procedure in `includes/static-analysis-
 
 ## File-extension filter
 
-Filter the changed file list to entries matching any of: `*.js`, `*.jsx`, `*.mjs`, `*.cjs`, `*.ts`, `*.tsx`, `*.vue`, `*.svelte`. If none match, emit the canonical zero-state and stop (see `includes/static-analysis-context.md` §2):
+Filter the changed file list to entries matching any of: `*.js`, `*.jsx`, `*.mjs`, `*.cjs`, `*.ts`, `*.tsx`, `*.mts`, `*.cts`, `*.vue`, `*.svelte`. If none match, emit the canonical zero-state and stop (see `includes/static-analysis-context.md` §2):
 
 ```
 ## ESLint Findings

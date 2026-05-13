@@ -647,7 +647,7 @@ The block is now ready for use in Step 2.9 when building `$AGENT_PROMPT`.
 2.6. Scan the changed file list:
    - **C# detection:** if any file ends with `.cs`, set `$CSHARP_DETECTED = true`
    - **UI detection:** if any file ends with `.html`, `.css`, `.scss`, `.less`, `.jsx`, `.tsx`, `.vue`, `.svelte`, `.axaml`, `.xaml`, or matches UI framework config patterns, set `$UI_DETECTED = true`
-   - **JS/TS detection:** if any file ends with `.js`, `.jsx`, `.mjs`, `.cjs`, `.ts`, `.tsx`, `.vue`, or `.svelte`, set `$JS_DETECTED = true`
+   - **JS/TS detection:** if any file ends with `.js`, `.jsx`, `.mjs`, `.cjs`, `.ts`, `.tsx`, `.mts`, `.cts`, `.vue`, or `.svelte`, set `$JS_DETECTED = true`
    - **Python detection:** if any file ends with `.py` or `.ipynb`, set `$PY_DETECTED = true`
    - **IaC detection:** if any file ends with `.tf`, `.tfvars`, or `.dockerfile`; has basename `Dockerfile` or `Dockerfile.*`; sits under any of `k8s/`, `kubernetes/`, `helm/`, `manifests/`, `chart/`, `charts/` and ends in `.yaml` or `.yml`; or has extension `.cfn.yaml`, `.cfn.yml`, `.template.json`, or `.template.yaml`, set `$IAC_DETECTED = true`
 2.7. Scan `$FULL_DIFF` hunks for **significant deletions:** if any single hunk contains 10+ contiguous deleted lines, set `$SIGNIFICANT_DELETIONS = true`

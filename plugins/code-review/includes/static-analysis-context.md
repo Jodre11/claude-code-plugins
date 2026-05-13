@@ -95,6 +95,8 @@ Canonical heading shape: `## <Tool name> Findings`. Per-finding block:
 - **Suggested fix:** concrete suggestion based on rule + context
 ```
 
+**Authoring suggested fixes:** read the file around the flagged line and provide a concrete recommendation — don't paraphrase the tool's rule description. The `Suggested fix:` field should answer "what should the developer change?", not "what does the rule mean?".
+
 Zero-findings case (after `$CHANGED_LINES` filtering): `## <Tool name> Findings\n\n0 findings.`
 
 Report ALL findings whose mapped severity is not `omit`. Specialists may add a `Reference:` field

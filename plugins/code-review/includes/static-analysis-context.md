@@ -78,9 +78,10 @@ to review what the PR introduced, not audit the rest.
 ## 6. Confidence and severity contract
 
 Every finding includes the literal `Confidence: 100`. Severity is tool-derived; each specialist's
-file declares its own mapping table (e.g. ERROR → Critical, WARNING → Important). The
-`Confidence: 100` literal lets the future severity-locked + capped-confidence policy apply
-uniformly across all static-analysis specialists.
+file declares its own mapping table (e.g. WARNING → Important, SUGGESTION → Suggestion — see §10
+for the default-cap and Critical-allow-list mechanism). The `Confidence: 100` literal lets the
+severity-locked + capped-confidence policy (§10) apply uniformly across all static-analysis
+specialists.
 
 ## 7. Output format
 
@@ -119,3 +120,61 @@ those domains.
 
 Remove the tool's intermediate output files from `$CLAUDE_TEMP_DIR` after parsing. Skip cleanup
 if the run was aborted (PATH miss, temp-dir absent) — there is nothing to clean.
+
+## 10. Severity-locked + capped-confidence policy
+
+Findings from static-analysis specialists are tool-derived, deterministic data. The
+synthesiser must not reclassify their severity, must not silently dismiss them, and
+must not adjust their confidence outside a hard envelope. This section codifies that
+contract. The synthesiser cites it from `agents/review-synthesiser.md` under its
+"Severity Reclassification" section.
+
+**Severity is locked.** Each specialist's mapped severity (per its per-tool table —
+ESLint mapping in `agents/eslint-reviewer.md`, Ruff in `agents/ruff-reviewer.md`,
+Trivy in `agents/trivy-reviewer.md`, JetBrains InspectCode in
+`agents/jbinspect-reviewer.md`) is authoritative. The synthesiser's "Severity
+Reclassification" pass skips findings tagged `[eslint]`, `[ruff]`, `[trivy]`, or
+`[jbinspect]`. There is no LLM override on severity for these findings.
+
+**Confidence starts at 100.** Every static-analysis finding emits the literal
+`Confidence: 100` (per §6). The synthesiser may cap it down within a bounded envelope
+based on cross-reviewer dissent, but cannot raise it above 100.
+
+**Per-source dissent budget.** The synthesiser examines the qualitative
+`agree/disagree/supplement` text from each of 8 cross-reviewers (`security`,
+`correctness`, `consistency`, `style`, `archaeology`, `reuse`, `efficiency`,
+`alignment`) plus its own independent analysis as a 9th source. For each source it
+decides whether that source dissented and how strongly, allocating
+up to 5 points of confidence drop per source. Silence is not agreement —
+silent sources contribute 0. Agreement also contributes 0; there is no "credit"
+mechanism — confidence cannot exceed 100.
+
+**Floor 50.** The clamp is `Confidence = max(50, 100 - Σ dissent)`. With 9 sources ×
+5 points each, the maximum drop is 45, giving a hard floor of 50. The synthesiser
+must not breach this floor — even if it judges every source maximally dissenting,
+the rendered confidence stays at 50.
+
+**Dismissed tier is forbidden.** Static-analysis findings only land in Consensus or
+Contested. A floor-50 finding with substantial cross-review pushback lands in
+Contested with the synthesiser's reasoning. Findings cannot be silently suppressed
+into Dismissed.
+
+**Critical-allow-list mechanism.** Each specialist's per-tool severity mapping caps
+its highest tier at `Important` by default (Trivy `CRITICAL` → Important,
+JetBrains `ERROR` → Important, ESLint `error` → Important, Ruff `S*` → Important).
+Specific rule IDs that warrant `Critical` are listed in a `Critical-allow-list:`
+subsection in each specialist file. The list is an explicit override rather than a
+heuristic: a rule must be enumerated to escalate. This fails *safe* — a new tool rule
+that should be Critical but is not on the list maps to its default cap; the LLM
+`security-reviewer` can still flag it separately under the LLM-specialist contract.
+
+**Rendered output.** When the synthesiser adjusts confidence (`C < 100`), render the
+adjusted value with this literal:
+
+```
+- **Confidence:** <C>  *(adjusted from 100 — <D> of 9 sources dissented)*
+```
+
+`C` is the final confidence (50–100); `D` is the number of dissenting sources
+(0–9). When `C == 100` (no adjustment), the parenthetical is omitted entirely. Most
+findings will not be adjusted, so the noise stays low.

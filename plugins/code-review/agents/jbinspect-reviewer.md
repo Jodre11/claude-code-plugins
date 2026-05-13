@@ -68,12 +68,18 @@ After cross-referencing, intersect each `<Issue>`'s `Line` attribute against `$C
 
 ## Severity mapping
 
+Per `includes/static-analysis-context.md` §10, the highest tier defaults to `Important`; `Critical` is opt-in via the allow-list below.
+
 | InspectCode severity | Mapped     |
 |----------------------|------------|
-| `ERROR`              | Critical   |
+| `ERROR`              | Important  |
 | `WARNING`            | Important  |
 | `SUGGESTION`         | Suggestion |
-| `HINT`               | omit       |
+| `HINT`               | Suggestion |
+
+## Critical-allow-list:
+
+none — see `includes/static-analysis-context.md` §10. C# nullable / async / disposable issues are well-covered as `Important`. If a future InspectCode rule warrants `Critical` (e.g. an ID dedicated to a known SQL-injection or path-traversal pattern), add it then.
 
 ## Output
 

@@ -49,15 +49,24 @@ trivy config --format=json --severity=MEDIUM,HIGH,CRITICAL --exit-code=0 <list-o
 
 ## Severity mapping
 
-| Trivy severity | Mapped     |
-|----------------|------------|
-| `CRITICAL`     | Critical   |
-| `HIGH`         | Important  |
-| `MEDIUM`       | Suggestion |
-| `LOW`          | omit (already excluded by `--severity` flag — kept here as defensive default if the flag changes) |
-| `UNKNOWN`      | omit (same)|
+Per `includes/static-analysis-context.md` §10, the highest tier defaults to `Important`; `Critical` is opt-in via the allow-list below. Trivy's native severity scale maps directly except `CRITICAL`, which is capped:
 
-Trivy's severity is calibrated for IaC blast radius; the mapping is direct.
+| Trivy native      | Mapped     |
+|-------------------|------------|
+| `CRITICAL`        | Important *(see allow-list)* |
+| `HIGH`            | Important  |
+| `MEDIUM`          | Suggestion |
+| `LOW`, `UNKNOWN`  | omit *(already filtered at `--severity` flag — kept here as defensive default if the flag changes)* |
+
+## Critical-allow-list:
+
+These rule IDs (and Title patterns) override the default `Important` cap to `Critical` per `includes/static-analysis-context.md` §10. The secret-finding family is wide, so the allow-list mixes patterns and explicit IDs:
+
+- **Pattern (rule ID):** any rule whose ID matches `AVD-*-SECRET-*`
+- **Pattern (title):** any rule whose Title contains `secret`, `credential`, or `private key` (case-insensitive)
+- **Explicit IDs:** `AVD-AWS-0017` (plaintext secret in Lambda env), `AVD-GCP-0001` (plaintext credential in Cloud Function env)
+
+New secret-finding rules added by Trivy upstream fall under the patterns above without needing an enumeration update. Specific IDs are listed for rules whose title doesn't trip the pattern match.
 
 ## Output
 

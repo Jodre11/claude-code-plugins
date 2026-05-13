@@ -461,3 +461,107 @@ test_static_analysis_specialists_have_required_severity_mapping() {
         fi
     done
 }
+
+test_sync_static_analysis_policy_literals() {
+    local cr
+    cr=$(_cr_dir)
+    if [[ ! -d "$cr" ]]; then
+        skip "static-analysis policy literals" "code-review plugin not found"
+        return
+    fi
+
+    local include="$cr/includes/static-analysis-context.md"
+    local synthesiser="$cr/agents/review-synthesiser.md"
+
+    if [[ ! -f "$include" ]]; then
+        fail "static-analysis policy literals: include exists" "missing: $include"
+        return
+    fi
+    if [[ ! -f "$synthesiser" ]]; then
+        fail "static-analysis policy literals: synthesiser exists" "missing: $synthesiser"
+        return
+    fi
+
+    # Two byte-identical literals must appear in BOTH §10 of the include AND the
+    # synthesiser carve-out. Drift in either direction would mean the policy text
+    # has diverged between its definition site and its consumer.
+    local literal
+    for literal in \
+        'up to 5 points of confidence drop' \
+        'Confidence = max(50, 100 - Σ dissent)'; do
+        if grep -qF "$literal" "$include"; then
+            pass "static-analysis policy literals: include contains '$literal'"
+        else
+            fail "static-analysis policy literals: include contains '$literal'" \
+                "literal not found in $include"
+        fi
+        if grep -qF "$literal" "$synthesiser"; then
+            pass "static-analysis policy literals: synthesiser contains '$literal'"
+        else
+            fail "static-analysis policy literals: synthesiser contains '$literal'" \
+                "literal not found in $synthesiser"
+        fi
+    done
+}
+
+test_sync_static_analysis_severity_lock() {
+    local cr
+    cr=$(_cr_dir)
+    if [[ ! -d "$cr" ]]; then
+        skip "static-analysis severity lock" "code-review plugin not found"
+        return
+    fi
+
+    local synthesiser="$cr/agents/review-synthesiser.md"
+    if [[ ! -f "$synthesiser" ]]; then
+        fail "static-analysis severity lock: synthesiser exists" "missing: $synthesiser"
+        return
+    fi
+
+    # The carve-out's anchor sentence must appear verbatim. Match the load-bearing
+    # phrase rather than the entire paragraph — paragraph-level matching is brittle
+    # against acceptable wording polish; the anchor sentence is the policy claim.
+    local anchor='Findings tagged `[eslint]`, `[ruff]`, `[trivy]`, or `[jbinspect]` are exempt from'
+    if grep -qF "$anchor" "$synthesiser"; then
+        pass "static-analysis severity lock: synthesiser contains carve-out anchor sentence"
+    else
+        fail "static-analysis severity lock: synthesiser contains carve-out anchor sentence" \
+            "anchor literal not found: $anchor"
+    fi
+
+    # Each of the four specialist tags must be listed verbatim in the carve-out.
+    # Drift here would silently re-enable reclassification for the missing specialist.
+    local tag
+    for tag in '[eslint]' '[ruff]' '[trivy]' '[jbinspect]'; do
+        if grep -qF "\`$tag\`" "$synthesiser"; then
+            pass "static-analysis severity lock: synthesiser lists tag $tag"
+        else
+            fail "static-analysis severity lock: synthesiser lists tag $tag" \
+                "tag literal \`$tag\` not found in $synthesiser"
+        fi
+    done
+}
+
+test_sync_static_analysis_critical_allowlist_present() {
+    local cr
+    cr=$(_cr_dir)
+    if [[ ! -d "$cr" ]]; then
+        skip "static-analysis critical-allow-list" "code-review plugin not found"
+        return
+    fi
+
+    local agent
+    for agent in eslint-reviewer.md ruff-reviewer.md trivy-reviewer.md jbinspect-reviewer.md; do
+        local path="$cr/agents/$agent"
+        if [[ ! -f "$path" ]]; then
+            fail "static-analysis critical-allow-list: $agent exists" "missing: $path"
+            continue
+        fi
+        if grep -qF 'Critical-allow-list:' "$path"; then
+            pass "static-analysis critical-allow-list: $agent contains 'Critical-allow-list:'"
+        else
+            fail "static-analysis critical-allow-list: $agent contains 'Critical-allow-list:'" \
+                "heading literal not found in $path"
+        fi
+    done
+}

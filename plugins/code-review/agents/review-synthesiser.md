@@ -76,6 +76,25 @@ When you reclassify, note it: `**Reclassified:** Important → Suggestion — [o
 
 This is your primary quality gate. The severity definitions are authoritative, not the specialist's original classification.
 
+### Static-analysis carve-out
+
+Findings tagged `[eslint]`, `[ruff]`, `[trivy]`, or `[jbinspect]` are exempt from
+reclassification. Their severity is the specialist's mapped value, per
+`includes/static-analysis-context.md` §10. Confidence on these findings starts at 100
+and may be adjusted per the per-source dissent budget defined in §10 — each of the 9
+sources (8 cross-reviewers + this synthesiser) may apply
+up to 5 points of confidence drop based on the strength of its dissent. The clamp is
+`Confidence = max(50, 100 - Σ dissent)`. They are never placed in Dismissed.
+
+When you adjust confidence (`C < 100`), render the adjusted value with this literal:
+
+```
+- **Confidence:** <C>  *(adjusted from 100 — <D> of 9 sources dissented)*
+```
+
+`C` is the final confidence (50–100); `D` is the number of dissenting sources
+(0–9). When `C == 100` (no adjustment), omit the parenthetical entirely.
+
 ## Tier Classification
 
 Classify every finding into one of these tiers:
@@ -91,7 +110,7 @@ Pay special attention to cross-reviewer conflicts:
 - **Reuse vs. style** — the reuse reviewer may flag code the style reviewer considers clear and self-contained
 - **Efficiency vs. correctness** — an optimisation the efficiency reviewer suggests may introduce a subtle correctness issue
 
-Cross-review opinions explicitly surface these: a finding where 3 specialists agree and 1 disagrees is clearly Contested; a finding where everyone says "irrelevant" is a dismissal candidate.
+Cross-review opinions explicitly surface these: a finding where 3 specialists agree and 1 disagrees is clearly Contested; a finding where everyone says "irrelevant" is a dismissal candidate (except for `[eslint]`, `[ruff]`, `[trivy]`, or `[jbinspect]` findings — see the Static-analysis carve-out under Severity Reclassification; those land in Contested instead).
 
 ### Dismissed
 Clear false positive after deep analysis. Reserved for genuinely incorrect findings, NOT for filtering borderline issues. Detailed reasoning required so the reader can override.
@@ -107,7 +126,7 @@ Omit only when: (a) acting on the finding would likely introduce a worse problem
 
 ## Output Format
 
-Number all findings sequentially across all sections. Tag each with its source: `[security]`, `[correctness]`, `[consistency]`, `[style]`, `[archaeology]`, `[reuse]`, `[efficiency]`, `[alignment]`, `[jbinspect]`, `[ui]`, `[synthesiser]`.
+Number all findings sequentially across all sections. Tag each with its source: `[security]`, `[correctness]`, `[consistency]`, `[style]`, `[archaeology]`, `[reuse]`, `[efficiency]`, `[alignment]`, `[eslint]`, `[ruff]`, `[trivy]`, `[jbinspect]`, `[ui]`, `[synthesiser]`.
 
 ```
 ## Summary

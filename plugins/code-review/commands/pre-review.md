@@ -550,8 +550,9 @@ The block is now ready for use in Step 2.9 when building `$AGENT_PROMPT`.
    - **C# detection:** if any file ends with `.cs`, set `$CSHARP_DETECTED = true`
    - **UI detection:** if any file ends with `.html`, `.css`, `.scss`, `.less`, `.jsx`, `.tsx`, `.vue`, `.svelte`, `.axaml`, `.xaml`, or matches UI framework config patterns, set `$UI_DETECTED = true`
    - **JS/TS detection:** if any file ends with `.js`, `.jsx`, `.mjs`, `.cjs`, `.ts`, `.tsx`, `.mts`, `.cts`, `.vue`, or `.svelte`, set `$JS_DETECTED = true`
+   - **Note:** JS/TS detection deliberately overlaps with UI detection on `.jsx`, `.tsx`, `.vue`, `.svelte`. Both flags fire on these files — `eslint-reviewer` and `ui-reviewer` analyse different concerns. The dispatcher does not deduplicate; specialist file filters scope each tool's pass.
    - **Python detection:** if any file ends with `.py` or `.ipynb`, set `$PY_DETECTED = true`
-   - **IaC detection:** if any file ends with `.tf`, `.tfvars`, or `.dockerfile`; has basename `Dockerfile` or `Dockerfile.*`; sits under any of `k8s/`, `kubernetes/`, `helm/`, `manifests/`, `chart/`, `charts/` and ends in `.yaml` or `.yml`; or has extension `.cfn.yaml`, `.cfn.yml`, `.template.json`, or `.template.yaml`, set `$IAC_DETECTED = true`
+   - **IaC detection:** if any file ends with `.tf`, `.tfvars`, `.tf.json`, `.tfplan`, or `.dockerfile`; has basename `Dockerfile`, matches `Dockerfile.*`, or has basename `Containerfile`; has any path segment equal to `k8s`, `kubernetes`, `helm`, `manifests`, `chart`, or `charts` (e.g. `infra/k8s/deployment.yaml` matches; `mock-data.yaml` does not) and ends in `.yaml`, `.yml`, or `.tpl`; or has extension `.cfn.yaml`, `.cfn.yml`, `.template.json`, or `.template.yaml`, set `$IAC_DETECTED = true`
 2.7. Scan `$FULL_DIFF` hunks for **significant deletions:** if any single hunk contains 10+ contiguous deleted lines, set `$SIGNIFICANT_DELETIONS = true`
 2.8. Scan changed file paths and `$FULL_DIFF` content for **security-sensitive areas** (auth, crypto, input validation, SQL, API endpoints, secrets management, deserialisation, JWT, session, token, eval, exec, spawn, certificate, CORS). If found, set `$SECURITY_SENSITIVE = true`
 
@@ -780,6 +781,8 @@ Agent({
 Batch composition was tuned after a documented incident where the model dispatched only 3 of 7 specialists and fabricated justification for selective omission (commit eb0bbda, 2026-05). Do not reduce batch sizes or reorder splits without re-running that scenario — the explicit dispatch enumeration is the safety net.
 
 This is a fallback only — prefer a single parallel dispatch when possible. Never use batching as a justification to skip specialists entirely.
+
+**Polyglot fallback:** if all five conditional specialists fire on a single diff, Batch 2 carries 9 dispatches — above the typical concurrency ceiling. Split Batch 2 further: keep the 4 core specialists in Batch 2, dispatch the 5 conditionals as Batch 3 after Batch 2 completes. The verify-completeness self-check in Step 4.3 still gates whether all expected specialists ran, regardless of batch count.
 
 Store `$SPECIALIST_COUNT` = number of specialists dispatched (8 core only; 9–13 with conditionals: +1 each for `$CSHARP_DETECTED`, `$UI_DETECTED`, `$JS_DETECTED`, `$PY_DETECTED`, `$IAC_DETECTED`) and note the dispatch timestamp.
 

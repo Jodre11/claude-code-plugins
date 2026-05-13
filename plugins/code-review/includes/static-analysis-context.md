@@ -95,6 +95,8 @@ Canonical heading shape: `## <Tool name> Findings`. Per-finding block:
 - **Suggested fix:** concrete suggestion based on rule + context
 ```
 
+**Authoring suggested fixes:** read the file around the flagged line and provide a concrete recommendation — don't paraphrase the tool's rule description. The `Suggested fix:` field should answer "what should the developer change?", not "what does the rule mean?".
+
 Zero-findings case (after `$CHANGED_LINES` filtering): `## <Tool name> Findings\n\n0 findings.`
 
 Report ALL findings whose mapped severity is not `omit`. Specialists may add a `Reference:` field
@@ -107,6 +109,10 @@ with `Mode: cross-review`. Their findings ARE shown to the eight cross-reviewers
 of the pipeline) — `security-cross-review` etc. may flag a static-analysis finding from another
 angle — but the static-analysis specialist itself sits out the cross-review phase. The exclusion
 generalises the existing jbinspect carve-out to the new specialists.
+
+Specialists report only their tool's findings. Leave security, style, and correctness judgement
+to peer reviewers — the cross-review machinery in Step 5 of the pipeline already triangulates
+those domains.
 
 ## 9. Cleanup
 

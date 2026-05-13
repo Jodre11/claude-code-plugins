@@ -7,10 +7,11 @@ Cited from:
   - agents/jbinspect-reviewer.md
   - agents/code-analysis.md (InspectCode section)
 
-Cite-only is provisional — a behavioural smoke test in tests/lib/test_static_analysis_behavioural.sh
-gates the design. If specialists rationalise away the include (skip-by-rationalisation), inline this
-file's body into each specialist verbatim with sync-test enforcement (modelled on
-test_sync_cross_review_mode_inline_matches_canonical). See spec
+Cite-only design confirmed by Stage 2 behavioural smoke (33 dispatches across 4 specialists × 3
+sub-checks × 3 iterations, jbinspect/normal_run N/A — no C# fixture): every specialist emitted
+the canonical wording verbatim, with no skip-by-rationalisation. Driver protocol in
+tests/fixtures/static-analysis/driver-prompt.md; results consumed by
+tests/lib/test_static_analysis_behavioural.sh under CLAUDE_CODE_E2E_TESTS=1. See spec
 docs/superpowers/specs/2026-05-12-static-analysis-specialists-design.md §"Cite-only vs. inline". -->
 
 # Static-Analysis Context

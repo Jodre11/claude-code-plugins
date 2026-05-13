@@ -91,11 +91,13 @@ weak hand-wave wording ("irrelevant for this PR", "this isn't the kind of issue 
 care about here"). The synthesiser is expected to register its own dissent during
 independent analysis as the 9th source, bringing total dissent to 9 of 9.
 
-Template (substitute `<empty-tree-sha>` with `git hash-object -t tree /dev/null`):
+Template (substitute `<empty-tree-sha>` with `git hash-object -t tree /dev/null`, and the
+`Head SHA:` placeholder with `git rev-parse HEAD` — the synthesiser validates `$HEAD_SHA`
+against `^[0-9a-f]{40}$` and halts on the literal string `HEAD`):
 
 ```
 Base branch: <empty-tree-sha>
-Head SHA: HEAD
+Head SHA: <full HEAD SHA from `git rev-parse HEAD`>
 Empty tree mode: true
 
 Changed file list:
@@ -180,7 +182,7 @@ that targets only the relevant fixture file(s).
 
 ```
 Base branch: <empty-tree SHA from `git hash-object -t tree /dev/null`>
-Head SHA: HEAD
+Head SHA: <full HEAD SHA from `git rev-parse HEAD`>
 Path scope: tests/fixtures/static-analysis/<subdir>
 Empty tree mode: true
 Intent ledger:

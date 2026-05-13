@@ -70,7 +70,7 @@ The review pipeline (`includes/review-pipeline.md`) handles all routing:
 | `efficiency-reviewer` | Performance issues, N+1 patterns, missed concurrency, resource leaks |
 | `alignment-reviewer` | Intent drift and scope creep against the captured intent ledger |
 | `jbinspect-reviewer` | JetBrains InspectCode static analysis for C# (conditional — `.cs` files only) |
-| `eslint-reviewer` | ESLint or Biome static analysis for JS/TS (conditional — `.js`/`.jsx`/`.mjs`/`.cjs`/`.ts`/`.tsx`/`.vue`/`.svelte` files only) |
+| `eslint-reviewer` | ESLint or Biome static analysis for JS/TS (conditional — `.js`/`.jsx`/`.mjs`/`.cjs`/`.ts`/`.tsx`/`.mts`/`.cts`/`.vue`/`.svelte` files only) |
 | `ruff-reviewer` | Ruff static analysis for Python (conditional — `.py`/`.ipynb` files only; notebooks via Ruff ≥ 0.6.0 or `nbqa` fallback) |
 | `trivy-reviewer` | `trivy config` IaC security analysis (conditional — Terraform / Dockerfile / Kubernetes / Helm / CFN files only) |
 | `ui-reviewer` | UI/UX quality, accessibility, usability (conditional — visual component files only) |

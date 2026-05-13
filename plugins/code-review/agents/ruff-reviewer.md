@@ -54,13 +54,24 @@ The `nbqa` line-remap is the most fiddly part of the specialist — keep this pr
 
 ## Severity mapping
 
-Ruff has no built-in severity scale; map by rule code prefix:
+Per `includes/static-analysis-context.md` §10, the highest tier defaults to `Important`; `Critical` is opt-in via the allow-list below. Ruff has no native severity scale; categorise by rule code prefix:
 
-- `E*`, `F*` (broken-code rules: undefined name, syntax error) → Important
-- `S*` (bandit security) → Important; **promote to Critical** for the enumerated list:
-  `S102`, `S103`, `S104`, `S105`, `S106`, `S107`, `S301`–`S321`, `S501`–`S612`.
-  (Pickle/marshal deserialisation, exec, hardcoded password, all-interfaces bind, SQL injection patterns.)
-- everything else → Suggestion
+| Code prefix                 | Mapped     |
+|-----------------------------|------------|
+| `F` (Pyflakes)              | Important  |
+| `E` (pycodestyle errors)    | Important  |
+| `W` (pycodestyle warnings)  | Suggestion |
+| `B` (bugbear)               | Important  |
+| `S` (bandit)                | Important *(see allow-list)* |
+| `PL*`, `SIM*`, `UP*`, `RUF*` | Suggestion |
+| Everything else             | Suggestion |
+
+## Critical-allow-list:
+
+These rule IDs override the default `Important` cap to `Critical` per `includes/static-analysis-context.md` §10 — a rule must be enumerated here to escalate. New rules fall through to the default cap and are flagged separately by `security-reviewer` if warranted.
+
+- `S105`, `S106`, `S107`, `S108` — hardcoded password / temp-file leak rules
+- `S301`, `S302`, `S307` — unsafe deserialisation / dynamic-eval rules
 
 ## Output
 

@@ -542,6 +542,46 @@ test_sync_static_analysis_severity_lock() {
     done
 }
 
+test_sync_static_analysis_dismissed_forbidden_literal() {
+    local cr
+    cr=$(_cr_dir)
+    if [[ ! -d "$cr" ]]; then
+        skip "static-analysis dismissed-forbidden literal" "code-review plugin not found"
+        return
+    fi
+
+    local include="$cr/includes/static-analysis-context.md"
+    local synthesiser="$cr/agents/review-synthesiser.md"
+
+    if [[ ! -f "$include" ]]; then
+        fail "static-analysis dismissed-forbidden literal: include exists" "missing: $include"
+        return
+    fi
+    if [[ ! -f "$synthesiser" ]]; then
+        fail "static-analysis dismissed-forbidden literal: synthesiser exists" "missing: $synthesiser"
+        return
+    fi
+
+    # The Dismissed-forbidden rule is verified behaviourally by the Phase 2 smoke
+    # (no Dismissed entries in tier_placements). This structural check is belt-and-
+    # braces: it catches drift in the source-of-truth wording before a behavioural
+    # run, and it survives an empty results file or a CLAUDE_CODE_E2E_TESTS=0 run.
+    # The literal must appear in BOTH §10 of the include AND the synthesiser carve-out's
+    # surrounding context (the carve-out cites "never placed in Dismissed" inline).
+    if grep -qF 'Dismissed tier is forbidden' "$include"; then
+        pass "static-analysis dismissed-forbidden literal: include contains 'Dismissed tier is forbidden'"
+    else
+        fail "static-analysis dismissed-forbidden literal: include contains 'Dismissed tier is forbidden'" \
+            "literal not found in $include"
+    fi
+    if grep -qF 'never placed in Dismissed' "$synthesiser"; then
+        pass "static-analysis dismissed-forbidden literal: synthesiser contains 'never placed in Dismissed'"
+    else
+        fail "static-analysis dismissed-forbidden literal: synthesiser contains 'never placed in Dismissed'" \
+            "literal not found in $synthesiser"
+    fi
+}
+
 test_sync_static_analysis_critical_allowlist_present() {
     local cr
     cr=$(_cr_dir)

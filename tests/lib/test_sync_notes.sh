@@ -358,6 +358,14 @@ test_sync_cross_review_mode_inline_matches_canonical() {
 }
 
 test_sync_changed_lines_rule_matches_canonical() {
+    # The extraction below intentionally starts at the blockquote header
+    # (`> **CHANGED_LINES OUTPUT FILTER — MANDATORY**`), not at the preceding HTML
+    # comment. The HTML comment is a maintainer-facing propagation hint that
+    # legitimately differs across canonical (which lists target files) and inlined
+    # copies (which refer back to the canonical), and is not load-bearing for the
+    # runtime agent. Tightening the window to include it would trigger spurious
+    # failures; conversely, if HTML-comment consistency does need enforcing, add a
+    # separate test rather than expanding this extraction.
     local cr
     cr=$(_cr_dir)
     if [[ ! -d "$cr" ]]; then
@@ -824,7 +832,11 @@ test_sync_synthesiser_dispatch_includes_review_mode() {
         fi
 
         # Find the synthesiser dispatch prompt (single line containing the prompt
-        # template) and assert it includes "Review mode: $REVIEW_MODE".
+        # template) and assert it includes "Review mode: $REVIEW_MODE". The three
+        # files enumerated above are the contractually-mandated synthesiser dispatch
+        # sites — failure to find a dispatch in any of them is a regression, not a
+        # benign skip. If a future file legitimately drops the dispatch, remove it
+        # from the loop above rather than relaxing this branch.
         if grep -qE 'subagent_type: "code-review:review-synthesiser"' "$file"; then
             if grep -qE 'Review mode: \$REVIEW_MODE' "$file"; then
                 pass "synthesiser dispatch Review mode: $basename_file includes \$REVIEW_MODE"
@@ -833,8 +845,8 @@ test_sync_synthesiser_dispatch_includes_review_mode() {
                     "the synthesiser dispatch prompt must include 'Review mode: \$REVIEW_MODE\\n' so the synthesiser can suppress verdict guidance in local mode"
             fi
         else
-            # File doesn't dispatch the synthesiser — skip silently
-            :
+            fail "synthesiser dispatch Review mode: $basename_file" \
+                "expected file to contain a synthesiser dispatch (subagent_type: \"code-review:review-synthesiser\") but none was found — was the dispatch deleted?"
         fi
     done
 }

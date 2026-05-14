@@ -496,7 +496,10 @@ deduplicated.
 2.4. Derive `$FILE_COUNT` (count of `$CHANGED_FILES`) and `$LINE_COUNT` (sum
 of `+`-prefixed and `-`-prefixed lines in `$FULL_DIFF`, excluding `+++` and
 `---` headers) from the same walk that builds `$CHANGED_LINES` in Step 2.5.
-A rename with no content change contributes 0 to `$LINE_COUNT`.
+A rename with no content change contributes 0 to `$LINE_COUNT`. Binary files
+show no `+`/`-` lines in the diff output and likewise contribute 0.
+Insertions-only and deletions-only diffs are handled implicitly because the
+count is over both prefix types.
 
 ### Step 2.5: Build $CHANGED_LINES
 

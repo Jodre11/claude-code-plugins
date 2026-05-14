@@ -1521,14 +1521,28 @@ operations — no prose parsing.
 
 ### Class A — User confirmation flow
 
+Class A reads two variables from earlier work: `$SYNTH_VERDICT` /
+`$SYNTH_RUBRIC_ROW` are parsed below from the synthesiser's report;
+`$DOWNGRADE_REASON` is populated by Class B §B.3 when an APPROVE → COMMENT
+downgrade applies, and is unset (empty) otherwise. The downgraded prompt
+template (the second variant in §A.3) is rendered ONLY when `$PROPOSED_ACTION
+= COMMENT` and `$DOWNGRADE_REASON` is non-empty — otherwise the standard
+APPROVE template is used.
+
+#### A.1 Parse synthesiser verdict
+
 Parse the synthesiser's `## Verdict` block (the `Verdict:` and `Rubric row applied:`
 lines) into `$SYNTH_VERDICT` and `$SYNTH_RUBRIC_ROW`. These are required —
 absence is a pipeline error: report `Pipeline error: synthesiser report missing
 ## Verdict block (expected when $REVIEW_MODE = pr)` and stop.
 
-Compute the proposed action. By default `$PROPOSED_ACTION = $SYNTH_VERDICT`.
-If the Class B state checks (next section) downgrade APPROVE to COMMENT,
-`$PROPOSED_ACTION = COMMENT` and `$DOWNGRADE_REASON` is populated.
+#### A.2 Compute proposed action
+
+By default `$PROPOSED_ACTION = $SYNTH_VERDICT`. If the Class B state checks
+(next section) downgrade APPROVE to COMMENT, `$PROPOSED_ACTION = COMMENT`
+and `$DOWNGRADE_REASON` is populated.
+
+#### A.3 Render confirmation prompt
 
 Render ONE of three confirmation prompts based on the proposed action:
 

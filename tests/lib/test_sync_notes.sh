@@ -891,3 +891,72 @@ test_sync_synthesiser_dispatch_uses_ultrathink() {
         fi
     done
 }
+
+test_sync_verdict_rubric_inline_matches_canonical() {
+    local cr
+    cr=$(_cr_dir)
+    if [[ ! -d "$cr" ]]; then
+        skip "verdict-rubric inline sync" "code-review plugin not found"
+        return
+    fi
+
+    local canonical="$cr/includes/verdict-rubric.md"
+    if [[ ! -f "$canonical" ]]; then
+        skip "verdict-rubric inline sync" "canonical file not found"
+        return
+    fi
+
+    # Extract canonical body from "### Verdict rubric (PR mode only" through end-of-file.
+    # The HTML maintenance comment is excluded from the inlined copies (consumers do not
+    # duplicate the canonical's maintenance metadata).
+    local canonical_body
+    canonical_body=$(sed -n '/^### Verdict rubric (PR mode only, first match wins)/,$ p' "$canonical")
+
+    if [[ -z "$canonical_body" ]]; then
+        fail "verdict-rubric inline sync: canonical body extracted" "no body found"
+        return
+    fi
+
+    local consumer
+    for consumer in \
+        "$cr/agents/review-synthesiser.md" \
+        "$cr/skills/review-gh-pr/SKILL.md"; do
+
+        local basename_consumer
+        basename_consumer=$(basename "$(dirname "$consumer")")/$(basename "$consumer")
+
+        if [[ ! -f "$consumer" ]]; then
+            fail "verdict-rubric inline sync: $basename_consumer" "file not found"
+            continue
+        fi
+
+        # Each consumer inlines the canonical body bounded by the same start anchor and
+        # the line "via deterministic string operations — no prose parsing." (last line of
+        # the Synthesiser contract section, unique in the canonical).
+        local consumer_body
+        consumer_body=$(sed -n '/^### Verdict rubric (PR mode only, first match wins)/,/^token via deterministic string operations — no prose parsing\.$/p' "$consumer")
+
+        if [[ -z "$consumer_body" ]]; then
+            fail "verdict-rubric inline sync: $basename_consumer" "inline block not found (sed anchors may need updating)"
+            continue
+        fi
+
+        # The canonical's body extracted via the same end-anchor pattern for like-for-like comparison.
+        local canonical_range
+        canonical_range=$(sed -n '/^### Verdict rubric (PR mode only, first match wins)/,/^token via deterministic string operations — no prose parsing\.$/p' "$canonical")
+
+        if [[ "$canonical_range" == "$consumer_body" ]]; then
+            pass "verdict-rubric inline sync: $basename_consumer matches canonical"
+        else
+            local tmp1 tmp2
+            tmp1=$(mktemp)
+            tmp2=$(mktemp)
+            echo "$canonical_range" > "$tmp1"
+            echo "$consumer_body" > "$tmp2"
+            local diff_output
+            diff_output=$(diff -u --label "canonical" --label "$basename_consumer" "$tmp1" "$tmp2" | head -30 || true)
+            rm -f "$tmp1" "$tmp2"
+            fail "verdict-rubric inline sync: $basename_consumer matches canonical" "$diff_output"
+        fi
+    done
+}

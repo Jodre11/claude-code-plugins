@@ -179,7 +179,99 @@ source: <in_diff_doc | prompt_block | pr_body | commit_subjects | user_paste>
 - `source` — the priority of the source that passed (`in_diff_doc`, `prompt_block`,
   `pr_body`, `commit_subjects`, or `user_paste`).
 
-Announce `> Phase 0: ledger built (source: $SOURCE)` and continue to Phase 0.6.
+Announce `> Phase 0: ledger built (source: $SOURCE)` and continue to Phase 0.55.
+
+## Phase 0.55: Local branch freshness check
+
+Run Phase 0.55 AFTER Phase 0 and BEFORE Phase 0.6. The diff that the rest of
+the pipeline measures (Step 2.2 onwards) is computed against the local
+working tree's `HEAD`. If `HEAD` is **behind** the PR's remote head, the
+review analyses stale code and ships a false-clean report against the wrong
+commit set. The local checkout MAY be ahead of the remote head — that is the
+correct review surface in workflows where the implementer iterates locally
+before pushing — but it must not be behind.
+
+### 0.55.1 Skip in local mode
+
+If `$REVIEW_MODE` is `local`, skip this entire section and continue to
+Phase 0.6. There is no remote PR to compare against; pre-review measures the
+working tree directly.
+
+### 0.55.2 Fetch the remote head
+
+In `pr` mode, retrieve the PR's remote head SHA:
+
+```bash
+gh pr view "$ARGUMENTS" --json headRefOid -q '.headRefOid'
+```
+
+Store as `$REMOTE_HEAD_SHA`. Validate that `$REMOTE_HEAD_SHA` matches
+`^[0-9a-f]{40}$` — if it does not (empty result, API error, or unexpected
+format), report `Phase 0.55 halt: could not retrieve remote head SHA from
+gh pr view` and stop.
+
+### 0.55.3 Verify the remote SHA is locally known
+
+```bash
+git cat-file -e "$REMOTE_HEAD_SHA" 2>/dev/null
+```
+
+If the command exits non-zero, the local clone has not fetched the commit
+the remote PR points to. Halt with:
+
+```
+> Phase 0.55 halt: remote head $REMOTE_HEAD_SHA is not present locally.
+>
+> The PR's remote head is unknown to your local checkout. The review would
+> measure a stale diff against an outdated tree. Fetch and re-invoke:
+>
+>   git fetch origin <branch>
+>   # or:
+>   gh pr checkout <pr-number>
+>
+> Then re-run the review.
+```
+
+Do NOT auto-fetch — that is the user's call (a fetch may pull in changes
+they have not yet reviewed locally, and silently mutating the working tree
+during a review violates the principle of least surprise).
+
+### 0.55.4 Verify local HEAD is at-or-ahead of remote
+
+```bash
+git merge-base --is-ancestor "$REMOTE_HEAD_SHA" HEAD
+```
+
+This succeeds (exit 0) when `$REMOTE_HEAD_SHA` is an ancestor of `HEAD` —
+i.e. the local branch contains every commit on the remote. The local tree
+may be ahead (local commits not yet pushed) and the check still passes;
+that is the correct surface for the review.
+
+If the command exits non-zero, the local branch is **behind or has diverged
+from** the remote head. Halt with:
+
+```
+> Phase 0.55 halt: local HEAD is behind or diverged from remote head.
+>
+> Local HEAD:  $HEAD_SHA
+> Remote head: $REMOTE_HEAD_SHA
+>
+> The review would measure an out-of-date diff against the remote PR.
+> Update your local branch and re-invoke:
+>
+>   git pull --ff-only origin <branch>
+>   # or, if the remote was force-pushed:
+>   git fetch origin <branch> && git reset --hard origin/<branch>
+>
+> Then re-run the review. (If your local checkout is intentionally ahead
+> of the remote, push first: `git push` — the review must analyse the
+> commits the PR actually represents.)
+```
+
+### 0.55.5 Announce and continue
+
+Announce `> Phase 0.55: local branch up-to-date with remote head $REMOTE_HEAD_SHA`
+and continue to Phase 0.6.
 
 ## Phase 0.6: CI Status Gate
 

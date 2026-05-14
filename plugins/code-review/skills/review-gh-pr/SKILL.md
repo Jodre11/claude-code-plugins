@@ -1212,6 +1212,11 @@ Resolved threads are hidden on the PR conversation page. Replying to a resolved 
 >    efficiency …"*). Silent merges are forbidden.
 > 2. **`dismissed-by-synthesiser`** — listed verbatim in the synthesiser's `Dismissed
 >    Findings` section. You may not invent your own dismissals.
+> 3. **`filtered-by-confidence (verdict APPROVE, confidence < 75)`** — applied
+>    automatically by Class D of Step 6's Output filtering when the synthesiser's
+>    verdict is APPROVE (or APPROVE→COMMENT) and the finding's confidence is
+>    below 75. This is mechanical, not judgement-driven; you do NOT invent it
+>    on your own initiative.
 >
 > Anything else — "I judged this trivial", "overlaps loosely with comment N",
 > "low signal" — is a pipeline violation. Re-add the finding before continuing.
@@ -1636,11 +1641,69 @@ judgement-driven.
 
 ### Class C — Submission mechanics
 
-(See subsequent step rewrite — added in Task 11.)
+- Inline comments are posted before the top-level review verdict.
+- Order: file order from `$CHANGED_FILES`, then ascending line number.
+- Side: `RIGHT` for additions/modifications, `LEFT` for deletions. The diff polarity is captured in the synthesiser's `File:` citation; for `archaeology-reviewer` findings on deletion anchors (`near N` in `$CHANGED_LINES`), use the anchor line number directly and `LEFT` side.
+- Verdict (`gh pr review`) is submitted only after all inline comments succeed.
+- No artificial cap on inline comment count. If the synthesiser produced N findings (or N filtered findings under APPROVE / APPROVE→COMMENT), all N are posted.
+- On any inline-comment posting failure: stop, surface the error and the failed item, ask user retry / skip-this-comment / cancel-the-whole-submission. No silent partial submissions.
+
+The submission API call uses the body produced by Class D below:
+
+```bash
+gh pr review "$ARGUMENTS" --<approve|request-changes|comment> --input - <<'EOF_REVIEW_BODY'
+<filtered body produced by Class D>
+EOF_REVIEW_BODY
+```
+
+The flag (`--approve` / `--request-changes` / `--comment`) is selected from
+`$FINAL_VERDICT` after the user's confirmation prompt response in Class A.
 
 ### Class D — Output filtering
 
-(See subsequent step rewrite — added in Task 11.)
+The orchestrator filters which consensus findings get posted to GitHub based on
+`$FINAL_VERDICT` (the verdict after Class A user confirmation, which may be the
+synthesiser's proposal, the Class B downgrade, or the user's override). The
+filter is the only content-shaping power the orchestrator has, and it is
+mechanical.
+
+#### D.1 Compute the post set
+
+- If `$FINAL_VERDICT == REQUEST_CHANGES`: `$POST_SET` = every consensus finding. No filter.
+- If `$FINAL_VERDICT == APPROVE` or `$FINAL_VERDICT == COMMENT` (the APPROVE→COMMENT downgrade path): `$POST_SET` = consensus findings with `Confidence: <C>` where `C >= 75`. Sub-threshold findings are dropped from inline-comment posting AND from body references.
+
+Capture `$DROPPED_SET` = consensus findings NOT in `$POST_SET`. `$DROPPED_COUNT` = its size.
+
+#### D.2 Filter inline comments
+
+When iterating consensus findings to post inline (Step 5 of this skill), skip any finding whose `[#N]` token is NOT in `$POST_SET`. The reconciliation table from Step 3 still records the full row set; the table's `Outgoing comment ID` cell for a filtered finding is blank with rationale `filtered-by-confidence (verdict APPROVE, confidence < 75)`. This is a NEW permitted rationale alongside `dedup-with-#N` and `dismissed-by-synthesiser`. Update the no-filter rule and table column docs in Step 3 of this skill if not already done.
+
+#### D.3 Construct the GitHub body
+
+Start from the synthesiser's body verbatim. Apply three deterministic transformations:
+
+1. **Strip filtered-finding references.** For every finding in `$DROPPED_SET`, locate every paragraph or bullet in the body that contains the finding's `[#N]` token (e.g. `[#3]`) and remove it. The synthesiser contract guarantees every reference to that finding carries the `[#N]` token, so deterministic string match suffices. Also remove the finding's full `### Finding #N — [...]` section under `## Consensus Findings`.
+
+2. **Strip the `## Cost` section** if present. Remove from the heading line `## Cost` through the next `## ` heading or end of file.
+
+3. **Strip the `## Dismissed` section** if present. Remove from the heading line `## Dismissed Findings` (or `## Dismissed`) through the next `## ` heading or end of file.
+
+#### D.4 Append the footer when findings were filtered
+
+If `$DROPPED_COUNT > 0`, append to the end of the constructed body:
+
+```
+
+---
+
+*$DROPPED_COUNT additional finding(s) below the 75% confidence threshold were not posted. Run pre-review locally to see the full report.*
+```
+
+(The leading `---` separates the footer from the synthesiser content. The italic line is the verbatim footer text — substitute `$DROPPED_COUNT` for the count.)
+
+If `$DROPPED_COUNT == 0`, do NOT append the footer.
+
+The constructed body is now `$REVIEW_BODY` and feeds the `gh pr review --input -` call in Class C.
 
 ## Step 7: Summarize
 

@@ -632,6 +632,15 @@ This prompt is used by both the lightweight path (Step 3) and the full pipeline 
 - `$SIGNIFICANT_DELETIONS` is false
 - `$SECURITY_SENSITIVE` is false
 
+**Self-re-review carve-out:** if the caller is in self-re-review mode (see
+`skills/review-gh-pr/SKILL.md` Step 1), the lightweight path's `code-analysis`
+agent receives an additional prompt directive: "Skip alignment findings — this
+is a self-re-review pass; intent and scope were evaluated on the prior review."
+This preserves the Step 4.4 carve-out's intent on the lightweight path.
+Alternatively, a self-re-review may force the full path (skipping Step 3)
+if the policy is changed in a future revision; the current behaviour is the
+in-prompt directive.
+
 Announce: `> X files, Y lines changed — using lightweight review (code-analysis)`
 
 Dispatch the `code-analysis` agent using `$AGENT_PROMPT` (defined in Step 2.9):

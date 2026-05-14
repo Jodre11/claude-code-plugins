@@ -87,6 +87,13 @@ dispatched in self-re-review mode (consistent with the existing rule that the fu
 team is not dispatched). Body-improvement Suggestions from a previous review must not be
 re-raised; only verify previously-raised alignment issues.
 
+**Lightweight path in self-re-review mode:** if Step 3 routes to the lightweight path
+(small diff, no significant deletions, no security-sensitive areas), the `code-analysis`
+dispatch prompt includes the additional directive: "Skip alignment findings — this is a
+self-re-review pass; intent and scope were evaluated on the prior review." This preserves
+the Step 4.4 alignment carve-out's intent on the lightweight path, where a single agent
+covers all domains including alignment.
+
 **What NOT to do in re-review mode:**
 - Do not re-review the entire diff with fresh eyes looking for new minor issues
 - Do not raise style, naming, or structural suggestions that weren't worth raising first time
@@ -729,6 +736,15 @@ This prompt is used by both the lightweight path (Step 3) and the full pipeline 
 - `$LINE_COUNT` ≤ 150
 - `$SIGNIFICANT_DELETIONS` is false
 - `$SECURITY_SENSITIVE` is false
+
+**Self-re-review carve-out:** if the caller is in self-re-review mode (see
+`skills/review-gh-pr/SKILL.md` Step 1), the lightweight path's `code-analysis`
+agent receives an additional prompt directive: "Skip alignment findings — this
+is a self-re-review pass; intent and scope were evaluated on the prior review."
+This preserves the Step 4.4 carve-out's intent on the lightweight path.
+Alternatively, a self-re-review may force the full path (skipping Step 3)
+if the policy is changed in a future revision; the current behaviour is the
+in-prompt directive.
 
 Announce: `> X files, Y lines changed — using lightweight review (code-analysis)`
 

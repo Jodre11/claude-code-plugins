@@ -110,3 +110,8 @@ X file(s) changed, 0 findings — LGTM
 - Don't report test-only issues unless they mask real bugs.
 - Don't report formatting-only issues unless they violate explicit CLAUDE.md rules.
 - Number findings sequentially across all sections so the user can say "fix finding #3".
+- **Self-re-review.** If your prompt contains "Skip alignment findings — this
+  is a self-re-review pass", do not emit any finding whose severity rationale
+  is intent drift or scope creep. Bugs, regressions, and security issues
+  introduced by fix commits remain in scope. This carve-out matches Step 4.4
+  in the full pipeline.

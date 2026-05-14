@@ -136,6 +136,84 @@ Include every real finding. If an issue exists, report it. The only findings tha
 
 Omit only when: (a) acting on the finding would likely introduce a worse problem than it solves, or (b) the finding is so tenuous that including it would dilute the report's signal. In both cases, state your reasoning in the Dismissed section so the reader can override.
 
+<!-- VERDICT RUBRIC — inlined from includes/verdict-rubric.md (canonical source).
+Edit the include first, then propagate to all listed consumers. -->
+
+### Verdict rubric (PR mode only, first match wins)
+
+| # | Condition | Verdict |
+|---|---|---|
+| 1 | Intent-ledger states a `goal` AND any consensus finding indicates the goal is not achieved | `REQUEST_CHANGES` |
+| 2 | Any consensus **Critical** finding (at any confidence) | `REQUEST_CHANGES` |
+| 3 | Any consensus **Important** finding with confidence ≥ 70 | `REQUEST_CHANGES` |
+| 4 | Otherwise | `APPROVE` |
+
+The synthesiser produces only `APPROVE` or `REQUEST_CHANGES`. `COMMENT` is
+never a synthesiser output — it can only emerge from the orchestrator's
+APPROVE → COMMENT downgrade (see Posting policy below) or from a user override
+at the confirmation prompt.
+
+By construction under `APPROVE`:
+- No Critical findings exist (row 2 caught them).
+- Important findings only exist below confidence 70 (row 3 caught the rest).
+- Suggestions exist at any confidence.
+
+In `local` (pre-review) mode the rubric does not apply: pre-review produces no
+verdict — the human reader decides what (if anything) to act on. The synthesiser
+emits no `Verdict:` line in local mode.
+
+### Posting policy (orchestrator, mechanical)
+
+The orchestrator filters which consensus findings get posted to GitHub based on
+the synthesiser's verdict. The filter is deterministic — same input, same
+output, no model judgement. It does not constitute "altering findings" because
+the synthesiser's sealed report (severity, confidence, body, fix text) is
+unchanged; only which subset gets posted is decided.
+
+| Verdict path | Filter |
+|---|---|
+| `REQUEST_CHANGES` | Post **every** consensus finding. No filter. The implementer needs the full picture; an under-powered orchestrator must not dilute what a max-effort synthesiser produced. Verbose by design. |
+| `APPROVE` (and APPROVE → COMMENT downgrade) | Post consensus findings with **confidence ≥ 75**. Sub-threshold findings remain visible in the synthesiser's stdout report but are not posted to GitHub. |
+
+The 75 threshold is intentionally above the rubric's 70 cutoff for Important
+findings. Below 70: don't block. Above 75: surface under APPROVE. The 70-75
+band is judged not-confident-enough to distract an author who is already
+getting an APPROVE.
+
+### Body construction (orchestrator)
+
+The GitHub top-level review body posts the synthesiser's body verbatim except
+for three deterministic transformations:
+
+- References to filtered-out findings (those dropped by the Posting policy
+  above) are elided. The synthesiser tags every consensus finding with a stable
+  `[#N]` token (see Synthesiser contract below); the orchestrator strips body
+  paragraphs and bullets that contain `[#N]` tokens for filtered findings.
+- `## Cost` section stripped — instrumentation, not author-facing. Stays in
+  stdout for the implementer.
+- `## Dismissed` section stripped — false-positives, noise for the author.
+  Stays in stdout for the implementer.
+
+When any findings were filtered, the orchestrator appends a footer to the
+GitHub body:
+
+> *N additional finding(s) below the 75% confidence threshold were not posted.
+> Run pre-review locally to see the full report.*
+
+(`N` resolves to the count of filtered findings.)
+
+### Synthesiser contract
+
+For the orchestrator's filtering to be mechanical, the synthesiser MUST produce
+a body where every consensus finding is tagged with a stable `[#N]` token in
+its section header, and EVERY reference to that finding elsewhere in the body
+(Synthesiser Assessment, Summary, cross-references) carries the same `[#N]`
+token. The orchestrator filters by stripping paragraphs and bullets that
+contain a filtered-out finding's `[#N]` token via deterministic string
+operations — no prose parsing.
+
+---
+
 ## Output Format
 
 Number all findings sequentially across all sections. Tag each with its source: `[security]`, `[correctness]`, `[consistency]`, `[style]`, `[archaeology]`, `[reuse]`, `[efficiency]`, `[alignment]`, `[eslint]`, `[ruff]`, `[trivy]`, `[jbinspect]`, `[ui]`, `[synthesiser]`.
@@ -148,7 +226,21 @@ X file(s) changed | Y finding(s) | Z contested
 > High-level analysis of the changes: intent, risk profile, areas of concern, and overall impression.
 > This is your independent expert assessment before diving into individual findings.
 
+## Verdict
+
+*(Render this section ONLY when `$REVIEW_MODE` is `pr`. Omit the entire `## Verdict` heading and contents in `local` mode — pre-review produces no verdict.)*
+
+```
+Verdict: <APPROVE | REQUEST_CHANGES>
+Rubric row applied: <1 | 2 | 3 | 4>
+Reason: <one-line condition matched, copied from the rubric — e.g. "intent ledger goal not achieved (finding [#3])" or "consensus Important finding [#7] confidence 82" or "no high-confidence Critical/Important findings, goal achieved">
+```
+
+The orchestrator parses this block via fixed-string `Verdict:` and `Rubric row applied:` line markers; the `Reason:` line is human-facing and may reference findings via their `[#N]` token. Emit ONE verdict block per report.
+
 ## Consensus Findings
+
+> **Finding-ID contract.** Every consensus finding's section header MUST begin with the literal token `Finding #N` (where `N` is the sequential finding number). The orchestrator parses these tokens to filter findings under the Posting policy. References to a consensus finding elsewhere in the body — Synthesiser Assessment, Summary, cross-references — MUST carry the same `[#N]` token in square brackets (e.g. `as flagged in [#3]`) so the orchestrator can identify references to filtered findings via deterministic string match. Synthesiser Findings (`### Finding #N — [short title] [synthesiser]`) and Contested / Dismissed findings carry the same token contract.
 
 ### Critical
 #### Finding #1 — [short title] [security]
@@ -253,11 +345,23 @@ X file(s) changed | 0 findings — LGTM
 - The Summary header counts MUST match the body. Count findings after assembling the full report — do not estimate. `Y finding(s)` = total numbered findings across Consensus + Synthesiser + Contested (not Dismissed). `Z contested` = findings in the Contested section only.
 - Do not quote raw secrets, credentials, or API keys verbatim in the report — describe the location and nature of the exposure instead.
 - **Verdict guidance is `pr`-mode only.** When `$REVIEW_MODE` is `local` (pre-review),
-  do NOT produce verdict guidance (`APPROVE`/`COMMENT`/`REQUEST_CHANGES`) anywhere in
-  the report — including the Synthesiser Assessment, the Summary, and any per-finding
-  notes. Pre-review output is consumed by a human author who decides whether to ignore
-  findings, fix a subset, or produce a follow-up plan; there is no GitHub review to
-  submit.
+  do NOT produce a `## Verdict` section, a `Verdict:` line, or any `APPROVE` /
+  `REQUEST_CHANGES` recommendation anywhere in the report — including the Synthesiser
+  Assessment, the Summary, and any per-finding notes. Pre-review output is consumed by
+  a human author who decides whether to ignore findings, fix a subset, or produce a
+  follow-up plan; there is no GitHub review to submit.
+- **Apply the verdict rubric (PR mode only).** When `$REVIEW_MODE` is `pr`, compute
+  the verdict by walking the four rubric rows in order, first match wins. Emit a single
+  `## Verdict` block with three lines: `Verdict:` (one of `APPROVE` or
+  `REQUEST_CHANGES`), `Rubric row applied:` (one of `1` | `2` | `3` | `4`), and
+  `Reason:` (one-line condition matched, citing finding `[#N]` tokens where applicable).
+  `COMMENT` is never a synthesiser output.
+- **Tag every consensus finding with a stable `[#N]` token.** The orchestrator filters
+  findings by `[#N]` token (Posting policy in the inlined Verdict Rubric section). The
+  finding's `Finding #N` header is the canonical token; every reference to that finding
+  elsewhere in the body — Summary counts, Synthesiser Assessment cross-references — must
+  carry the same `[#N]` token in square brackets so the orchestrator can elide
+  filtered-finding references via deterministic string operations.
 - When the intent ledger states a `goal` and one or more findings indicate the goal is not
   achieved, escalate the most central such finding to Important severity at minimum, even
   if the originating specialist filed it lower.

@@ -232,6 +232,20 @@ Otherwise, halt the review. Print:
 
 The halt is final — there is no acknowledge-to-proceed prompt. Stop the pipeline cleanly.
 
+<!-- COUPLING: this hard halt was paired with the deletion of the synthesiser-side CI
+verdict constraint (the `## CI Status` Output block and the two `$CI_STATUS_BODY`-driven
+verdict-constraint Rules in `agents/review-synthesiser.md`, removed in PR #27). The two
+mechanisms were redundant by design when both existed (defence in depth). They are now
+collapsed into this single hard halt: if the synthesiser is reached, CI is green by
+construction.
+
+If this halt is ever softened — restoring an acknowledge-to-proceed path, exempting
+specific check states such as `TIMED_OUT`, or reintroducing a transient-vs-definitive
+classification — the synthesiser-side constraint MUST be restored as defence in depth.
+A single softened gate with no synthesiser-side check would let the synthesiser emit
+APPROVE on a failing CI state, a real correctness regression. -->
+
+
 ### Progress line format
 
 Use this format for all progress reporting (Steps 4 and 5):

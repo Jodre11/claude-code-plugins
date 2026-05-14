@@ -1617,10 +1617,18 @@ On `n`: halt cleanly without submission.
 
 ```bash
 gh pr view "$ARGUMENTS" --json reviews \
-  | jq --arg head "$(gh pr view "$ARGUMENTS" --json headRefOid -q '.headRefOid')" \
+  | jq --arg head "$HEAD_SHA" \
        --arg user "$CURRENT_USER" \
        '.reviews | map(select(.state == "CHANGES_REQUESTED" and .commit.oid == $head and .author.login != $user)) | length'
 ```
+
+`$HEAD_SHA` was captured and validated in Step 2.1 of the pipeline (regex
+`^[0-9a-f]{40}$`); reusing it here is preferred over re-fetching `headRefOid`
+from the live PR. The reused value is zero network cost, eliminates a TOCTOU
+window (force-push between two `gh pr view` calls would mismatch `reviews`
+against `headRefOid`), and aligns the check semantics with B.2 — both
+B-checks gate on "the commit the synthesiser analysed", not "whatever the
+head currently is".
 
 If the result is `> 0`, there is at least one non-dismissed peer
 `REQUEST_CHANGES` from another reviewer on the latest commit. If the

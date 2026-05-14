@@ -174,4 +174,4 @@ source: <in_diff_doc | prompt_block | pr_body | commit_subjects | user_paste>
 - `source` — the priority of the source that passed (`in_diff_doc`, `prompt_block`,
   `pr_body`, `commit_subjects`, or `user_paste`).
 
-Announce `> Phase 0: ledger built (source: $SOURCE)` and continue to Phase 0.6.
+Announce `> Phase 0: ledger built (source: $SOURCE)` and continue to Phase 0.55.

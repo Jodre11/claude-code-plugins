@@ -170,7 +170,7 @@ test_sync_intent_ledger_inline_matches_canonical() {
     # each consumer. The HTML maintenance comment in the canonical lives outside this range,
     # so we compare just the prose body.
     local canonical_body
-    canonical_body=$(sed -n '/^Run Phase 0 BEFORE Step 1/,/continue to Phase 0\.6\.$/p' "$canonical")
+    canonical_body=$(sed -n '/^Run Phase 0 BEFORE Step 1/,/continue to Phase 0\.55\.$/p' "$canonical")
 
     if [[ -z "$canonical_body" ]]; then
         fail "intent-ledger inline sync: canonical body extracted" "no body found"
@@ -192,7 +192,7 @@ test_sync_intent_ledger_inline_matches_canonical() {
 
         if grep -qF "## Phase 0: Intent Ledger" "$consumer" 2>/dev/null; then
             local consumer_body
-            consumer_body=$(sed -n '/^Run Phase 0 BEFORE Step 1/,/continue to Phase 0\.6\.$/p' "$consumer")
+            consumer_body=$(sed -n '/^Run Phase 0 BEFORE Step 1/,/continue to Phase 0\.55\.$/p' "$consumer")
 
             # Guard against vacuous pass: an empty extraction signals the sed end-anchor
             # has drifted in the consumer. Without this, [[ "" == "" ]] would silently
@@ -1183,5 +1183,64 @@ test_skill_md_filter_rationale_propagated_to_three_sites() {
     else
         fail "SKILL.md filter rationale propagation: Step 5.5 assertion subtracts P" \
             "Step 5.5 assertion 2 must read 'C == R - D - X - P' — the pre-existing 'C == R - D - X' false-halts every APPROVE verdict where any consensus finding has confidence < 75 (the common case)"
+    fi
+}
+
+test_sync_phase_055_local_branch_freshness_check() {
+    # Phase 0.55 protects the pipeline from measuring a stale diff: if the local HEAD
+    # is behind the PR's remote head, the review analyses an outdated tree and ships
+    # a false-clean report against the wrong commit set. The check has three load-
+    # bearing commands; this test asserts each one is present in the canonical so a
+    # future edit cannot silently delete one and break the protection.
+    local cr
+    cr=$(_cr_dir)
+    if [[ ! -d "$cr" ]]; then
+        skip "Phase 0.55 local branch freshness" "code-review plugin not found"
+        return
+    fi
+
+    local canonical="$cr/includes/review-pipeline.md"
+    if [[ ! -f "$canonical" ]]; then
+        fail "Phase 0.55 local branch freshness" "review-pipeline.md not found"
+        return
+    fi
+
+    # Site 1: the heading must exist in the canonical (the existing pipeline sync test
+    # then enforces byte-identical propagation to the two inlined consumers).
+    if grep -qE '^## Phase 0\.55: Local branch freshness check$' "$canonical"; then
+        pass "Phase 0.55 local branch freshness: section heading present"
+    else
+        fail "Phase 0.55 local branch freshness: section heading present" \
+            "review-pipeline.md must contain '## Phase 0.55: Local branch freshness check' as its own section, positioned between Phase 0 and Phase 0.6 — the heading is the test anchor for the three command-presence assertions below"
+    fi
+
+    # Site 2: must fetch the remote head via gh pr view --json headRefOid. Without this
+    # the orchestrator has nothing to compare HEAD against — Phase 0.55 collapses to
+    # a no-op.
+    if grep -qE 'gh pr view "\$ARGUMENTS" --json headRefOid' "$canonical"; then
+        pass "Phase 0.55 local branch freshness: fetches remote head SHA"
+    else
+        fail "Phase 0.55 local branch freshness: fetches remote head SHA" \
+            "Phase 0.55 must fetch \$REMOTE_HEAD_SHA via 'gh pr view \"\$ARGUMENTS\" --json headRefOid' — the freshness check has no input without it"
+    fi
+
+    # Site 3: must verify the SHA is locally known via git cat-file -e. Otherwise the
+    # next assertion (merge-base) would error confusingly when the remote was force-
+    # pushed and the user has not fetched.
+    if grep -qE 'git cat-file -e "\$REMOTE_HEAD_SHA"' "$canonical"; then
+        pass "Phase 0.55 local branch freshness: verifies remote SHA is locally known"
+    else
+        fail "Phase 0.55 local branch freshness: verifies remote SHA is locally known" \
+            "Phase 0.55 must run 'git cat-file -e \"\$REMOTE_HEAD_SHA\"' to verify the remote head exists in the local clone — otherwise an unfetched remote presents as 'diverged' rather than 'unknown', misdirecting the user"
+    fi
+
+    # Site 4: must verify HEAD is at-or-ahead of remote via merge-base --is-ancestor.
+    # This is the load-bearing check — exit 0 when remote is an ancestor of HEAD
+    # (local at or ahead), exit 1 when local is behind or diverged.
+    if grep -qE 'git merge-base --is-ancestor "\$REMOTE_HEAD_SHA" HEAD' "$canonical"; then
+        pass "Phase 0.55 local branch freshness: asserts HEAD is at-or-ahead of remote"
+    else
+        fail "Phase 0.55 local branch freshness: asserts HEAD is at-or-ahead of remote" \
+            "Phase 0.55 must run 'git merge-base --is-ancestor \"\$REMOTE_HEAD_SHA\" HEAD' — this is the actual freshness assertion. Without it, the gate is decorative"
     fi
 }

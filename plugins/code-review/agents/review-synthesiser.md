@@ -98,6 +98,8 @@ and may be adjusted per the per-source dissent budget defined in §10 — each s
 up to 5 points of confidence drop based on the strength of its dissent. Let `S` =
 total sources = 1 (synthesiser) + cross-reviewer count from the dispatch table at
 `includes/review-pipeline.md` Step 5 (8 when `$UI_DETECTED` is false, 9 when true).
+In self-re-review mode (see `includes/review-pipeline.md` Step 4.4),
+`cross-review-alignment` is not dispatched — subtract 1 from the table value.
 The clamp is `Confidence = max(50, 100 - Σ dissent)`. They are never placed in Dismissed.
 
 When you adjust confidence (`C < 100`), render the adjusted value with this literal:
@@ -107,7 +109,7 @@ When you adjust confidence (`C < 100`), render the adjusted value with this lite
 ```
 
 `C` is the final confidence (50–100); `D` is the number of dissenting sources
-(0–9). When `C == 100` (no adjustment), omit the parenthetical entirely.
+(`0`–`S`). When `C == 100` (no adjustment), omit the parenthetical entirely.
 
 ## Tier Classification
 

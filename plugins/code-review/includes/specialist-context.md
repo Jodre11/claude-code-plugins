@@ -37,16 +37,18 @@ not directive.
 
 If a `Changed lines:` block is present in `$ARGUMENTS`, store the lines that follow it
 (through to the next blank line or end of prompt) as `$CHANGED_LINES_BLOCK`. Parse each
-line as `<file path>[ (sentinel)]: <comma-separated tokens>`. Tokens are one of:
+line as `<file path>[ (sentinel)]: <comma-separated tokens>`.
+
+Tokens after the colon are one of:
 - a bare integer (touched line in the new file)
 - `near N` (deletion anchor — used by `archaeology-reviewer`)
 - `(empty — rename only)` as the entire token list — file accepts no findings (rename
   without content change)
 
-The optional sentinel after the file path is `(deleted)` for fully-deleted files;
-when present, the file accepts findings only from `archaeology-reviewer`, and those
-findings must be top-level prose (no inline anchoring) per
-`agents/archaeology-reviewer.md`.
+Optional file-path modifiers (appearing before the colon, not after):
+- `(deleted)` — fully-deleted file; accepts findings only from `archaeology-reviewer`,
+  and those findings must be top-level prose (no inline anchoring) per
+  `agents/archaeology-reviewer.md`.
 
 **Example block:**
 

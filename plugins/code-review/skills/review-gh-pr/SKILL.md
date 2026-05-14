@@ -1408,45 +1408,170 @@ before proceeding. You may not rationalise around a count mismatch; surface it.
 
 ## Step 6: Submit Review Verdict
 
-For complex PRs (many files, large changes, or new functionality), include a **top-level review comment** that:
-1. **Acknowledges the good**: Brief praise for what the PR does well (architecture, patterns, improvements)
-2. **Summarizes concerns**: High-level overview of the issues raised in inline comments
-3. **Justifies the verdict**: Explain why you're approving, requesting changes, or just commenting
+The synthesiser is the sole authority for the PR review verdict. The orchestrator
+(this step) executes that verdict — it cannot alter findings, severity, confidence,
+fix text, file/line attribution, or the synthesiser-produced verdict on its own
+initiative. The single deterministic transformation the orchestrator may apply is
+the APPROVE → COMMENT downgrade described in the Class B state checks below.
 
-This is especially important for REQUEST_CHANGES - the author deserves context on why the PR is blocked.
+The user is sovereign over the final action submitted. At the confirmation prompt
+the user can override the proposed action to any of `APPROVE`, `REQUEST_CHANGES`,
+or `COMMENT`. This is the documented caveat to synthesiser-as-sole-authority.
 
-Choose the review action:
+<!-- VERDICT RUBRIC — inlined from includes/verdict-rubric.md (canonical source).
+Edit the include first, then propagate to all listed consumers. -->
 
-| Action | When to use |
-|--------|-------------|
-| **APPROVE** | No comments are blockers (nitpicks and suggestions are fine — approve and comment) |
-| **REQUEST_CHANGES** | Any comment is a blocker that must be addressed before merge |
-| **COMMENT** | Only when: (1) another reviewer has already approved, (2) that approval is the most recent review event, (3) no commits have been pushed since, AND (4) you agree with the approval. If you disagree with the existing verdict, submit your own verdict (APPROVE or REQUEST_CHANGES) instead — bare COMMENT blocks merging if no other approval exists |
+### Verdict rubric (PR mode only, first match wins)
 
-Ask the user to confirm the verdict before submitting.
+| # | Condition | Verdict |
+|---|---|---|
+| 1 | Intent-ledger states a `goal` AND any consensus finding indicates the goal is not achieved | `REQUEST_CHANGES` |
+| 2 | Any consensus **Critical** finding (at any confidence) | `REQUEST_CHANGES` |
+| 3 | Any consensus **Important** finding with confidence ≥ 70 | `REQUEST_CHANGES` |
+| 4 | Otherwise | `APPROVE` |
 
-Submit the review with:
+The synthesiser produces only `APPROVE` or `REQUEST_CHANGES`. `COMMENT` is
+never a synthesiser output — it can only emerge from the orchestrator's
+APPROVE → COMMENT downgrade (see Posting policy below) or from a user override
+at the confirmation prompt.
 
-```bash
-gh pr review "$ARGUMENTS" --approve --input - <<'EOF_REVIEW_BODY'
-Review summary here
-EOF_REVIEW_BODY
-# or
-gh pr review "$ARGUMENTS" --request-changes --input - <<'EOF_REVIEW_BODY'
-Review summary here
-EOF_REVIEW_BODY
-# or
-gh pr review "$ARGUMENTS" --comment --input - <<'EOF_REVIEW_BODY'
-Review summary here
-EOF_REVIEW_BODY
+By construction under `APPROVE`:
+- No Critical findings exist (row 2 caught them).
+- Important findings only exist below confidence 70 (row 3 caught the rest).
+- Suggestions exist at any confidence.
+
+In `local` (pre-review) mode the rubric does not apply: pre-review produces no
+verdict — the human reader decides what (if anything) to act on. The synthesiser
+emits no `Verdict:` line in local mode.
+
+### Posting policy (orchestrator, mechanical)
+
+The orchestrator filters which consensus findings get posted to GitHub based on
+the synthesiser's verdict. The filter is deterministic — same input, same
+output, no model judgement. It does not constitute "altering findings" because
+the synthesiser's sealed report (severity, confidence, body, fix text) is
+unchanged; only which subset gets posted is decided.
+
+| Verdict path | Filter |
+|---|---|
+| `REQUEST_CHANGES` | Post **every** consensus finding. No filter. The implementer needs the full picture; an under-powered orchestrator must not dilute what a max-effort synthesiser produced. Verbose by design. |
+| `APPROVE` (and APPROVE → COMMENT downgrade) | Post consensus findings with **confidence ≥ 75**. Sub-threshold findings remain visible in the synthesiser's stdout report but are not posted to GitHub. |
+
+The 75 threshold is intentionally above the rubric's 70 cutoff for Important
+findings. Below 70: don't block. Above 75: surface under APPROVE. The 70-75
+band is judged not-confident-enough to distract an author who is already
+getting an APPROVE.
+
+### Body construction (orchestrator)
+
+The GitHub top-level review body posts the synthesiser's body verbatim except
+for three deterministic transformations:
+
+- References to filtered-out findings (those dropped by the Posting policy
+  above) are elided. The synthesiser tags every consensus finding with a stable
+  `[#N]` token (see Synthesiser contract below); the orchestrator strips body
+  paragraphs and bullets that contain `[#N]` tokens for filtered findings.
+- `## Cost` section stripped — instrumentation, not author-facing. Stays in
+  stdout for the implementer.
+- `## Dismissed` section stripped — false-positives, noise for the author.
+  Stays in stdout for the implementer.
+
+When any findings were filtered, the orchestrator appends a footer to the
+GitHub body:
+
+> *N additional finding(s) below the 75% confidence threshold were not posted.
+> Run pre-review locally to see the full report.*
+
+(`N` resolves to the count of filtered findings.)
+
+### Synthesiser contract
+
+For the orchestrator's filtering to be mechanical, the synthesiser MUST produce
+a body where every consensus finding is tagged with a stable `[#N]` token in
+its section header, and EVERY reference to that finding elsewhere in the body
+(Synthesiser Assessment, Summary, cross-references) carries the same `[#N]`
+token. The orchestrator filters by stripping paragraphs and bullets that
+contain a filtered-out finding's `[#N]` token via deterministic string
+operations — no prose parsing.
+
+---
+
+### Class A — User confirmation flow
+
+Parse the synthesiser's `## Verdict` block (the `Verdict:` and `Rubric row applied:`
+lines) into `$SYNTH_VERDICT` and `$SYNTH_RUBRIC_ROW`. These are required —
+absence is a pipeline error: report `Pipeline error: synthesiser report missing
+## Verdict block (expected when $REVIEW_MODE = pr)` and stop.
+
+Compute the proposed action. By default `$PROPOSED_ACTION = $SYNTH_VERDICT`.
+If the Class B state checks (next section) downgrade APPROVE to COMMENT,
+`$PROPOSED_ACTION = COMMENT` and `$DOWNGRADE_REASON` is populated.
+
+Render ONE of three confirmation prompts based on the proposed action:
+
+**Prompt template (synthesiser proposed APPROVE, no downgrade):**
+
+```
+> Synthesiser proposes: APPROVE
+>   Rubric row $SYNTH_RUBRIC_ROW: <reason from synthesiser ## Verdict Reason: line>
+>   <tier counts> across <N> files
+>
+> Submit as proposed [s], override to REQUEST_CHANGES [r],
+> or cancel without submitting [n]? [s/r/n]
 ```
 
-**Review body guidelines:**
-- Summarize key findings (1-3 sentences)
-- Reference the comment-to-finding count in the form: `N inline comments covering M synthesiser findings (K deduplicated, J dismissed-by-synthesiser)`. The user uses this to spot mismatches at a glance — do not omit or fudge it.
-- For APPROVE: note any optional suggestions worth considering
-- For REQUEST_CHANGES: clearly state what must be addressed
-- Keep it concise - details are in the inline comments
+**Prompt template (synthesiser proposed APPROVE, downgraded to COMMENT by Class B):**
+
+```
+> Synthesiser proposes: APPROVE
+>   Rubric row $SYNTH_RUBRIC_ROW: <reason from synthesiser ## Verdict Reason: line>
+> Orchestrator adjustment: APPROVE → COMMENT
+>   Reason: $DOWNGRADE_REASON
+>
+> Submit as COMMENT [s], override to APPROVE [a], override to REQUEST_CHANGES [r],
+> or cancel without submitting [n]? [s/a/r/n]
+```
+
+**Prompt template (synthesiser proposed REQUEST_CHANGES):**
+
+```
+> Synthesiser proposes: REQUEST_CHANGES
+>   Rubric row $SYNTH_RUBRIC_ROW: <reason from synthesiser ## Verdict Reason: line>
+>   <tier counts> across <N> files
+>
+> Submit as proposed [s], override to APPROVE [a], override to COMMENT [c],
+> or cancel without submitting [n]? [s/a/c/n]
+```
+
+**Behaviour:**
+- Default (Enter, no input): submit-as-proposed.
+- Override actions require explicit keypress.
+- Cancel: halt without submission. Synthesiser report has already rendered to
+  stdout, so the user keeps the analysis.
+
+**Audit trail (announce-line on submission):**
+
+```
+> Review submitted: <FINAL_VERDICT> (<provenance>) | URL: <pr-review-url>
+```
+
+Where `<provenance>` is one of:
+- `synthesiser-proposed` — submitted exactly as the synthesiser proposed
+- `orchestrator-adjusted to <FINAL>, originally synthesiser-proposed <ORIGINAL>` — Class B downgrade applied, user accepted
+- `user override of synthesiser-proposed <ORIGINAL>` — user changed the verdict
+- `user override of orchestrator-adjusted <ADJUSTED>, originally synthesiser-proposed <ORIGINAL>` — Class B downgrade and user override both applied
+
+### Class B — PR-thread state handling
+
+(See subsequent step rewrite — added in Task 10.)
+
+### Class C — Submission mechanics
+
+(See subsequent step rewrite — added in Task 11.)
+
+### Class D — Output filtering
+
+(See subsequent step rewrite — added in Task 11.)
 
 ## Step 7: Summarize
 

@@ -51,13 +51,18 @@ Check `$CLAUDE_TEMP_DIR` is present in your prompt before invoking either tool �
 
 Per `includes/static-analysis-context.md` §10, the highest tier defaults to `Important`; `Critical` is opt-in via the allow-list below.
 
-| ESLint config       | Mapped     |
-|---------------------|------------|
-| `error` (severity 2) | Important  |
-| `warn` (severity 1)  | Suggestion |
-| `off` (severity 0)   | omit       |
+| Tool config                  | Mapped     |
+|------------------------------|------------|
+| ESLint `error` (severity 2)  | Important  |
+| ESLint `warn` (severity 1)   | Suggestion |
+| ESLint `off` (severity 0)    | omit       |
+| Biome `error`                | Important  |
+| Biome `warn`                 | Suggestion |
+| Biome `info`                 | Suggestion |
+| Biome `on`                   | use the rule's default severity, then map per the rows above |
+| Biome `off`                  | omit       |
 
-ESLint's severity is rule-config-derived, not rule-intrinsic — the same rule fires at `error` in one project and `warn` in another. The mapping above reflects that.
+Severity in both tools is rule-config-derived, not rule-intrinsic — the same rule fires at `error` in one project and `warn` in another. The mapping above reflects that. Biome's `on` token is a passthrough: the rule emits at its built-in default severity, which then maps via the `error`/`warn`/`info` rows above.
 
 ## Critical-allow-list:
 

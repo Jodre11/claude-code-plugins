@@ -48,6 +48,22 @@ when present, the file accepts findings only from `archaeology-reviewer`, and th
 findings must be top-level prose (no inline anchoring) per
 `agents/archaeology-reviewer.md`.
 
+**Example block:**
+
+```
+Changed lines:
+src/Foo.cs: 12, 13, 14, 17, near 22
+docs/README.md: 5, 6, 7
+src/Renamed.cs: (empty — rename only)
+src/RemovedHelper.cs (deleted): near 1
+```
+
+In this example, `Foo.cs` accepts findings on lines 12-14 and 17 (added/modified)
+and on line 22 (deletion anchor — archaeology only). `README.md` accepts findings
+on lines 5-7. `Renamed.cs` accepts no findings (rename without content change).
+`RemovedHelper.cs` is fully deleted; only archaeology may emit findings, and they
+must be top-level prose (no inline anchor).
+
 The block is the orchestrator's authoritative line-level filter. Specialists MUST emit
 findings only on lines that appear as bare integers (or `near N` for archaeology
 deletions) in the matching file's token list. Files NOT in the block are out of scope

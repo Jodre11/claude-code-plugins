@@ -1,8 +1,8 @@
 <!-- CROSS-REVIEW MODE — this is the canonical source.
 Edit this file first, then propagate to all specialist agents:
-archaeology-reviewer.md, consistency-reviewer.md, correctness-reviewer.md,
-efficiency-reviewer.md, reuse-reviewer.md, security-reviewer.md,
-style-reviewer.md, ui-reviewer.md.
+alignment-reviewer.md, archaeology-reviewer.md, consistency-reviewer.md,
+correctness-reviewer.md, efficiency-reviewer.md, reuse-reviewer.md,
+security-reviewer.md, style-reviewer.md, ui-reviewer.md.
 
 Static-analysis specialists (jbinspect, eslint, ruff, trivy) DO NOT inline
 this file and MUST NOT participate in cross-review-mode dispatch. Their

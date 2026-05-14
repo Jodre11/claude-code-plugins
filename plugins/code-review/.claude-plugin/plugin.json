@@ -15,9 +15,16 @@
     "archaeology",
     "reuse",
     "efficiency",
+    "alignment",
     "jetbrains",
     "accessibility",
     "ui",
-    "synthesis"
+    "synthesis",
+    "pre-review",
+    "trivial-mode",
+    "static-analysis",
+    "eslint",
+    "ruff",
+    "trivy"
   ]
 }

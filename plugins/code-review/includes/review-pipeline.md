@@ -123,7 +123,9 @@ Before posting, fetch the most recent review by the current user:
 
 ```
 gh api user --jq .login                            # capture as $CURRENT_USER
-gh pr view "$ARGUMENTS" --json reviews --jq '.reviews | map(select(.author.login == "'"$CURRENT_USER"'")) | sort_by(.submittedAt) | reverse | .[0]'
+gh pr view "$ARGUMENTS" --json reviews \
+  | jq --arg user "$CURRENT_USER" \
+       '.reviews | map(select(.author.login == $user)) | sort_by(.submittedAt) | reverse | .[0]'
 ```
 
 If the most recent review by `$CURRENT_USER` exists, has `state == "CHANGES_REQUESTED"`,

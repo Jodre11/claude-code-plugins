@@ -605,3 +605,56 @@ test_sync_static_analysis_critical_allowlist_present() {
         fi
     done
 }
+
+test_sync_agent_prompt_empty_tree_mode_uses_variable() {
+    local cr
+    cr=$(_cr_dir)
+    if [[ ! -d "$cr" ]]; then
+        skip "AGENT_PROMPT empty-tree-mode variable" "code-review plugin not found"
+        return
+    fi
+
+    # The $AGENT_PROMPT template (Step 2.9 in the canonical) and its inlined copies
+    # MUST use $EMPTY_TREE_MODE interpolation, not a literal "true"/"false". Search for
+    # the offending literal string within the template fence range.
+    local file
+    for file in \
+        "$cr/includes/review-pipeline.md" \
+        "$cr/commands/pre-review.md" \
+        "$cr/skills/review-gh-pr/SKILL.md"; do
+
+        local basename_file
+        basename_file=$(basename "$file")
+
+        if [[ ! -f "$file" ]]; then
+            fail "AGENT_PROMPT empty-tree-mode variable: $basename_file" "file not found"
+            continue
+        fi
+
+        # Extract the AGENT_PROMPT fenced block: from "Define `\$AGENT_PROMPT`" through
+        # the next "```" closer. grep the block for a literal "Empty tree mode: true"
+        # OR "Empty tree mode: false" that is NOT inside backticks (the bullet at line
+        # ~580 legitimately quotes "Empty tree mode: true" in backticks while documenting
+        # the rule — that is fine).
+        local block
+        block=$(awk '
+            /Define `\$AGENT_PROMPT`/ { in_block = 1 }
+            in_block && /^```$/ {
+                if (saw_fence) { in_block = 0 } else { saw_fence = 1 }
+                next
+            }
+            in_block && saw_fence { print }
+        ' "$file")
+
+        if [[ -z "$block" ]]; then
+            fail "AGENT_PROMPT empty-tree-mode variable: $basename_file" "AGENT_PROMPT fenced block not found"
+            continue
+        fi
+
+        if echo "$block" | grep -qE '^Empty tree mode: (true|false)$'; then
+            fail "AGENT_PROMPT empty-tree-mode variable: $basename_file" "template literally hardcodes 'Empty tree mode: true|false' instead of '\$EMPTY_TREE_MODE' interpolation"
+        else
+            pass "AGENT_PROMPT empty-tree-mode variable: $basename_file uses interpolation"
+        fi
+    done
+}

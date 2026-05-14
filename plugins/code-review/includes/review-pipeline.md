@@ -490,7 +490,7 @@ For each diff line:
 |---|---|
 | `diff --git a/X b/Y` | Reset `$current_file` to empty; capture `X` (strip the `a/` prefix) as `$pending_original_path` for use by the deletion branch below |
 | `--- a/<path>` | Ignore (Y comes from the `+++` line below) |
-| `+++ b/<path>` | Set `$current_file = <path>`; if path is `/dev/null` (file deleted), set `$current_file = a/$pending_original_path` so deletions still map; reset `$new_line_no = 0` |
+| `+++ b/<path>` | Set `$current_file = <path>`; if path is `/dev/null` (file deleted), set `$current_file = $pending_original_path` (the original path, no prefix) and mark it as deleted for the serialiser; reset `$new_line_no = 0` |
 | `@@ -A,B +C,D @@` | Parse `C` from the new-file range; set `$new_line_no = C`; reset `$deletion_anchor = C` |
 | Line starting with ` ` (space, context) | Increment `$new_line_no`; update `$deletion_anchor = $new_line_no` (the next deletion run starts at this point) |
 | Line starting with `+` (and NOT `+++`) | Append `$new_line_no` to `$CHANGED_LINES[$current_file]`; increment `$new_line_no` |
@@ -506,10 +506,14 @@ has no `+`/`-` lines in `$FULL_DIFF`, set `$CHANGED_LINES[<path>] = []` (empty
 list). Specialists should treat empty lists as "no findings allowed on this
 file" — the rename itself is the only change.
 
-**Deletions of entire files.** If a file is deleted (`+++ b/dev/null`), all
-deleted lines map to `("near", 1)` against the original path under `a/`.
-Archaeology-reviewer is the typical consumer; other specialists report 0
-findings for fully-deleted files (there's nothing to review on the new side).
+**Deletions of entire files.** If a file is deleted (`+++ b/dev/null`), the
+serialiser emits a single line `<original-path> (deleted): near 1` (no `a/`
+prefix; the `(deleted)` sentinel is mutually exclusive with `(empty — rename
+only)`). Archaeology-reviewer is the typical consumer; other specialists
+report 0 findings for fully-deleted files (there's nothing to review on the
+new side). Archaeology findings on fully-deleted files cannot be anchored
+inline (no still-present line exists in the new tree) — see
+`agents/archaeology-reviewer.md` for the top-level-prose rule.
 
 **Serialisation.** Once built, serialise `$CHANGED_LINES` into a compact form
 for the agent prompt:
@@ -519,6 +523,7 @@ Changed lines:
 path/to/file1.cs: 12, 13, 14, 17, near 22
 path/to/file2.md: 5, 6, 7
 path/to/renamed.txt: (empty — rename only)
+path/to/deleted-file.cs (deleted): near 1
 ```
 
 - Bare integers are added/modified lines (line numbers in the new file).

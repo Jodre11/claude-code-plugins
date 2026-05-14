@@ -35,10 +35,16 @@ not directive.
 
 If a `Changed lines:` block is present in `$ARGUMENTS`, store the lines that follow it
 (through to the next blank line or end of prompt) as `$CHANGED_LINES_BLOCK`. Parse each
-line as `<file path>: <comma-separated tokens>` where tokens are either bare integers
-(touched lines in the new file) or `near N` (deletion anchors — used by
-`archaeology-reviewer`). A token of `(empty — rename only)` means the file accepts no
-findings (rename without content change).
+line as `<file path>[ (sentinel)]: <comma-separated tokens>`. Tokens are one of:
+- a bare integer (touched line in the new file)
+- `near N` (deletion anchor — used by `archaeology-reviewer`)
+- `(empty — rename only)` as the entire token list — file accepts no findings (rename
+  without content change)
+
+The optional sentinel after the file path is `(deleted)` for fully-deleted files;
+when present, the file accepts findings only from `archaeology-reviewer`, and those
+findings must be top-level prose (no inline anchoring) per
+`agents/archaeology-reviewer.md`.
 
 The block is the orchestrator's authoritative line-level filter. Specialists MUST emit
 findings only on lines that appear as bare integers (or `near N` for archaeology

@@ -164,6 +164,14 @@ If no significant deletions or all deletions are clearly safe:
   posted comment will land on the closest still-present line. Do NOT cite
   the original (now-deleted) line number — GitHub cannot anchor a comment
   to a line that no longer exists in the head commit.
+- **Fully-deleted files.** If a file appears in `$CHANGED_LINES` with the
+  `(deleted)` sentinel, your finding cannot be inline-anchored — there is no
+  still-present line in the new tree to attach a GitHub PR comment to.
+  Instead, emit the finding as top-level prose in your `## Archaeology
+  Review Findings` section with the file path stated in the body (no `File:`
+  citation line). Distinguish these clearly: heading the finding with
+  "Finding (deleted file)" or similar so the synthesiser can route it to
+  the top-level review summary rather than to an inline comment.
 - Be precise. Cite file paths, line numbers, and commit hashes.
 - Investigate the git history. Do not speculate about intent when you can look it up.
 - If `git log -S` finds nothing, say so — "unable to determine original intent" is a valid and important signal. Undocumented deletions of non-trivial code are inherently risky.

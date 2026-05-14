@@ -850,3 +850,44 @@ test_sync_synthesiser_dispatch_includes_review_mode() {
         fi
     done
 }
+
+test_sync_synthesiser_dispatch_uses_ultrathink() {
+    local cr
+    cr=$(_cr_dir)
+    if [[ ! -d "$cr" ]]; then
+        skip "synthesiser dispatch ultrathink keyword" "code-review plugin not found"
+        return
+    fi
+
+    local file
+    for file in \
+        "$cr/includes/review-pipeline.md" \
+        "$cr/commands/pre-review.md" \
+        "$cr/skills/review-gh-pr/SKILL.md"; do
+
+        local basename_file
+        basename_file=$(basename "$file")
+
+        if [[ ! -f "$file" ]]; then
+            fail "synthesiser dispatch ultrathink keyword: $basename_file" "file not found"
+            continue
+        fi
+
+        # The synthesiser dispatch prompt body must START with the literal "ultrathink"
+        # keyword, followed by \n\n, before any other content. The keyword is what
+        # Claude Code's keyword detector looks for to set the max thinking budget.
+        # Detect the dispatch via the subagent_type marker, then assert the prompt
+        # field begins with "ultrathink\n\n".
+        if grep -qE 'subagent_type: "code-review:review-synthesiser"' "$file"; then
+            if grep -qE 'prompt: "ultrathink\\n\\n' "$file"; then
+                pass "synthesiser dispatch ultrathink keyword: $basename_file prompt starts with ultrathink"
+            else
+                fail "synthesiser dispatch ultrathink keyword: $basename_file prompt starts with ultrathink" \
+                    "the synthesiser dispatch prompt must begin with the literal 'ultrathink\\n\\n' so Claude Code's keyword detector sets the max thinking budget; without it, the synthesiser runs at default effort regardless of any frontmatter declaration"
+            fi
+        else
+            fail "synthesiser dispatch ultrathink keyword: $basename_file" \
+                "expected file to contain a synthesiser dispatch (subagent_type: \"code-review:review-synthesiser\") but none was found — was the dispatch deleted?"
+        fi
+    done
+}

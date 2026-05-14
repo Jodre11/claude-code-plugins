@@ -727,3 +727,76 @@ test_sync_agent_prompt_empty_tree_mode_uses_variable() {
         fi
     done
 }
+
+test_sync_static_analysis_cross_feed_documented() {
+    local cr
+    cr=$(_cr_dir)
+    if [[ ! -d "$cr" ]]; then
+        skip "static-analysis cross-feed documentation" "code-review plugin not found"
+        return
+    fi
+
+    local pipeline="$cr/includes/review-pipeline.md"
+    local sa_context="$cr/includes/static-analysis-context.md"
+    local cr_mode="$cr/includes/cross-review-mode.md"
+
+    local file
+    for file in "$pipeline" "$sa_context" "$cr_mode"; do
+        if [[ ! -f "$file" ]]; then
+            fail "static-analysis cross-feed documentation: $(basename "$file") present" "file not found"
+            return
+        fi
+    done
+
+    # Assertion 1: review-pipeline.md Step 5.2 sub-step 3 must require static-analysis
+    # findings to be included in EVERY cross-reviewer's prompt. The phrase "for ALL
+    # cross-reviewers" is the load-bearing part.
+    if grep -qE 'Include findings from any static-analysis specialist .*for ALL cross-reviewers' "$pipeline"; then
+        pass "static-analysis cross-feed: Step 5.2 sub-step 3 includes findings for ALL cross-reviewers"
+    else
+        fail "static-analysis cross-feed: Step 5.2 sub-step 3 includes findings for ALL cross-reviewers" \
+            "the canonical Step 5.2 sub-step 3 in review-pipeline.md must contain the load-bearing phrase 'Include findings from any static-analysis specialist ... for ALL cross-reviewers' — this is what wires static-analysis findings into the stochastic cross-reviewer prompts"
+    fi
+
+    # Assertion 2: static-analysis-context.md §8 must affirm that findings ARE shown
+    # to cross-reviewers. The phrase "shown to the" + "cross-reviewers" is the claim.
+    if grep -qE 'findings ARE shown to .*cross-reviewers' "$sa_context"; then
+        pass "static-analysis cross-feed: §8 affirms findings shown to cross-reviewers"
+    else
+        fail "static-analysis cross-feed: §8 affirms findings shown to cross-reviewers" \
+            "static-analysis-context.md §8 must contain the affirmation 'findings ARE shown to ... cross-reviewers' — this is the consumer-side documentation of the same policy"
+    fi
+
+    # Assertion 3: cross-review-mode.md HTML header must restate the same rule for
+    # specialists reading their own inlined block.
+    if grep -qE 'findings are visible to other cross-reviewers' "$cr_mode"; then
+        pass "static-analysis cross-feed: cross-review-mode.md restates rule"
+    else
+        fail "static-analysis cross-feed: cross-review-mode.md restates rule" \
+            "cross-review-mode.md HTML header must restate that static-analysis findings are visible to cross-reviewers"
+    fi
+
+    # Assertion 4: each of the four static-analysis specialist names must appear in
+    # both review-pipeline.md and static-analysis-context.md. We assert presence
+    # individually (not order/format) so that legitimate prose variations between
+    # the two canonicals do not trigger false positives. The names are the load-
+    # bearing tokens: a future edit that drops one of them from either canonical
+    # would silently shrink the cross-feed scope.
+    local name pipeline_missing sa_missing
+    pipeline_missing=""
+    sa_missing=""
+    for name in jbinspect eslint ruff trivy; do
+        if ! grep -q "$name" "$pipeline"; then
+            pipeline_missing="$pipeline_missing $name"
+        fi
+        if ! grep -q "$name" "$sa_context"; then
+            sa_missing="$sa_missing $name"
+        fi
+    done
+    if [[ -z "$pipeline_missing" && -z "$sa_missing" ]]; then
+        pass "static-analysis cross-feed: specialist enumeration consistent across canonicals"
+    else
+        fail "static-analysis cross-feed: specialist enumeration consistent across canonicals" \
+            "review-pipeline.md missing names:${pipeline_missing:-<none>}; static-analysis-context.md missing names:${sa_missing:-<none>} — both canonicals must reference all four (jbinspect, eslint, ruff, trivy) static-analysis specialists"
+    fi
+}

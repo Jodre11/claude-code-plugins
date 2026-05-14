@@ -1563,7 +1563,76 @@ Where `<provenance>` is one of:
 
 ### Class B — PR-thread state handling
 
-(See subsequent step rewrite — added in Task 10.)
+Run three checks at the start of Step 6, BEFORE presenting the Class A
+confirmation prompt. All three use `gh api` / `gh pr view` against live PR state.
+Batch them into one GraphQL call where possible to amortise latency.
+
+#### B.1 PR closed or merged since review started
+
+```bash
+gh pr view "$ARGUMENTS" --json state,mergedAt -q '{state: .state, mergedAt: .mergedAt}'
+```
+
+If `state` is `CLOSED` or `MERGED`, refuse to submit. Print:
+
+```
+> PR #N has been <closed|merged> since the review started. Skipping submission.
+> Synthesiser report rendered to stdout for your reference.
+```
+
+Halt cleanly. Do NOT present the Class A confirmation prompt.
+
+#### B.2 New commits pushed since synthesiser ran
+
+```bash
+gh pr view "$ARGUMENTS" --json headRefOid -q '.headRefOid'
+```
+
+Compare the result against `$HEAD_SHA` (the commit the synthesiser analysed,
+captured in Step 2.1 of the pipeline). If different, present a warning BEFORE
+the Class A confirmation prompt:
+
+```
+> Warning: PR head has advanced since this review was started.
+>   Synthesiser analysed: <synth-sha>
+>   Current HEAD:         <head-sha> (<N> new commits)
+> Findings may be stale. Continue with submission, or cancel and re-run? [s/n]
+```
+
+On `s`: continue to the Class A confirmation prompt. Inline comments still
+anchor to `$HEAD_SHA` (the synthesiser's analysed commit), not to current HEAD
+— safest, no dangling anchors, reviewers can navigate to current head from the
+GitHub UI.
+
+On `n`: halt cleanly without submission.
+
+#### B.3 Outstanding peer REQUEST_CHANGES
+
+```bash
+gh pr view "$ARGUMENTS" --json reviews \
+  | jq --arg head "$(gh pr view "$ARGUMENTS" --json headRefOid -q '.headRefOid')" \
+       --arg user "$CURRENT_USER" \
+       '.reviews | map(select(.state == "CHANGES_REQUESTED" and .commit.oid == $head and .author.login != $user)) | length'
+```
+
+If the result is `> 0`, there is at least one non-dismissed peer
+`REQUEST_CHANGES` from another reviewer on the latest commit. If the
+synthesiser proposed `APPROVE`, transform the proposed action to `COMMENT` and
+populate `$DOWNGRADE_REASON` with:
+
+```
+prior reviewer @<login> has outstanding REQUEST_CHANGES (review #<id>) — APPROVE would override; posting as COMMENT instead
+```
+
+Capture `<login>` and `<id>` from the same query (extend the jq pipeline to
+return the first matching review's `author.login` and `databaseId`).
+
+If the synthesiser proposed `REQUEST_CHANGES`, no transform applies (the
+peer's REQUEST_CHANGES is already aligned with the synthesiser's proposal).
+
+This is the SOLE deterministic transformation the orchestrator is allowed to
+apply to the synthesiser's proposed verdict. It is rule-driven, not
+judgement-driven.
 
 ### Class C — Submission mechanics
 

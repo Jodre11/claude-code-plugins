@@ -412,8 +412,21 @@ and is mechanical.
 
 - `tests/run.sh` passes including new sync tests.
 - `ultrathink` keyword present at the start of the synthesiser dispatch prompt
-  in canonical and both inlined consumers (asserted by sync test).
+  in canonical and both inlined consumers (asserted by sync test). This is a
+  deliberate per-invocation cost choice: the synthesiser is the sole verdict
+  authority, runs once per review (the load-bearing decision in the pipeline),
+  and one extended-thinking dispatch per PR is judged worthwhile against the
+  alternative of a default-budget verdict on the entire specialist + cross-
+  review aggregate. Documented here so the cost is not implicit in the
+  dispatch prompt.
 - `ultrathink: true` no longer present in any agent frontmatter.
+- `$INTENT_LEDGER` appears in the synthesiser dispatch prompt at all three
+  sites (`includes/review-pipeline.md`, `commands/pre-review.md`,
+  `skills/review-gh-pr/SKILL.md`), positioned between the Review mode line
+  and the trust boundary advisory, so the synthesiser can evaluate verdict
+  rubric row 1 (intent-ledger goal unachieved) deterministically rather than
+  inferring the goal from the diff. Verified by sync test
+  `test_sync_synth_dispatch_passes_intent_ledger`.
 - `includes/ci-status-gate.md` Phase 0.6 rewritten to halt on any non-green
   state; no acknowledge-to-proceed prompt; no definitive/transient
   classification.

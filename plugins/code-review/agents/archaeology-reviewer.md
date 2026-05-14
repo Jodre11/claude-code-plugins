@@ -151,19 +151,35 @@ If no significant deletions or all deletions are clearly safe:
 
 ## Rules
 
-- Only report findings on lines listed in `$CHANGED_LINES` for that file
-  (parsed from the `Changed lines:` block in your prompt). Do NOT emit
-  findings on unchanged lines, even FYI — pre-existing issues are out of
-  scope. You may still *read* unchanged context to understand the change,
-  but the finding's `File:` line must reference a `file:line` whose line
-  appears in `$CHANGED_LINES[file]`. Files appearing in the `Changed lines:`
-  block with `(empty — rename only)` accept no findings at all (the rename
-  itself is the only change).
+<!-- CHANGED_LINES OUTPUT FILTER — inlined from includes/specialist-context.md (canonical source).
+Edit the include first, then propagate to all listed specialists. -->
+
+> **CHANGED_LINES OUTPUT FILTER — MANDATORY**
+>
+> Only report findings on lines listed in `$CHANGED_LINES` for that file
+> (parsed from the `Changed lines:` block in your prompt). Do NOT emit
+> findings on unchanged lines, even FYI — pre-existing issues are out of
+> scope. You may still *read* unchanged context to understand the change,
+> but the finding's `File:` line must reference a `file:line` whose line
+> appears in `$CHANGED_LINES[file]`. Files appearing in the `Changed lines:`
+> block with `(empty — rename only)` accept no findings at all (the rename
+> itself is the only change).
+
+---
+
 - For deletions, map findings to the `near N` anchor: cite `file:N` where N
   is the new-file line number adjacent to where the deletion happened. The
   posted comment will land on the closest still-present line. Do NOT cite
   the original (now-deleted) line number — GitHub cannot anchor a comment
   to a line that no longer exists in the head commit.
+- **Fully-deleted files.** If a file appears in `$CHANGED_LINES` with the
+  `(deleted)` sentinel, your finding cannot be inline-anchored — there is no
+  still-present line in the new tree to attach a GitHub PR comment to.
+  Instead, emit the finding as top-level prose in your `## Archaeology
+  Review Findings` section with the file path stated in the body (no `File:`
+  citation line). Distinguish these clearly: heading the finding with
+  "Finding (deleted file)" or similar so the synthesiser can route it to
+  the top-level review summary rather than to an inline comment.
 - Be precise. Cite file paths, line numbers, and commit hashes.
 - Investigate the git history. Do not speculate about intent when you can look it up.
 - If `git log -S` finds nothing, say so — "unable to determine original intent" is a valid and important signal. Undocumented deletions of non-trivial code are inherently risky.

@@ -357,6 +357,83 @@ test_sync_cross_review_mode_inline_matches_canonical() {
     done
 }
 
+test_sync_changed_lines_rule_matches_canonical() {
+    # The extraction below intentionally starts at the blockquote header
+    # (`> **CHANGED_LINES OUTPUT FILTER — MANDATORY**`), not at the preceding HTML
+    # comment. The HTML comment is a maintainer-facing propagation hint that
+    # legitimately differs across canonical (which lists target files) and inlined
+    # copies (which refer back to the canonical), and is not load-bearing for the
+    # runtime agent. Tightening the window to include it would trigger spurious
+    # failures; conversely, if HTML-comment consistency does need enforcing, add a
+    # separate test rather than expanding this extraction.
+    local cr
+    cr=$(_cr_dir)
+    if [[ ! -d "$cr" ]]; then
+        skip "CHANGED_LINES rule sync" "code-review plugin not found"
+        return
+    fi
+
+    local canonical="$cr/includes/specialist-context.md"
+    if [[ ! -f "$canonical" ]]; then
+        skip "CHANGED_LINES rule sync" "canonical file not found"
+        return
+    fi
+
+    # Extract the canonical block from the MANDATORY blockquote header.
+    local canonical_body
+    canonical_body=$(sed -n '/^> \*\*CHANGED_LINES OUTPUT FILTER — MANDATORY\*\*/,$ p' "$canonical")
+
+    if [[ -z "$canonical_body" ]]; then
+        fail "CHANGED_LINES rule sync: canonical body extracted" "no body found"
+        return
+    fi
+
+    local agent
+    for agent in \
+        "$cr/agents/archaeology-reviewer.md" \
+        "$cr/agents/code-analysis.md" \
+        "$cr/agents/consistency-reviewer.md" \
+        "$cr/agents/correctness-reviewer.md" \
+        "$cr/agents/efficiency-reviewer.md" \
+        "$cr/agents/reuse-reviewer.md" \
+        "$cr/agents/security-reviewer.md" \
+        "$cr/agents/style-reviewer.md" \
+        "$cr/agents/ui-reviewer.md"; do
+
+        local basename_agent
+        basename_agent=$(basename "$agent")
+
+        if [[ ! -f "$agent" ]]; then
+            fail "CHANGED_LINES rule sync: $basename_agent" "file not found"
+            continue
+        fi
+
+        # Each agent embeds the block bounded by the same blockquote header and the
+        # next "---" separator. Mirror the cross-review-mode extraction pattern.
+        local inline_body
+        inline_body=$(sed -n '/^> \*\*CHANGED_LINES OUTPUT FILTER — MANDATORY\*\*/,/^---$/ p' "$agent" | sed '$ d')
+
+        if [[ -z "$inline_body" ]]; then
+            fail "CHANGED_LINES rule sync: $basename_agent" "inline block not found"
+            continue
+        fi
+
+        if [[ "$canonical_body" == "$inline_body" ]]; then
+            pass "CHANGED_LINES rule sync: $basename_agent matches canonical"
+        else
+            local tmp1 tmp2
+            tmp1=$(mktemp)
+            tmp2=$(mktemp)
+            echo "$canonical_body" > "$tmp1"
+            echo "$inline_body" > "$tmp2"
+            local diff_output
+            diff_output=$(diff -u --label "canonical" --label "$basename_agent" "$tmp1" "$tmp2" | head -30 || true)
+            rm -f "$tmp1" "$tmp2"
+            fail "CHANGED_LINES rule sync: $basename_agent matches canonical" "$diff_output"
+        fi
+    done
+}
+
 test_sync_base_branch_steps_match() {
     local cr
     cr=$(_cr_dir)
@@ -602,6 +679,174 @@ test_sync_static_analysis_critical_allowlist_present() {
         else
             fail "static-analysis critical-allow-list: $agent contains 'Critical-allow-list:'" \
                 "heading literal not found in $path"
+        fi
+    done
+}
+
+test_sync_agent_prompt_empty_tree_mode_uses_variable() {
+    local cr
+    cr=$(_cr_dir)
+    if [[ ! -d "$cr" ]]; then
+        skip "AGENT_PROMPT empty-tree-mode variable" "code-review plugin not found"
+        return
+    fi
+
+    # The $AGENT_PROMPT template (Step 2.9 in the canonical) and its inlined copies
+    # MUST use $EMPTY_TREE_MODE interpolation, not a literal "true"/"false". Search for
+    # the offending literal string within the template fence range.
+    local file
+    for file in \
+        "$cr/includes/review-pipeline.md" \
+        "$cr/commands/pre-review.md" \
+        "$cr/skills/review-gh-pr/SKILL.md"; do
+
+        local basename_file
+        basename_file=$(basename "$file")
+
+        if [[ ! -f "$file" ]]; then
+            fail "AGENT_PROMPT empty-tree-mode variable: $basename_file" "file not found"
+            continue
+        fi
+
+        # Extract the AGENT_PROMPT fenced block: from "Define `\$AGENT_PROMPT`" through
+        # the next "```" closer. grep the block for a literal "Empty tree mode: true"
+        # OR "Empty tree mode: false" that is NOT inside backticks (the bullet at line
+        # ~580 legitimately quotes "Empty tree mode: true" in backticks while documenting
+        # the rule — that is fine).
+        local block
+        block=$(awk '
+            /Define `\$AGENT_PROMPT`/ { in_block = 1 }
+            in_block && /^```$/ {
+                if (saw_fence) { in_block = 0 } else { saw_fence = 1 }
+                next
+            }
+            in_block && saw_fence { print }
+        ' "$file")
+
+        if [[ -z "$block" ]]; then
+            fail "AGENT_PROMPT empty-tree-mode variable: $basename_file" "AGENT_PROMPT fenced block not found"
+            continue
+        fi
+
+        if echo "$block" | grep -qE '^Empty tree mode: (true|false)$'; then
+            fail "AGENT_PROMPT empty-tree-mode variable: $basename_file" "template literally hardcodes 'Empty tree mode: true|false' instead of '\$EMPTY_TREE_MODE' interpolation"
+        else
+            pass "AGENT_PROMPT empty-tree-mode variable: $basename_file uses interpolation"
+        fi
+    done
+}
+
+test_sync_static_analysis_cross_feed_documented() {
+    local cr
+    cr=$(_cr_dir)
+    if [[ ! -d "$cr" ]]; then
+        skip "static-analysis cross-feed documentation" "code-review plugin not found"
+        return
+    fi
+
+    local pipeline="$cr/includes/review-pipeline.md"
+    local sa_context="$cr/includes/static-analysis-context.md"
+    local cr_mode="$cr/includes/cross-review-mode.md"
+
+    local file
+    for file in "$pipeline" "$sa_context" "$cr_mode"; do
+        if [[ ! -f "$file" ]]; then
+            fail "static-analysis cross-feed documentation: $(basename "$file") present" "file not found"
+            return
+        fi
+    done
+
+    # Assertion 1: review-pipeline.md Step 5.2 sub-step 3 must require static-analysis
+    # findings to be included in EVERY cross-reviewer's prompt. The phrase "for ALL
+    # cross-reviewers" is the load-bearing part.
+    if grep -qE 'Include findings from any static-analysis specialist .*for ALL cross-reviewers' "$pipeline"; then
+        pass "static-analysis cross-feed: Step 5.2 sub-step 3 includes findings for ALL cross-reviewers"
+    else
+        fail "static-analysis cross-feed: Step 5.2 sub-step 3 includes findings for ALL cross-reviewers" \
+            "the canonical Step 5.2 sub-step 3 in review-pipeline.md must contain the load-bearing phrase 'Include findings from any static-analysis specialist ... for ALL cross-reviewers' — this is what wires static-analysis findings into the stochastic cross-reviewer prompts"
+    fi
+
+    # Assertion 2: static-analysis-context.md §8 must affirm that findings ARE shown
+    # to cross-reviewers. The phrase "shown to the" + "cross-reviewers" is the claim.
+    if grep -qE 'findings ARE shown to .*cross-reviewers' "$sa_context"; then
+        pass "static-analysis cross-feed: §8 affirms findings shown to cross-reviewers"
+    else
+        fail "static-analysis cross-feed: §8 affirms findings shown to cross-reviewers" \
+            "static-analysis-context.md §8 must contain the affirmation 'findings ARE shown to ... cross-reviewers' — this is the consumer-side documentation of the same policy"
+    fi
+
+    # Assertion 3: cross-review-mode.md HTML header must restate the same rule for
+    # specialists reading their own inlined block.
+    if grep -qE 'findings are visible to other cross-reviewers' "$cr_mode"; then
+        pass "static-analysis cross-feed: cross-review-mode.md restates rule"
+    else
+        fail "static-analysis cross-feed: cross-review-mode.md restates rule" \
+            "cross-review-mode.md HTML header must restate that static-analysis findings are visible to cross-reviewers"
+    fi
+
+    # Assertion 4: each of the four static-analysis specialist names must appear in
+    # both review-pipeline.md and static-analysis-context.md. We assert presence
+    # individually (not order/format) so that legitimate prose variations between
+    # the two canonicals do not trigger false positives. The names are the load-
+    # bearing tokens: a future edit that drops one of them from either canonical
+    # would silently shrink the cross-feed scope.
+    local name pipeline_missing sa_missing
+    pipeline_missing=""
+    sa_missing=""
+    for name in jbinspect eslint ruff trivy; do
+        if ! grep -q "$name" "$pipeline"; then
+            pipeline_missing="$pipeline_missing $name"
+        fi
+        if ! grep -q "$name" "$sa_context"; then
+            sa_missing="$sa_missing $name"
+        fi
+    done
+    if [[ -z "$pipeline_missing" && -z "$sa_missing" ]]; then
+        pass "static-analysis cross-feed: specialist enumeration consistent across canonicals"
+    else
+        fail "static-analysis cross-feed: specialist enumeration consistent across canonicals" \
+            "review-pipeline.md missing names:${pipeline_missing:-<none>}; static-analysis-context.md missing names:${sa_missing:-<none>} — both canonicals must reference all four (jbinspect, eslint, ruff, trivy) static-analysis specialists"
+    fi
+}
+
+test_sync_synthesiser_dispatch_includes_review_mode() {
+    local cr
+    cr=$(_cr_dir)
+    if [[ ! -d "$cr" ]]; then
+        skip "synthesiser dispatch Review mode" "code-review plugin not found"
+        return
+    fi
+
+    local file
+    for file in \
+        "$cr/includes/review-pipeline.md" \
+        "$cr/commands/pre-review.md" \
+        "$cr/skills/review-gh-pr/SKILL.md"; do
+
+        local basename_file
+        basename_file=$(basename "$file")
+
+        if [[ ! -f "$file" ]]; then
+            fail "synthesiser dispatch Review mode: $basename_file" "file not found"
+            continue
+        fi
+
+        # Find the synthesiser dispatch prompt (single line containing the prompt
+        # template) and assert it includes "Review mode: $REVIEW_MODE". The three
+        # files enumerated above are the contractually-mandated synthesiser dispatch
+        # sites — failure to find a dispatch in any of them is a regression, not a
+        # benign skip. If a future file legitimately drops the dispatch, remove it
+        # from the loop above rather than relaxing this branch.
+        if grep -qE 'subagent_type: "code-review:review-synthesiser"' "$file"; then
+            if grep -qE 'Review mode: \$REVIEW_MODE' "$file"; then
+                pass "synthesiser dispatch Review mode: $basename_file includes \$REVIEW_MODE"
+            else
+                fail "synthesiser dispatch Review mode: $basename_file includes \$REVIEW_MODE" \
+                    "the synthesiser dispatch prompt must include 'Review mode: \$REVIEW_MODE\\n' so the synthesiser can suppress verdict guidance in local mode"
+            fi
+        else
+            fail "synthesiser dispatch Review mode: $basename_file" \
+                "expected file to contain a synthesiser dispatch (subagent_type: \"code-review:review-synthesiser\") but none was found — was the dispatch deleted?"
         fi
     done
 }

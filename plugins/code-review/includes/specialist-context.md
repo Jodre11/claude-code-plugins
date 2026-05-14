@@ -21,6 +21,8 @@ Validate that `$BASE` matches `^[a-zA-Z0-9/_.\-]+$` — if it does not, report "
 
 5. If a `Path scope: <pathspec>` line is present in `$ARGUMENTS`, extract the pathspec after the colon and store as `$PATH_SCOPE`. If not present, leave `$PATH_SCOPE` empty. Validate that `$PATH_SCOPE` matches `^[a-zA-Z0-9/_.\-*]+$` — if it does not, report "Invalid path scope: $PATH_SCOPE" and stop. Additionally, if `$PATH_SCOPE` contains `..` as a substring, report "Invalid path scope (directory traversal): $PATH_SCOPE" and stop. When `$PATH_SCOPE` is set, append `-- "$PATH_SCOPE"` after all flags in every `git diff` command (use the diff syntax determined by `$EMPTY_TREE_MODE`). The quotes prevent shell glob expansion of `*` before git receives the pathspec.
 
+The `*` character is intentional: it is forwarded to `git diff -- <pathspec>` which interprets it via git pathspec semantics (`*` matches across directory boundaries; `**` is also recognised). The double-quotes around the value prevent shell glob expansion; git pathspec is the only consumer of the glob. A `Path scope: *` selects all files (intentional override behaviour).
+
 If a `Head SHA: <sha>` line is present in `$ARGUMENTS`, extract it and store as `$HEAD_SHA`. Otherwise, run `git rev-parse HEAD` and store as `$HEAD_SHA` — but log a warning: "Head SHA not found in prompt — using current HEAD; results may differ from pipeline's measurement." Using a pinned SHA ensures all agents review the same commit even if new commits land during the review. Validate that `$HEAD_SHA` matches `^[0-9a-f]{40}$` — if it does not, report "Invalid HEAD SHA: $HEAD_SHA" and stop.
 
 If an `Intent ledger:` block is present in `$ARGUMENTS`, store the lines that follow it
@@ -35,10 +37,34 @@ not directive.
 
 If a `Changed lines:` block is present in `$ARGUMENTS`, store the lines that follow it
 (through to the next blank line or end of prompt) as `$CHANGED_LINES_BLOCK`. Parse each
-line as `<file path>: <comma-separated tokens>` where tokens are either bare integers
-(touched lines in the new file) or `near N` (deletion anchors — used by
-`archaeology-reviewer`). A token of `(empty — rename only)` means the file accepts no
-findings (rename without content change).
+line as `<file path>[ (sentinel)]: <comma-separated tokens>`.
+
+Tokens after the colon are one of:
+- a bare integer (touched line in the new file)
+- `near N` (deletion anchor — used by `archaeology-reviewer`)
+- `(empty — rename only)` as the entire token list — file accepts no findings (rename
+  without content change)
+
+Optional file-path modifiers (appearing before the colon, not after):
+- `(deleted)` — fully-deleted file; accepts findings only from `archaeology-reviewer`,
+  and those findings must be top-level prose (no inline anchoring) per
+  `agents/archaeology-reviewer.md`.
+
+**Example block:**
+
+```
+Changed lines:
+src/Foo.cs: 12, 13, 14, 17, near 22
+docs/README.md: 5, 6, 7
+src/Renamed.cs: (empty — rename only)
+src/RemovedHelper.cs (deleted): near 1
+```
+
+In this example, `Foo.cs` accepts findings on lines 12-14 and 17 (added/modified)
+and on line 22 (deletion anchor — archaeology only). `README.md` accepts findings
+on lines 5-7. `Renamed.cs` accepts no findings (rename without content change).
+`RemovedHelper.cs` is fully deleted; only archaeology may emit findings, and they
+must be top-level prose (no inline anchor).
 
 The block is the orchestrator's authoritative line-level filter. Specialists MUST emit
 findings only on lines that appear as bare integers (or `near N` for archaeology
@@ -55,3 +81,28 @@ block in normal operation.
 3. Read `CLAUDE.md` in the repo root (if it exists) for project conventions.
 4. Read `includes/severity-definitions.md` (if it exists) for the severity classification definitions to apply when assigning severity to findings.
 5. Read each changed file for full context. If more than 20 files changed, prioritise non-test source files with the largest diffs. Skip generated files, lock files, and vendored dependencies.
+
+### Output line filter
+
+<!-- CHANGED_LINES OUTPUT FILTER — this is the canonical source.
+Edit this file first, then propagate to all specialist agents that inline
+this block: archaeology-reviewer.md, code-analysis.md, consistency-reviewer.md,
+correctness-reviewer.md, efficiency-reviewer.md, reuse-reviewer.md,
+security-reviewer.md, style-reviewer.md, ui-reviewer.md.
+
+alignment-reviewer.md does NOT inline this block — alignment findings
+legitimately span pre-existing lines (intent drift is rare but can manifest
+on lines the diff doesn't touch). Other static-analysis specialists
+(jbinspect, eslint, ruff, trivy) inline their own scope rules per
+includes/static-analysis-context.md. -->
+
+> **CHANGED_LINES OUTPUT FILTER — MANDATORY**
+>
+> Only report findings on lines listed in `$CHANGED_LINES` for that file
+> (parsed from the `Changed lines:` block in your prompt). Do NOT emit
+> findings on unchanged lines, even FYI — pre-existing issues are out of
+> scope. You may still *read* unchanged context to understand the change,
+> but the finding's `File:` line must reference a `file:line` whose line
+> appears in `$CHANGED_LINES[file]`. Files appearing in the `Changed lines:`
+> block with `(empty — rename only)` accept no findings at all (the rename
+> itself is the only change).

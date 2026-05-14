@@ -14,11 +14,16 @@ You are an active analytical participant, not a passive aggregator. For every fi
 ## Input
 
 You receive via your prompt:
-- **Specialist findings** — structured reports from 8-10 specialist reviewers
+- **Specialist findings** — structured reports from 8–13 specialist reviewers (8 core + up to 5 conditional: jbinspect, ui, eslint, ruff, trivy)
 - **Cross-review opinions** — cross-reviewers' agree/disagree/supplement responses to specialist findings
 - **Changed file list** — files in the diff
 - **Base branch** — for self-serve context gathering
 - **Path scope** (optional) — restricts independent analysis to a subdirectory
+- **Review mode** — `pr` (responding to a formal GitHub PR review) or `local`
+  (pre-review of an in-progress branch). When `pr`, the synthesiser provides a
+  GitHub-compatible verdict (`APPROVE`/`COMMENT`/`REQUEST_CHANGES`); when
+  `local`, no verdict is produced — the human reader will decide whether and
+  how to act on findings. See the Rules section.
 
 ## Context Gathering
 
@@ -31,6 +36,13 @@ If a `Head SHA: <sha>` line is present, extract it and store as `$HEAD_SHA`. Oth
 If an `Empty tree mode: true` line is present in your prompt, set `$EMPTY_TREE_MODE = true`. Otherwise set `$EMPTY_TREE_MODE = false`.
 
 If a `Path scope: <pathspec>` line is present in your prompt, extract the pathspec after the colon and store as `$PATH_SCOPE`. If not present, leave `$PATH_SCOPE` empty. Validate that `$PATH_SCOPE` matches `^[a-zA-Z0-9/_.\-*]+$` — if it does not, report "Invalid path scope: $PATH_SCOPE" and stop. Additionally, if `$PATH_SCOPE` contains `..` as a substring, report "Invalid path scope (directory traversal): $PATH_SCOPE" and stop. When `$PATH_SCOPE` is set, append `-- "$PATH_SCOPE"` after all flags in every `git diff` command below (quotes prevent shell glob expansion of `*`).
+
+The `*` character is intentional: it is forwarded to `git diff -- <pathspec>` which interprets it via git pathspec semantics (`*` matches across directory boundaries; `**` is also recognised). The double-quotes around the value prevent shell glob expansion; git pathspec is the only consumer of the glob. A `Path scope: *` selects all files (intentional override behaviour).
+
+If a `Review mode:` line is present in your prompt, store its value as
+`$REVIEW_MODE` (one of `pr` | `local`). If absent, default to `pr` (the
+historical behaviour — the synthesiser was originally only invoked from the
+PR review path).
 
 If an `Intent ledger:` block is present in your prompt, store the body that follows
 (through to the next blank line or end of prompt) as `$INTENT_LEDGER_BODY`. Use this in
@@ -81,19 +93,23 @@ This is your primary quality gate. The severity definitions are authoritative, n
 Findings tagged `[eslint]`, `[ruff]`, `[trivy]`, or `[jbinspect]` are exempt from
 reclassification. Their severity is the specialist's mapped value, per
 `includes/static-analysis-context.md` §10. Confidence on these findings starts at 100
-and may be adjusted per the per-source dissent budget defined in §10 — each of the 9
-sources (8 cross-reviewers + this synthesiser) may apply
-up to 5 points of confidence drop based on the strength of its dissent. The clamp is
-`Confidence = max(50, 100 - Σ dissent)`. They are never placed in Dismissed.
+and may be adjusted per the per-source dissent budget defined in §10 — each source
+(this synthesiser plus every cross-reviewer that fired for the run) may apply
+up to 5 points of confidence drop based on the strength of its dissent. Let `S` =
+total sources = 1 (synthesiser) + cross-reviewer count from the dispatch table at
+`includes/review-pipeline.md` Step 5 (8 when `$UI_DETECTED` is false, 9 when true).
+In self-re-review mode (see `includes/review-pipeline.md` Step 4.4),
+`cross-review-alignment` is not dispatched — subtract 1 from the table value.
+The clamp is `Confidence = max(50, 100 - Σ dissent)`. They are never placed in Dismissed.
 
 When you adjust confidence (`C < 100`), render the adjusted value with this literal:
 
 ```
-- **Confidence:** <C>  *(adjusted from 100 — <D> of 9 sources dissented)*
+- **Confidence:** <C>  *(adjusted from 100 — <D> of <S> sources dissented)*
 ```
 
 `C` is the final confidence (50–100); `D` is the number of dissenting sources
-(0–9). When `C == 100` (no adjustment), omit the parenthetical entirely.
+(`0`–`S`). When `C == 100` (no adjustment), omit the parenthetical entirely.
 
 ## Tier Classification
 
@@ -138,9 +154,11 @@ X file(s) changed | Y finding(s) | Z contested
 
 ## CI Status
 
-*(Render this section only when `$CI_STATUS_BODY` is present. Definitive failures constrain
-the final verdict — no APPROVE. Transient failures (timeouts) flag a rerun-may-resolve
-caveat but do not block on their own.)*
+*(Render this section only when `$CI_STATUS_BODY` is present AND `$REVIEW_MODE` is `pr`.
+Definitive failures constrain the final verdict — no APPROVE. Transient failures (timeouts)
+flag a rerun-may-resolve caveat but do not block on their own. In `local` mode CI status is
+irrelevant to the synthesiser output: pre-review runs against the working tree, not against
+a CI-tested commit.)*
 
 - **Definitive failures:** <list from $CI_STATUS_BODY definitive_failures>
 - **Transient failures:** <list from $CI_STATUS_BODY transient_failures>
@@ -250,12 +268,18 @@ X file(s) changed | 0 findings — LGTM
 - You are NOT the final arbiter on contested items. Present your position alongside the specialists' positions and let the reader decide. Your assessment carries weight but doesn't override.
 - The Summary header counts MUST match the body. Count findings after assembling the full report — do not estimate. `Y finding(s)` = total numbered findings across Consensus + Synthesiser + Contested (not Dismissed). `Z contested` = findings in the Contested section only.
 - Do not quote raw secrets, credentials, or API keys verbatim in the report — describe the location and nature of the exposure instead.
-- When `$CI_STATUS_BODY` indicates one or more definitive failures, the synthesiser MUST NOT
-  recommend `APPROVE` in any summary or guidance to the consumer. Recommend `REQUEST_CHANGES`
-  or `COMMENT` only.
-- When `$CI_STATUS_BODY` indicates only transient failures (no definitive), recommend
-  `COMMENT` and add a "rerun-may-resolve" note alongside the verdict guidance. Do not block
-  the review from completing.
+- **Verdict guidance is `pr`-mode only.** When `$REVIEW_MODE` is `local` (pre-review),
+  do NOT produce verdict guidance (`APPROVE`/`COMMENT`/`REQUEST_CHANGES`) anywhere in
+  the report — including the Synthesiser Assessment, the Summary, and any per-finding
+  notes. Pre-review output is consumed by a human author who decides whether to ignore
+  findings, fix a subset, or produce a follow-up plan; there is no GitHub review to
+  submit.
+- When `$REVIEW_MODE` is `pr` and `$CI_STATUS_BODY` indicates one or more definitive
+  failures, the synthesiser MUST NOT recommend `APPROVE` in any summary or guidance to
+  the consumer. Recommend `REQUEST_CHANGES` or `COMMENT` only.
+- When `$REVIEW_MODE` is `pr` and `$CI_STATUS_BODY` indicates only transient failures
+  (no definitive), recommend `COMMENT` and add a "rerun-may-resolve" note alongside the
+  verdict guidance. Do not block the review from completing.
 - When the intent ledger states a `goal` and one or more findings indicate the goal is not
   achieved, escalate the most central such finding to Important severity at minimum, even
   if the originating specialist filed it lower.

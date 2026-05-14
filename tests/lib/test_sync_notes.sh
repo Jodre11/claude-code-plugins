@@ -961,3 +961,96 @@ test_sync_verdict_rubric_inline_matches_canonical() {
         fi
     done
 }
+
+test_synthesiser_verdict_output_restricted_to_two_values() {
+    local cr
+    cr=$(_cr_dir)
+    if [[ ! -d "$cr" ]]; then
+        skip "synthesiser verdict restricted" "code-review plugin not found"
+        return
+    fi
+
+    local synthesiser="$cr/agents/review-synthesiser.md"
+    if [[ ! -f "$synthesiser" ]]; then
+        fail "synthesiser verdict restricted" "review-synthesiser.md not found"
+        return
+    fi
+
+    # Assert the ## Verdict Output Format block exists and the Verdict: line restricts
+    # to "APPROVE | REQUEST_CHANGES" — exactly two values, no COMMENT, no other variants.
+    if grep -qE '^Verdict: <APPROVE \| REQUEST_CHANGES>$' "$synthesiser"; then
+        pass "synthesiser verdict restricted: ## Verdict block lists exactly APPROVE | REQUEST_CHANGES"
+    else
+        fail "synthesiser verdict restricted: ## Verdict block lists exactly APPROVE | REQUEST_CHANGES" \
+            "the synthesiser's ## Verdict Output Format block must contain a 'Verdict: <APPROVE | REQUEST_CHANGES>' line — COMMENT is never a synthesiser output, only a Class B downgrade or user override"
+    fi
+
+    # Assert the synthesiser does NOT include COMMENT as a possible Verdict: value.
+    if grep -qE '^Verdict: <APPROVE \| REQUEST_CHANGES \| COMMENT' "$synthesiser"; then
+        fail "synthesiser verdict restricted: COMMENT is NOT a synthesiser output" \
+            "the synthesiser's ## Verdict Output Format block must NOT include COMMENT as a possible Verdict: value — Class B downgrade and user override are the only routes to COMMENT"
+    else
+        pass "synthesiser verdict restricted: COMMENT is NOT a synthesiser output"
+    fi
+
+    # Assert the Rubric row applied: line lists exactly the four rubric rows.
+    if grep -qE '^Rubric row applied: <1 \| 2 \| 3 \| 4>$' "$synthesiser"; then
+        pass "synthesiser verdict restricted: Rubric row applied lists exactly 1 | 2 | 3 | 4"
+    else
+        fail "synthesiser verdict restricted: Rubric row applied lists exactly 1 | 2 | 3 | 4" \
+            "the synthesiser's ## Verdict block must contain 'Rubric row applied: <1 | 2 | 3 | 4>' — the four rubric rows are the only legal values"
+    fi
+}
+
+test_skill_md_step6_references_rubric_and_classes() {
+    local cr
+    cr=$(_cr_dir)
+    if [[ ! -d "$cr" ]]; then
+        skip "SKILL.md Step 6 rubric and classes" "code-review plugin not found"
+        return
+    fi
+
+    local skill="$cr/skills/review-gh-pr/SKILL.md"
+    if [[ ! -f "$skill" ]]; then
+        fail "SKILL.md Step 6 rubric and classes" "SKILL.md not found"
+        return
+    fi
+
+    # Extract Step 6's body: from "## Step 6: Submit Review Verdict" to "## Step 7" or
+    # end of file. All assertions below operate on this slice.
+    local step6
+    step6=$(sed -n '/^## Step 6: Submit Review Verdict/,/^## Step 7/p' "$skill")
+
+    if [[ -z "$step6" ]]; then
+        fail "SKILL.md Step 6 rubric and classes: Step 6 section extracted" "Step 6 not found in SKILL.md"
+        return
+    fi
+
+    # Assertion 1: Step 6 must inline the rubric heading.
+    if echo "$step6" | grep -qE '^### Verdict rubric \(PR mode only, first match wins\)$'; then
+        pass "SKILL.md Step 6 rubric and classes: rubric inlined"
+    else
+        fail "SKILL.md Step 6 rubric and classes: rubric inlined" \
+            "Step 6 must inline the verdict rubric heading '### Verdict rubric (PR mode only, first match wins)' — without it the orchestrator has no documented authority chain to the synthesiser's verdict"
+    fi
+
+    # Assertion 2: Step 6 must NOT contain the old decision matrix (the "| Action | When
+    # to use |" header is the load-bearing signature of the deleted matrix).
+    if echo "$step6" | grep -qE '^\| \*\*APPROVE\*\* \| No comments are blockers'; then
+        fail "SKILL.md Step 6 rubric and classes: decision matrix removed" \
+            "Step 6 still contains the legacy decision matrix ('| **APPROVE** | No comments are blockers …') — this lets the orchestrator pick a verdict on its own initiative, conflicting with synthesiser-as-sole-authority. Delete the matrix; the rubric replaces it."
+    else
+        pass "SKILL.md Step 6 rubric and classes: decision matrix removed"
+    fi
+
+    # Assertion 3-6: Step 6 must contain all four Class A/B/C/D headings.
+    local class
+    for class in A B C D; do
+        if echo "$step6" | grep -qE "^### Class $class —"; then
+            pass "SKILL.md Step 6 rubric and classes: Class $class heading present"
+        else
+            fail "SKILL.md Step 6 rubric and classes: Class $class heading present" \
+                "Step 6 must contain a heading '### Class $class — …'. The four classes (A: user-confirmation, B: PR-thread state, C: submission mechanics, D: output filtering) document the orchestrator's full decision scope — missing one means a class of orchestrator behaviour is undocumented and may drift toward judgement-driven action"
+        fi
+    done
+}

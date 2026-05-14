@@ -461,9 +461,13 @@ If either is false, the trivial bar fails.
 
 ### 0.7.6 Check for significant deletions
 
-Run `git diff [diff-syntax]` and scan hunks for any single hunk with 10+ contiguous
-deleted lines. This duplicates Step 2.7's `$SIGNIFICANT_DELETIONS` logic; the
-duplication is intentional to keep Phase 0.7 self-contained as a fast-path pre-check.
+If 0.7.5 has already failed (file-count or line-count bar exceeded), skip this
+sub-step entirely and proceed straight to "Trivial bar failed" — running a full
+`git diff` to scan for deletions is moot when the size bar already disqualified
+the diff. Otherwise, run `git diff [diff-syntax]` and scan hunks for any single
+hunk with 10+ contiguous deleted lines. This duplicates Step 2.7's
+`$SIGNIFICANT_DELETIONS` logic; the duplication is intentional to keep Phase 0.7
+self-contained as a fast-path pre-check.
 
 If any such hunk exists, the trivial bar fails — fall through to Step 1.
 

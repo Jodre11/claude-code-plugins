@@ -832,6 +832,11 @@ cycle that re-review mode exists to prevent. All other core specialists still di
 are not). `pre-review` (local diff) has no re-review concept and this carve-out does not
 apply there.
 
+Step 5's cross-review dispatch must also skip `cross-review-alignment` in
+self-re-review mode — there are no alignment-reviewer specialist findings
+to feed it, so its run would emit `0 opinions` for trivial reasons.
+`$CROSS_REVIEW_COUNT` reduces by 1 in this mode (see Step 5 table footnote).
+
 This carve-out lives here in the canonical so the rule is co-located with the dispatch
 list — the inline-vs-canonical mechanism (PR #10 incident) was specifically designed to
 prevent dispatch logic drifting between consumers.
@@ -878,6 +883,11 @@ Store `$CROSS_REVIEW_COUNT` = number of cross-review agents per this table (the 
 | `$UI_DETECTED` is true  | 9                     |
 
 Static-analysis specialists never contribute to `$CROSS_REVIEW_COUNT` regardless of how many fire. `$SPECIALIST_COUNT` is unaffected by this table — it still includes static-analysis specialists.
+
+**Self-re-review carve-out:** `$CROSS_REVIEW_COUNT` decrements by 1 when in
+self-re-review mode (see Step 4.4) — `cross-review-alignment` is not
+dispatched because alignment-reviewer's specialist pass was suppressed. The
+table values above describe the standard (non-re-review) path.
 
 Use `$CROSS_REVIEW_COUNT` (not `$SPECIALIST_COUNT`) as the total count `R` counts down from in progress reporting below.
 

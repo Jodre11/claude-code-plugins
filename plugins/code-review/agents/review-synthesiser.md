@@ -3,7 +3,6 @@ name: review-synthesiser
 description: Synthesises specialist code review findings into a tiered report with independent deep analysis. Dispatched by the review include after specialists complete.
 model: opus
 tools: Read, Grep, Glob, Bash
-ultrathink: true
 # background: omitted — synthesiser runs in foreground for streaming output
 ---
 

@@ -1071,31 +1071,58 @@ test_skill_md_step6_references_rubric_and_classes() {
         return
     fi
 
-    # Assertion 1: Step 6 must inline the rubric heading.
-    if echo "$step6" | grep -qE '^### Verdict rubric \(PR mode only, first match wins\)$'; then
-        pass "SKILL.md Step 6 rubric and classes: rubric inlined"
-    else
-        fail "SKILL.md Step 6 rubric and classes: rubric inlined" \
-            "Step 6 must inline the verdict rubric heading '### Verdict rubric (PR mode only, first match wins)' — without it the orchestrator has no documented authority chain to the synthesiser's verdict"
-    fi
-
-    # Assertion 2: Step 6 must NOT contain the old decision matrix (the "| Action | When
-    # to use |" header is the load-bearing signature of the deleted matrix).
-    if echo "$step6" | grep -qE '^\| \*\*APPROVE\*\* \| No comments are blockers'; then
-        fail "SKILL.md Step 6 rubric and classes: decision matrix removed" \
-            "Step 6 still contains the legacy decision matrix ('| **APPROVE** | No comments are blockers …') — this lets the orchestrator pick a verdict on its own initiative, conflicting with synthesiser-as-sole-authority. Delete the matrix; the rubric replaces it."
-    else
-        pass "SKILL.md Step 6 rubric and classes: decision matrix removed"
-    fi
-
-    # Assertion 3-6: Step 6 must contain all four Class A/B/C/D headings.
-    local class
-    for class in A B C D; do
-        if echo "$step6" | grep -qE "^### Class $class —"; then
-            pass "SKILL.md Step 6 rubric and classes: Class $class heading present"
+    # Six assertions on Step 6's body, encoded as parallel arrays of
+    # (sense, pattern, pass_label, fail_explanation) tuples. `sense` is `present` if the
+    # pattern is required to appear (rubric heading, four Class headings) or `absent` if
+    # it is forbidden (the legacy decision matrix). The loop body branches once on sense
+    # and dispatches the same pass/fail bookkeeping in both cases — replaces an earlier
+    # mix of two ad-hoc assertions and one for-loop with a single uniform structure.
+    local senses=(
+        present
+        absent
+        present
+        present
+        present
+        present
+    )
+    local patterns=(
+        '^### Verdict rubric \(PR mode only, first match wins\)$'
+        '^\| \*\*APPROVE\*\* \| No comments are blockers'
+        '^### Class A —'
+        '^### Class B —'
+        '^### Class C —'
+        '^### Class D —'
+    )
+    local labels=(
+        "rubric inlined"
+        "decision matrix removed"
+        "Class A heading present"
+        "Class B heading present"
+        "Class C heading present"
+        "Class D heading present"
+    )
+    local explanations=(
+        "Step 6 must inline the verdict rubric heading '### Verdict rubric (PR mode only, first match wins)' — without it the orchestrator has no documented authority chain to the synthesiser's verdict"
+        "Step 6 still contains the legacy decision matrix ('| **APPROVE** | No comments are blockers …') — this lets the orchestrator pick a verdict on its own initiative, conflicting with synthesiser-as-sole-authority. Delete the matrix; the rubric replaces it."
+        "Step 6 must contain a heading '### Class A — …'. The four classes (A: user-confirmation, B: PR-thread state, C: submission mechanics, D: output filtering) document the orchestrator's full decision scope — missing one means a class of orchestrator behaviour is undocumented and may drift toward judgement-driven action"
+        "Step 6 must contain a heading '### Class B — …'. The four classes (A: user-confirmation, B: PR-thread state, C: submission mechanics, D: output filtering) document the orchestrator's full decision scope — missing one means a class of orchestrator behaviour is undocumented and may drift toward judgement-driven action"
+        "Step 6 must contain a heading '### Class C — …'. The four classes (A: user-confirmation, B: PR-thread state, C: submission mechanics, D: output filtering) document the orchestrator's full decision scope — missing one means a class of orchestrator behaviour is undocumented and may drift toward judgement-driven action"
+        "Step 6 must contain a heading '### Class D — …'. The four classes (A: user-confirmation, B: PR-thread state, C: submission mechanics, D: output filtering) document the orchestrator's full decision scope — missing one means a class of orchestrator behaviour is undocumented and may drift toward judgement-driven action"
+    )
+    local i
+    for ((i = 0; i < ${#senses[@]}; i++)); do
+        local matched
+        if echo "$step6" | grep -qE "${patterns[i]}"; then
+            matched=yes
         else
-            fail "SKILL.md Step 6 rubric and classes: Class $class heading present" \
-                "Step 6 must contain a heading '### Class $class — …'. The four classes (A: user-confirmation, B: PR-thread state, C: submission mechanics, D: output filtering) document the orchestrator's full decision scope — missing one means a class of orchestrator behaviour is undocumented and may drift toward judgement-driven action"
+            matched=no
+        fi
+
+        if [[ ${senses[i]} == present && $matched == yes ]] \
+                || [[ ${senses[i]} == absent && $matched == no ]]; then
+            pass "SKILL.md Step 6 rubric and classes: ${labels[i]}"
+        else
+            fail "SKILL.md Step 6 rubric and classes: ${labels[i]}" "${explanations[i]}"
         fi
     done
 }

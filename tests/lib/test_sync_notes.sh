@@ -892,6 +892,51 @@ test_sync_synthesiser_dispatch_uses_ultrathink() {
     done
 }
 
+test_sync_synth_dispatch_passes_intent_ledger() {
+    # The synthesiser's verdict rubric row 1 fires on "Intent-ledger states a goal AND
+    # any consensus finding indicates the goal is not achieved." Row 1 is unevaluable
+    # without the ledger, so the dispatch prompt MUST include $INTENT_LEDGER. The
+    # synthesiser's agent definition already has the `Intent ledger:` extraction
+    # block; this test asserts the producer side is wired up too.
+    local cr
+    cr=$(_cr_dir)
+    if [[ ! -d "$cr" ]]; then
+        skip "synthesiser dispatch intent ledger" "code-review plugin not found"
+        return
+    fi
+
+    local file
+    for file in \
+        "$cr/includes/review-pipeline.md" \
+        "$cr/commands/pre-review.md" \
+        "$cr/skills/review-gh-pr/SKILL.md"; do
+
+        local basename_file
+        basename_file=$(basename "$file")
+
+        if [[ ! -f "$file" ]]; then
+            fail "synthesiser dispatch intent ledger: $basename_file" "file not found"
+            continue
+        fi
+
+        if grep -qE 'subagent_type: "code-review:review-synthesiser"' "$file"; then
+            # The dispatch prompt must contain '\n\n$INTENT_LEDGER\n' between the
+            # Review mode line and the trust boundary advisory. The literal token
+            # `$INTENT_LEDGER` is the variable name as it appears in the prompt
+            # template — the orchestrator substitutes its value at runtime.
+            if grep -qE 'Review mode: \$REVIEW_MODE\\n\\n\$INTENT_LEDGER\\n\\nTrust boundary' "$file"; then
+                pass "synthesiser dispatch intent ledger: $basename_file passes \$INTENT_LEDGER"
+            else
+                fail "synthesiser dispatch intent ledger: $basename_file passes \$INTENT_LEDGER" \
+                    "the synthesiser dispatch prompt must include \$INTENT_LEDGER between the Review mode line and the trust boundary advisory — without it the synthesiser cannot evaluate verdict rubric row 1 (intent-ledger goal unachieved) and must infer the goal from the diff non-deterministically"
+            fi
+        else
+            fail "synthesiser dispatch intent ledger: $basename_file" \
+                "expected file to contain a synthesiser dispatch (subagent_type: \"code-review:review-synthesiser\") but none was found — was the dispatch deleted?"
+        fi
+    done
+}
+
 test_sync_verdict_rubric_inline_matches_canonical() {
     local cr
     cr=$(_cr_dir)

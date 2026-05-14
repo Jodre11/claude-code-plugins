@@ -417,10 +417,24 @@ trivial-mode — they can re-invoke with `--force` if they want the full pipelin
 
 **Mode `pr`:**
 
-For each inline comment, post via the `gh api repos/{owner}/{repo}/pulls/{pr}/comments`
-pattern documented in Step 5 of `skills/review-gh-pr/SKILL.md` (use `--input -`
-heredoc for the body, `-F` for integer parameters, `-f side='LEFT|RIGHT'` based on
-diff polarity).
+For each inline comment, post via:
+
+```bash
+gh api repos/{owner}/{repo}/pulls/{pr_number}/comments \
+    --method POST \
+    -F commit_id="$HEAD_SHA" \
+    -f path="<file path>" \
+    -F line=<integer line number> \
+    -f side='RIGHT' \
+    --input - <<'EOF'
+{
+  "body": "<comment body>"
+}
+EOF
+```
+
+Use `RIGHT` side for additions and modifications, `LEFT` for deletions. The
+`--input -` heredoc carries the comment body to avoid shell-quoting issues.
 
 After all inline comments post, submit the verdict via `gh pr review` using
 `--approve`, `--request-changes`, or `--comment` per the verdict, with `--input -`

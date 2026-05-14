@@ -47,9 +47,6 @@ If an `Intent ledger:` block is present in your prompt, store the body that foll
 (through to the next blank line or end of prompt) as `$INTENT_LEDGER_BODY`. Use this in
 the Severity Reclassification, Independent Analysis, and Output sections below.
 
-If a `CI status:` block is present in your prompt, store the body that follows as
-`$CI_STATUS_BODY`. Use this in the Output Format section below.
-
 If a `Token usage:` block is present in your prompt, store the body that follows
 (through to the next blank line or end of prompt) as `$TOKEN_USAGE_BLOCK_BODY`. Use
 this in the `## Cost` section of the Output Format below. The block is mostly opaque
@@ -150,18 +147,6 @@ X file(s) changed | Y finding(s) | Z contested
 ## Synthesiser Assessment
 > High-level analysis of the changes: intent, risk profile, areas of concern, and overall impression.
 > This is your independent expert assessment before diving into individual findings.
-
-## CI Status
-
-*(Render this section only when `$CI_STATUS_BODY` is present AND `$REVIEW_MODE` is `pr`.
-Definitive failures constrain the final verdict — no APPROVE. Transient failures (timeouts)
-flag a rerun-may-resolve caveat but do not block on their own. In `local` mode CI status is
-irrelevant to the synthesiser output: pre-review runs against the working tree, not against
-a CI-tested commit.)*
-
-- **Definitive failures:** <list from $CI_STATUS_BODY definitive_failures>
-- **Transient failures:** <list from $CI_STATUS_BODY transient_failures>
-- **Verdict constraint:** APPROVE blocked | rerun may resolve | no constraint
 
 ## Consensus Findings
 
@@ -273,12 +258,6 @@ X file(s) changed | 0 findings — LGTM
   notes. Pre-review output is consumed by a human author who decides whether to ignore
   findings, fix a subset, or produce a follow-up plan; there is no GitHub review to
   submit.
-- When `$REVIEW_MODE` is `pr` and `$CI_STATUS_BODY` indicates one or more definitive
-  failures, the synthesiser MUST NOT recommend `APPROVE` in any summary or guidance to
-  the consumer. Recommend `REQUEST_CHANGES` or `COMMENT` only.
-- When `$REVIEW_MODE` is `pr` and `$CI_STATUS_BODY` indicates only transient failures
-  (no definitive), recommend `COMMENT` and add a "rerun-may-resolve" note alongside the
-  verdict guidance. Do not block the review from completing.
 - When the intent ledger states a `goal` and one or more findings indicate the goal is not
   achieved, escalate the most central such finding to Important severity at minimum, even
   if the originating specialist filed it lower.

@@ -44,7 +44,21 @@ Each security finding MUST include a concrete exploit scenario. If you cannot ar
 - Client-side permission/auth checks (server enforces)
 - UUIDs used as identifiers (unguessable)
 
-**Line-level filter (all manual-review findings):** Only report findings on lines listed in `$CHANGED_LINES` for that file (parsed from the `Changed lines:` block in your prompt). Do NOT emit findings on unchanged lines, even FYI — pre-existing issues are out of scope. You may still *read* unchanged context to understand the change, but the finding's `File:` line must reference a `file:line` whose line appears in `$CHANGED_LINES[file]`. Files appearing as `(empty — rename only)` accept no findings.
+<!-- CHANGED_LINES OUTPUT FILTER — inlined from includes/specialist-context.md (canonical source).
+Edit the include first, then propagate to all listed specialists. -->
+
+> **CHANGED_LINES OUTPUT FILTER — MANDATORY**
+>
+> Only report findings on lines listed in `$CHANGED_LINES` for that file
+> (parsed from the `Changed lines:` block in your prompt). Do NOT emit
+> findings on unchanged lines, even FYI — pre-existing issues are out of
+> scope. You may still *read* unchanged context to understand the change,
+> but the finding's `File:` line must reference a `file:line` whose line
+> appears in `$CHANGED_LINES[file]`. Files appearing in the `Changed lines:`
+> block with `(empty — rename only)` accept no findings at all (the rename
+> itself is the only change).
+
+---
 
 ### Format output
 

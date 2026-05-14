@@ -357,6 +357,75 @@ test_sync_cross_review_mode_inline_matches_canonical() {
     done
 }
 
+test_sync_changed_lines_rule_matches_canonical() {
+    local cr
+    cr=$(_cr_dir)
+    if [[ ! -d "$cr" ]]; then
+        skip "CHANGED_LINES rule sync" "code-review plugin not found"
+        return
+    fi
+
+    local canonical="$cr/includes/specialist-context.md"
+    if [[ ! -f "$canonical" ]]; then
+        skip "CHANGED_LINES rule sync" "canonical file not found"
+        return
+    fi
+
+    # Extract the canonical block from the MANDATORY blockquote header.
+    local canonical_body
+    canonical_body=$(sed -n '/^> \*\*CHANGED_LINES OUTPUT FILTER — MANDATORY\*\*/,$ p' "$canonical")
+
+    if [[ -z "$canonical_body" ]]; then
+        fail "CHANGED_LINES rule sync: canonical body extracted" "no body found"
+        return
+    fi
+
+    local agent
+    for agent in \
+        "$cr/agents/archaeology-reviewer.md" \
+        "$cr/agents/code-analysis.md" \
+        "$cr/agents/consistency-reviewer.md" \
+        "$cr/agents/correctness-reviewer.md" \
+        "$cr/agents/efficiency-reviewer.md" \
+        "$cr/agents/reuse-reviewer.md" \
+        "$cr/agents/security-reviewer.md" \
+        "$cr/agents/style-reviewer.md" \
+        "$cr/agents/ui-reviewer.md"; do
+
+        local basename_agent
+        basename_agent=$(basename "$agent")
+
+        if [[ ! -f "$agent" ]]; then
+            fail "CHANGED_LINES rule sync: $basename_agent" "file not found"
+            continue
+        fi
+
+        # Each agent embeds the block bounded by the same blockquote header and the
+        # next "---" separator. Mirror the cross-review-mode extraction pattern.
+        local inline_body
+        inline_body=$(sed -n '/^> \*\*CHANGED_LINES OUTPUT FILTER — MANDATORY\*\*/,/^---$/ p' "$agent" | sed '$ d')
+
+        if [[ -z "$inline_body" ]]; then
+            fail "CHANGED_LINES rule sync: $basename_agent" "inline block not found"
+            continue
+        fi
+
+        if [[ "$canonical_body" == "$inline_body" ]]; then
+            pass "CHANGED_LINES rule sync: $basename_agent matches canonical"
+        else
+            local tmp1 tmp2
+            tmp1=$(mktemp)
+            tmp2=$(mktemp)
+            echo "$canonical_body" > "$tmp1"
+            echo "$inline_body" > "$tmp2"
+            local diff_output
+            diff_output=$(diff -u --label "canonical" --label "$basename_agent" "$tmp1" "$tmp2" | head -30 || true)
+            rm -f "$tmp1" "$tmp2"
+            fail "CHANGED_LINES rule sync: $basename_agent matches canonical" "$diff_output"
+        fi
+    done
+}
+
 test_sync_base_branch_steps_match() {
     local cr
     cr=$(_cr_dir)

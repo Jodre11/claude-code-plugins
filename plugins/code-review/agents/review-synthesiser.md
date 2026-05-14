@@ -81,15 +81,17 @@ This is your primary quality gate. The severity definitions are authoritative, n
 Findings tagged `[eslint]`, `[ruff]`, `[trivy]`, or `[jbinspect]` are exempt from
 reclassification. Their severity is the specialist's mapped value, per
 `includes/static-analysis-context.md` §10. Confidence on these findings starts at 100
-and may be adjusted per the per-source dissent budget defined in §10 — each of the 9
-sources (8 cross-reviewers + this synthesiser) may apply
-up to 5 points of confidence drop based on the strength of its dissent. The clamp is
-`Confidence = max(50, 100 - Σ dissent)`. They are never placed in Dismissed.
+and may be adjusted per the per-source dissent budget defined in §10 — each source
+(this synthesiser plus every cross-reviewer that fired for the run) may apply
+up to 5 points of confidence drop based on the strength of its dissent. Let `S` =
+total sources = 1 (synthesiser) + cross-reviewer count from the dispatch table at
+`includes/review-pipeline.md` Step 5 (8 when `$UI_DETECTED` is false, 9 when true).
+The clamp is `Confidence = max(50, 100 - Σ dissent)`. They are never placed in Dismissed.
 
 When you adjust confidence (`C < 100`), render the adjusted value with this literal:
 
 ```
-- **Confidence:** <C>  *(adjusted from 100 — <D> of 9 sources dissented)*
+- **Confidence:** <C>  *(adjusted from 100 — <D> of <S> sources dissented)*
 ```
 
 `C` is the final confidence (50–100); `D` is the number of dissenting sources

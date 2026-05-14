@@ -1237,8 +1237,9 @@ is deliberate: it makes dropped findings visible as empty rows rather than absen
 
 Rules for the table:
 - Every synthesiser finding number appears exactly once as a row.
-- `Outgoing comment ID` may be blank ONLY when `Rationale` is `dedup-with-#N` or
-  `dismissed-by-synthesiser`. No other rationale is permitted.
+- `Outgoing comment ID` may be blank ONLY when `Rationale` is `dedup-with-#N`,
+  `dismissed-by-synthesiser`, or `filtered-by-confidence (verdict APPROVE,
+  confidence < 75)`. No other rationale is permitted.
 - For `dedup-with-#N`, row #N must point at the same `Outgoing comment ID` AND that
   comment's body must name both source domains. Verify before posting.
 - For `dismissed-by-synthesiser`, the token `#N` (where `N` is the finding number)
@@ -1400,16 +1401,17 @@ Compute these counts:
 - `C` = number of comments actually posted in Step 5 (count successful `gh api ... pulls/{pr}/comments` calls — store the IDs as you post and count them here)
 - `D` = number of rows whose rationale is `dedup-with-#N`
 - `X` = number of rows whose rationale is `dismissed-by-synthesiser`
+- `P` = number of rows whose rationale is `filtered-by-confidence (verdict APPROVE, confidence < 75)` — populated by Class D of Step 6 when the verdict is APPROVE or APPROVE→COMMENT; zero otherwise
 
 Assertions — ALL must hold:
 1. `R == F` — every finding has a row.
-2. `C == R - D - X` — every non-deduped, non-dismissed row produced exactly one comment.
+2. `C == R - D - X - P` — every non-deduped, non-dismissed, non-confidence-filtered row produced exactly one comment.
 3. Every `dedup-with-#N` row's outgoing comment body cites both source domains by name.
 4. Every `dismissed-by-synthesiser` row's finding number `N` appears as the token `#N` in the synthesiser's `Dismissed Findings` section (e.g. `#3` for finding 3, matching the synthesiser's `### Finding #N — ...` header format).
 
 If any assertion fails, STOP. Do not submit the verdict. Report the specific gap to
-the user (e.g. `R=26, C=20, D=4, X=0 — expected C=22, missing 2 comments`) and fix
-before proceeding. You may not rationalise around a count mismatch; surface it.
+the user (e.g. `R=26, C=20, D=4, X=0, P=0 — expected C=22, missing 2 comments`) and
+fix before proceeding. You may not rationalise around a count mismatch; surface it.
 
 ## Step 6: Submit Review Verdict
 
@@ -1676,7 +1678,7 @@ Capture `$DROPPED_SET` = consensus findings NOT in `$POST_SET`. `$DROPPED_COUNT`
 
 #### D.2 Filter inline comments
 
-When iterating consensus findings to post inline (Step 5 of this skill), skip any finding whose `[#N]` token is NOT in `$POST_SET`. The reconciliation table from Step 3 still records the full row set; the table's `Outgoing comment ID` cell for a filtered finding is blank with rationale `filtered-by-confidence (verdict APPROVE, confidence < 75)`. This is a NEW permitted rationale alongside `dedup-with-#N` and `dismissed-by-synthesiser`. Update the no-filter rule and table column docs in Step 3 of this skill if not already done.
+When iterating consensus findings to post inline (Step 5 of this skill), skip any finding whose `[#N]` token is NOT in `$POST_SET`. The reconciliation table from Step 3 still records the full row set; the table's `Outgoing comment ID` cell for a filtered finding is blank with rationale `filtered-by-confidence (verdict APPROVE, confidence < 75)`. This is a NEW permitted rationale alongside `dedup-with-#N` and `dismissed-by-synthesiser`. Three propagation sites in Step 3 and Step 5.5 of this skill must reflect the same set of rationales, all if not already done: (a) the no-filter rule in Step 3 (the bullet list of legal omission reasons), (b) the table column rule in Step 3 (the "may be blank ONLY when …" rule directly under the example reconciliation table), and (c) Step 5.5's assertion 2 (which must subtract `P`, the filtered-by-confidence count) and its accompanying variable list (which must define `P`).
 
 #### D.3 Construct the GitHub body
 

@@ -1054,3 +1054,62 @@ test_skill_md_step6_references_rubric_and_classes() {
         fi
     done
 }
+
+test_skill_md_filter_rationale_propagated_to_three_sites() {
+    # The `filtered-by-confidence` rationale (introduced by Class D §D.2) is a third
+    # permitted blank-`Outgoing comment ID` rationale. It must be enumerated at three
+    # propagation sites in SKILL.md, otherwise Step 5.5 false-halts on every APPROVE
+    # with sub-75 confidence findings, or Step 3's table column rule contradicts the
+    # no-filter rule introduced in the same step.
+    local cr
+    cr=$(_cr_dir)
+    if [[ ! -d "$cr" ]]; then
+        skip "SKILL.md filter rationale propagation" "code-review plugin not found"
+        return
+    fi
+
+    local skill="$cr/skills/review-gh-pr/SKILL.md"
+    if [[ ! -f "$skill" ]]; then
+        fail "SKILL.md filter rationale propagation" "SKILL.md not found"
+        return
+    fi
+
+    # Site 1: Step 3 no-filter rule must list filtered-by-confidence as a permitted
+    # blank-rationale (alongside dedup-with-#N and dismissed-by-synthesiser).
+    if grep -qE '^> 3\. \*\*`filtered-by-confidence' "$skill"; then
+        pass "SKILL.md filter rationale propagation: Step 3 no-filter rule lists filtered-by-confidence"
+    else
+        fail "SKILL.md filter rationale propagation: Step 3 no-filter rule lists filtered-by-confidence" \
+            "Step 3's no-filter rule (the bulleted list of legal omission reasons) must include a third item starting '> 3. **\`filtered-by-confidence' — without it the rule contradicts Class D §D.2's permission for confidence-driven omissions"
+    fi
+
+    # Site 2: Step 3 table column rule must also list filtered-by-confidence. This
+    # is the rule directly under the example reconciliation table that says
+    # "may be blank ONLY when ...". Earlier versions listed only two rationales,
+    # contradicting the no-filter rule; the third rationale must propagate here too.
+    if grep -qE 'may be blank ONLY when `Rationale` is `dedup-with-#N`,$' "$skill" \
+            && grep -qE '`dismissed-by-synthesiser`, or `filtered-by-confidence ' "$skill"; then
+        pass "SKILL.md filter rationale propagation: Step 3 table column rule lists filtered-by-confidence"
+    else
+        fail "SKILL.md filter rationale propagation: Step 3 table column rule lists filtered-by-confidence" \
+            "Step 3's table column rule under the example reconciliation table must enumerate all three rationales — currently it omits filtered-by-confidence and contradicts the no-filter rule above it"
+    fi
+
+    # Site 3: Step 5.5 must define P (filtered-by-confidence count) and the assertion
+    # must subtract it. C == R - D - X without the P term false-halts every APPROVE
+    # with sub-75 findings; that is the common case under APPROVE so the missing
+    # term is a hot-path bug.
+    if grep -qE '^- `P` = number of rows whose rationale is `filtered-by-confidence' "$skill"; then
+        pass "SKILL.md filter rationale propagation: Step 5.5 defines P"
+    else
+        fail "SKILL.md filter rationale propagation: Step 5.5 defines P" \
+            "Step 5.5's variable list must include 'P = number of rows whose rationale is filtered-by-confidence (verdict APPROVE, confidence < 75)' — without P the assertion 2 formula does not account for confidence-filtered rows"
+    fi
+
+    if grep -qE '`C == R - D - X - P`' "$skill"; then
+        pass "SKILL.md filter rationale propagation: Step 5.5 assertion subtracts P"
+    else
+        fail "SKILL.md filter rationale propagation: Step 5.5 assertion subtracts P" \
+            "Step 5.5 assertion 2 must read 'C == R - D - X - P' — the pre-existing 'C == R - D - X' false-halts every APPROVE verdict where any consensus finding has confidence < 75 (the common case)"
+    fi
+}

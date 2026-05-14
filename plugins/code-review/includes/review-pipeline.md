@@ -473,18 +473,28 @@ The `*` character is intentional: it is forwarded to `git diff -- <pathspec>` wh
 ### Step 2: Measure the diff and build agent prompt
 
 2.1. Run `git rev-parse HEAD` and store as `$HEAD_SHA`. Validate that `$HEAD_SHA` matches `^[0-9a-f]{40}$` — if it does not, report "Invalid HEAD SHA: $HEAD_SHA" and stop. All subsequent diff commands use `$HEAD_SHA` instead of `HEAD` to pin the review to a single commit and avoid race conditions if new commits land during the review.
-2.2. Run `git diff --name-only` (append `-- "$PATH_SCOPE"` if set) and store as `$CHANGED_FILES`. Use the diff syntax determined by `$EMPTY_TREE_MODE` (two-arg when true, three-dot when false). If empty, report "No changes found against $BASE" and stop.
-2.3. Run `git diff --shortstat` (append `-- "$PATH_SCOPE"` if set) using the same diff syntax and count:
-   - `$FILE_COUNT` — number of changed files (from `X file(s) changed`)
-   - `$LINE_COUNT` — total lines changed (insertions + deletions from the single summary line). If only insertions or only deletions appear, treat the absent count as 0. If the output is empty (e.g., a rename with no content change), treat `$LINE_COUNT` as 0.
-2.4. Run `git diff` (append `-- "$PATH_SCOPE"` if set) using the same diff syntax and store as `$FULL_DIFF`. This is the full hunk-level diff needed for scanning in items 2.6–2.8 below; do not discard it before the routing decision.
+2.2. Run `git diff` (append `-- "$PATH_SCOPE"` if set) using the diff syntax
+determined by `$EMPTY_TREE_MODE` (two-arg when true, three-dot when false) and
+store as `$FULL_DIFF`. If `$FULL_DIFF` is empty, report "No changes found
+against $BASE" and stop.
+
+2.3. Derive `$CHANGED_FILES` from `$FULL_DIFF` by collecting the path component
+of every `+++ b/<path>` header (or `a/<path>` for `+++ b/dev/null` deletions),
+deduplicated.
+
+2.4. Derive `$FILE_COUNT` (count of `$CHANGED_FILES`) and `$LINE_COUNT` (sum
+of `+`-prefixed and `-`-prefixed lines in `$FULL_DIFF`, excluding `+++` and
+`---` headers) from the same walk that builds `$CHANGED_LINES` in Step 2.5.
+A rename with no content change contributes 0 to `$LINE_COUNT`.
 
 ### Step 2.5: Build $CHANGED_LINES
 
-Parse `$FULL_DIFF` (already captured in Step 2.4) into a per-file map of line
+Parse `$FULL_DIFF` (already captured in Step 2.2) into a per-file map of line
 numbers that the diff actually touched. Specialists use this map to scope their
 findings to lines the PR added or modified — pre-existing issues on unchanged
-lines within changed files are out of scope.
+lines within changed files are out of scope. The same line-by-line walk
+produced by Step 2.4 may compute `$FILE_COUNT` and `$LINE_COUNT` (Step 2.4)
+alongside `$CHANGED_LINES` — derive them in a single pass over `$FULL_DIFF`.
 
 Initialise an empty associative map: `$CHANGED_LINES = {}` keyed by file path,
 value = list of integer line numbers (in the **new** file's coordinate space).

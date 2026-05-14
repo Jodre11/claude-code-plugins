@@ -800,3 +800,41 @@ test_sync_static_analysis_cross_feed_documented() {
             "review-pipeline.md missing names:${pipeline_missing:-<none>}; static-analysis-context.md missing names:${sa_missing:-<none>} — both canonicals must reference all four (jbinspect, eslint, ruff, trivy) static-analysis specialists"
     fi
 }
+
+test_sync_synthesiser_dispatch_includes_review_mode() {
+    local cr
+    cr=$(_cr_dir)
+    if [[ ! -d "$cr" ]]; then
+        skip "synthesiser dispatch Review mode" "code-review plugin not found"
+        return
+    fi
+
+    local file
+    for file in \
+        "$cr/includes/review-pipeline.md" \
+        "$cr/commands/pre-review.md" \
+        "$cr/skills/review-gh-pr/SKILL.md"; do
+
+        local basename_file
+        basename_file=$(basename "$file")
+
+        if [[ ! -f "$file" ]]; then
+            fail "synthesiser dispatch Review mode: $basename_file" "file not found"
+            continue
+        fi
+
+        # Find the synthesiser dispatch prompt (single line containing the prompt
+        # template) and assert it includes "Review mode: $REVIEW_MODE".
+        if grep -qE 'subagent_type: "code-review:review-synthesiser"' "$file"; then
+            if grep -qE 'Review mode: \$REVIEW_MODE' "$file"; then
+                pass "synthesiser dispatch Review mode: $basename_file includes \$REVIEW_MODE"
+            else
+                fail "synthesiser dispatch Review mode: $basename_file includes \$REVIEW_MODE" \
+                    "the synthesiser dispatch prompt must include 'Review mode: \$REVIEW_MODE\\n' so the synthesiser can suppress verdict guidance in local mode"
+            fi
+        else
+            # File doesn't dispatch the synthesiser — skip silently
+            :
+        fi
+    done
+}

@@ -581,9 +581,11 @@ The block is now ready for use in Step 2.9 when building `$AGENT_PROMPT`.
 #### 2.9. Build agent prompt
 
 **Defensive check:** if `$INTENT_LEDGER` is empty or unset at this point, this is a
-pipeline bug — Phase 0 must have built it or halted. STOP and report
-`Pipeline error: $INTENT_LEDGER missing at Step 2.9 — Phase 0 was bypassed or failed
-to halt`.
+pipeline bug — Phase 0 must have built it from a sufficient source, halted on
+insufficiency, or returned a non-empty user-paste. STOP and report
+`Pipeline error: $INTENT_LEDGER missing at Step 2.9 — Phase 0 either built it from
+a sufficient source, halted on insufficiency, or returned an empty user-paste; one
+of these post-conditions failed to fire`.
 
 Define `$AGENT_PROMPT` with the following lines, replacing all variables with their resolved values:
 

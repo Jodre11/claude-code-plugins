@@ -145,8 +145,20 @@ test_static_analysis_behavioural_smoke() {
     local synth_present
     synth_present="$(jq -r '.synthesiser != null' "$results_file")"
     if [[ "$synth_present" != "true" ]]; then
+        # Hard fail on the presence assertion (schema_version 2 requires the block),
+        # then emit explicit skips for each dependent assertion. A silent return
+        # would hide which downstream checks were starved — the skip events keep
+        # the test report self-describing.
         fail "smoke: synthesiser block present" \
             "synthesiser block missing in $results_file (schema_version 2 requires it)"
+        local dep
+        for dep in \
+            "smoke: synthesiser/synthesiser_severity_lock iterations passed" \
+            "smoke: synthesiser tier_placements has no Dismissed entries" \
+            "smoke: synthesiser observed_confidences all >= 50 (floor)" \
+            "smoke: synthesiser observed_severities all == Important (lock)"; do
+            skip "$dep" "synthesiser block absent — see prior failure"
+        done
         return
     fi
 

@@ -931,10 +931,11 @@ test_sync_verdict_rubric_inline_matches_canonical() {
         fi
 
         # Each consumer inlines the canonical body bounded by the same start anchor and
-        # the line "via deterministic string operations — no prose parsing." (last line of
-        # the Synthesiser contract section, unique in the canonical).
+        # the line "operations — no prose parsing." (last line of the Synthesiser contract
+        # section, unique in the canonical — note the body wraps so the literal
+        # "operations" begins the final line).
         local consumer_body
-        consumer_body=$(sed -n '/^### Verdict rubric (PR mode only, first match wins)/,/^token via deterministic string operations — no prose parsing\.$/p' "$consumer")
+        consumer_body=$(sed -n '/^### Verdict rubric (PR mode only, first match wins)/,/^operations — no prose parsing\.$/p' "$consumer")
 
         if [[ -z "$consumer_body" ]]; then
             fail "verdict-rubric inline sync: $basename_consumer" "inline block not found (sed anchors may need updating)"
@@ -943,7 +944,7 @@ test_sync_verdict_rubric_inline_matches_canonical() {
 
         # The canonical's body extracted via the same end-anchor pattern for like-for-like comparison.
         local canonical_range
-        canonical_range=$(sed -n '/^### Verdict rubric (PR mode only, first match wins)/,/^token via deterministic string operations — no prose parsing\.$/p' "$canonical")
+        canonical_range=$(sed -n '/^### Verdict rubric (PR mode only, first match wins)/,/^operations — no prose parsing\.$/p' "$canonical")
 
         if [[ "$canonical_range" == "$consumer_body" ]]; then
             pass "verdict-rubric inline sync: $basename_consumer matches canonical"

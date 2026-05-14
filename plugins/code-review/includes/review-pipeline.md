@@ -468,6 +468,8 @@ Validate that `$BASE` matches `^[a-zA-Z0-9/_.\-]+$` — if it does not, report "
 
 5. If a `Path scope: <pathspec>` line is present in `$ARGUMENTS`, extract the pathspec after the colon and store as `$PATH_SCOPE`. If not present, leave `$PATH_SCOPE` empty. Validate that `$PATH_SCOPE` matches `^[a-zA-Z0-9/_.\-*]+$` — if it does not, report "Invalid path scope: $PATH_SCOPE" and stop. Additionally, if `$PATH_SCOPE` contains `..` as a substring, report "Invalid path scope (directory traversal): $PATH_SCOPE" and stop. When `$PATH_SCOPE` is set, append `-- "$PATH_SCOPE"` after all flags in every `git diff` command throughout the pipeline (use the diff syntax determined by `$EMPTY_TREE_MODE`). The quotes prevent shell glob expansion of `*` before git receives the pathspec. This restricts the review to the specified subdirectory.
 
+The `*` character is intentional: it is forwarded to `git diff -- <pathspec>` which interprets it via git pathspec semantics (`*` matches across directory boundaries; `**` is also recognised). The double-quotes around the value prevent shell glob expansion; git pathspec is the only consumer of the glob. A `Path scope: *` selects all files (intentional override behaviour).
+
 ### Step 2: Measure the diff and build agent prompt
 
 2.1. Run `git rev-parse HEAD` and store as `$HEAD_SHA`. Validate that `$HEAD_SHA` matches `^[0-9a-f]{40}$` — if it does not, report "Invalid HEAD SHA: $HEAD_SHA" and stop. All subsequent diff commands use `$HEAD_SHA` instead of `HEAD` to pin the review to a single commit and avoid race conditions if new commits land during the review.

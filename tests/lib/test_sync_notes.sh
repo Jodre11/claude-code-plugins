@@ -170,7 +170,7 @@ test_sync_intent_ledger_inline_matches_canonical() {
     # each consumer. The HTML maintenance comment in the canonical lives outside this range,
     # so we compare just the prose body.
     local canonical_body
-    canonical_body=$(sed -n '/^Run Phase 0 BEFORE Step 1/,/continue to Phase 0\.6\.$/p' "$canonical")
+    canonical_body=$(sed -n '/^Run Phase 0 BEFORE Step 1/,/continue to Phase 0\.55\.$/p' "$canonical")
 
     if [[ -z "$canonical_body" ]]; then
         fail "intent-ledger inline sync: canonical body extracted" "no body found"
@@ -192,7 +192,7 @@ test_sync_intent_ledger_inline_matches_canonical() {
 
         if grep -qF "## Phase 0: Intent Ledger" "$consumer" 2>/dev/null; then
             local consumer_body
-            consumer_body=$(sed -n '/^Run Phase 0 BEFORE Step 1/,/continue to Phase 0\.6\.$/p' "$consumer")
+            consumer_body=$(sed -n '/^Run Phase 0 BEFORE Step 1/,/continue to Phase 0\.55\.$/p' "$consumer")
 
             # Guard against vacuous pass: an empty extraction signals the sed end-anchor
             # has drifted in the consumer. Without this, [[ "" == "" ]] would silently
@@ -239,7 +239,7 @@ test_sync_ci_status_gate_inline_matches_canonical() {
     # Same range-marker approach as intent-ledger sync. Markers chosen to exist verbatim
     # in both canonical and consumer, with the HTML maintenance comment falling outside.
     local canonical_body
-    canonical_body=$(sed -n '/^### 0.6.1 Skip in local mode/,/see `agents\/review-synthesiser\.md`\.$/p' "$canonical")
+    canonical_body=$(sed -n '/^### 0.6.1 Skip in local mode/,/Stop the pipeline cleanly\.$/p' "$canonical")
 
     if [[ -z "$canonical_body" ]]; then
         fail "ci-status-gate inline sync: canonical body extracted" "no body found"
@@ -261,7 +261,7 @@ test_sync_ci_status_gate_inline_matches_canonical() {
 
         if grep -qF "## Phase 0.6: CI Status Gate" "$consumer" 2>/dev/null; then
             local consumer_body
-            consumer_body=$(sed -n '/^### 0.6.1 Skip in local mode/,/see `agents\/review-synthesiser\.md`\.$/p' "$consumer")
+            consumer_body=$(sed -n '/^### 0.6.1 Skip in local mode/,/Stop the pipeline cleanly\.$/p' "$consumer")
 
             # Guard against vacuous pass: see notes on the intent-ledger sync test.
             if [[ -z "$consumer_body" ]]; then
@@ -849,4 +849,398 @@ test_sync_synthesiser_dispatch_includes_review_mode() {
                 "expected file to contain a synthesiser dispatch (subagent_type: \"code-review:review-synthesiser\") but none was found — was the dispatch deleted?"
         fi
     done
+}
+
+test_sync_synthesiser_dispatch_uses_ultrathink() {
+    local cr
+    cr=$(_cr_dir)
+    if [[ ! -d "$cr" ]]; then
+        skip "synthesiser dispatch ultrathink keyword" "code-review plugin not found"
+        return
+    fi
+
+    local file
+    for file in \
+        "$cr/includes/review-pipeline.md" \
+        "$cr/commands/pre-review.md" \
+        "$cr/skills/review-gh-pr/SKILL.md"; do
+
+        local basename_file
+        basename_file=$(basename "$file")
+
+        if [[ ! -f "$file" ]]; then
+            fail "synthesiser dispatch ultrathink keyword: $basename_file" "file not found"
+            continue
+        fi
+
+        # The synthesiser dispatch prompt body must START with the literal "ultrathink"
+        # keyword, followed by \n\n, before any other content. The keyword is what
+        # Claude Code's keyword detector looks for to set the max thinking budget.
+        # Detect the dispatch via the subagent_type marker, then assert the prompt
+        # field begins with "ultrathink\n\n".
+        if grep -qE 'subagent_type: "code-review:review-synthesiser"' "$file"; then
+            if grep -qE 'prompt: "ultrathink\\n\\n' "$file"; then
+                pass "synthesiser dispatch ultrathink keyword: $basename_file prompt starts with ultrathink"
+            else
+                fail "synthesiser dispatch ultrathink keyword: $basename_file prompt starts with ultrathink" \
+                    "the synthesiser dispatch prompt must begin with the literal 'ultrathink\\n\\n' so Claude Code's keyword detector sets the max thinking budget; without it, the synthesiser runs at default effort regardless of any frontmatter declaration"
+            fi
+        else
+            fail "synthesiser dispatch ultrathink keyword: $basename_file" \
+                "expected file to contain a synthesiser dispatch (subagent_type: \"code-review:review-synthesiser\") but none was found — was the dispatch deleted?"
+        fi
+    done
+}
+
+test_sync_synth_dispatch_passes_intent_ledger() {
+    # The synthesiser's verdict rubric row 1 fires on "Intent-ledger states a goal AND
+    # any consensus finding indicates the goal is not achieved." Row 1 is unevaluable
+    # without the ledger, so the dispatch prompt MUST include $INTENT_LEDGER. The
+    # synthesiser's agent definition already has the `Intent ledger:` extraction
+    # block; this test asserts the producer side is wired up too.
+    local cr
+    cr=$(_cr_dir)
+    if [[ ! -d "$cr" ]]; then
+        skip "synthesiser dispatch intent ledger" "code-review plugin not found"
+        return
+    fi
+
+    local file
+    for file in \
+        "$cr/includes/review-pipeline.md" \
+        "$cr/commands/pre-review.md" \
+        "$cr/skills/review-gh-pr/SKILL.md"; do
+
+        local basename_file
+        basename_file=$(basename "$file")
+
+        if [[ ! -f "$file" ]]; then
+            fail "synthesiser dispatch intent ledger: $basename_file" "file not found"
+            continue
+        fi
+
+        if grep -qE 'subagent_type: "code-review:review-synthesiser"' "$file"; then
+            # The dispatch prompt must contain '\n\n$INTENT_LEDGER\n' between the
+            # Review mode line and the trust boundary advisory. The literal token
+            # `$INTENT_LEDGER` is the variable name as it appears in the prompt
+            # template — the orchestrator substitutes its value at runtime.
+            if grep -qE 'Review mode: \$REVIEW_MODE\\n\\n\$INTENT_LEDGER\\n\\nTrust boundary' "$file"; then
+                pass "synthesiser dispatch intent ledger: $basename_file passes \$INTENT_LEDGER"
+            else
+                fail "synthesiser dispatch intent ledger: $basename_file passes \$INTENT_LEDGER" \
+                    "the synthesiser dispatch prompt must include \$INTENT_LEDGER between the Review mode line and the trust boundary advisory — without it the synthesiser cannot evaluate verdict rubric row 1 (intent-ledger goal unachieved) and must infer the goal from the diff non-deterministically"
+            fi
+        else
+            fail "synthesiser dispatch intent ledger: $basename_file" \
+                "expected file to contain a synthesiser dispatch (subagent_type: \"code-review:review-synthesiser\") but none was found — was the dispatch deleted?"
+        fi
+    done
+}
+
+test_sync_verdict_rubric_inline_matches_canonical() {
+    local cr
+    cr=$(_cr_dir)
+    if [[ ! -d "$cr" ]]; then
+        skip "verdict-rubric inline sync" "code-review plugin not found"
+        return
+    fi
+
+    local canonical="$cr/includes/verdict-rubric.md"
+    if [[ ! -f "$canonical" ]]; then
+        skip "verdict-rubric inline sync" "canonical file not found"
+        return
+    fi
+
+    # Extract canonical body from "### Verdict rubric (PR mode only" through end-of-file.
+    # The HTML maintenance comment is excluded from the inlined copies (consumers do not
+    # duplicate the canonical's maintenance metadata).
+    local canonical_body
+    canonical_body=$(sed -n '/^### Verdict rubric (PR mode only, first match wins)/,$ p' "$canonical")
+
+    if [[ -z "$canonical_body" ]]; then
+        fail "verdict-rubric inline sync: canonical body extracted" "no body found"
+        return
+    fi
+
+    local consumer
+    for consumer in \
+        "$cr/agents/review-synthesiser.md" \
+        "$cr/skills/review-gh-pr/SKILL.md"; do
+
+        local basename_consumer
+        basename_consumer=$(basename "$(dirname "$consumer")")/$(basename "$consumer")
+
+        if [[ ! -f "$consumer" ]]; then
+            fail "verdict-rubric inline sync: $basename_consumer" "file not found"
+            continue
+        fi
+
+        # Each consumer inlines the canonical body bounded by the same start anchor and
+        # the line "operations — no prose parsing." (last line of the Synthesiser contract
+        # section, unique in the canonical — note the body wraps so the literal
+        # "operations" begins the final line).
+        local consumer_body
+        consumer_body=$(sed -n '/^### Verdict rubric (PR mode only, first match wins)/,/^operations — no prose parsing\.$/p' "$consumer")
+
+        if [[ -z "$consumer_body" ]]; then
+            fail "verdict-rubric inline sync: $basename_consumer" "inline block not found (sed anchors may need updating)"
+            continue
+        fi
+
+        # The canonical's body extracted via the same end-anchor pattern for like-for-like comparison.
+        local canonical_range
+        canonical_range=$(sed -n '/^### Verdict rubric (PR mode only, first match wins)/,/^operations — no prose parsing\.$/p' "$canonical")
+
+        if [[ "$canonical_range" == "$consumer_body" ]]; then
+            pass "verdict-rubric inline sync: $basename_consumer matches canonical"
+        else
+            local tmp1 tmp2
+            tmp1=$(mktemp)
+            tmp2=$(mktemp)
+            echo "$canonical_range" > "$tmp1"
+            echo "$consumer_body" > "$tmp2"
+            local diff_output
+            diff_output=$(diff -u --label "canonical" --label "$basename_consumer" "$tmp1" "$tmp2" | head -30 || true)
+            rm -f "$tmp1" "$tmp2"
+            fail "verdict-rubric inline sync: $basename_consumer matches canonical" "$diff_output"
+        fi
+    done
+}
+
+test_synthesiser_verdict_output_restricted_to_two_values() {
+    local cr
+    cr=$(_cr_dir)
+    if [[ ! -d "$cr" ]]; then
+        skip "synthesiser verdict restricted" "code-review plugin not found"
+        return
+    fi
+
+    local synthesiser="$cr/agents/review-synthesiser.md"
+    if [[ ! -f "$synthesiser" ]]; then
+        fail "synthesiser verdict restricted" "review-synthesiser.md not found"
+        return
+    fi
+
+    # Assert the ## Verdict Output Format block exists and the Verdict: line restricts
+    # to "APPROVE | REQUEST_CHANGES" — exactly two values, no COMMENT, no other variants.
+    if grep -qE '^Verdict: <APPROVE \| REQUEST_CHANGES>$' "$synthesiser"; then
+        pass "synthesiser verdict restricted: ## Verdict block lists exactly APPROVE | REQUEST_CHANGES"
+    else
+        fail "synthesiser verdict restricted: ## Verdict block lists exactly APPROVE | REQUEST_CHANGES" \
+            "the synthesiser's ## Verdict Output Format block must contain a 'Verdict: <APPROVE | REQUEST_CHANGES>' line — COMMENT is never a synthesiser output, only a Class B downgrade or user override"
+    fi
+
+    # Assert the synthesiser does NOT include COMMENT as a possible Verdict: value.
+    if grep -qE '^Verdict: <APPROVE \| REQUEST_CHANGES \| COMMENT' "$synthesiser"; then
+        fail "synthesiser verdict restricted: COMMENT is NOT a synthesiser output" \
+            "the synthesiser's ## Verdict Output Format block must NOT include COMMENT as a possible Verdict: value — Class B downgrade and user override are the only routes to COMMENT"
+    else
+        pass "synthesiser verdict restricted: COMMENT is NOT a synthesiser output"
+    fi
+
+    # Assert the Rubric row applied: line lists exactly the four rubric rows.
+    if grep -qE '^Rubric row applied: <1 \| 2 \| 3 \| 4>$' "$synthesiser"; then
+        pass "synthesiser verdict restricted: Rubric row applied lists exactly 1 | 2 | 3 | 4"
+    else
+        fail "synthesiser verdict restricted: Rubric row applied lists exactly 1 | 2 | 3 | 4" \
+            "the synthesiser's ## Verdict block must contain 'Rubric row applied: <1 | 2 | 3 | 4>' — the four rubric rows are the only legal values"
+    fi
+}
+
+test_skill_md_step6_references_rubric_and_classes() {
+    local cr
+    cr=$(_cr_dir)
+    if [[ ! -d "$cr" ]]; then
+        skip "SKILL.md Step 6 rubric and classes" "code-review plugin not found"
+        return
+    fi
+
+    local skill="$cr/skills/review-gh-pr/SKILL.md"
+    if [[ ! -f "$skill" ]]; then
+        fail "SKILL.md Step 6 rubric and classes" "SKILL.md not found"
+        return
+    fi
+
+    # Extract Step 6's body: from "## Step 6: Submit Review Verdict" to "## Step 7" or
+    # end of file. All assertions below operate on this slice.
+    local step6
+    step6=$(sed -n '/^## Step 6: Submit Review Verdict/,/^## Step 7/p' "$skill")
+
+    if [[ -z "$step6" ]]; then
+        fail "SKILL.md Step 6 rubric and classes: Step 6 section extracted" "Step 6 not found in SKILL.md"
+        return
+    fi
+
+    # Six assertions on Step 6's body, encoded as parallel arrays of
+    # (sense, pattern, pass_label, fail_explanation) tuples. `sense` is `present` if the
+    # pattern is required to appear (rubric heading, four Class headings) or `absent` if
+    # it is forbidden (the legacy decision matrix). The loop body branches once on sense
+    # and dispatches the same pass/fail bookkeeping in both cases — replaces an earlier
+    # mix of two ad-hoc assertions and one for-loop with a single uniform structure.
+    local senses=(
+        present
+        absent
+        present
+        present
+        present
+        present
+    )
+    local patterns=(
+        '^### Verdict rubric \(PR mode only, first match wins\)$'
+        '^\| \*\*APPROVE\*\* \| No comments are blockers'
+        '^### Class A —'
+        '^### Class B —'
+        '^### Class C —'
+        '^### Class D —'
+    )
+    local labels=(
+        "rubric inlined"
+        "decision matrix removed"
+        "Class A heading present"
+        "Class B heading present"
+        "Class C heading present"
+        "Class D heading present"
+    )
+    local explanations=(
+        "Step 6 must inline the verdict rubric heading '### Verdict rubric (PR mode only, first match wins)' — without it the orchestrator has no documented authority chain to the synthesiser's verdict"
+        "Step 6 still contains the legacy decision matrix ('| **APPROVE** | No comments are blockers …') — this lets the orchestrator pick a verdict on its own initiative, conflicting with synthesiser-as-sole-authority. Delete the matrix; the rubric replaces it."
+        "Step 6 must contain a heading '### Class A — …'. The four classes (A: user-confirmation, B: PR-thread state, C: submission mechanics, D: output filtering) document the orchestrator's full decision scope — missing one means a class of orchestrator behaviour is undocumented and may drift toward judgement-driven action"
+        "Step 6 must contain a heading '### Class B — …'. The four classes (A: user-confirmation, B: PR-thread state, C: submission mechanics, D: output filtering) document the orchestrator's full decision scope — missing one means a class of orchestrator behaviour is undocumented and may drift toward judgement-driven action"
+        "Step 6 must contain a heading '### Class C — …'. The four classes (A: user-confirmation, B: PR-thread state, C: submission mechanics, D: output filtering) document the orchestrator's full decision scope — missing one means a class of orchestrator behaviour is undocumented and may drift toward judgement-driven action"
+        "Step 6 must contain a heading '### Class D — …'. The four classes (A: user-confirmation, B: PR-thread state, C: submission mechanics, D: output filtering) document the orchestrator's full decision scope — missing one means a class of orchestrator behaviour is undocumented and may drift toward judgement-driven action"
+    )
+    local i
+    for ((i = 0; i < ${#senses[@]}; i++)); do
+        local matched
+        if echo "$step6" | grep -qE "${patterns[i]}"; then
+            matched=yes
+        else
+            matched=no
+        fi
+
+        if [[ ${senses[i]} == present && $matched == yes ]] \
+                || [[ ${senses[i]} == absent && $matched == no ]]; then
+            pass "SKILL.md Step 6 rubric and classes: ${labels[i]}"
+        else
+            fail "SKILL.md Step 6 rubric and classes: ${labels[i]}" "${explanations[i]}"
+        fi
+    done
+}
+
+test_skill_md_filter_rationale_propagated_to_three_sites() {
+    # The `filtered-by-confidence` rationale (introduced by Class D §D.2) is a third
+    # permitted blank-`Outgoing comment ID` rationale. It must be enumerated at three
+    # propagation sites in SKILL.md, otherwise Step 5.5 false-halts on every APPROVE
+    # with sub-75 confidence findings, or Step 3's table column rule contradicts the
+    # no-filter rule introduced in the same step.
+    local cr
+    cr=$(_cr_dir)
+    if [[ ! -d "$cr" ]]; then
+        skip "SKILL.md filter rationale propagation" "code-review plugin not found"
+        return
+    fi
+
+    local skill="$cr/skills/review-gh-pr/SKILL.md"
+    if [[ ! -f "$skill" ]]; then
+        fail "SKILL.md filter rationale propagation" "SKILL.md not found"
+        return
+    fi
+
+    # Site 1: Step 3 no-filter rule must list filtered-by-confidence as a permitted
+    # blank-rationale (alongside dedup-with-#N and dismissed-by-synthesiser).
+    if grep -qE '^> 3\. \*\*`filtered-by-confidence' "$skill"; then
+        pass "SKILL.md filter rationale propagation: Step 3 no-filter rule lists filtered-by-confidence"
+    else
+        fail "SKILL.md filter rationale propagation: Step 3 no-filter rule lists filtered-by-confidence" \
+            "Step 3's no-filter rule (the bulleted list of legal omission reasons) must include a third item starting '> 3. **\`filtered-by-confidence' — without it the rule contradicts Class D §D.2's permission for confidence-driven omissions"
+    fi
+
+    # Site 2: Step 3 table column rule must also list filtered-by-confidence. This
+    # is the rule directly under the example reconciliation table that says
+    # "may be blank ONLY when ...". Earlier versions listed only two rationales,
+    # contradicting the no-filter rule; the third rationale must propagate here too.
+    if grep -qE 'may be blank ONLY when `Rationale` is `dedup-with-#N`,$' "$skill" \
+            && grep -qE '`dismissed-by-synthesiser`, or `filtered-by-confidence ' "$skill"; then
+        pass "SKILL.md filter rationale propagation: Step 3 table column rule lists filtered-by-confidence"
+    else
+        fail "SKILL.md filter rationale propagation: Step 3 table column rule lists filtered-by-confidence" \
+            "Step 3's table column rule under the example reconciliation table must enumerate all three rationales — currently it omits filtered-by-confidence and contradicts the no-filter rule above it"
+    fi
+
+    # Site 3: Step 5.5 must define P (filtered-by-confidence count) and the assertion
+    # must subtract it. C == R - D - X without the P term false-halts every APPROVE
+    # with sub-75 findings; that is the common case under APPROVE so the missing
+    # term is a hot-path bug.
+    if grep -qE '^- `P` = number of rows whose rationale is `filtered-by-confidence' "$skill"; then
+        pass "SKILL.md filter rationale propagation: Step 5.5 defines P"
+    else
+        fail "SKILL.md filter rationale propagation: Step 5.5 defines P" \
+            "Step 5.5's variable list must include 'P = number of rows whose rationale is filtered-by-confidence (verdict APPROVE, confidence < 75)' — without P the assertion 2 formula does not account for confidence-filtered rows"
+    fi
+
+    if grep -qE '`C == R - D - X - P`' "$skill"; then
+        pass "SKILL.md filter rationale propagation: Step 5.5 assertion subtracts P"
+    else
+        fail "SKILL.md filter rationale propagation: Step 5.5 assertion subtracts P" \
+            "Step 5.5 assertion 2 must read 'C == R - D - X - P' — the pre-existing 'C == R - D - X' false-halts every APPROVE verdict where any consensus finding has confidence < 75 (the common case)"
+    fi
+}
+
+test_sync_phase_055_local_branch_freshness_check() {
+    # Phase 0.55 protects the pipeline from measuring a stale diff: if the local HEAD
+    # is behind the PR's remote head, the review analyses an outdated tree and ships
+    # a false-clean report against the wrong commit set. The check has three load-
+    # bearing commands; this test asserts each one is present in the canonical so a
+    # future edit cannot silently delete one and break the protection.
+    local cr
+    cr=$(_cr_dir)
+    if [[ ! -d "$cr" ]]; then
+        skip "Phase 0.55 local branch freshness" "code-review plugin not found"
+        return
+    fi
+
+    local canonical="$cr/includes/review-pipeline.md"
+    if [[ ! -f "$canonical" ]]; then
+        fail "Phase 0.55 local branch freshness" "review-pipeline.md not found"
+        return
+    fi
+
+    # Site 1: the heading must exist in the canonical (the existing pipeline sync test
+    # then enforces byte-identical propagation to the two inlined consumers).
+    if grep -qE '^## Phase 0\.55: Local branch freshness check$' "$canonical"; then
+        pass "Phase 0.55 local branch freshness: section heading present"
+    else
+        fail "Phase 0.55 local branch freshness: section heading present" \
+            "review-pipeline.md must contain '## Phase 0.55: Local branch freshness check' as its own section, positioned between Phase 0 and Phase 0.6 — the heading is the test anchor for the three command-presence assertions below"
+    fi
+
+    # Site 2: must fetch the remote head via gh pr view --json headRefOid. Without this
+    # the orchestrator has nothing to compare HEAD against — Phase 0.55 collapses to
+    # a no-op.
+    if grep -qE 'gh pr view "\$ARGUMENTS" --json headRefOid' "$canonical"; then
+        pass "Phase 0.55 local branch freshness: fetches remote head SHA"
+    else
+        fail "Phase 0.55 local branch freshness: fetches remote head SHA" \
+            "Phase 0.55 must fetch \$REMOTE_HEAD_SHA via 'gh pr view \"\$ARGUMENTS\" --json headRefOid' — the freshness check has no input without it"
+    fi
+
+    # Site 3: must verify the SHA is locally known via git cat-file -e. Otherwise the
+    # next assertion (merge-base) would error confusingly when the remote was force-
+    # pushed and the user has not fetched.
+    if grep -qE 'git cat-file -e "\$REMOTE_HEAD_SHA"' "$canonical"; then
+        pass "Phase 0.55 local branch freshness: verifies remote SHA is locally known"
+    else
+        fail "Phase 0.55 local branch freshness: verifies remote SHA is locally known" \
+            "Phase 0.55 must run 'git cat-file -e \"\$REMOTE_HEAD_SHA\"' to verify the remote head exists in the local clone — otherwise an unfetched remote presents as 'diverged' rather than 'unknown', misdirecting the user"
+    fi
+
+    # Site 4: must verify HEAD is at-or-ahead of remote via merge-base --is-ancestor.
+    # This is the load-bearing check — exit 0 when remote is an ancestor of HEAD
+    # (local at or ahead), exit 1 when local is behind or diverged.
+    if grep -qE 'git merge-base --is-ancestor "\$REMOTE_HEAD_SHA" HEAD' "$canonical"; then
+        pass "Phase 0.55 local branch freshness: asserts HEAD is at-or-ahead of remote"
+    else
+        fail "Phase 0.55 local branch freshness: asserts HEAD is at-or-ahead of remote" \
+            "Phase 0.55 must run 'git merge-base --is-ancestor \"\$REMOTE_HEAD_SHA\" HEAD' — this is the actual freshness assertion. Without it, the gate is decorative"
+    fi
 }

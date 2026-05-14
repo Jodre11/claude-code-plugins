@@ -154,6 +154,8 @@ APPROVE → COMMENT downgrade (see Posting policy below) or from a user override
 at the confirmation prompt.
 
 By construction under `APPROVE`:
+- Either no `goal` was stated in the intent ledger, or no consensus finding
+  indicates the goal is not achieved (row 1 did not fire).
 - No Critical findings exist (row 2 caught them).
 - Important findings only exist below confidence 70 (row 3 caught the rest).
 - Suggestions exist at any confidence.

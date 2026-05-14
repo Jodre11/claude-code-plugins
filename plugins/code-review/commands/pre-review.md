@@ -1032,7 +1032,7 @@ Agent({
 })
 ```
 
-The synthesiser dispatch prompt opens with the `ultrathink` keyword, which Claude Code detects to set the max thinking budget for the dispatched subagent. The model alias `model: "opus"` remains floating so the synthesiser rides the latest frontier. The synthesiser reads the diff and files itself for independent analysis.
+The synthesiser dispatch prompt opens with the `ultrathink` keyword, which Claude Code detects to set the max thinking budget for the dispatched subagent. The model alias `model: "opus"` remains floating so the synthesiser rides the latest frontier. The synthesiser reads the diff and files itself for independent analysis. The synthesiser is the sole authority for the PR review verdict (`APPROVE` / `REQUEST_CHANGES`); it computes the verdict by applying the four-row rubric inlined in `agents/review-synthesiser.md` (canonical at `includes/verdict-rubric.md`). The orchestrator (Step 6 of `skills/review-gh-pr/SKILL.md`) executes that verdict — see the rubric's Posting policy and Body construction sections for the deterministic transformations the orchestrator is allowed to apply.
 
 Announce: `> Dispatching synthesiser (opus, ultrathink)...`
 

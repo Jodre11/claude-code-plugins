@@ -61,3 +61,28 @@ block in normal operation.
 3. Read `CLAUDE.md` in the repo root (if it exists) for project conventions.
 4. Read `includes/severity-definitions.md` (if it exists) for the severity classification definitions to apply when assigning severity to findings.
 5. Read each changed file for full context. If more than 20 files changed, prioritise non-test source files with the largest diffs. Skip generated files, lock files, and vendored dependencies.
+
+### Output line filter
+
+<!-- CHANGED_LINES OUTPUT FILTER — this is the canonical source.
+Edit this file first, then propagate to all specialist agents that inline
+this block: archaeology-reviewer.md, code-analysis.md, consistency-reviewer.md,
+correctness-reviewer.md, efficiency-reviewer.md, reuse-reviewer.md,
+security-reviewer.md, style-reviewer.md, ui-reviewer.md.
+
+alignment-reviewer.md does NOT inline this block — alignment findings
+legitimately span pre-existing lines (intent drift is rare but can manifest
+on lines the diff doesn't touch). Other static-analysis specialists
+(jbinspect, eslint, ruff, trivy) inline their own scope rules per
+includes/static-analysis-context.md. -->
+
+> **CHANGED_LINES OUTPUT FILTER — MANDATORY**
+>
+> Only report findings on lines listed in `$CHANGED_LINES` for that file
+> (parsed from the `Changed lines:` block in your prompt). Do NOT emit
+> findings on unchanged lines, even FYI — pre-existing issues are out of
+> scope. You may still *read* unchanged context to understand the change,
+> but the finding's `File:` line must reference a `file:line` whose line
+> appears in `$CHANGED_LINES[file]`. Files appearing in the `Changed lines:`
+> block with `(empty — rename only)` accept no findings at all (the rename
+> itself is the only change).

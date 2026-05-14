@@ -151,14 +151,22 @@ If no significant deletions or all deletions are clearly safe:
 
 ## Rules
 
-- Only report findings on lines listed in `$CHANGED_LINES` for that file
-  (parsed from the `Changed lines:` block in your prompt). Do NOT emit
-  findings on unchanged lines, even FYI — pre-existing issues are out of
-  scope. You may still *read* unchanged context to understand the change,
-  but the finding's `File:` line must reference a `file:line` whose line
-  appears in `$CHANGED_LINES[file]`. Files appearing in the `Changed lines:`
-  block with `(empty — rename only)` accept no findings at all (the rename
-  itself is the only change).
+<!-- CHANGED_LINES OUTPUT FILTER — inlined from includes/specialist-context.md (canonical source).
+Edit the include first, then propagate to all listed specialists. -->
+
+> **CHANGED_LINES OUTPUT FILTER — MANDATORY**
+>
+> Only report findings on lines listed in `$CHANGED_LINES` for that file
+> (parsed from the `Changed lines:` block in your prompt). Do NOT emit
+> findings on unchanged lines, even FYI — pre-existing issues are out of
+> scope. You may still *read* unchanged context to understand the change,
+> but the finding's `File:` line must reference a `file:line` whose line
+> appears in `$CHANGED_LINES[file]`. Files appearing in the `Changed lines:`
+> block with `(empty — rename only)` accept no findings at all (the rename
+> itself is the only change).
+
+---
+
 - For deletions, map findings to the `near N` anchor: cite `file:N` where N
   is the new-file line number adjacent to where the deletion happened. The
   posted comment will land on the closest still-present line. Do NOT cite

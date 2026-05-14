@@ -91,3 +91,15 @@ its section header, and EVERY reference to that finding elsewhere in the body
 token. The orchestrator filters by stripping paragraphs and bullets that
 contain a filtered-out finding's `[#N]` token via deterministic string
 operations — no prose parsing.
+
+<!-- TEST SYNC ANCHOR: the literal "operations — no prose parsing." (start of the
+final line of the Synthesiser contract section above) is used as a `sed` end-anchor
+in `tests/lib/test_sync_notes.sh::test_sync_verdict_rubric_inline_matches_canonical`
+to extract the inlined block from consumer files. Do NOT rephrase the final sentence
+without updating the test's sed pattern in lockstep — a partial-phrase rephrase
+would silently truncate the extracted body, and the diff-based comparison would
+either pass vacuously or fail with an obscure "extracted body was empty" error.
+
+This comment is intentionally placed AFTER the end-anchor line so it sits outside
+the extraction window — adding it inside would invalidate the sync test. -->
+

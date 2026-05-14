@@ -590,7 +590,7 @@ For each diff line:
 | `diff --git a/X b/Y` | Reset `$current_file` to empty; capture `X` (strip the `a/` prefix) as `$pending_original_path` for use by the deletion branch below |
 | `--- a/<path>` | Ignore (Y comes from the `+++` line below) |
 | `+++ b/<path>` | Set `$current_file = <path>`; if path is `/dev/null` (file deleted), set `$current_file = $pending_original_path` (the original path, no prefix) and mark it as deleted for the serialiser; reset `$new_line_no = 0` |
-| `@@ -A,B +C,D @@` | Parse `C` from the new-file range; set `$new_line_no = C`; reset `$deletion_anchor = C` |
+| `@@ -A,B +C,D @@` | Parse `C` from the new-file range; set `$new_line_no = C`; reset `$deletion_anchor = max(C, 1)` (clamp prevents `near 0` for top-of-file deletions where `C = 0`) |
 | Line starting with ` ` (space, context) | Increment `$new_line_no`; update `$deletion_anchor = $new_line_no` (the next deletion run starts at this point) |
 | Line starting with `+` (and NOT `+++`) | Append `$new_line_no` to `$CHANGED_LINES[$current_file]`; increment `$new_line_no` |
 | Line starting with `-` (and NOT `---`) | Do NOT increment `$new_line_no` (the line is gone in the new file); append the marker `("near", $deletion_anchor)` to `$CHANGED_LINES[$current_file]` (a tagged tuple, distinct from a bare integer for added lines) |

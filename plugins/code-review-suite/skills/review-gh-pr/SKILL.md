@@ -558,10 +558,14 @@ If either is false, the trivial bar fails.
 If 0.7.5 has already failed (file-count or line-count bar exceeded), skip this
 sub-step entirely and proceed straight to "Trivial bar failed" — running a full
 `git diff` to scan for deletions is moot when the size bar already disqualified
-the diff. Otherwise, run `git diff [diff-syntax]` and scan hunks for any single
-hunk with 10+ contiguous deleted lines. This duplicates Step 2.7's
-`$SIGNIFICANT_DELETIONS` logic; the duplication is intentional to keep Phase 0.7
-self-contained as a fast-path pre-check.
+the diff. Otherwise, run `git diff -w [diff-syntax]` and scan hunks for any
+single hunk with 10+ contiguous deleted lines. The `-w` flag (alias for
+`--ignore-all-space`) collapses whitespace-only differences before the deletion
+count is taken: a re-indent that emits each line as `-` then `+` with different
+leading whitespace is not a deletion at all under `-w` and contributes zero to
+the contiguous-`-` run. This duplicates Step 2.7's `$SIGNIFICANT_DELETIONS`
+logic; the duplication is intentional to keep Phase 0.7 self-contained as a
+fast-path pre-check.
 
 If any such hunk exists, the trivial bar fails — fall through to Step 1.
 
@@ -587,8 +591,9 @@ hunks. Form an opinion on what changed and why.
 Draft a structured mini-review:
 
 - **Verdict** (omit entirely when `$REVIEW_MODE` is `local` — no verdict is produced
-  in pre-review): `APPROVE` if everything looks fine, `COMMENT` if minor observations
-  are worth surfacing, `REQUEST_CHANGES` if anything is wrong.
+  in pre-review): `APPROVE` if everything looks fine, `REQUEST_CHANGES` if anything
+  is wrong. (`COMMENT` is not a permitted trivial-mode verdict; minor observations
+  ride alongside `APPROVE` as inline comments.)
 - **Top-level body (2-3 sentences):** Explain what changed and why the diff qualifies
   for trivial-mode. End the body with the verbatim line:
   `Reviewed via trivial-mode fast path: docs/config diff under the size bar.`
@@ -791,7 +796,7 @@ The block is now ready for use in Step 2.9 when building `$AGENT_PROMPT`.
    - **Note:** JS/TS detection deliberately overlaps with UI detection on `.jsx`, `.tsx`, `.vue`, `.svelte`. Both flags fire on these files — `eslint-reviewer` and `ui-reviewer` analyse different concerns. The dispatcher does not deduplicate; specialist file filters scope each tool's pass.
    - **Python detection:** if any file ends with `.py` or `.ipynb`, set `$PY_DETECTED = true`
    - **IaC detection:** if any file ends with `.tf`, `.tfvars`, `.tf.json`, `.tfplan`, or `.dockerfile`; has basename `Dockerfile`, matches `Dockerfile.*`, or has basename `Containerfile`; has any path segment equal to `k8s`, `kubernetes`, `helm`, `manifests`, `chart`, or `charts` (e.g. `infra/k8s/deployment.yaml` matches; `mock-data.yaml` does not) and ends in `.yaml`, `.yml`, or `.tpl`; or has extension `.cfn.yaml`, `.cfn.yml`, `.template.json`, or `.template.yaml`, set `$IAC_DETECTED = true`
-2.7. Scan `$FULL_DIFF` hunks for **significant deletions:** if any single hunk contains 10+ contiguous deleted lines, set `$SIGNIFICANT_DELETIONS = true`
+2.7. Scan for **significant deletions:** run `git diff -w` (using the diff syntax determined by `$EMPTY_TREE_MODE`, append `-- "$PATH_SCOPE"` if set) and scan its hunks for any single hunk with 10+ contiguous deleted lines. If any such hunk exists, set `$SIGNIFICANT_DELETIONS = true`. The `-w` view drops whitespace-only differences before the deletion count is taken, so re-indents and other whitespace-only edits do not register as significant deletions. **Do NOT replace `$FULL_DIFF` with the `-w` view** — `$FULL_DIFF` (already captured in 2.2 without `-w`) remains the authoritative artifact for `$CHANGED_LINES`, `$LINE_COUNT`, specialists, and archaeology anchors. Only the deletion-detection scan uses `-w`.
 2.8. Scan changed file paths and `$FULL_DIFF` content for **security-sensitive areas** (auth, crypto, input validation, SQL, API endpoints, secrets management, deserialisation, JWT, session, token, eval, exec, spawn, certificate, CORS). If found, set `$SECURITY_SENSITIVE = true`
 
 #### 2.9. Build agent prompt
@@ -1320,9 +1325,9 @@ Resolved threads are hidden on the PR conversation page. Replying to a resolved 
 >    Findings` section. You may not invent your own dismissals.
 > 3. **`filtered-by-confidence (verdict APPROVE, confidence < 75)`** — applied
 >    automatically by Class D of Step 6's Output filtering when the synthesiser's
->    verdict is APPROVE (or APPROVE→COMMENT) and the finding's confidence is
->    below 75. This is mechanical, not judgement-driven; you do NOT invent it
->    on your own initiative.
+>    verdict is APPROVE (or COMMENT via user override) and the finding's
+>    confidence is below 75. This is mechanical, not judgement-driven; you do
+>    NOT invent it on your own initiative.
 >
 > Anything else — "I judged this trivial", "overlaps loosely with comment N",
 > "low signal" — is a pipeline violation. Re-add the finding before continuing.
@@ -1507,7 +1512,7 @@ Compute these counts:
 - `C` = number of comments actually posted in Step 5 (count successful `gh api ... pulls/{pr}/comments` calls — store the IDs as you post and count them here)
 - `D` = number of rows whose rationale is `dedup-with-#N`
 - `X` = number of rows whose rationale is `dismissed-by-synthesiser`
-- `P` = number of rows whose rationale is `filtered-by-confidence (verdict APPROVE, confidence < 75)` — populated by Class D of Step 6 when the verdict is APPROVE or APPROVE→COMMENT; zero otherwise
+- `P` = number of rows whose rationale is `filtered-by-confidence (verdict APPROVE, confidence < 75)` — populated by Class D of Step 6 when the verdict is APPROVE or COMMENT (user override); zero otherwise
 
 Assertions — ALL must hold:
 1. `R == F` — every finding has a row.
@@ -1524,12 +1529,13 @@ fix before proceeding. You may not rationalise around a count mismatch; surface 
 The synthesiser is the sole authority for the PR review verdict. The orchestrator
 (this step) executes that verdict — it cannot alter findings, severity, confidence,
 fix text, file/line attribution, or the synthesiser-produced verdict on its own
-initiative. The single deterministic transformation the orchestrator may apply is
-the APPROVE → COMMENT downgrade described in the Class B state checks below.
+initiative. `$FINAL_VERDICT` equals the synthesiser's verdict for every review
+path; the orchestrator never auto-emits `COMMENT`.
 
 The user is sovereign over the final action submitted. At the confirmation prompt
-the user can override the proposed action to any of `APPROVE`, `REQUEST_CHANGES`,
-or `COMMENT`. This is the documented caveat to synthesiser-as-sole-authority.
+the user can override the proposed action; the user's `[c]` keypress under the
+`REQUEST_CHANGES` prompt is the only path to a `COMMENT` submission. This is the
+documented caveat to synthesiser-as-sole-authority.
 
 <!-- VERDICT RUBRIC — inlined from includes/verdict-rubric.md (canonical source).
 Edit the include first, then propagate to all listed consumers. -->
@@ -1544,9 +1550,9 @@ Edit the include first, then propagate to all listed consumers. -->
 | 4 | Otherwise | `APPROVE` |
 
 The synthesiser produces only `APPROVE` or `REQUEST_CHANGES`. `COMMENT` is
-never a synthesiser output — it can only emerge from the orchestrator's
-APPROVE → COMMENT downgrade (see Posting policy below) or from a user override
-at the confirmation prompt.
+never a synthesiser output, and the orchestrator never auto-downgrades a synth
+verdict to `COMMENT`. The only route to a `COMMENT` verdict is an explicit user
+override at the Class A confirmation prompt.
 
 By construction under `APPROVE`:
 - Either no `goal` was stated in the intent ledger, or no consensus finding
@@ -1570,7 +1576,7 @@ unchanged; only which subset gets posted is decided.
 | Verdict path | Filter |
 |---|---|
 | `REQUEST_CHANGES` | Post **every** consensus finding. No filter. The implementer needs the full picture; an under-powered orchestrator must not dilute what a max-effort synthesiser produced. Verbose by design. |
-| `APPROVE` (and APPROVE → COMMENT downgrade) | Post consensus findings with **confidence ≥ 75**. Sub-threshold findings remain visible in the synthesiser's stdout report but are not posted to GitHub. |
+| `APPROVE` | Post consensus findings with **confidence ≥ 75**. Sub-threshold findings remain visible in the synthesiser's stdout report but are not posted to GitHub. |
 
 The 75 threshold is intentionally above the rubric's 70 cutoff for Important
 findings. Below 70: don't block. Above 75: surface under APPROVE. The 70-75
@@ -1613,13 +1619,10 @@ operations — no prose parsing.
 
 ### Class A — User confirmation flow
 
-Class A reads two variables from earlier work: `$SYNTH_VERDICT` /
-`$SYNTH_RUBRIC_ROW` are parsed below from the synthesiser's report;
-`$DOWNGRADE_REASON` is populated by Class B §B.3 when an APPROVE → COMMENT
-downgrade applies, and is unset (empty) otherwise. The downgraded prompt
-template (the second variant in §A.3) is rendered ONLY when `$PROPOSED_ACTION
-= COMMENT` and `$DOWNGRADE_REASON` is non-empty — otherwise the standard
-APPROVE template is used.
+Class A reads two variables from earlier work: `$SYNTH_VERDICT` and
+`$SYNTH_RUBRIC_ROW` are parsed below from the synthesiser's report. There is
+no orchestrator-driven downgrade — Class A renders one of two confirmation
+prompts based purely on `$SYNTH_VERDICT`.
 
 #### A.1 Parse synthesiser verdict
 
@@ -1630,15 +1633,13 @@ absence is a pipeline error: report `Pipeline error: synthesiser report missing
 
 #### A.2 Compute proposed action
 
-By default `$PROPOSED_ACTION = $SYNTH_VERDICT`. If the Class B state checks
-(next section) downgrade APPROVE to COMMENT, `$PROPOSED_ACTION = COMMENT`
-and `$DOWNGRADE_REASON` is populated.
+`$PROPOSED_ACTION = $SYNTH_VERDICT.`
 
 #### A.3 Render confirmation prompt
 
-Render ONE of three confirmation prompts based on the proposed action:
+Render ONE of two confirmation prompts based on the proposed action:
 
-**Prompt template (synthesiser proposed APPROVE, no downgrade):**
+**Prompt template (synthesiser proposed APPROVE):**
 
 ```
 > Synthesiser proposes: APPROVE
@@ -1647,18 +1648,6 @@ Render ONE of three confirmation prompts based on the proposed action:
 >
 > Submit as proposed [s], override to REQUEST_CHANGES [r],
 > or cancel without submitting [n]? [s/r/n]
-```
-
-**Prompt template (synthesiser proposed APPROVE, downgraded to COMMENT by Class B):**
-
-```
-> Synthesiser proposes: APPROVE
->   Rubric row $SYNTH_RUBRIC_ROW: <reason from synthesiser ## Verdict Reason: line>
-> Orchestrator adjustment: APPROVE → COMMENT
->   Reason: $DOWNGRADE_REASON
->
-> Submit as COMMENT [s], override to APPROVE [a], override to REQUEST_CHANGES [r],
-> or cancel without submitting [n]? [s/a/r/n]
 ```
 
 **Prompt template (synthesiser proposed REQUEST_CHANGES):**
@@ -1686,14 +1675,12 @@ Render ONE of three confirmation prompts based on the proposed action:
 
 Where `<provenance>` is one of:
 - `synthesiser-proposed` — submitted exactly as the synthesiser proposed
-- `orchestrator-adjusted to <FINAL>, originally synthesiser-proposed <ORIGINAL>` — Class B downgrade applied, user accepted
 - `user override of synthesiser-proposed <ORIGINAL>` — user changed the verdict
-- `user override of orchestrator-adjusted <ADJUSTED>, originally synthesiser-proposed <ORIGINAL>` — Class B downgrade and user override both applied
 
 ### Class B — PR-thread state handling
 
-Run three checks at the start of Step 6, BEFORE presenting the Class A
-confirmation prompt. All three use `gh api` / `gh pr view` against live PR state.
+Run two checks at the start of Step 6, BEFORE presenting the Class A
+confirmation prompt. Both use `gh api` / `gh pr view` against live PR state.
 Batch them into one GraphQL call where possible to amortise latency.
 
 #### B.1 PR closed or merged since review started
@@ -1735,49 +1722,13 @@ GitHub UI.
 
 On `n`: halt cleanly without submission.
 
-#### B.3 Outstanding peer REQUEST_CHANGES
-
-```bash
-gh pr view "$ARGUMENTS" --json reviews \
-  | jq --arg head "$HEAD_SHA" \
-       --arg user "$CURRENT_USER" \
-       '.reviews | map(select(.state == "CHANGES_REQUESTED" and .commit.oid == $head and .author.login != $user)) | length'
-```
-
-`$HEAD_SHA` was captured and validated in Step 2.1 of the pipeline (regex
-`^[0-9a-f]{40}$`); reusing it here is preferred over re-fetching `headRefOid`
-from the live PR. The reused value is zero network cost, eliminates a TOCTOU
-window (force-push between two `gh pr view` calls would mismatch `reviews`
-against `headRefOid`), and aligns the check semantics with B.2 — both
-B-checks gate on "the commit the synthesiser analysed", not "whatever the
-head currently is".
-
-If the result is `> 0`, there is at least one non-dismissed peer
-`REQUEST_CHANGES` from another reviewer on the latest commit. If the
-synthesiser proposed `APPROVE`, transform the proposed action to `COMMENT` and
-populate `$DOWNGRADE_REASON` with:
-
-```
-prior reviewer @<login> has outstanding REQUEST_CHANGES (review #<id>) — APPROVE would override; posting as COMMENT instead
-```
-
-Capture `<login>` and `<id>` from the same query (extend the jq pipeline to
-return the first matching review's `author.login` and `databaseId`).
-
-If the synthesiser proposed `REQUEST_CHANGES`, no transform applies (the
-peer's REQUEST_CHANGES is already aligned with the synthesiser's proposal).
-
-This is the SOLE deterministic transformation the orchestrator is allowed to
-apply to the synthesiser's proposed verdict. It is rule-driven, not
-judgement-driven.
-
 ### Class C — Submission mechanics
 
 - Inline comments are posted before the top-level review verdict.
 - Order: file order from `$CHANGED_FILES`, then ascending line number.
 - Side: `RIGHT` for additions/modifications, `LEFT` for deletions. The diff polarity is captured in the synthesiser's `File:` citation; for `archaeology-reviewer` findings on deletion anchors (`near N` in `$CHANGED_LINES`), use the anchor line number directly and `LEFT` side.
 - Verdict (`gh pr review`) is submitted only after all inline comments succeed.
-- No artificial cap on inline comment count. If the synthesiser produced N findings (or N filtered findings under APPROVE / APPROVE→COMMENT), all N are posted.
+- No artificial cap on inline comment count. If the synthesiser produced N findings (or N filtered findings under APPROVE / COMMENT — the latter only via user override), all N are posted.
 - On any inline-comment posting failure: stop, surface the error and the failed item, ask user retry / skip-this-comment / cancel-the-whole-submission. No silent partial submissions.
 
 The submission API call uses the body produced by Class D below:
@@ -1794,15 +1745,14 @@ The flag (`--approve` / `--request-changes` / `--comment`) is selected from
 ### Class D — Output filtering
 
 The orchestrator filters which consensus findings get posted to GitHub based on
-`$FINAL_VERDICT` (the verdict after Class A user confirmation, which may be the
-synthesiser's proposal, the Class B downgrade, or the user's override). The
-filter is the only content-shaping power the orchestrator has, and it is
-mechanical.
+`$FINAL_VERDICT` (the verdict after Class A user confirmation, which is either
+the synthesiser's proposal or the user's override). The filter is the only
+content-shaping power the orchestrator has, and it is mechanical.
 
 #### D.1 Compute the post set
 
 - If `$FINAL_VERDICT == REQUEST_CHANGES`: `$POST_SET` = every consensus finding. No filter.
-- If `$FINAL_VERDICT == APPROVE` or `$FINAL_VERDICT == COMMENT` (the APPROVE→COMMENT downgrade path): `$POST_SET` = consensus findings with `Confidence: <C>` where `C >= 75`. Sub-threshold findings are dropped from inline-comment posting AND from body references.
+- If `$FINAL_VERDICT == APPROVE` or `$FINAL_VERDICT == COMMENT` (COMMENT reached only via user override under the `REQUEST_CHANGES` prompt): `$POST_SET` = consensus findings with `Confidence: <C>` where `C >= 75`. Sub-threshold findings are dropped from inline-comment posting AND from body references.
 
 Capture `$DROPPED_SET` = consensus findings NOT in `$POST_SET`. `$DROPPED_COUNT` = its size.
 

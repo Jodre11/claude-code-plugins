@@ -27,9 +27,9 @@ auditing both. -->
 | 4 | Otherwise | `APPROVE` |
 
 The synthesiser produces only `APPROVE` or `REQUEST_CHANGES`. `COMMENT` is
-never a synthesiser output — it can only emerge from the orchestrator's
-APPROVE → COMMENT downgrade (see Posting policy below) or from a user override
-at the confirmation prompt.
+never a synthesiser output, and the orchestrator never auto-downgrades a synth
+verdict to `COMMENT`. The only route to a `COMMENT` verdict is an explicit user
+override at the Class A confirmation prompt.
 
 By construction under `APPROVE`:
 - Either no `goal` was stated in the intent ledger, or no consensus finding
@@ -53,7 +53,7 @@ unchanged; only which subset gets posted is decided.
 | Verdict path | Filter |
 |---|---|
 | `REQUEST_CHANGES` | Post **every** consensus finding. No filter. The implementer needs the full picture; an under-powered orchestrator must not dilute what a max-effort synthesiser produced. Verbose by design. |
-| `APPROVE` (and APPROVE → COMMENT downgrade) | Post consensus findings with **confidence ≥ 75**. Sub-threshold findings remain visible in the synthesiser's stdout report but are not posted to GitHub. |
+| `APPROVE` | Post consensus findings with **confidence ≥ 75**. Sub-threshold findings remain visible in the synthesiser's stdout report but are not posted to GitHub. |
 
 The 75 threshold is intentionally above the rubric's 70 cutoff for Important
 findings. Below 70: don't block. Above 75: surface under APPROVE. The 70-75

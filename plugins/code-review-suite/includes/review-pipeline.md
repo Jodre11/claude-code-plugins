@@ -452,10 +452,14 @@ If either is false, the trivial bar fails.
 If 0.7.5 has already failed (file-count or line-count bar exceeded), skip this
 sub-step entirely and proceed straight to "Trivial bar failed" — running a full
 `git diff` to scan for deletions is moot when the size bar already disqualified
-the diff. Otherwise, run `git diff [diff-syntax]` and scan hunks for any single
-hunk with 10+ contiguous deleted lines. This duplicates Step 2.7's
-`$SIGNIFICANT_DELETIONS` logic; the duplication is intentional to keep Phase 0.7
-self-contained as a fast-path pre-check.
+the diff. Otherwise, run `git diff -w [diff-syntax]` and scan hunks for any
+single hunk with 10+ contiguous deleted lines. The `-w` flag (alias for
+`--ignore-all-space`) collapses whitespace-only differences before the deletion
+count is taken: a re-indent that emits each line as `-` then `+` with different
+leading whitespace is not a deletion at all under `-w` and contributes zero to
+the contiguous-`-` run. This duplicates Step 2.7's `$SIGNIFICANT_DELETIONS`
+logic; the duplication is intentional to keep Phase 0.7 self-contained as a
+fast-path pre-check.
 
 If any such hunk exists, the trivial bar fails — fall through to Step 1.
 
@@ -481,8 +485,9 @@ hunks. Form an opinion on what changed and why.
 Draft a structured mini-review:
 
 - **Verdict** (omit entirely when `$REVIEW_MODE` is `local` — no verdict is produced
-  in pre-review): `APPROVE` if everything looks fine, `COMMENT` if minor observations
-  are worth surfacing, `REQUEST_CHANGES` if anything is wrong.
+  in pre-review): `APPROVE` if everything looks fine, `REQUEST_CHANGES` if anything
+  is wrong. (`COMMENT` is not a permitted trivial-mode verdict; minor observations
+  ride alongside `APPROVE` as inline comments.)
 - **Top-level body (2-3 sentences):** Explain what changed and why the diff qualifies
   for trivial-mode. End the body with the verbatim line:
   `Reviewed via trivial-mode fast path: docs/config diff under the size bar.`
@@ -685,7 +690,7 @@ The block is now ready for use in Step 2.9 when building `$AGENT_PROMPT`.
    - **Note:** JS/TS detection deliberately overlaps with UI detection on `.jsx`, `.tsx`, `.vue`, `.svelte`. Both flags fire on these files — `eslint-reviewer` and `ui-reviewer` analyse different concerns. The dispatcher does not deduplicate; specialist file filters scope each tool's pass.
    - **Python detection:** if any file ends with `.py` or `.ipynb`, set `$PY_DETECTED = true`
    - **IaC detection:** if any file ends with `.tf`, `.tfvars`, `.tf.json`, `.tfplan`, or `.dockerfile`; has basename `Dockerfile`, matches `Dockerfile.*`, or has basename `Containerfile`; has any path segment equal to `k8s`, `kubernetes`, `helm`, `manifests`, `chart`, or `charts` (e.g. `infra/k8s/deployment.yaml` matches; `mock-data.yaml` does not) and ends in `.yaml`, `.yml`, or `.tpl`; or has extension `.cfn.yaml`, `.cfn.yml`, `.template.json`, or `.template.yaml`, set `$IAC_DETECTED = true`
-2.7. Scan `$FULL_DIFF` hunks for **significant deletions:** if any single hunk contains 10+ contiguous deleted lines, set `$SIGNIFICANT_DELETIONS = true`
+2.7. Scan for **significant deletions:** run `git diff -w` (using the diff syntax determined by `$EMPTY_TREE_MODE`, append `-- "$PATH_SCOPE"` if set) and scan its hunks for any single hunk with 10+ contiguous deleted lines. If any such hunk exists, set `$SIGNIFICANT_DELETIONS = true`. The `-w` view drops whitespace-only differences before the deletion count is taken, so re-indents and other whitespace-only edits do not register as significant deletions. **Do NOT replace `$FULL_DIFF` with the `-w` view** — `$FULL_DIFF` (already captured in 2.2 without `-w`) remains the authoritative artifact for `$CHANGED_LINES`, `$LINE_COUNT`, specialists, and archaeology anchors. Only the deletion-detection scan uses `-w`.
 2.8. Scan changed file paths and `$FULL_DIFF` content for **security-sensitive areas** (auth, crypto, input validation, SQL, API endpoints, secrets management, deserialisation, JWT, session, token, eval, exec, spawn, certificate, CORS). If found, set `$SECURITY_SENSITIVE = true`
 
 #### 2.9. Build agent prompt

@@ -740,7 +740,7 @@ Dispatch the `code-analysis` agent using `$AGENT_PROMPT` (defined in Step 2.9):
 ```
 Agent({
     description: "Lightweight code analysis",
-    subagent_type: "code-review:code-analysis",
+    subagent_type: "code-review-suite:code-analysis",
     name: "code-analysis",
     mode: "auto",
     prompt: $AGENT_PROMPT
@@ -789,7 +789,7 @@ Dispatch ALL 8 core specialists **in parallel** as background agents — no exce
 ```
 Agent({
     description: "Security review",
-    subagent_type: "code-review:security-reviewer",
+    subagent_type: "code-review-suite:security-reviewer",
     name: "security-reviewer",
     mode: "auto",
     run_in_background: true,
@@ -797,7 +797,7 @@ Agent({
 })
 Agent({
     description: "Correctness review",
-    subagent_type: "code-review:correctness-reviewer",
+    subagent_type: "code-review-suite:correctness-reviewer",
     name: "correctness-reviewer",
     mode: "auto",
     run_in_background: true,
@@ -805,7 +805,7 @@ Agent({
 })
 Agent({
     description: "Consistency review",
-    subagent_type: "code-review:consistency-reviewer",
+    subagent_type: "code-review-suite:consistency-reviewer",
     name: "consistency-reviewer",
     mode: "auto",
     run_in_background: true,
@@ -813,7 +813,7 @@ Agent({
 })
 Agent({
     description: "Style review",
-    subagent_type: "code-review:style-reviewer",
+    subagent_type: "code-review-suite:style-reviewer",
     name: "style-reviewer",
     mode: "auto",
     run_in_background: true,
@@ -821,7 +821,7 @@ Agent({
 })
 Agent({
     description: "Archaeology review",
-    subagent_type: "code-review:archaeology-reviewer",
+    subagent_type: "code-review-suite:archaeology-reviewer",
     name: "archaeology-reviewer",
     mode: "auto",
     run_in_background: true,
@@ -829,7 +829,7 @@ Agent({
 })
 Agent({
     description: "Reuse review",
-    subagent_type: "code-review:reuse-reviewer",
+    subagent_type: "code-review-suite:reuse-reviewer",
     name: "reuse-reviewer",
     mode: "auto",
     run_in_background: true,
@@ -837,7 +837,7 @@ Agent({
 })
 Agent({
     description: "Efficiency review",
-    subagent_type: "code-review:efficiency-reviewer",
+    subagent_type: "code-review-suite:efficiency-reviewer",
     name: "efficiency-reviewer",
     mode: "auto",
     run_in_background: true,
@@ -845,7 +845,7 @@ Agent({
 })
 Agent({
     description: "Alignment review",
-    subagent_type: "code-review:alignment-reviewer",
+    subagent_type: "code-review-suite:alignment-reviewer",
     name: "alignment-reviewer",
     mode: "auto",
     run_in_background: true,
@@ -859,7 +859,7 @@ If `$CSHARP_DETECTED`, also dispatch:
 ```
 Agent({
     description: "JetBrains InspectCode review",
-    subagent_type: "code-review:jbinspect-reviewer",
+    subagent_type: "code-review-suite:jbinspect-reviewer",
     name: "jbinspect-reviewer",
     mode: "auto",
     run_in_background: true,
@@ -871,7 +871,7 @@ If `$UI_DETECTED`, also dispatch:
 ```
 Agent({
     description: "UI/UX review",
-    subagent_type: "code-review:ui-reviewer",
+    subagent_type: "code-review-suite:ui-reviewer",
     name: "ui-reviewer",
     mode: "auto",
     run_in_background: true,
@@ -883,7 +883,7 @@ If `$JS_DETECTED`, also dispatch:
 ```
 Agent({
     description: "ESLint/Biome review",
-    subagent_type: "code-review:eslint-reviewer",
+    subagent_type: "code-review-suite:eslint-reviewer",
     name: "eslint-reviewer",
     mode: "auto",
     run_in_background: true,
@@ -895,7 +895,7 @@ If `$PY_DETECTED`, also dispatch:
 ```
 Agent({
     description: "Ruff review",
-    subagent_type: "code-review:ruff-reviewer",
+    subagent_type: "code-review-suite:ruff-reviewer",
     name: "ruff-reviewer",
     mode: "auto",
     run_in_background: true,
@@ -907,7 +907,7 @@ If `$IAC_DETECTED`, also dispatch:
 ```
 Agent({
     description: "Trivy IaC security review",
-    subagent_type: "code-review:trivy-reviewer",
+    subagent_type: "code-review-suite:trivy-reviewer",
     name: "trivy-reviewer",
     mode: "auto",
     run_in_background: true,
@@ -1036,7 +1036,7 @@ Use `$CROSS_REVIEW_COUNT` (not `$SPECIALIST_COUNT`) as the total count `R` count
 ```
 Agent({
     description: "Cross-review <domain>",
-    subagent_type: "code-review:<domain>-reviewer",
+    subagent_type: "code-review-suite:<domain>-reviewer",
     name: "cross-review-<domain>",
     mode: "auto",
     run_in_background: true,
@@ -1129,7 +1129,7 @@ Dispatch the synthesiser. Build the prompt with the following lines, replacing a
 ```
 Agent({
     description: "Synthesise review findings",
-    subagent_type: "code-review:review-synthesiser",
+    subagent_type: "code-review-suite:review-synthesiser",
     name: "review-synthesiser",
     mode: "auto",
     model: "opus",

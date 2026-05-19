@@ -1027,7 +1027,7 @@ test_synthesiser_verdict_output_restricted_to_two_values() {
         pass "synthesiser verdict restricted: ## Verdict block lists exactly APPROVE | REQUEST_CHANGES"
     else
         fail "synthesiser verdict restricted: ## Verdict block lists exactly APPROVE | REQUEST_CHANGES" \
-            "the synthesiser's ## Verdict Output Format block must contain a 'Verdict: <APPROVE | REQUEST_CHANGES>' line — COMMENT is never a synthesiser output, only a Class B downgrade or user override"
+            "the synthesiser's ## Verdict Output Format block must contain a 'Verdict: <APPROVE | REQUEST_CHANGES>' line — COMMENT is never a synthesiser output, only a user override"
     fi
 
     # Assert the synthesiser does NOT include COMMENT as a possible Verdict: value.
@@ -1243,4 +1243,67 @@ test_sync_phase_055_local_branch_freshness_check() {
         fail "Phase 0.55 local branch freshness: asserts HEAD is at-or-ahead of remote" \
             "Phase 0.55 must run 'git merge-base --is-ancestor \"\$REMOTE_HEAD_SHA\" HEAD' — this is the actual freshness assertion. Without it, the gate is decorative"
     fi
+}
+
+test_orchestrator_comment_elision_negative_presence() {
+    # After the orchestrator-COMMENT elision (spec 2026-05-19), three legacy
+    # strings must not reappear in the contractually-expected sites:
+    #
+    # 1. SKILL.md must not contain "Outstanding peer REQUEST_CHANGES" — Class B.3
+    #    was deleted in full. Reintroduction would mean the peer-RC downgrade
+    #    path crept back, contradicting `final = synth`.
+    # 2. SKILL.md must not contain `$DOWNGRADE_REASON` — the variable is retired
+    #    along with Class A.3's middle template. Any reference would be dangling.
+    # 3. The trivial-mode mini-review verdict bullet ("COMMENT if minor
+    #    observations") was removed from the canonical pipeline and both inlined
+    #    consumers. Reintroduction in any of the three sites would re-enable
+    #    trivial-mode COMMENT verdicts.
+    local cr
+    cr=$(_cr_dir)
+    if [[ ! -d "$cr" ]]; then
+        skip "orchestrator COMMENT elision negative presence" "code-review-suite plugin not found"
+        return
+    fi
+
+    local skill="$cr/skills/review-gh-pr/SKILL.md"
+    if [[ ! -f "$skill" ]]; then
+        fail "orchestrator COMMENT elision: SKILL.md present" "missing: $skill"
+        return
+    fi
+
+    if grep -qF 'Outstanding peer REQUEST_CHANGES' "$skill"; then
+        fail "orchestrator COMMENT elision: SKILL.md drops 'Outstanding peer REQUEST_CHANGES'" \
+            "Class B.3 (Outstanding peer REQUEST_CHANGES) was deleted by the 2026-05-19 spec — reintroduction reinstates the APPROVE → COMMENT downgrade path that conflicts with 'final = synth'"
+    else
+        pass "orchestrator COMMENT elision: SKILL.md drops 'Outstanding peer REQUEST_CHANGES'"
+    fi
+
+    if grep -qF '$DOWNGRADE_REASON' "$skill"; then
+        fail "orchestrator COMMENT elision: SKILL.md drops \$DOWNGRADE_REASON" \
+            "the \$DOWNGRADE_REASON variable was retired by the 2026-05-19 spec — any reference is dangling"
+    else
+        pass "orchestrator COMMENT elision: SKILL.md drops \$DOWNGRADE_REASON"
+    fi
+
+    local pipeline_canonical="$cr/includes/review-pipeline.md"
+    local pipeline_skill="$skill"
+    local pipeline_command="$cr/commands/pre-review.md"
+
+    local site
+    for site in "$pipeline_canonical" "$pipeline_skill" "$pipeline_command"; do
+        local label
+        label=$(basename "$(dirname "$site")")/$(basename "$site")
+
+        if [[ ! -f "$site" ]]; then
+            fail "orchestrator COMMENT elision: $label present" "missing: $site"
+            continue
+        fi
+
+        if grep -qF 'COMMENT if minor observations' "$site"; then
+            fail "orchestrator COMMENT elision: $label drops 'COMMENT if minor observations'" \
+                "the trivial-mode mini-review's COMMENT verdict bullet was removed by the 2026-05-19 spec — reintroduction in any of the three propagation sites re-enables trivial-mode COMMENT verdicts"
+        else
+            pass "orchestrator COMMENT elision: $label drops 'COMMENT if minor observations'"
+        fi
+    done
 }

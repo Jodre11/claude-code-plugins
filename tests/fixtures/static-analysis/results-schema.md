@@ -109,7 +109,7 @@ After parsing:
   inline-with-sync-test for ALL FOUR specialists (per Stage-1 spec §"Rollback shape").
 - `overall_pass: false` (synthesiser breach — confidence < 50 or finding in Dismissed
   or severity reclassified) → roll back the synthesiser side: inline §10's policy text
-  into `plugins/code-review/agents/review-synthesiser.md` verbatim with a new sync
+  into `plugins/code-review-suite/agents/review-synthesiser.md` verbatim with a new sync
   test `test_sync_static_analysis_policy_inline_matches_canonical` (to be created on
   rollback, mirroring the existing `test_sync_cross_review_mode_inline_matches_canonical`).
   The cite-only design is empirically validated by the predecessor's Stage 2 so this

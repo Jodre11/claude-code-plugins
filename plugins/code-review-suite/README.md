@@ -107,4 +107,4 @@ The review pipeline (`includes/review-pipeline.md`) handles all routing:
 
 ## Installation
 
-    claude plugins install code-review@jodre11-plugins
+    claude plugins install code-review-suite@jodre11-plugins

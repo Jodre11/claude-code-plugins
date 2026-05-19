@@ -2,7 +2,7 @@
 # Sync-note consistency tests — validation regexes and base-branch resolution steps match across files.
 
 _cr_dir() {
-    echo "$REPO_ROOT/plugins/code-review"
+    echo "$REPO_ROOT/plugins/code-review-suite"
 }
 
 _extract_regex() {
@@ -19,7 +19,7 @@ test_sync_base_regex_matches() {
     local cr
     cr=$(_cr_dir)
     if [[ ! -d "$cr" ]]; then
-        skip "BASE regex sync" "code-review plugin not found"
+        skip "BASE regex sync" "code-review-suite plugin not found"
         return
     fi
 
@@ -38,7 +38,7 @@ test_sync_head_sha_regex_matches() {
     local cr
     cr=$(_cr_dir)
     if [[ ! -d "$cr" ]]; then
-        skip "HEAD_SHA regex sync" "code-review plugin not found"
+        skip "HEAD_SHA regex sync" "code-review-suite plugin not found"
         return
     fi
 
@@ -57,7 +57,7 @@ test_sync_path_scope_regex_matches() {
     local cr
     cr=$(_cr_dir)
     if [[ ! -d "$cr" ]]; then
-        skip "PATH_SCOPE regex sync" "code-review plugin not found"
+        skip "PATH_SCOPE regex sync" "code-review-suite plugin not found"
         return
     fi
 
@@ -76,7 +76,7 @@ test_sync_path_scope_traversal_check_present() {
     local cr
     cr=$(_cr_dir)
     if [[ ! -d "$cr" ]]; then
-        skip "PATH_SCOPE traversal check" "code-review plugin not found"
+        skip "PATH_SCOPE traversal check" "code-review-suite plugin not found"
         return
     fi
 
@@ -95,7 +95,7 @@ test_sync_pipeline_inline_matches_canonical() {
     local cr
     cr=$(_cr_dir)
     if [[ ! -d "$cr" ]]; then
-        skip "pipeline inline sync" "code-review plugin not found"
+        skip "pipeline inline sync" "code-review-suite plugin not found"
         return
     fi
 
@@ -156,7 +156,7 @@ test_sync_intent_ledger_inline_matches_canonical() {
     local cr
     cr=$(_cr_dir)
     if [[ ! -d "$cr" ]]; then
-        skip "intent-ledger inline sync" "code-review plugin not found"
+        skip "intent-ledger inline sync" "code-review-suite plugin not found"
         return
     fi
 
@@ -226,7 +226,7 @@ test_sync_ci_status_gate_inline_matches_canonical() {
     local cr
     cr=$(_cr_dir)
     if [[ ! -d "$cr" ]]; then
-        skip "ci-status-gate inline sync" "code-review plugin not found"
+        skip "ci-status-gate inline sync" "code-review-suite plugin not found"
         return
     fi
 
@@ -293,7 +293,7 @@ test_sync_cross_review_mode_inline_matches_canonical() {
     local cr
     cr=$(_cr_dir)
     if [[ ! -d "$cr" ]]; then
-        skip "cross-review-mode inline sync" "code-review plugin not found"
+        skip "cross-review-mode inline sync" "code-review-suite plugin not found"
         return
     fi
 
@@ -369,7 +369,7 @@ test_sync_changed_lines_rule_matches_canonical() {
     local cr
     cr=$(_cr_dir)
     if [[ ! -d "$cr" ]]; then
-        skip "CHANGED_LINES rule sync" "code-review plugin not found"
+        skip "CHANGED_LINES rule sync" "code-review-suite plugin not found"
         return
     fi
 
@@ -438,7 +438,7 @@ test_sync_base_branch_steps_match() {
     local cr
     cr=$(_cr_dir)
     if [[ ! -d "$cr" ]]; then
-        skip "base-branch steps sync" "code-review plugin not found"
+        skip "base-branch steps sync" "code-review-suite plugin not found"
         return
     fi
 
@@ -483,7 +483,7 @@ test_dispatcher_includes_new_static_analysis_flags() {
     local cr
     cr=$(_cr_dir)
     if [[ ! -d "$cr" ]]; then
-        skip "static-analysis dispatcher flags" "code-review plugin not found"
+        skip "static-analysis dispatcher flags" "code-review-suite plugin not found"
         return
     fi
 
@@ -511,7 +511,7 @@ test_static_analysis_specialists_have_required_severity_mapping() {
     local cr
     cr=$(_cr_dir)
     if [[ ! -d "$cr" ]]; then
-        skip "static-analysis severity literals" "code-review plugin not found"
+        skip "static-analysis severity literals" "code-review-suite plugin not found"
         return
     fi
 
@@ -543,7 +543,7 @@ test_sync_static_analysis_policy_literals() {
     local cr
     cr=$(_cr_dir)
     if [[ ! -d "$cr" ]]; then
-        skip "static-analysis policy literals" "code-review plugin not found"
+        skip "static-analysis policy literals" "code-review-suite plugin not found"
         return
     fi
 
@@ -585,7 +585,7 @@ test_sync_static_analysis_severity_lock() {
     local cr
     cr=$(_cr_dir)
     if [[ ! -d "$cr" ]]; then
-        skip "static-analysis severity lock" "code-review plugin not found"
+        skip "static-analysis severity lock" "code-review-suite plugin not found"
         return
     fi
 
@@ -623,7 +623,7 @@ test_sync_static_analysis_dismissed_forbidden_literal() {
     local cr
     cr=$(_cr_dir)
     if [[ ! -d "$cr" ]]; then
-        skip "static-analysis dismissed-forbidden literal" "code-review plugin not found"
+        skip "static-analysis dismissed-forbidden literal" "code-review-suite plugin not found"
         return
     fi
 
@@ -663,7 +663,7 @@ test_sync_static_analysis_critical_allowlist_present() {
     local cr
     cr=$(_cr_dir)
     if [[ ! -d "$cr" ]]; then
-        skip "static-analysis critical-allow-list" "code-review plugin not found"
+        skip "static-analysis critical-allow-list" "code-review-suite plugin not found"
         return
     fi
 
@@ -687,7 +687,7 @@ test_sync_agent_prompt_empty_tree_mode_uses_variable() {
     local cr
     cr=$(_cr_dir)
     if [[ ! -d "$cr" ]]; then
-        skip "AGENT_PROMPT empty-tree-mode variable" "code-review plugin not found"
+        skip "AGENT_PROMPT empty-tree-mode variable" "code-review-suite plugin not found"
         return
     fi
 
@@ -740,7 +740,7 @@ test_sync_static_analysis_cross_feed_documented() {
     local cr
     cr=$(_cr_dir)
     if [[ ! -d "$cr" ]]; then
-        skip "static-analysis cross-feed documentation" "code-review plugin not found"
+        skip "static-analysis cross-feed documentation" "code-review-suite plugin not found"
         return
     fi
 
@@ -813,7 +813,7 @@ test_sync_synthesiser_dispatch_includes_review_mode() {
     local cr
     cr=$(_cr_dir)
     if [[ ! -d "$cr" ]]; then
-        skip "synthesiser dispatch Review mode" "code-review plugin not found"
+        skip "synthesiser dispatch Review mode" "code-review-suite plugin not found"
         return
     fi
 
@@ -837,7 +837,7 @@ test_sync_synthesiser_dispatch_includes_review_mode() {
         # sites — failure to find a dispatch in any of them is a regression, not a
         # benign skip. If a future file legitimately drops the dispatch, remove it
         # from the loop above rather than relaxing this branch.
-        if grep -qE 'subagent_type: "code-review:review-synthesiser"' "$file"; then
+        if grep -qE 'subagent_type: "code-review-suite:review-synthesiser"' "$file"; then
             if grep -qE 'Review mode: \$REVIEW_MODE' "$file"; then
                 pass "synthesiser dispatch Review mode: $basename_file includes \$REVIEW_MODE"
             else
@@ -846,7 +846,7 @@ test_sync_synthesiser_dispatch_includes_review_mode() {
             fi
         else
             fail "synthesiser dispatch Review mode: $basename_file" \
-                "expected file to contain a synthesiser dispatch (subagent_type: \"code-review:review-synthesiser\") but none was found — was the dispatch deleted?"
+                "expected file to contain a synthesiser dispatch (subagent_type: \"code-review-suite:review-synthesiser\") but none was found — was the dispatch deleted?"
         fi
     done
 }
@@ -855,7 +855,7 @@ test_sync_synthesiser_dispatch_uses_ultrathink() {
     local cr
     cr=$(_cr_dir)
     if [[ ! -d "$cr" ]]; then
-        skip "synthesiser dispatch ultrathink keyword" "code-review plugin not found"
+        skip "synthesiser dispatch ultrathink keyword" "code-review-suite plugin not found"
         return
     fi
 
@@ -878,7 +878,7 @@ test_sync_synthesiser_dispatch_uses_ultrathink() {
         # Claude Code's keyword detector looks for to set the max thinking budget.
         # Detect the dispatch via the subagent_type marker, then assert the prompt
         # field begins with "ultrathink\n\n".
-        if grep -qE 'subagent_type: "code-review:review-synthesiser"' "$file"; then
+        if grep -qE 'subagent_type: "code-review-suite:review-synthesiser"' "$file"; then
             if grep -qE 'prompt: "ultrathink\\n\\n' "$file"; then
                 pass "synthesiser dispatch ultrathink keyword: $basename_file prompt starts with ultrathink"
             else
@@ -887,7 +887,7 @@ test_sync_synthesiser_dispatch_uses_ultrathink() {
             fi
         else
             fail "synthesiser dispatch ultrathink keyword: $basename_file" \
-                "expected file to contain a synthesiser dispatch (subagent_type: \"code-review:review-synthesiser\") but none was found — was the dispatch deleted?"
+                "expected file to contain a synthesiser dispatch (subagent_type: \"code-review-suite:review-synthesiser\") but none was found — was the dispatch deleted?"
         fi
     done
 }
@@ -901,7 +901,7 @@ test_sync_synth_dispatch_passes_intent_ledger() {
     local cr
     cr=$(_cr_dir)
     if [[ ! -d "$cr" ]]; then
-        skip "synthesiser dispatch intent ledger" "code-review plugin not found"
+        skip "synthesiser dispatch intent ledger" "code-review-suite plugin not found"
         return
     fi
 
@@ -919,7 +919,7 @@ test_sync_synth_dispatch_passes_intent_ledger() {
             continue
         fi
 
-        if grep -qE 'subagent_type: "code-review:review-synthesiser"' "$file"; then
+        if grep -qE 'subagent_type: "code-review-suite:review-synthesiser"' "$file"; then
             # The dispatch prompt must contain '\n\n$INTENT_LEDGER\n' between the
             # Review mode line and the trust boundary advisory. The literal token
             # `$INTENT_LEDGER` is the variable name as it appears in the prompt
@@ -932,7 +932,7 @@ test_sync_synth_dispatch_passes_intent_ledger() {
             fi
         else
             fail "synthesiser dispatch intent ledger: $basename_file" \
-                "expected file to contain a synthesiser dispatch (subagent_type: \"code-review:review-synthesiser\") but none was found — was the dispatch deleted?"
+                "expected file to contain a synthesiser dispatch (subagent_type: \"code-review-suite:review-synthesiser\") but none was found — was the dispatch deleted?"
         fi
     done
 }
@@ -941,7 +941,7 @@ test_sync_verdict_rubric_inline_matches_canonical() {
     local cr
     cr=$(_cr_dir)
     if [[ ! -d "$cr" ]]; then
-        skip "verdict-rubric inline sync" "code-review plugin not found"
+        skip "verdict-rubric inline sync" "code-review-suite plugin not found"
         return
     fi
 
@@ -1011,7 +1011,7 @@ test_synthesiser_verdict_output_restricted_to_two_values() {
     local cr
     cr=$(_cr_dir)
     if [[ ! -d "$cr" ]]; then
-        skip "synthesiser verdict restricted" "code-review plugin not found"
+        skip "synthesiser verdict restricted" "code-review-suite plugin not found"
         return
     fi
 
@@ -1051,7 +1051,7 @@ test_skill_md_step6_references_rubric_and_classes() {
     local cr
     cr=$(_cr_dir)
     if [[ ! -d "$cr" ]]; then
-        skip "SKILL.md Step 6 rubric and classes" "code-review plugin not found"
+        skip "SKILL.md Step 6 rubric and classes" "code-review-suite plugin not found"
         return
     fi
 
@@ -1136,7 +1136,7 @@ test_skill_md_filter_rationale_propagated_to_three_sites() {
     local cr
     cr=$(_cr_dir)
     if [[ ! -d "$cr" ]]; then
-        skip "SKILL.md filter rationale propagation" "code-review plugin not found"
+        skip "SKILL.md filter rationale propagation" "code-review-suite plugin not found"
         return
     fi
 
@@ -1195,7 +1195,7 @@ test_sync_phase_055_local_branch_freshness_check() {
     local cr
     cr=$(_cr_dir)
     if [[ ! -d "$cr" ]]; then
-        skip "Phase 0.55 local branch freshness" "code-review plugin not found"
+        skip "Phase 0.55 local branch freshness" "code-review-suite plugin not found"
         return
     fi
 

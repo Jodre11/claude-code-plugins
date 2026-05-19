@@ -111,15 +111,15 @@ test_command_directories_have_commands() {
 }
 
 test_static_analysis_context_exists() {
-    local cr="$REPO_ROOT/plugins/code-review"
-    assert_file_exists "plugins/code-review/includes/static-analysis-context.md" \
-        "code-review: static-analysis-context.md exists"
+    local cr="$REPO_ROOT/plugins/code-review-suite"
+    assert_file_exists "plugins/code-review-suite/includes/static-analysis-context.md" \
+        "code-review-suite: static-analysis-context.md exists"
 }
 
 test_static_analysis_specialists_cite_include() {
-    local cr="$REPO_ROOT/plugins/code-review"
+    local cr="$REPO_ROOT/plugins/code-review-suite"
     if [[ ! -d "$cr" ]]; then
-        skip "static-analysis citation" "code-review plugin not found"
+        skip "static-analysis citation" "code-review-suite plugin not found"
         return
     fi
 

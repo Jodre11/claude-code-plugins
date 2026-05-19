@@ -1,5 +1,5 @@
 {
-  "name": "code-review",
+  "name": "code-review-suite",
   "description": "Multi-agent code review with specialist, cross-review, and synthesis agents — includes review pipeline, PR review skill, pre-review and address-pr-comments commands",
   "author": {
     "name": "Christian Haddrell"

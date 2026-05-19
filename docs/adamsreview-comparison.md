@@ -1,9 +1,9 @@
-# adamsreview vs local code-review — where adamsreview is superior
+# adamsreview vs local code-review-suite — where adamsreview is superior
 
 Date: 2026-05-11
 Subject of comparison:
 - External: https://github.com/adamjgmiller/adamsreview
-- Local: `plugins/code-review/` (this repo)
+- Local: `plugins/code-review-suite/` (this repo; renamed from `code-review` on 2026-05-19)
 
 This note focuses on areas where **adamsreview is materially better** than the
 local plugin. It is not a balanced review — strengths of the local plugin are

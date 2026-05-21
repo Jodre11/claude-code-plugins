@@ -59,6 +59,12 @@ Users receive updates on their next session start without any manual version bum
 See [Version resolution](https://code.claude.com/docs/en/plugin-marketplaces#version-resolution-and-release-channels)
 in the Claude Code docs for details.
 
+## Internal tooling
+
+- [`tests/ab/`](tests/ab/README.md) — A/B test harness for the code review suite.
+  Operator-driven; runs identical inputs through the suite under different
+  agent parameter configurations and captures mechanical metrics.
+
 ## Licence
 
 [MIT](LICENSE)

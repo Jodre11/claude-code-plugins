@@ -153,3 +153,76 @@ test_ab_mutate_strip_idempotent() {
     fi
     rm -f "$tmp"
 }
+
+test_ab_config_loads_baseline() {
+    local config="$REPO_ROOT/tests/ab/lib/config.sh"
+    local baseline="$REPO_ROOT/tests/ab/configs/baseline.yaml"
+
+    if [[ ! -f "$config" || ! -f "$baseline" ]]; then
+        fail "A/B config: lib/config.sh and baseline.yaml exist" "missing one or both"
+        return
+    fi
+
+    local name strip
+    name=$(
+        # shellcheck disable=SC1090
+        source "$config"
+        config_load "$baseline" >/dev/null
+        echo "$_AB_CONFIG_NAME"
+    )
+    strip=$(
+        # shellcheck disable=SC1090
+        source "$config"
+        config_load "$baseline" >/dev/null
+        echo "${_AB_CONFIG_STRIP_ULTRATHINK:-false}"
+    )
+
+    assert_equals "baseline" "$name" "A/B config: baseline.yaml exposes name=baseline"
+    assert_equals "false" "$strip" "A/B config: baseline.yaml does not strip ultrathink"
+}
+
+test_ab_config_loads_no_ultrathink() {
+    local config="$REPO_ROOT/tests/ab/lib/config.sh"
+    local cfg="$REPO_ROOT/tests/ab/configs/no-ultrathink.yaml"
+
+    if [[ ! -f "$config" || ! -f "$cfg" ]]; then
+        fail "A/B config: lib/config.sh and no-ultrathink.yaml exist" "missing one or both"
+        return
+    fi
+
+    local strip
+    strip=$(
+        # shellcheck disable=SC1090
+        source "$config"
+        config_load "$cfg" >/dev/null
+        echo "${_AB_CONFIG_STRIP_ULTRATHINK:-false}"
+    )
+
+    assert_equals "true" "$strip" "A/B config: no-ultrathink.yaml strips ultrathink"
+}
+
+test_ab_config_rejects_unknown_top_level_key() {
+    local config="$REPO_ROOT/tests/ab/lib/config.sh"
+    local bad="$REPO_ROOT/tests/ab/fixtures/config-bad-key.yaml"
+
+    if [[ ! -f "$config" || ! -f "$bad" ]]; then
+        fail "A/B config: bad-key fixture present" "missing"
+        return
+    fi
+
+    local rc
+    rc=$(
+        # shellcheck disable=SC1090
+        source "$config"
+        set +e
+        config_load "$bad" >/dev/null 2>&1
+        echo $?
+    )
+
+    if [[ "$rc" != "0" ]]; then
+        pass "A/B config: unknown top-level keys rejected"
+    else
+        fail "A/B config: unknown top-level keys rejected" \
+            "config_load accepted a config with 'unknown_top_level_key' — schema validation must hard-fail on unrecognised keys per the spec"
+    fi
+}

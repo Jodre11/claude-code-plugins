@@ -1,0 +1,32 @@
+# Review of PR #29 — Whitespace-aware deletion detection + orchestrator COMMENT elision
+
+**State:** MERGED on 2026-05-19T18:04:14Z. No GitHub action taken (Class B.1 refused submission).
+
+## Verdict
+
+```
+Verdict: APPROVE (advisory — PR already merged)
+Rubric row applied: 4
+Reason: No consensus Critical findings; no Important findings at confidence ≥ 70 after reclassification.
+```
+
+## Summary
+
+11 files changed | 14 consensus findings | 1 dismissed | 0 contested
+
+Two unrelated mechanical fixes share canonical-and-inlined plumbing:
+
+1. **Whitespace-aware deletion detection** — Phase 0.7.6 + Step 2.7 now scan `git diff -w` for the 10+ contiguous-deletion threshold.
+2. **Orchestrator COMMENT elision** — `final = synth` for every review path.
+
+## Top suggestions worth a follow-up
+
+| # | Finding | File | Confidence |
+|---|---------|------|------------|
+| 14 | Stale "Class B downgrade" failure-message in test_sync_notes.sh:1036 | tests/lib/test_sync_notes.sh:1036 | 95 |
+| 1 | Spec doc self-contradiction at design.md:290 | docs/design.md:290 | 95 |
+
+## Cost
+
+Specialists: 386,179 tokens (192 tool uses, 955.0s) across 8 agents
+**Review subtotal: 793,860 tokens, 372 tool uses, ~34.7 minutes wall-clock equivalent**

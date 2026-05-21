@@ -419,6 +419,54 @@ test_ab_capture_extracts_freeform_verdict() {
     rm -rf "$trial_dir"
 }
 
+test_ab_capture_counts_consensus_findings_from_table_summary() {
+    # Real shape from PR #29 trial 2: a structured report with title heading,
+    # verdict block, table-formatted top suggestions, and a "N consensus
+    # findings" line in ## Summary. The bullet-line proxy (^- ) returns 0
+    # because findings are in tables/numbered lists. capture must extract the
+    # authoritative N from "consensus findings".
+    local capture="$REPO_ROOT/tests/ab/lib/capture.sh"
+    local fixture="$REPO_ROOT/tests/ab/fixtures/trial-stdout-table-summary.log"
+
+    if [[ ! -f "$capture" || ! -f "$fixture" ]]; then
+        fail "A/B capture: table-summary fixture present" "missing"
+        return
+    fi
+
+    local trial_dir
+    trial_dir=$(mktemp -d)
+    cp "$fixture" "$trial_dir/stdout.log"
+
+    (
+        # shellcheck disable=SC1090
+        source "$capture"
+        capture_parse_trial "$trial_dir"
+    )
+
+    local verdict findings
+    verdict=$(cat "$trial_dir/verdict.txt" 2>/dev/null)
+    findings=$(jq -r '.finding_count' "$trial_dir/report-stats.json" 2>/dev/null)
+
+    assert_equals "APPROVE" "$verdict" \
+        "A/B capture: table-summary verdict extracted"
+    assert_equals "14" "$findings" \
+        "A/B capture: table-summary 'N consensus findings' extracted"
+
+    # The whole report (title + verdict + summary + table + cost) must land
+    # in synthesiser-report.md, not just the ## Summary onward. Assert by
+    # presence of the title line, the verdict block, AND the cost block.
+    if grep -qF '# Review of PR #29' "$trial_dir/synthesiser-report.md" \
+       && grep -qF 'Verdict: APPROVE' "$trial_dir/synthesiser-report.md" \
+       && grep -qF 'Review subtotal' "$trial_dir/synthesiser-report.md"; then
+        pass "A/B capture: full report block extracted from heading to end"
+    else
+        fail "A/B capture: full report block extracted from heading to end" \
+            "title, verdict, or cost block missing from synthesiser-report.md"
+    fi
+
+    rm -rf "$trial_dir"
+}
+
 test_ab_capture_extracts_orchestrator_summary_verdict() {
     # Real shape from a live -p trial: the synthesiser report does NOT reach
     # the parent stdout under `claude -p`; the orchestrator's `## Summary`

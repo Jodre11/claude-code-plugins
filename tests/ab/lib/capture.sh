@@ -6,12 +6,11 @@ set -euo pipefail
 
 # Sourced by tests/ab/run.sh. After lib/launch.sh runs a trial and writes
 # stdout.log, capture_parse_trial extracts:
-#   - synthesiser-report.md  : the orchestrator's top-level summary block
-#                              (the synthesiser's own report does NOT reach
-#                              the parent stdout under `claude -p`; the
-#                              orchestrator's Step 6 / Step 7 summary does)
+#   - synthesiser-report.md  : the orchestrator's full report block as
+#                              emitted to parent stdout (synthesiser's own
+#                              transcript does not propagate under -p)
 #   - verdict.txt            : APPROVE | REQUEST_CHANGES | INCONCLUSIVE
-#   - report-stats.json      : char count, line count, finding count proxy
+#   - report-stats.json      : char count, line count, finding count
 #
 # Phase 1 deliberately skips usage.json — the spec marks token-usage capture
 # as best-effort and Phase 1 leans on wall-clock as the primary thinking-
@@ -27,6 +26,16 @@ set -euo pipefail
 #      "**Verdict (advisory only):** REQUEST_CHANGES — ..."
 #      "Advisory verdict: **APPROVE** (Rubric row 4)."
 #      "Verdict: APPROVE" / "**Verdict** APPROVE"
+#
+# Finding count priority (first non-zero match wins):
+#   1. "N consensus findings" — the orchestrator's canonical wording in the
+#      Summary line. Authoritative count.
+#   2. "N findings total" / "N findings" — looser variants from less-formatted
+#      summaries.
+#   3. Bullet-line proxy (`^- `) — last-resort fallback for reports that emit
+#      pure-bullet lists. Returns 0 if none of the above hit and there are no
+#      bullets, indicating capture should be reviewed rather than treated as
+#      a real zero.
 
 capture_parse_trial() {
     local trial_dir="$1"
@@ -41,10 +50,12 @@ capture_parse_trial() {
     #   a. Synthesiser raw block (`# Code Review Report` header through next
     #      `Verdict: ` line) — would only appear if subagent stdout ever
     #      propagates to the parent; preserved as a future-proof path.
-    #   b. Orchestrator's `## Summary` heading through end-of-file — the
-    #      common shape under Class B.1 halts.
-    #   c. Whole stdout — when the orchestrator emits a single freeform
-    #      paragraph with no heading (also common in `-p` mode).
+    #   b. From the first markdown heading (`^# `, `^## `, etc.) through end
+    #      of stdout — the common shape under `-p` when the orchestrator
+    #      structures the response (Class B.1 halt, normal posting summary,
+    #      mixed table/bullet bodies).
+    #   c. Whole stdout — fallback for trials that emit a single freeform
+    #      paragraph with no heading at all.
     # If stdout is non-empty, the report file is non-empty.
     local report
     report=$(awk '
@@ -54,7 +65,7 @@ capture_parse_trial() {
     ' "$stdout")
     if [[ -z "$report" ]]; then
         report=$(awk '
-            /^## Summary$/ { in_block = 1 }
+            /^#{1,6} / { in_block = 1 }
             in_block { print }
         ' "$stdout")
     fi
@@ -69,11 +80,6 @@ capture_parse_trial() {
     fi
 
     # 2. Extract the verdict via the priority chain documented above.
-    # First look for the synthesiser raw block (future-proof fallback). Then
-    # fall back to a permissive freeform match: any line containing a verdict
-    # token followed within ~50 chars by APPROVE | REQUEST_CHANGES, with
-    # optional markdown emphasis around the value. The freeform fallback is
-    # what hits in practice under `claude -p`.
     local verdict="INCONCLUSIVE"
     local match
     match=$(grep -m1 -E '^Verdict: (APPROVE|REQUEST_CHANGES)$' "$stdout" || true)
@@ -87,13 +93,33 @@ capture_parse_trial() {
     fi
     printf '%s\n' "$verdict" > "$trial_dir/verdict.txt"
 
-    # 3. Coarse stats: char count, line count, and a finding count proxy
-    # (number of bullet lines in the report). The count is a directional
-    # metric, not absolute — see the spec's scoring section.
+    # 3. Stats: char count, line count, finding count.
+    # Finding count uses the priority chain documented in the file header:
+    #   a. "N consensus findings" (orchestrator's canonical count).
+    #   b. "N findings total" / "N findings" (looser fallback).
+    #   c. `^- ` bullet line count (last-resort proxy).
     local chars lines findings
     chars=$(wc -c < "$trial_dir/synthesiser-report.md" | tr -d '[:space:]')
     lines=$(wc -l < "$trial_dir/synthesiser-report.md" | tr -d '[:space:]')
-    findings=$(grep -cE '^- ' "$trial_dir/synthesiser-report.md" || true)
+
+    findings=0
+    local found_match
+    found_match=$(grep -m1 -oE '[0-9]+ consensus findings' "$trial_dir/synthesiser-report.md" || true)
+    if [[ -n "$found_match" ]]; then
+        findings="${found_match%% *}"
+    else
+        found_match=$(grep -m1 -oE '[0-9]+ findings? total' "$trial_dir/synthesiser-report.md" || true)
+        if [[ -n "$found_match" ]]; then
+            findings="${found_match%% *}"
+        else
+            found_match=$(grep -m1 -oE '[0-9]+ findings' "$trial_dir/synthesiser-report.md" || true)
+            if [[ -n "$found_match" ]]; then
+                findings="${found_match%% *}"
+            else
+                findings=$(grep -cE '^- ' "$trial_dir/synthesiser-report.md" || true)
+            fi
+        fi
+    fi
 
     jq -n \
         --argjson chars "$chars" \

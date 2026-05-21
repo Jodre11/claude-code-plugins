@@ -226,3 +226,77 @@ test_ab_config_rejects_unknown_top_level_key() {
             "config_load accepted a config with 'unknown_top_level_key' — schema validation must hard-fail on unrecognised keys per the spec"
     fi
 }
+
+test_ab_launch_resolves_timeout_binary() {
+    local launch="$REPO_ROOT/tests/ab/lib/launch.sh"
+    if [[ ! -f "$launch" ]]; then
+        fail "A/B launch: lib/launch.sh exists" "missing"
+        return
+    fi
+
+    local result
+    result=$(
+        # shellcheck disable=SC1090
+        source "$launch"
+        # PATH manipulation: prepend a sandbox where we have only `timeout`
+        # available. The function must accept either timeout or gtimeout.
+        if command -v timeout >/dev/null 2>&1 || command -v gtimeout >/dev/null 2>&1; then
+            launch_resolve_timeout_binary
+        else
+            echo "neither-available"
+        fi
+    )
+
+    if [[ "$result" == "timeout" || "$result" == "gtimeout" ]]; then
+        pass "A/B launch: resolves timeout or gtimeout from PATH"
+    elif [[ "$result" == "neither-available" ]]; then
+        skip "A/B launch: timeout binary present" "neither timeout nor gtimeout on PATH on this host"
+    else
+        fail "A/B launch: resolves timeout or gtimeout from PATH" \
+            "expected 'timeout' or 'gtimeout' on PATH; got: '$result'"
+    fi
+}
+
+test_ab_launch_builds_argv_for_claude_p() {
+    local launch="$REPO_ROOT/tests/ab/lib/launch.sh"
+    if [[ ! -f "$launch" ]]; then
+        fail "A/B launch: lib/launch.sh exists" "missing"
+        return
+    fi
+
+    # Source the helper, call launch_build_claude_argv with known inputs, and
+    # assert the resulting argv array contains the expected flags. The
+    # function writes one argv element per line to stdout for testability.
+    local argv
+    argv=$(
+        # shellcheck disable=SC1090
+        source "$launch"
+        launch_build_claude_argv "opus" "max" "/review-gh-pr https://example/pr/29"
+    )
+
+    if echo "$argv" | grep -qF -- "-p"; then
+        pass "A/B launch: argv includes -p flag"
+    else
+        fail "A/B launch: argv includes -p flag" "argv=$argv"
+    fi
+    if echo "$argv" | grep -qF -- "--permission-mode"; then
+        pass "A/B launch: argv includes --permission-mode"
+    else
+        fail "A/B launch: argv includes --permission-mode" "argv=$argv"
+    fi
+    if echo "$argv" | grep -qF -- "bypassPermissions"; then
+        pass "A/B launch: argv passes bypassPermissions"
+    else
+        fail "A/B launch: argv passes bypassPermissions" "argv=$argv"
+    fi
+    if echo "$argv" | grep -qF -- "--model"; then
+        pass "A/B launch: argv includes --model"
+    else
+        fail "A/B launch: argv includes --model" "argv=$argv"
+    fi
+    if echo "$argv" | grep -qF -- "--effort"; then
+        pass "A/B launch: argv includes --effort"
+    else
+        fail "A/B launch: argv includes --effort" "argv=$argv"
+    fi
+}

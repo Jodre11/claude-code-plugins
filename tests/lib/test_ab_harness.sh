@@ -387,3 +387,53 @@ test_ab_capture_handles_truncated_output() {
 
     rm -rf "$trial_dir"
 }
+
+test_ab_run_sh_help_succeeds() {
+    local run="$REPO_ROOT/tests/ab/run.sh"
+    if [[ ! -x "$run" ]]; then
+        fail "A/B run.sh: executable" "missing or not +x"
+        return
+    fi
+
+    local out rc
+    out=$("$run" --help 2>&1)
+    rc=$?
+
+    if [[ "$rc" == "0" ]] && echo "$out" | grep -qF "Usage: tests/ab/run.sh"; then
+        pass "A/B run.sh: --help exits 0 and prints usage"
+    else
+        fail "A/B run.sh: --help exits 0 and prints usage" \
+            "rc=$rc out=$out"
+    fi
+}
+
+test_ab_run_sh_rejects_unknown_config_key() {
+    local run="$REPO_ROOT/tests/ab/run.sh"
+    local bad="$REPO_ROOT/tests/ab/fixtures/config-bad-key.yaml"
+    if [[ ! -x "$run" || ! -f "$bad" ]]; then
+        fail "A/B run.sh: bad-config rejection" "missing run.sh or fixture"
+        return
+    fi
+
+    # We pass --trials 1 but expect run.sh to exit non-zero during preflight
+    # because config_load fails on the unknown key. The harness must NOT begin
+    # mutating the tree in this state.
+    local rc
+    "$run" --config "$bad" --trials 1 >/dev/null 2>&1 || rc=$?
+
+    if [[ "${rc:-0}" != "0" ]]; then
+        pass "A/B run.sh: rejects unknown config key with non-zero exit"
+    else
+        fail "A/B run.sh: rejects unknown config key with non-zero exit" \
+            "run.sh exited 0 on a config with an unknown top-level key — this is the precondition that must hard-halt before any mutation"
+    fi
+
+    # Belt-and-braces: the working tree must still be clean. If it isn't,
+    # mutations leaked despite the preflight failure.
+    if git -C "$REPO_ROOT" diff --quiet; then
+        pass "A/B run.sh: bad-config rejection leaves working tree clean"
+    else
+        fail "A/B run.sh: bad-config rejection leaves working tree clean" \
+            "working tree is dirty after run.sh rejected a bad config — the preflight check fired AFTER mutations were applied, which is the wrong order"
+    fi
+}

@@ -123,8 +123,15 @@ main() {
             "$timeout_bin" \
             || rc=$?
 
-        capture_parse_trial "$trial_dir"
-        _ab_append_summary_row "$trial_dir" "$i" "$rc"
+        # Tolerate per-trial capture/summary failures: a crashed trial must
+        # not abort the loop or skip the revert. Log and press on; the
+        # sentinel row still lands in summary.csv.
+        if ! capture_parse_trial "$trial_dir"; then
+            echo "[$(date -u +'%H:%M:%SZ')] $trial_num: capture failed (rc=$?), recording sentinel" >&2
+        fi
+        if ! _ab_append_summary_row "$trial_dir" "$i" "$rc"; then
+            echo "[$(date -u +'%H:%M:%SZ')] $trial_num: summary row failed (rc=$?)" >&2
+        fi
 
         # Inter-trial pause — gives Bedrock breathing room.
         if [[ "$i" -lt "$trials" ]]; then
@@ -220,12 +227,21 @@ _ab_append_summary_row() {
     local trial_num="$2"
     local rc="$3"
 
-    local wall verdict findings chars timed_out
-    wall=$(jq -r '.wall_clock_seconds' "$trial_dir/timing.json")
-    timed_out=$(jq -r '.timed_out' "$trial_dir/timing.json")
-    verdict=$(cat "$trial_dir/verdict.txt")
-    findings=$(jq -r '.finding_count' "$trial_dir/report-stats.json")
-    chars=$(jq -r '.report_chars' "$trial_dir/report-stats.json")
+    # Sentinel defaults for crashed trials with missing artefacts. -1 makes
+    # post-hoc filtering trivial; CAPTURE_FAILED never collides with the three
+    # legal verdicts (APPROVE | REQUEST_CHANGES | INCONCLUSIVE).
+    local wall=-1 verdict="CAPTURE_FAILED" findings=-1 chars=-1 timed_out="false"
+    if [[ -f "$trial_dir/timing.json" ]]; then
+        wall=$(jq -r '.wall_clock_seconds // -1' "$trial_dir/timing.json" 2>/dev/null || echo -1)
+        timed_out=$(jq -r '.timed_out // false' "$trial_dir/timing.json" 2>/dev/null || echo false)
+    fi
+    if [[ -f "$trial_dir/verdict.txt" ]]; then
+        verdict=$(cat "$trial_dir/verdict.txt")
+    fi
+    if [[ -f "$trial_dir/report-stats.json" ]]; then
+        findings=$(jq -r '.finding_count // -1' "$trial_dir/report-stats.json" 2>/dev/null || echo -1)
+        chars=$(jq -r '.report_chars // -1' "$trial_dir/report-stats.json" 2>/dev/null || echo -1)
+    fi
 
     printf '%d,%d,%d,%s,%d,%d,%s\n' \
         "$trial_num" "$rc" "$wall" "$verdict" "$findings" "$chars" "$timed_out" \

@@ -81,6 +81,21 @@ launch_run_trial() {
     start_iso=$(date -u +'%Y-%m-%dT%H:%M:%SZ')
     local start_epoch=$SECONDS
 
+    # Heartbeat: emit elapsed-time updates to stderr every 60s while the
+    # trial runs, so a 17-20 minute trial is observable. The heartbeat fires
+    # only via stderr — never the captured stdout — so verdict regex matching
+    # is unaffected. Killed in a trap when the trial returns or the harness
+    # is interrupted.
+    (
+        hb_elapsed=0
+        while sleep 60; do
+            hb_elapsed=$((hb_elapsed + 60))
+            echo "[$(date -u +'%H:%M:%SZ')] $(basename "$trial_dir"): still running (${hb_elapsed}s elapsed)" >&2
+        done
+    ) &
+    local hb_pid=$!
+    trap 'kill -TERM "$hb_pid" 2>/dev/null; wait "$hb_pid" 2>/dev/null || true' RETURN
+
     # CLAUDE_CODE_SUBPROCESS_ENV_SCRUB=1 (set in ~/.claudeenv as a hardening
     # default) silently downgrades --permission-mode bypassPermissions to
     # default and emits a one-line stderr warning. The harness needs the
@@ -97,6 +112,10 @@ launch_run_trial() {
             --exclude-dynamic-system-prompt-sections \
             "$prompt" \
         > "$stdout" 2> "$stderr" || rc=$?
+
+    kill -TERM "$hb_pid" 2>/dev/null || true
+    wait "$hb_pid" 2>/dev/null || true
+    trap - RETURN
 
     local end_epoch=$SECONDS
     local end_iso

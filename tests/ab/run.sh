@@ -105,6 +105,21 @@ main() {
     local summary="$_AB_RUN_DIR/summary.csv"
     echo "trial,exit_code,wall_clock_seconds,verdict,finding_count,report_chars,timed_out" > "$summary"
 
+    # Run-start banner. Wall-clock estimate is empirical (~17-20 min/trial
+    # observed against PR #29 in Phase 1).
+    local est_min=$((trials * 18 + (trials - 1) * 5 / 60))
+    echo "" >&2
+    echo "==> A/B harness run starting" >&2
+    echo "    Experiment:    $experiment_name" >&2
+    echo "    Trials:        $trials (per-trial timeout ${timeout_seconds}s)" >&2
+    echo "    Corpus:        $_AB_CORPUS_PR_URL" >&2
+    echo "    Session:       model=$_AB_CONFIG_SESSION_MODEL effort=$_AB_CONFIG_SESSION_EFFORT" >&2
+    echo "    Mutations:     strip_ultrathink=$_AB_CONFIG_STRIP_ULTRATHINK agent_models='${_AB_CONFIG_AGENT_MODELS:-none}'" >&2
+    echo "    Run dir:       $_AB_RUN_DIR" >&2
+    echo "    Estimated:     ~${est_min} min wall-clock" >&2
+    echo "    Started:       $(date -u +'%Y-%m-%dT%H:%M:%SZ')" >&2
+    echo "" >&2
+
     local i
     for ((i = 1; i <= trials; i++)); do
         local trial_num

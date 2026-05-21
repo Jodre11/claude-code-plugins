@@ -1,0 +1,11 @@
+## Summary
+
+Review of [PR #29](https://github.com/Jodre11/claude-code-plugins/pull/29) complete. The PR is **already MERGED** so no GitHub review was submitted (Class B.1 halt). Synthesiser report rendered above for record.
+
+**Verdict (advisory only):** REQUEST_CHANGES — driven by 2 Important findings:
+- **Finding #1** stale "Class B downgrade" diagnostic at `tests/lib/test_sync_notes.sh:1036` (paired with the line-1030 update that the PR did make).
+- **Finding #2** redundant `assert_equals` + threshold check in `test_deletion_detection.sh:101` and 133, which corrupts pass/fail counters because `harness.sh`'s `fail()` is non-terminating.
+
+Plus 8 Suggestions and 1 contested finding (Class B.3 deletion — alignment ruled in-scope per spec).
+
+If you want, I can open a small fast-follow PR addressing the two Important findings — say the word.

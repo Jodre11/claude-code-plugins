@@ -388,6 +388,44 @@ test_ab_capture_handles_truncated_output() {
     rm -rf "$trial_dir"
 }
 
+test_ab_capture_extracts_orchestrator_summary_verdict() {
+    # Real shape from a live -p trial: the synthesiser report does NOT reach
+    # the parent stdout under `claude -p`; the orchestrator's `## Summary`
+    # block does, with `**Verdict (advisory only):** <X>` in Class B.1 halt
+    # mode. capture must recognise that pattern.
+    local capture="$REPO_ROOT/tests/ab/lib/capture.sh"
+    local fixture="$REPO_ROOT/tests/ab/fixtures/trial-stdout-orchestrator-summary.log"
+
+    if [[ ! -f "$capture" || ! -f "$fixture" ]]; then
+        fail "A/B capture: orchestrator-summary fixture present" "missing"
+        return
+    fi
+
+    local trial_dir
+    trial_dir=$(mktemp -d)
+    cp "$fixture" "$trial_dir/stdout.log"
+
+    (
+        # shellcheck disable=SC1090
+        source "$capture"
+        capture_parse_trial "$trial_dir"
+    )
+
+    local verdict
+    verdict=$(cat "$trial_dir/verdict.txt" 2>/dev/null)
+    assert_equals "REQUEST_CHANGES" "$verdict" \
+        "A/B capture: orchestrator advisory-only verdict extracted"
+
+    if [[ -s "$trial_dir/synthesiser-report.md" ]]; then
+        pass "A/B capture: orchestrator summary captured to synthesiser-report.md"
+    else
+        fail "A/B capture: orchestrator summary captured to synthesiser-report.md" \
+            "report file missing or empty"
+    fi
+
+    rm -rf "$trial_dir"
+}
+
 test_ab_run_sh_help_succeeds() {
     local run="$REPO_ROOT/tests/ab/run.sh"
     if [[ ! -x "$run" ]]; then

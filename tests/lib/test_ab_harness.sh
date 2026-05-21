@@ -388,6 +388,37 @@ test_ab_capture_handles_truncated_output() {
     rm -rf "$trial_dir"
 }
 
+test_ab_capture_extracts_freeform_verdict() {
+    # Real shape from a second live -p trial: the orchestrator emitted a
+    # single freeform paragraph (no heading) ending with
+    # "Advisory verdict: **APPROVE** (Rubric row 4)." The capture regex
+    # must match the freeform pattern as well as the headed one.
+    local capture="$REPO_ROOT/tests/ab/lib/capture.sh"
+    local fixture="$REPO_ROOT/tests/ab/fixtures/trial-stdout-freeform-summary.log"
+
+    if [[ ! -f "$capture" || ! -f "$fixture" ]]; then
+        fail "A/B capture: freeform fixture present" "missing"
+        return
+    fi
+
+    local trial_dir
+    trial_dir=$(mktemp -d)
+    cp "$fixture" "$trial_dir/stdout.log"
+
+    (
+        # shellcheck disable=SC1090
+        source "$capture"
+        capture_parse_trial "$trial_dir"
+    )
+
+    local verdict
+    verdict=$(cat "$trial_dir/verdict.txt" 2>/dev/null)
+    assert_equals "APPROVE" "$verdict" \
+        "A/B capture: freeform 'Advisory verdict: **APPROVE**' extracted"
+
+    rm -rf "$trial_dir"
+}
+
 test_ab_capture_extracts_orchestrator_summary_verdict() {
     # Real shape from a live -p trial: the synthesiser report does NOT reach
     # the parent stdout under `claude -p`; the orchestrator's `## Summary`

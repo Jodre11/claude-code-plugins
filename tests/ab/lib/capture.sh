@@ -21,11 +21,12 @@ set -euo pipefail
 #   1. `^Verdict: (APPROVE|REQUEST_CHANGES)$` — synthesiser raw block (would
 #      appear if subagent stdout ever propagates; preserved as a future-proof
 #      fallback).
-#   2. `Verdict (advisory only):** (APPROVE|REQUEST_CHANGES)` — the
-#      orchestrator's Class B.1 halt summary, emitted when the PR is already
-#      closed or merged at submission time.
-#   3. `^\*\*Verdict\*\* (APPROVE|REQUEST_CHANGES)$` — the orchestrator's
-#      Class C posting summary for normal open-PR runs.
+#   2. Any line containing a `[Vv]erdict` token followed within ~50 chars by
+#      APPROVE | REQUEST_CHANGES, possibly wrapped in markdown emphasis. This
+#      covers the orchestrator's freeform summary, which varies trial-to-trial:
+#      "**Verdict (advisory only):** REQUEST_CHANGES — ..."
+#      "Advisory verdict: **APPROVE** (Rubric row 4)."
+#      "Verdict: APPROVE" / "**Verdict** APPROVE"
 
 capture_parse_trial() {
     local trial_dir="$1"
@@ -36,11 +37,15 @@ capture_parse_trial() {
         return 1
     fi
 
-    # 1. Extract the report block. Prefer the synthesiser raw header if present
-    # (would only appear if subagent stdout propagation changes), otherwise
-    # fall back to the orchestrator's "## Summary" block, which is what `-p`
-    # mode actually emits today. If neither marker is found the report file is
-    # left empty.
+    # 1. Extract the report block. Try in order:
+    #   a. Synthesiser raw block (`# Code Review Report` header through next
+    #      `Verdict: ` line) — would only appear if subagent stdout ever
+    #      propagates to the parent; preserved as a future-proof path.
+    #   b. Orchestrator's `## Summary` heading through end-of-file — the
+    #      common shape under Class B.1 halts.
+    #   c. Whole stdout — when the orchestrator emits a single freeform
+    #      paragraph with no heading (also common in `-p` mode).
+    # If stdout is non-empty, the report file is non-empty.
     local report
     report=$(awk '
         /^# Code Review Report$/ { in_block = 1 }
@@ -53,6 +58,9 @@ capture_parse_trial() {
             in_block { print }
         ' "$stdout")
     fi
+    if [[ -z "$report" ]]; then
+        report=$(cat "$stdout")
+    fi
 
     if [[ -n "$report" ]]; then
         printf '%s\n' "$report" > "$trial_dir/synthesiser-report.md"
@@ -61,20 +69,20 @@ capture_parse_trial() {
     fi
 
     # 2. Extract the verdict via the priority chain documented above.
+    # First look for the synthesiser raw block (future-proof fallback). Then
+    # fall back to a permissive freeform match: any line containing a verdict
+    # token followed within ~50 chars by APPROVE | REQUEST_CHANGES, with
+    # optional markdown emphasis around the value. The freeform fallback is
+    # what hits in practice under `claude -p`.
     local verdict="INCONCLUSIVE"
     local match
     match=$(grep -m1 -E '^Verdict: (APPROVE|REQUEST_CHANGES)$' "$stdout" || true)
     if [[ "$match" =~ ^Verdict:[[:space:]](APPROVE|REQUEST_CHANGES)$ ]]; then
         verdict="${BASH_REMATCH[1]}"
     else
-        match=$(grep -m1 -E 'Verdict \(advisory only\):\*\* (APPROVE|REQUEST_CHANGES)' "$stdout" || true)
-        if [[ "$match" =~ Verdict[[:space:]]\(advisory[[:space:]]only\):\*\*[[:space:]](APPROVE|REQUEST_CHANGES) ]]; then
+        match=$(grep -m1 -iE '[Vv]erdict[^[:alnum:]].{0,50}(APPROVE|REQUEST_CHANGES)' "$stdout" || true)
+        if [[ "$match" =~ (APPROVE|REQUEST_CHANGES) ]]; then
             verdict="${BASH_REMATCH[1]}"
-        else
-            match=$(grep -m1 -E '^\*\*Verdict\*\*[[:space:]](APPROVE|REQUEST_CHANGES)' "$stdout" || true)
-            if [[ "$match" =~ ^\*\*Verdict\*\*[[:space:]](APPROVE|REQUEST_CHANGES) ]]; then
-                verdict="${BASH_REMATCH[1]}"
-            fi
         fi
     fi
     printf '%s\n' "$verdict" > "$trial_dir/verdict.txt"

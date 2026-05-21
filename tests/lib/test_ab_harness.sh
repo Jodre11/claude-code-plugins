@@ -55,3 +55,101 @@ test_ab_shell_scripts_have_strict_mode() {
         fi
     done
 }
+
+test_ab_mutate_strips_ultrathink_keyword() {
+    local mutate="$REPO_ROOT/tests/ab/lib/mutate.sh"
+    local before="$REPO_ROOT/tests/ab/fixtures/synthesiser-dispatch-before.md"
+    local after="$REPO_ROOT/tests/ab/fixtures/synthesiser-dispatch-after.md"
+
+    if [[ ! -f "$mutate" ]]; then
+        fail "A/B mutate: lib/mutate.sh exists" "missing"
+        return
+    fi
+    if [[ ! -f "$before" || ! -f "$after" ]]; then
+        fail "A/B mutate: fixtures present" "missing fixture pair"
+        return
+    fi
+
+    local tmp
+    tmp=$(mktemp)
+    cp "$before" "$tmp"
+
+    (
+        # shellcheck disable=SC1090
+        source "$mutate"
+        mutate_strip_ultrathink_keyword "$tmp"
+    )
+
+    if diff -q "$tmp" "$after" >/dev/null 2>&1; then
+        pass "A/B mutate: ultrathink keyword stripped to expected form"
+    else
+        local diff_output
+        diff_output=$(diff -u --label expected --label actual "$after" "$tmp" | head -30 || true)
+        fail "A/B mutate: ultrathink keyword stripped to expected form" "$diff_output"
+    fi
+    rm -f "$tmp"
+}
+
+test_ab_mutate_rewrites_agent_model() {
+    local mutate="$REPO_ROOT/tests/ab/lib/mutate.sh"
+    local before="$REPO_ROOT/tests/ab/fixtures/agent-before.md"
+    local after="$REPO_ROOT/tests/ab/fixtures/agent-after.md"
+
+    if [[ ! -f "$mutate" ]]; then
+        fail "A/B mutate: lib/mutate.sh exists" "missing"
+        return
+    fi
+    if [[ ! -f "$before" || ! -f "$after" ]]; then
+        fail "A/B mutate: agent fixtures present" "missing fixture pair"
+        return
+    fi
+
+    local tmp
+    tmp=$(mktemp)
+    cp "$before" "$tmp"
+
+    (
+        # shellcheck disable=SC1090
+        source "$mutate"
+        mutate_set_agent_model "$tmp" sonnet
+    )
+
+    if diff -q "$tmp" "$after" >/dev/null 2>&1; then
+        pass "A/B mutate: agent model frontmatter rewritten"
+    else
+        local diff_output
+        diff_output=$(diff -u --label expected --label actual "$after" "$tmp" | head -30 || true)
+        fail "A/B mutate: agent model frontmatter rewritten" "$diff_output"
+    fi
+    rm -f "$tmp"
+}
+
+test_ab_mutate_strip_idempotent() {
+    # Second strip must be a no-op — exit 0, no edit. Guards against accidental
+    # double-strips eating non-ultrathink prompt content.
+    local mutate="$REPO_ROOT/tests/ab/lib/mutate.sh"
+    local after="$REPO_ROOT/tests/ab/fixtures/synthesiser-dispatch-after.md"
+
+    if [[ ! -f "$mutate" || ! -f "$after" ]]; then
+        skip "A/B mutate: idempotent strip" "missing helper or fixture"
+        return
+    fi
+
+    local tmp
+    tmp=$(mktemp)
+    cp "$after" "$tmp"
+
+    (
+        # shellcheck disable=SC1090
+        source "$mutate"
+        mutate_strip_ultrathink_keyword "$tmp"
+    )
+
+    if diff -q "$tmp" "$after" >/dev/null 2>&1; then
+        pass "A/B mutate: second strip is a no-op"
+    else
+        fail "A/B mutate: second strip is a no-op" \
+            "applying the strip twice produced different output — strip is not idempotent"
+    fi
+    rm -f "$tmp"
+}

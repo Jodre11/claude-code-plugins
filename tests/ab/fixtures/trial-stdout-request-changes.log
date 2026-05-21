@@ -1,0 +1,16 @@
+Preamble.
+
+# Code Review Report
+
+## Important
+- Real bug at auth.go:42 — unparameterised query.
+
+## Suggestions
+- Style nit.
+
+## Verdict Output Format
+
+Verdict: REQUEST_CHANGES
+Rubric row applied: 2
+
+Trailing.

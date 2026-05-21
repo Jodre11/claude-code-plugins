@@ -300,3 +300,90 @@ test_ab_launch_builds_argv_for_claude_p() {
         fail "A/B launch: argv includes --effort" "argv=$argv"
     fi
 }
+
+test_ab_capture_extracts_verdict_approve() {
+    local capture="$REPO_ROOT/tests/ab/lib/capture.sh"
+    local fixture="$REPO_ROOT/tests/ab/fixtures/trial-stdout-approve.log"
+
+    if [[ ! -f "$capture" || ! -f "$fixture" ]]; then
+        fail "A/B capture: helper and fixture exist" "missing"
+        return
+    fi
+
+    local trial_dir
+    trial_dir=$(mktemp -d)
+    cp "$fixture" "$trial_dir/stdout.log"
+
+    (
+        # shellcheck disable=SC1090
+        source "$capture"
+        capture_parse_trial "$trial_dir"
+    )
+
+    local verdict
+    verdict=$(cat "$trial_dir/verdict.txt" 2>/dev/null)
+    assert_equals "APPROVE" "$verdict" "A/B capture: APPROVE verdict extracted"
+
+    if [[ -s "$trial_dir/synthesiser-report.md" ]]; then
+        pass "A/B capture: synthesiser-report.md is non-empty"
+    else
+        fail "A/B capture: synthesiser-report.md is non-empty" "report file missing or empty"
+    fi
+
+    rm -rf "$trial_dir"
+}
+
+test_ab_capture_extracts_verdict_request_changes() {
+    local capture="$REPO_ROOT/tests/ab/lib/capture.sh"
+    local fixture="$REPO_ROOT/tests/ab/fixtures/trial-stdout-request-changes.log"
+
+    if [[ ! -f "$capture" || ! -f "$fixture" ]]; then
+        fail "A/B capture: REQUEST_CHANGES fixture present" "missing"
+        return
+    fi
+
+    local trial_dir
+    trial_dir=$(mktemp -d)
+    cp "$fixture" "$trial_dir/stdout.log"
+
+    (
+        # shellcheck disable=SC1090
+        source "$capture"
+        capture_parse_trial "$trial_dir"
+    )
+
+    local verdict
+    verdict=$(cat "$trial_dir/verdict.txt" 2>/dev/null)
+    assert_equals "REQUEST_CHANGES" "$verdict" "A/B capture: REQUEST_CHANGES verdict extracted"
+
+    rm -rf "$trial_dir"
+}
+
+test_ab_capture_handles_truncated_output() {
+    # When the trial timed out before the synthesiser emitted a verdict, the
+    # capture must write 'INCONCLUSIVE' rather than silently producing an
+    # empty verdict.txt — silent empty would corrupt the summary CSV.
+    local capture="$REPO_ROOT/tests/ab/lib/capture.sh"
+    local fixture="$REPO_ROOT/tests/ab/fixtures/trial-stdout-truncated.log"
+
+    if [[ ! -f "$capture" || ! -f "$fixture" ]]; then
+        fail "A/B capture: truncated fixture present" "missing"
+        return
+    fi
+
+    local trial_dir
+    trial_dir=$(mktemp -d)
+    cp "$fixture" "$trial_dir/stdout.log"
+
+    (
+        # shellcheck disable=SC1090
+        source "$capture"
+        capture_parse_trial "$trial_dir"
+    )
+
+    local verdict
+    verdict=$(cat "$trial_dir/verdict.txt" 2>/dev/null)
+    assert_equals "INCONCLUSIVE" "$verdict" "A/B capture: truncated stdout yields INCONCLUSIVE"
+
+    rm -rf "$trial_dir"
+}

@@ -1,0 +1,17 @@
+Some session preamble that capture must skip.
+
+# Code Review Report
+
+## Important
+- None
+
+## Suggestions
+- One stylistic nit at file.go:14
+- Another at file.go:42
+
+## Verdict Output Format
+
+Verdict: APPROVE
+Rubric row applied: 1
+
+Trailing prose that capture must not include in the report.

@@ -117,7 +117,7 @@ main() {
     echo "    Mutations:     strip_ultrathink=$_AB_CONFIG_STRIP_ULTRATHINK agent_models='${_AB_CONFIG_AGENT_MODELS:-none}'" >&2
     echo "    Run dir:       $_AB_RUN_DIR" >&2
     echo "    Estimated:     ~${est_min} min wall-clock" >&2
-    echo "    Started:       $(date -u +'%Y-%m-%dT%H:%M:%SZ')" >&2
+    echo "    Started:       $(date +'%Y-%m-%dT%H:%M:%S%z') (local)" >&2
     echo "" >&2
 
     local i
@@ -126,7 +126,7 @@ main() {
         trial_num=$(printf 'trial-%03d' "$i")
         local trial_dir="$_AB_RUN_DIR/$trial_num"
         mkdir -p "$trial_dir"
-        echo "[$(date -u +'%H:%M:%SZ')] $trial_num: launching..." >&2
+        echo "[$(date +'%H:%M:%S')] $trial_num: launching..." >&2
 
         local rc=0
         launch_run_trial \
@@ -142,10 +142,10 @@ main() {
         # not abort the loop or skip the revert. Log and press on; the
         # sentinel row still lands in summary.csv.
         if ! capture_parse_trial "$trial_dir"; then
-            echo "[$(date -u +'%H:%M:%SZ')] $trial_num: capture failed (rc=$?), recording sentinel" >&2
+            echo "[$(date +'%H:%M:%S')] $trial_num: capture failed (rc=$?), recording sentinel" >&2
         fi
         if ! _ab_append_summary_row "$trial_dir" "$i" "$rc"; then
-            echo "[$(date -u +'%H:%M:%SZ')] $trial_num: summary row failed (rc=$?)" >&2
+            echo "[$(date +'%H:%M:%S')] $trial_num: summary row failed (rc=$?)" >&2
         fi
 
         # Inter-trial pause — gives Bedrock breathing room.

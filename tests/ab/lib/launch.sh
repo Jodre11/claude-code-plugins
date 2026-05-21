@@ -90,7 +90,7 @@ launch_run_trial() {
         hb_elapsed=0
         while sleep 60; do
             hb_elapsed=$((hb_elapsed + 60))
-            echo "[$(date -u +'%H:%M:%SZ')] $(basename "$trial_dir"): still running (${hb_elapsed}s elapsed)" >&2
+            echo "[$(date +'%H:%M:%S')] $(basename "$trial_dir"): still running (${hb_elapsed}s elapsed)" >&2
         done
     ) &
     local hb_pid=$!

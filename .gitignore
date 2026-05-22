@@ -22,3 +22,6 @@ package-lock.json
 
 # Test artefacts
 tests/lib/.static-analysis-smoke-results.json
+
+# A/B test harness output
+tests/ab/runs/

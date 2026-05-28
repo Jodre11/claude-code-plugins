@@ -172,6 +172,13 @@ launch_build_per_agent_argv() {
 #    command).
 #
 # Returns 0 on a clean run, 124 on timeout, or the underlying exit code.
+#
+# Contract:
+#  - body_path and user_msg_path MUST be absolute paths. The trial subshell
+#    shifts cwd to working_dir before invoking claude, so a relative path
+#    would resolve against working_dir instead of the caller's cwd.
+#  - --allowed-tools is intentionally omitted; the agent inherits the full
+#    tool surface. The Phase 2b faithfulness check is the safety net.
 launch_run_per_agent_trial() {
     local trial_dir="$1"
     local timeout_seconds="$2"

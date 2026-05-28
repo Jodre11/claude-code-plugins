@@ -463,8 +463,16 @@ test_ab_fixture_decay_warner_against_fake_history() {
         return
     fi
 
-    local repo
+    local repo old_warn_file head_warn_file
     repo=$(mktemp -d)
+    old_warn_file=$(mktemp)
+    head_warn_file=$(mktemp)
+
+    # Capture decay-warner output for both probes inside a subshell (the
+    # subshell shifts cwd into the fake repo and sources lib/fixture.sh).
+    # Pass/fail assertions happen in the outer frame so counter mutations
+    # persist — Bash subshells receive copies of $_pass_count and the like,
+    # which are discarded on subshell exit.
     (
         cd "$repo"
         git init -q
@@ -477,28 +485,36 @@ test_ab_fixture_decay_warner_against_fake_history() {
         old_sha=$(git rev-parse HEAD)
         echo "v2" > tracked.txt
         git commit -qam "v2"
-        # Probe the decay-warner.
+
         # shellcheck disable=SC1090
         source "$lib"
-        local warnings
-        warnings=$(fixture_decay_warnings_for_path "$old_sha" "tracked.txt")
-        if [[ -n "$warnings" ]]; then
-            pass "A/B fixture: decay-warner detects post-sha edits"
-        else
-            fail "A/B fixture: decay-warner detects post-sha edits" \
-                "expected a warning for tracked.txt edited after $old_sha"
-        fi
 
-        # Probe with HEAD as the captured sha — no warnings expected.
+        # Probe 1: old_sha < HEAD with file edited in between -> expect warning.
+        fixture_decay_warnings_for_path "$old_sha" "tracked.txt" > "$old_warn_file"
+
+        # Probe 2: HEAD vs HEAD -> expect silence.
         local head_sha
         head_sha=$(git rev-parse HEAD)
-        warnings=$(fixture_decay_warnings_for_path "$head_sha" "tracked.txt")
-        if [[ -z "$warnings" ]]; then
-            pass "A/B fixture: decay-warner silent when path unchanged since sha"
-        else
-            fail "A/B fixture: decay-warner silent when path unchanged since sha" \
-                "unexpected warnings: $warnings"
-        fi
+        fixture_decay_warnings_for_path "$head_sha" "tracked.txt" > "$head_warn_file"
     ) || true
+
+    # Assertions in the outer frame so pass/fail mutations persist.
+    if [[ -s "$old_warn_file" ]]; then
+        pass "A/B fixture: decay-warner detects post-sha edits"
+    else
+        fail "A/B fixture: decay-warner detects post-sha edits" \
+            "expected a warning for tracked.txt edited after the captured sha"
+    fi
+
+    if [[ ! -s "$head_warn_file" ]]; then
+        pass "A/B fixture: decay-warner silent when path unchanged since sha"
+    else
+        local content
+        content=$(cat "$head_warn_file")
+        fail "A/B fixture: decay-warner silent when path unchanged since sha" \
+            "unexpected warnings: $content"
+    fi
+
+    rm -f "$old_warn_file" "$head_warn_file"
     rm -rf "$repo"
 }

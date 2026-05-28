@@ -226,3 +226,43 @@ EOF
 
     rm -rf "$fixture" "$out"
 }
+
+test_ab_launch_per_agent_argv_includes_append_system_prompt() {
+    local launch="$REPO_ROOT/tests/ab/lib/launch.sh"
+    if [[ ! -f "$launch" ]]; then
+        fail "A/B per-agent launch: lib present" "missing"
+        return
+    fi
+
+    local body user_msg argv
+    body=$(mktemp)
+    user_msg=$(mktemp)
+    printf 'system prompt body\n' > "$body"
+    printf 'user message\n' > "$user_msg"
+
+    argv=$(
+        # shellcheck disable=SC1090
+        source "$launch"
+        launch_build_per_agent_argv "haiku" "low" "$body" "$user_msg"
+    )
+
+    if echo "$argv" | grep -qE -- "--append-system-prompt(-file)?"; then
+        pass "A/B per-agent launch: argv includes --append-system-prompt(-file)"
+    else
+        fail "A/B per-agent launch: argv includes --append-system-prompt(-file)" "argv=$argv"
+    fi
+
+    if echo "$argv" | grep -qF -- "--model"; then
+        pass "A/B per-agent launch: argv includes --model"
+    else
+        fail "A/B per-agent launch: argv includes --model" "argv=$argv"
+    fi
+
+    if echo "$argv" | grep -qF -- "--effort"; then
+        pass "A/B per-agent launch: argv includes --effort"
+    else
+        fail "A/B per-agent launch: argv includes --effort" "argv=$argv"
+    fi
+
+    rm -f "$body" "$user_msg"
+}

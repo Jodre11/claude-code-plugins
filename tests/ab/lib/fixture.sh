@@ -7,4 +7,4 @@ set -euo pipefail
 # Public functions implemented in Task 5:
 #   fixture_load <fixture-id>                # validates source.yaml, populates _AB_FIXTURE_*
 #   fixture_materialise <out-dir>            # produces working tree per working_dir_strategy
-#   fixture_check_decay                      # returns warnings array; non-fatal
+#   fixture_check_decay                      # emits warnings to stdout (one line per decayed path); non-fatal

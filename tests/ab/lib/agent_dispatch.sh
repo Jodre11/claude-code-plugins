@@ -7,4 +7,4 @@ set -euo pipefail
 # Public functions implemented in Task 4:
 #   agent_dispatch_strip_frontmatter <agent-md-path> <out-path>
 #   agent_dispatch_build_user_message <fixture-dir> <out-path>
-#   agent_dispatch_run_trial <trial-dir> <agent-name> <fixture-id> <model> <effort> <timeout-bin> <timeout-seconds>
+#   agent_dispatch_run_trial <trial-dir> <agent-name> <fixture-dir> <model> <effort> <timeout-bin> <timeout-seconds> <working-dir>

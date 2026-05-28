@@ -1,0 +1,29 @@
+Some preamble noise from the dispatched session.
+
+## Ruff Findings
+
+### Finding 1
+File: bad.py
+Line: 1
+Rule: F401 (Pyflakes)
+Severity: Important
+Confidence: 100
+Description: `sys` imported but unused.
+
+### Finding 2
+File: bad.py
+Line: 3
+Rule: E501 (pycodestyle)
+Severity: Important
+Confidence: 100
+Description: Line too long (some pretext over 80 chars).
+
+### Finding 3
+File: notebook.ipynb
+Line: 12
+Rule: B008 (bugbear)
+Severity: Important
+Confidence: 100
+Description: Do not perform function call in argument defaults.
+
+Trailing prose that must not be parsed as a finding.

@@ -266,3 +266,136 @@ test_ab_launch_per_agent_argv_includes_append_system_prompt() {
 
     rm -f "$body" "$user_msg"
 }
+
+test_ab_agent_capture_parses_three_findings() {
+    local lib="$REPO_ROOT/tests/ab/lib/agent_capture.sh"
+    local fixture="$REPO_ROOT/tests/ab/fixtures/ruff-stdout-three-findings.log"
+
+    if [[ ! -f "$lib" || ! -f "$fixture" ]]; then
+        fail "A/B agent_capture: lib + fixture present" "missing"
+        return
+    fi
+
+    local trial_dir
+    trial_dir=$(mktemp -d)
+    cp "$fixture" "$trial_dir/stdout.log"
+
+    (
+        # shellcheck disable=SC1090
+        source "$lib"
+        agent_capture_parse_ruff_trial "$trial_dir"
+    )
+
+    if [[ -s "$trial_dir/findings.json" ]]; then
+        pass "A/B agent_capture: findings.json non-empty"
+    else
+        fail "A/B agent_capture: findings.json non-empty" "file empty or absent"
+        rm -rf "$trial_dir"
+        return
+    fi
+
+    local count
+    count=$(jq 'length' "$trial_dir/findings.json")
+    assert_equals "3" "$count" "A/B agent_capture: three findings extracted"
+
+    local first_rule first_file first_line
+    first_rule=$(jq -r '.[0].rule_id' "$trial_dir/findings.json")
+    first_file=$(jq -r '.[0].file' "$trial_dir/findings.json")
+    first_line=$(jq -r '.[0].line' "$trial_dir/findings.json")
+    assert_equals "F401" "$first_rule" "A/B agent_capture: rule_id parsed"
+    assert_equals "bad.py" "$first_file" "A/B agent_capture: file parsed"
+    assert_equals "1" "$first_line" "A/B agent_capture: line parsed"
+
+    rm -rf "$trial_dir"
+}
+
+test_ab_agent_capture_zero_findings_is_empty_array() {
+    local lib="$REPO_ROOT/tests/ab/lib/agent_capture.sh"
+    local fixture="$REPO_ROOT/tests/ab/fixtures/ruff-stdout-zero-findings.log"
+
+    if [[ ! -f "$lib" || ! -f "$fixture" ]]; then
+        fail "A/B agent_capture: zero-findings fixture present" "missing"
+        return
+    fi
+
+    local trial_dir
+    trial_dir=$(mktemp -d)
+    cp "$fixture" "$trial_dir/stdout.log"
+
+    (
+        # shellcheck disable=SC1090
+        source "$lib"
+        agent_capture_parse_ruff_trial "$trial_dir"
+    )
+
+    local count
+    count=$(jq 'length' "$trial_dir/findings.json")
+    assert_equals "0" "$count" "A/B agent_capture: zero-state yields empty array"
+
+    rm -rf "$trial_dir"
+}
+
+test_ab_agent_capture_skipped_marks_inconclusive() {
+    # 'Skipped — ruff not available on PATH.' is not the same as zero findings;
+    # the tool did not run. Capture must surface this distinctly so summary.csv
+    # can mark the trial INCONCLUSIVE rather than counting it as a real zero.
+    local lib="$REPO_ROOT/tests/ab/lib/agent_capture.sh"
+    local fixture="$REPO_ROOT/tests/ab/fixtures/ruff-stdout-skipped.log"
+
+    if [[ ! -f "$lib" || ! -f "$fixture" ]]; then
+        fail "A/B agent_capture: skipped fixture present" "missing"
+        return
+    fi
+
+    local trial_dir
+    trial_dir=$(mktemp -d)
+    cp "$fixture" "$trial_dir/stdout.log"
+
+    (
+        # shellcheck disable=SC1090
+        source "$lib"
+        agent_capture_parse_ruff_trial "$trial_dir"
+    )
+
+    if [[ -f "$trial_dir/INCONCLUSIVE" ]]; then
+        pass "A/B agent_capture: skipped state writes INCONCLUSIVE marker"
+    else
+        fail "A/B agent_capture: skipped state writes INCONCLUSIVE marker" \
+            "expected $trial_dir/INCONCLUSIVE marker file"
+    fi
+
+    rm -rf "$trial_dir"
+}
+
+test_ab_agent_capture_findings_hash_is_deterministic() {
+    # Two runs over the same stdout must produce identical findings_hash.
+    # This is the cross-trial comparison primitive — if it is order-sensitive
+    # or non-deterministic, the headline experiment cannot detect equivalent
+    # behaviour as equivalent.
+    local lib="$REPO_ROOT/tests/ab/lib/agent_capture.sh"
+    local fixture="$REPO_ROOT/tests/ab/fixtures/ruff-stdout-three-findings.log"
+
+    if [[ ! -f "$lib" || ! -f "$fixture" ]]; then
+        fail "A/B agent_capture: hash determinism check setup" "missing"
+        return
+    fi
+
+    local d1 d2 hash1 hash2
+    d1=$(mktemp -d); d2=$(mktemp -d)
+    cp "$fixture" "$d1/stdout.log"
+    cp "$fixture" "$d2/stdout.log"
+
+    (
+        # shellcheck disable=SC1090
+        source "$lib"
+        agent_capture_parse_ruff_trial "$d1"
+        agent_capture_parse_ruff_trial "$d2"
+    )
+
+    hash1=$(cat "$d1/findings_hash.txt")
+    hash2=$(cat "$d2/findings_hash.txt")
+
+    assert_equals "$hash1" "$hash2" "A/B agent_capture: findings_hash is deterministic across runs"
+
+    rm -rf "$d1" "$d2"
+}

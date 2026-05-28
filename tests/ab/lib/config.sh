@@ -98,8 +98,10 @@ config_load() {
 
     # 7. Mode + agent. Defaults: mode=end-to-end (Phase 1 behaviour). When
     # mode is per-agent, an agent: top-level field is mandatory; the
-    # agents: map (Phase 1 mutation surface) must be empty since per-agent
-    # mode never edits tracked files.
+    # agents: map must not declare any per-agent model override since
+    # per-agent mode varies model via session.model and never edits
+    # tracked files. Non-model agents: entries are not currently caught
+    # by this guard — see config.sh deviation note in the Task 3 commit.
     _AB_CONFIG_MODE=$(yq -r '.mode // "end-to-end"' "$path")
     _AB_CONFIG_AGENT=$(yq -r '.agent // ""' "$path")
 
@@ -114,7 +116,7 @@ config_load() {
             return 1
         fi
         if [[ -n "$_AB_CONFIG_AGENT_MODELS" ]]; then
-            echo "config_load: $path: agents: must be empty when mode: per-agent (per-agent mode never edits tracked files)" >&2
+            echo "config_load: $path: agents: must not declare per-agent model overrides when mode: per-agent (per-agent varies model via session.model only)" >&2
             return 1
         fi
     fi

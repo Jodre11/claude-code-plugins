@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # tests/ab/lib/fixture.sh — fixture loader, working-dir materialiser, decay-warner.
-# Sourced by tests/ab/run.sh in --mode per-agent.
+# Sourced by tests/ab/run.sh in --mode per-agent. See full notes below
+# set -euo pipefail.
 set -euo pipefail
 
 # Required keys in source.yaml. captured_under sub-keys (suite_sha, agent_model,

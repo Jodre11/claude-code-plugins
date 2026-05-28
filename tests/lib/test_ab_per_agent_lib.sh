@@ -440,11 +440,10 @@ test_ab_fixture_rejects_missing_agent() {
     rc=$(
         # shellcheck disable=SC1090
         source "$lib"
+        set +e
         fixture_load_from_path "$bad" >/dev/null 2>&1
         echo $?
-    ) || true
-    # rc is empty when set -euo pipefail (from sourced lib) exits the subshell
-    # before echo $? runs — that also means the call failed, which is what we want.
+    )
 
     if [[ "$rc" != "0" ]]; then
         pass "A/B fixture: source.yaml without agent: rejected"

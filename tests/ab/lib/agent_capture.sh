@@ -23,9 +23,11 @@ agent_capture_parse_ruff_trial() {
         return 1
     fi
 
-    # 1. Detect the tool-skipped state. The ruff-reviewer agent emits the
-    # exact line 'Skipped — ruff not available on PATH.' or the partial
-    # coverage variant. Either marks the trial as INCONCLUSIVE.
+    # 1. Detect the tool-fully-skipped state ('Skipped — ruff not available
+    # on PATH.'). The partial-coverage variant ('Notebook files (.ipynb)
+    # skipped — ruff < 0.6.0 and nbqa not available on PATH.') is NOT
+    # treated as INCONCLUSIVE — it falls through to the finding parser
+    # because .py findings may still be present.
     if grep -qE '^Skipped — ' "$stdout"; then
         : > "$trial_dir/INCONCLUSIVE"
         : > "$trial_dir/agent-output.md"
@@ -60,6 +62,7 @@ agent_capture_parse_ruff_trial() {
     #    Description: ...
     # Description is intentionally NOT included in the tuple — descriptive
     # prose is rephrased run-to-run by the model and must not affect the hash.
+    trap 'rm -f "$trial_dir/.findings.tsv"' RETURN
     awk '
         BEGIN { state = "between"; OFS = "\t" }
         /^File: / { file = substr($0, 7); state = "in_finding"; next }
@@ -99,7 +102,6 @@ agent_capture_parse_ruff_trial() {
                 confidence: (.[4] | tonumber)
               })
           ' > "$trial_dir/findings.json"
-    rm -f "$trial_dir/.findings.tsv"
 
     _agent_capture_compute_hash "$trial_dir/findings.json" "$trial_dir/findings_hash.txt"
 }

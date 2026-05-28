@@ -1,0 +1,6 @@
+name: smoke
+mode: per-agent
+agent: ruff-reviewer
+session:
+  model: sonnet
+  effort: default

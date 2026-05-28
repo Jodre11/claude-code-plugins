@@ -1,0 +1,6 @@
+name: smoke
+mode: drift-detector
+agent: ruff-reviewer
+session:
+  model: sonnet
+  effort: default

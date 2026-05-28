@@ -554,3 +554,84 @@ test_ab_run_sh_rejects_unknown_config_key() {
             "working tree is dirty after run.sh rejected a bad config — the preflight check fired AFTER mutations were applied, which is the wrong order"
     fi
 }
+
+test_ab_config_loads_per_agent_good() {
+    local config="$REPO_ROOT/tests/ab/lib/config.sh"
+    local good="$REPO_ROOT/tests/ab/fixtures/config-per-agent-good.yaml"
+
+    if [[ ! -f "$config" || ! -f "$good" ]]; then
+        fail "A/B config: per-agent good fixture present" "missing"
+        return
+    fi
+
+    local mode agent
+    mode=$(
+        # shellcheck disable=SC1090
+        source "$config"
+        set +e
+        config_load "$good" >/dev/null 2>&1
+        echo "${_AB_CONFIG_MODE:-}"
+    )
+    agent=$(
+        # shellcheck disable=SC1090
+        source "$config"
+        set +e
+        config_load "$good" >/dev/null 2>&1
+        echo "${_AB_CONFIG_AGENT:-}"
+    )
+
+    assert_equals "per-agent" "$mode" "A/B config: per-agent mode parsed"
+    assert_equals "ruff-reviewer" "$agent" "A/B config: per-agent agent parsed"
+}
+
+test_ab_config_rejects_per_agent_missing_agent() {
+    local config="$REPO_ROOT/tests/ab/lib/config.sh"
+    local bad="$REPO_ROOT/tests/ab/fixtures/config-per-agent-missing-agent.yaml"
+
+    if [[ ! -f "$config" || ! -f "$bad" ]]; then
+        fail "A/B config: per-agent missing-agent fixture present" "missing"
+        return
+    fi
+
+    local rc
+    rc=$(
+        # shellcheck disable=SC1090
+        source "$config"
+        set +e
+        config_load "$bad" >/dev/null 2>&1
+        echo $?
+    )
+
+    if [[ "$rc" != "0" ]]; then
+        pass "A/B config: per-agent without agent: rejected"
+    else
+        fail "A/B config: per-agent without agent: rejected" \
+            "config_load accepted a mode: per-agent config without an agent: field — must hard-fail"
+    fi
+}
+
+test_ab_config_rejects_unknown_mode() {
+    local config="$REPO_ROOT/tests/ab/lib/config.sh"
+    local bad="$REPO_ROOT/tests/ab/fixtures/config-per-agent-unknown-mode.yaml"
+
+    if [[ ! -f "$config" || ! -f "$bad" ]]; then
+        fail "A/B config: unknown-mode fixture present" "missing"
+        return
+    fi
+
+    local rc
+    rc=$(
+        # shellcheck disable=SC1090
+        source "$config"
+        set +e
+        config_load "$bad" >/dev/null 2>&1
+        echo $?
+    )
+
+    if [[ "$rc" != "0" ]]; then
+        pass "A/B config: unknown mode: value rejected"
+    else
+        fail "A/B config: unknown mode: value rejected" \
+            "config_load accepted mode: drift-detector — only 'end-to-end' and 'per-agent' are valid"
+    fi
+}

@@ -1,0 +1,2 @@
+Changed lines:
+  bad.py: 1

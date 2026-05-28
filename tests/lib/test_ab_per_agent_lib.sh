@@ -399,3 +399,107 @@ test_ab_agent_capture_findings_hash_is_deterministic() {
 
     rm -rf "$d1" "$d2"
 }
+
+test_ab_fixture_loads_good() {
+    local lib="$REPO_ROOT/tests/ab/lib/fixture.sh"
+    local good="$REPO_ROOT/tests/ab/fixtures/source-yaml-good.yaml"
+
+    if [[ ! -f "$lib" || ! -f "$good" ]]; then
+        fail "A/B fixture: lib + good fixture present" "missing"
+        return
+    fi
+
+    local id agent
+    id=$(
+        # shellcheck disable=SC1090
+        source "$lib"
+        fixture_load_from_path "$good" >/dev/null
+        echo "${_AB_FIXTURE_ID:-}"
+    )
+    agent=$(
+        # shellcheck disable=SC1090
+        source "$lib"
+        fixture_load_from_path "$good" >/dev/null
+        echo "${_AB_FIXTURE_AGENT:-}"
+    )
+
+    assert_equals "smoke-good" "$id" "A/B fixture: id parsed from source.yaml"
+    assert_equals "ruff-reviewer" "$agent" "A/B fixture: agent parsed from source.yaml"
+}
+
+test_ab_fixture_rejects_missing_agent() {
+    local lib="$REPO_ROOT/tests/ab/lib/fixture.sh"
+    local bad="$REPO_ROOT/tests/ab/fixtures/source-yaml-missing-key.yaml"
+
+    if [[ ! -f "$lib" || ! -f "$bad" ]]; then
+        fail "A/B fixture: missing-key fixture present" "missing"
+        return
+    fi
+
+    local rc
+    rc=$(
+        # shellcheck disable=SC1090
+        source "$lib"
+        fixture_load_from_path "$bad" >/dev/null 2>&1
+        echo $?
+    ) || true
+    # rc is empty when set -euo pipefail (from sourced lib) exits the subshell
+    # before echo $? runs — that also means the call failed, which is what we want.
+
+    if [[ "$rc" != "0" ]]; then
+        pass "A/B fixture: source.yaml without agent: rejected"
+    else
+        fail "A/B fixture: source.yaml without agent: rejected" \
+            "fixture_load accepted a source.yaml missing the required agent: field"
+    fi
+}
+
+test_ab_fixture_decay_warner_against_fake_history() {
+    # Build a minimal fake git history: a temp repo, two commits to a tracked
+    # file, then probe the decay-warner against the older sha and expect a
+    # warning (because file was modified after that sha).
+    local lib="$REPO_ROOT/tests/ab/lib/fixture.sh"
+    if [[ ! -f "$lib" ]]; then
+        fail "A/B fixture: lib present" "missing"
+        return
+    fi
+
+    local repo
+    repo=$(mktemp -d)
+    (
+        cd "$repo"
+        git init -q
+        git config user.email "t@example.com"
+        git config user.name "T"
+        echo "v1" > tracked.txt
+        git add tracked.txt
+        git commit -qm "v1"
+        local old_sha
+        old_sha=$(git rev-parse HEAD)
+        echo "v2" > tracked.txt
+        git commit -qam "v2"
+        # Probe the decay-warner.
+        # shellcheck disable=SC1090
+        source "$lib"
+        local warnings
+        warnings=$(fixture_decay_warnings_for_path "$old_sha" "tracked.txt")
+        if [[ -n "$warnings" ]]; then
+            pass "A/B fixture: decay-warner detects post-sha edits"
+        else
+            fail "A/B fixture: decay-warner detects post-sha edits" \
+                "expected a warning for tracked.txt edited after $old_sha"
+        fi
+
+        # Probe with HEAD as the captured sha — no warnings expected.
+        local head_sha
+        head_sha=$(git rev-parse HEAD)
+        warnings=$(fixture_decay_warnings_for_path "$head_sha" "tracked.txt")
+        if [[ -z "$warnings" ]]; then
+            pass "A/B fixture: decay-warner silent when path unchanged since sha"
+        else
+            fail "A/B fixture: decay-warner silent when path unchanged since sha" \
+                "unexpected warnings: $warnings"
+        fi
+    ) || true
+    rm -rf "$repo"
+}

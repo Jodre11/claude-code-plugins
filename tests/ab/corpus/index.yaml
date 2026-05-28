@@ -1,0 +1,6 @@
+fixtures:
+  - id: ruff-smoke-bad-py
+    agent: ruff-reviewer
+    type: synthetic
+    description: F401 unused import on a single Python file. Bootstraps the per-agent loop.
+    tags: [smoke, deterministic]

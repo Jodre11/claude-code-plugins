@@ -28,3 +28,58 @@ test_ab_corpus_index_present_or_absent_consistently() {
     fail "A/B corpus: index and fixtures consistent" \
         "found index.yaml=$( [[ -f "$index" ]] && echo yes || echo no ) and $fixtures fixture dir(s) — must be both or neither"
 }
+
+test_ab_corpus_smoke_fixture_required_keys_present() {
+    local source_yaml="$REPO_ROOT/tests/ab/corpus/ruff-smoke-bad-py/source.yaml"
+    if [[ ! -f "$source_yaml" ]]; then
+        fail "A/B corpus: smoke source.yaml present" "missing"
+        return
+    fi
+
+    local key
+    for key in id agent captured_at captured_under working_dir_strategy intent_ledger depends_on; do
+        if [[ "$(yq "has(\"$key\")" "$source_yaml")" == "true" ]]; then
+            pass "A/B corpus: smoke source.yaml has $key"
+        else
+            fail "A/B corpus: smoke source.yaml has $key" "missing required key"
+        fi
+    done
+}
+
+test_ab_corpus_index_includes_smoke_fixture() {
+    local index="$REPO_ROOT/tests/ab/corpus/index.yaml"
+    if [[ ! -f "$index" ]]; then
+        fail "A/B corpus: index.yaml present" "missing"
+        return
+    fi
+
+    local ids
+    ids=$(yq -r '.fixtures[].id' "$index")
+    if echo "$ids" | grep -qE '^ruff-smoke-bad-py$'; then
+        pass "A/B corpus: index.yaml lists ruff-smoke-bad-py"
+    else
+        fail "A/B corpus: index.yaml lists ruff-smoke-bad-py" "ids=$ids"
+    fi
+}
+
+test_ab_corpus_smoke_depends_on_paths_resolve() {
+    local source_yaml="$REPO_ROOT/tests/ab/corpus/ruff-smoke-bad-py/source.yaml"
+    if [[ ! -f "$source_yaml" ]]; then
+        fail "A/B corpus: smoke source.yaml present" "missing"
+        return
+    fi
+
+    local path missing=()
+    while IFS= read -r path; do
+        [[ -z "$path" ]] && continue
+        if [[ ! -e "$REPO_ROOT/$path" ]]; then
+            missing+=("$path")
+        fi
+    done < <(yq -r '.depends_on[]' "$source_yaml")
+
+    if [[ ${#missing[@]} -eq 0 ]]; then
+        pass "A/B corpus: smoke depends_on paths all resolve"
+    else
+        fail "A/B corpus: smoke depends_on paths all resolve" "missing: ${missing[*]}"
+    fi
+}

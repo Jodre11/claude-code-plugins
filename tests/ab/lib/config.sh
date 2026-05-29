@@ -7,17 +7,20 @@ set -euo pipefail
 # config_load <path> validates the schema and populates the following
 # environment-style globals consumed by lib/mutate.sh and lib/launch.sh:
 #
-#   _AB_CONFIG_NAME              — the config's name: field (string)
-#   _AB_CONFIG_DESCRIPTION       — optional description: field (string)
-#   _AB_CONFIG_SESSION_MODEL     — session.model (string; passed as --model)
-#   _AB_CONFIG_SESSION_EFFORT    — session.effort (string; passed as --effort)
-#   _AB_CONFIG_STRIP_ULTRATHINK  — "true" if agents.review-synthesiser.ultrathink == false
+#   _AB_CONFIG_AGENT             — agent name when mode: per-agent (string)
 #   _AB_CONFIG_AGENT_MODELS      — space-separated "name model" pairs (parallel array)
+#   _AB_CONFIG_DESCRIPTION       — optional description: field (string)
+#   _AB_CONFIG_MODE              — "end-to-end" (default) | "per-agent"
+#   _AB_CONFIG_NAME              — the config's name: field (string)
+#   _AB_CONFIG_SESSION_EFFORT    — session.effort (string; passed as --effort)
+#   _AB_CONFIG_SESSION_MODEL     — session.model (string; passed as --model)
+#   _AB_CONFIG_STRIP_ULTRATHINK  — "true" if agents.review-synthesiser.ultrathink == false
 #
 # Unrecognised top-level or per-agent keys are a hard error — a typo must not
 # silently fall back to production defaults.
 
-_AB_VALID_TOP_KEYS="name description session agents"
+_AB_VALID_TOP_KEYS="name description session agents mode agent"
+_AB_VALID_MODES="end-to-end per-agent"
 _AB_VALID_SESSION_KEYS="model effort"
 _AB_VALID_AGENT_KEYS="model ultrathink"
 
@@ -92,6 +95,31 @@ config_load() {
         fi
     done
     _AB_CONFIG_AGENT_MODELS="${_AB_CONFIG_AGENT_MODELS# }"
+
+    # 7. Mode + agent. Defaults: mode=end-to-end (Phase 1 behaviour). When
+    # mode is per-agent, an agent: top-level field is mandatory; the
+    # agents: map must not declare any per-agent model override since
+    # per-agent mode varies model via session.model and never edits
+    # tracked files. Non-model agents: entries are not currently caught
+    # by this guard — see config.sh deviation note in the Task 3 commit.
+    _AB_CONFIG_MODE=$(yq -r '.mode // "end-to-end"' "$path")
+    _AB_CONFIG_AGENT=$(yq -r '.agent // ""' "$path")
+
+    if ! _ab_key_in_set "$_AB_CONFIG_MODE" "$_AB_VALID_MODES"; then
+        echo "config_load: $path: unknown mode '$_AB_CONFIG_MODE' (allowed: $_AB_VALID_MODES)" >&2
+        return 1
+    fi
+
+    if [[ "$_AB_CONFIG_MODE" == "per-agent" ]]; then
+        if [[ -z "$_AB_CONFIG_AGENT" ]]; then
+            echo "config_load: $path: agent: is required when mode: per-agent" >&2
+            return 1
+        fi
+        if [[ -n "$_AB_CONFIG_AGENT_MODELS" ]]; then
+            echo "config_load: $path: agents: must not declare per-agent model overrides when mode: per-agent (per-agent varies model via session.model only)" >&2
+            return 1
+        fi
+    fi
 }
 
 _ab_key_in_set() {

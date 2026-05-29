@@ -1,0 +1,7 @@
+name: ruff-baseline
+description: Production reference for ruff-reviewer — sonnet at default effort.
+mode: per-agent
+agent: ruff-reviewer
+session:
+  model: sonnet
+  effort: default

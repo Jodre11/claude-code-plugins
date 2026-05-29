@@ -1,0 +1,12 @@
+id: smoke-good
+agent: ruff-reviewer
+captured_at: 2026-05-28T00:00:00Z
+captured_under:
+  suite_sha: deadbeef
+  agent_model: sonnet
+  agent_effort: default
+working_dir_strategy: copy
+source_path: tests/fixtures/static-analysis/ruff/
+intent_ledger: |
+  - Test.
+depends_on: []

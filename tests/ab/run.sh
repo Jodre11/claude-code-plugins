@@ -222,8 +222,6 @@ _ab_run_per_agent() {
     local faithfulness_check="$6"  # "true" | "false"
     local stream_json="${7:-false}"
 
-    _AB_STREAM_JSON="$stream_json"
-
     # Preflight: same as end-to-end except no clean-tree check (per-agent
     # never edits tracked files) and we resolve the fixture before going
     # near Bedrock.
@@ -276,7 +274,7 @@ _ab_run_per_agent() {
             "$timeout_bin" \
             "$timeout_seconds" \
             "$working_dir" \
-            "$_AB_STREAM_JSON" \
+            "$stream_json" \
             || rc=$?
 
         agent_capture_parse_ruff_trial "$trial_dir"

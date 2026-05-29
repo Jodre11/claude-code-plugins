@@ -616,9 +616,10 @@ test_ab_config_per_agent_ruff_haiku_low_parses() {
 }
 
 test_ab_run_sh_stream_json_flag_recognised() {
-    # Phase 3.1a: --stream-json must be a recognised flag and must propagate
-    # _AB_STREAM_JSON=true into the per-agent run path. Default behaviour
-    # (flag absent) must yield _AB_STREAM_JSON=false.
+    # Phase 3.1a: --stream-json must be a recognised flag and listed in
+    # run.sh's --help output so operators can discover it. Propagation
+    # through to launch.sh's argv is verified by the smoke tests, not by
+    # this structural test.
     local run="$REPO_ROOT/tests/ab/run.sh"
     if [[ ! -x "$run" ]]; then
         fail "A/B run.sh: --stream-json flag" "missing or not +x"

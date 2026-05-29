@@ -216,21 +216,44 @@ launch_run_per_agent_trial() {
     # CLAUDE_CODE_SUBPROCESS_ENV_SCRUB=1 silently downgrades --permission-mode
     # bypassPermissions. Override for this subprocess only (same as
     # launch_run_trial).
+    #
+    # effort=default (or empty) means "let the model use its built-in default".
+    # The claude CLI does not accept "default" as a valid --effort value, so we
+    # omit the flag entirely when the config specifies it.
     local rc=0
-    (
-        cd "$working_dir"
-        CLAUDE_CODE_SUBPROCESS_ENV_SCRUB=0 \
-        "$timeout_bin" --foreground --signal=TERM --kill-after=30 "$timeout_seconds" \
-            command claude \
-                -p \
-                --permission-mode bypassPermissions \
-                --model "$model" \
-                --effort "$effort" \
-                --append-system-prompt-file "$body_path" \
-                --exclude-dynamic-system-prompt-sections \
-                "$user_msg" \
-            > "$stdout" 2> "$stderr"
-    ) || rc=$?
+    if [[ -n "$effort" && "$effort" != "default" ]]; then
+        # Named effort level: pass --effort explicitly.
+        (
+            cd "$working_dir"
+            CLAUDE_CODE_SUBPROCESS_ENV_SCRUB=0 \
+            "$timeout_bin" --foreground --signal=TERM --kill-after=30 "$timeout_seconds" \
+                command claude \
+                    -p \
+                    --permission-mode bypassPermissions \
+                    --model "$model" \
+                    --effort "$effort" \
+                    --append-system-prompt-file "$body_path" \
+                    --exclude-dynamic-system-prompt-sections \
+                    "$user_msg" \
+                > "$stdout" 2> "$stderr"
+        ) || rc=$?
+    else
+        # effort=default (or empty): omit --effort; let the CLI use its default.
+        # "default" is not a valid --effort argument value for the claude CLI.
+        (
+            cd "$working_dir"
+            CLAUDE_CODE_SUBPROCESS_ENV_SCRUB=0 \
+            "$timeout_bin" --foreground --signal=TERM --kill-after=30 "$timeout_seconds" \
+                command claude \
+                    -p \
+                    --permission-mode bypassPermissions \
+                    --model "$model" \
+                    --append-system-prompt-file "$body_path" \
+                    --exclude-dynamic-system-prompt-sections \
+                    "$user_msg" \
+                > "$stdout" 2> "$stderr"
+        ) || rc=$?
+    fi
 
     kill -TERM "$hb_pid" 2>/dev/null || true
     wait "$hb_pid" 2>/dev/null || true

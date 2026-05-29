@@ -2,28 +2,42 @@ Some preamble noise from the dispatched session.
 
 ## Ruff Findings
 
-### Finding 1
-File: bad.py
-Line: 1
-Rule: F401 (Pyflakes)
-Severity: Important
-Confidence: 100
-Description: `sys` imported but unused.
+**3 findings** — 2 Python files analysed.
 
-### Finding 2
-File: bad.py
-Line: 3
-Rule: E501 (pycodestyle)
-Severity: Important
-Confidence: 100
-Description: Line too long (some pretext over 80 chars).
+---
 
-### Finding 3
-File: notebook.ipynb
-Line: 12
-Rule: B008 (bugbear)
-Severity: Important
-Confidence: 100
-Description: Do not perform function call in argument defaults.
+**Finding 1**
+
+- **File:** `bad.py`
+- **Line:** 1
+- **Rule:** `F401` (Pyflakes)
+- **Severity:** Important
+- **Confidence:** 100
+- **Message:** `sys` imported but unused.
+- **Detail:** The `import sys` statement on line 1 is never referenced in the file. Ruff has a safe auto-fix available: remove the import entirely.
+
+---
+
+**Finding 2**
+
+- **File:** `bad.py`
+- **Line:** 3
+- **Rule:** `E501` (pycodestyle)
+- **Severity:** Important
+- **Confidence:** 100
+- **Message:** Line too long (some pretext over 80 chars).
+- **Detail:** Wrap the line or refactor.
+
+---
+
+**Finding 3**
+
+- **File:** `notebook.ipynb`
+- **Line:** 12
+- **Rule:** `B008` (bugbear)
+- **Severity:** Important
+- **Confidence:** 100
+- **Message:** Do not perform function call in argument defaults.
+- **Detail:** Move the call into the function body.
 
 Trailing prose that must not be parsed as a finding.

@@ -1631,41 +1631,36 @@ agent_capture_parse_ruff_trial() {
         return 0
     fi
 
-    # 4. Parse per-finding blocks. Each finding is a contiguous run of:
-    #    File: <file>
-    #    Line: <line>
-    #    Rule: <code> (<category>)
-    #    Severity: <severity>
-    #    Confidence: <int>
-    #    Description: ...
-    # Description is intentionally NOT included in the tuple — descriptive
-    # prose is rephrased run-to-run by the model and must not affect the hash.
-    awk '
-        BEGIN { state = "between"; OFS = "\t" }
-        /^File: / { file = substr($0, 7); state = "in_finding"; next }
-        state == "in_finding" && /^Line: / {
-            line = substr($0, 7)
-            next
-        }
-        state == "in_finding" && /^Rule: / {
-            # "F401 (Pyflakes)" -> rule_id="F401"
-            rule = substr($0, 7)
-            split(rule, a, " ")
-            rule_id = a[1]
-            next
-        }
-        state == "in_finding" && /^Severity: / {
-            severity = substr($0, 11)
-            next
-        }
-        state == "in_finding" && /^Confidence: / {
-            confidence = substr($0, 13)
-            print file, line, rule_id, severity, confidence
-            file = ""; line = ""; rule_id = ""; severity = ""; confidence = ""
-            state = "between"
-            next
-        }
-    ' "$trial_dir/agent-output.md" > "$trial_dir/.findings.tsv"
+    # 4. Parse per-finding blocks per the canonical static-analysis-context.md
+    # §7 contract: bold-markdown bullets of the form `- **<Field>:** <value>`.
+    # See "Plan-defect note (post-Task 8)" at the end of this task for the
+    # history — the original awk in this plan was authored against a fictional
+    # plain `Field: value` format that the canonical contract does NOT use.
+    #
+    # The parser is a single awk pass with a state machine that:
+    #   - flushes a complete pending tuple on each finding boundary
+    #     (`### Finding —` or `**Finding N**`) and at EOF
+    #   - extracts `- **<Field>:** <value>` bullets, stripping wrap-only
+    #     backticks from values (paths and rule IDs are commonly wrapped:
+    #     `` `bad.py` ``, `` `F401` ``)
+    #   - splits `**File:**` on the LAST `:` if present, treating the right
+    #     half as the line number; otherwise reads `**Line:**` separately
+    #   - takes the first whitespace-or-paren-separated token of `**Rule:**`
+    #     as the rule_id (handles `F401 (Pyflakes)` and `F401(Pyflakes)`)
+    #   - ignores all other bullets (`**Description:**`, `**Message:**`,
+    #     `**Detail:**`, `**Suggested fix:**`, `**Reference:**`) — those
+    #     contribute to the visible report but are not part of the tuple
+    # Tuple emission only when File, line, rule_id, severity, confidence
+    # are all populated. Description/Message/Detail are intentionally not
+    # in the tuple — descriptive prose is rephrased run-to-run by the model
+    # and must not affect the hash.
+    #
+    # Reference implementation: see tests/ab/lib/agent_capture.sh in the
+    # repo HEAD. The state machine is small (~70 lines of awk) but tolerant
+    # of the surface drift the agent actually emits today (e.g. `**Finding 1**`
+    # heading instead of the canonical `### Finding —`).
+    awk '<canonical-bold-markdown parser; see tests/ab/lib/agent_capture.sh>' \
+        "$trial_dir/agent-output.md" > "$trial_dir/.findings.tsv"
 
     # 5. Sort tuples deterministically (file, line, rule_id) and emit JSON.
     sort -t $'\t' -k1,1 -k2,2n -k3,3 "$trial_dir/.findings.tsv" \
@@ -1728,6 +1723,46 @@ produce identical hashes.
 EOF
 )"
 ```
+
+### Plan-defect note (post-Task 8)
+
+The original awk in this task's Step 4 was authored against a fictional plain
+`Field: value` format (e.g. `File: bad.py`, `Line: 1`, `Rule: F401 (Pyflakes)`).
+The canonical contract at
+`plugins/code-review-suite/includes/static-analysis-context.md` §7
+specifies bold-markdown bullets:
+
+```
+### Finding — [short title]
+- **File:** path/to/file.ext:line
+- **Confidence:** 100
+- **Severity:** Critical | Important | Suggestion
+- **Rule:** rule-id (category/plugin)
+- **Description:** the message from the tool
+- **Suggested fix:** concrete suggestion
+```
+
+The first live Bedrock trial in Task 8 (sonnet/default against the
+ruff-smoke-bad-py fixture, 2026-05-29) revealed the divergence: the agent
+emitted the canonical bold-markdown format faithfully and the parser silently
+returned `findings.json: []`. This is load-bearing — `findings_hash` is the
+cross-trial comparison primitive for the headline haiku-low vs sonnet
+experiment in Task 11. With both arms parsing to `[]`, the experiment would
+be meaningless.
+
+The parser was rewritten during Task 8 closeout (see
+`tests/ab/lib/agent_capture.sh` in the repo HEAD) to consume the canonical
+format, plus the bullet-form surface drift the agent actually emits today
+(`**Finding N**` headings instead of `### Finding — [title]`, paths wrapped
+in backticks, separate `- **Line:** N` bullets). The Step 4 awk block above
+is now a description sketch rather than a transcribed implementation; the
+canonical reference lives in code, not in this plan.
+
+**Lesson for future plan authors:** empirically ground parsers, output
+contracts, and CLI flag spellings against a live agent trace BEFORE
+transcribing into a plan. Fictional formats that "look reasonable" silently
+break load-bearing comparisons. When in doubt, run one cheap probe trial
+and copy the actual output verbatim into the spec.
 
 ---
 

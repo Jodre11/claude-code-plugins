@@ -53,15 +53,24 @@ agent_capture_parse_ruff_trial() {
         return 0
     fi
 
-    # 4. Parse per-finding blocks. Each finding is a contiguous run of:
-    #    File: <file>
-    #    Line: <line>
-    #    Rule: <code> (<category>)
-    #    Severity: <severity>
-    #    Confidence: <int>
-    #    Description: ...
-    # Description is intentionally NOT included in the tuple — descriptive
-    # prose is rephrased run-to-run by the model and must not affect the hash.
+    # 4. Parse per-finding blocks per the canonical static-analysis-context.md
+    # §7 contract: bold-markdown bullets of the form `- **<Field>:** <value>`.
+    # The parser is tolerant of:
+    #   - backticks around path values (`bad.py`) and rule IDs (`F401`)
+    #   - both `- **File:** path` and `- **File:** path:line` forms
+    #   - separate `- **Line:** N` bullets when File doesn't carry the line
+    #   - heading variants: `### Finding — [title]` (canonical) and
+    #     `**Finding N**` (current agent surface drift)
+    #   - non-tuple bullets (Description, Message, Detail, Suggested fix,
+    #     Reference) — parsed and discarded; they live in the visible report
+    #     but are not part of the deterministic tuple.
+    #
+    # State machine: a finding boundary (### Finding, **Finding N**, or a
+    # second **File:** for the same finding) flushes any complete pending
+    # tuple. EOF also flushes. The tuple is emitted only when File,
+    # rule_id, severity, confidence are all populated AND a line number is
+    # known (either from the File `path:line` suffix or a separate **Line:**
+    # bullet).
     #
     # The .findings.tsv scratch file is an intermediate artefact. Write it,
     # consume it in the sort | jq pipeline, then delete it explicitly. Do not
@@ -70,30 +79,73 @@ agent_capture_parse_ruff_trial() {
     # and fire on subsequent function returns, causing 'unbound variable'
     # errors when captured locals (like $trial_dir) are no longer in scope.
     awk '
-        BEGIN { state = "between"; OFS = "\t" }
-        /^File: / { file = substr($0, 7); state = "in_finding"; next }
-        state == "in_finding" && /^Line: / {
-            line = substr($0, 7)
-            next
+        function strip_backticks(s,    n) {
+            # Trim leading and trailing backticks (a simple wrap, not arbitrary
+            # markdown). Caller-tolerant: idempotent on already-clean strings.
+            sub(/^`+/, "", s)
+            sub(/`+$/, "", s)
+            return s
         }
-        state == "in_finding" && /^Rule: / {
-            # "F401 (Pyflakes)" -> rule_id="F401"
-            rule = substr($0, 7)
-            split(rule, a, " ")
-            rule_id = a[1]
-            next
-        }
-        state == "in_finding" && /^Severity: / {
-            severity = substr($0, 11)
-            next
-        }
-        state == "in_finding" && /^Confidence: / {
-            confidence = substr($0, 13)
-            print file, line, rule_id, severity, confidence
+        function emit_if_complete(    eff_line, n, dummy) {
+            # If the File field carried a `:line` suffix, split on the LAST
+            # colon. Unix-only — Windows path drives are out of scope.
+            eff_line = line
+            if (eff_line == "" && file != "") {
+                n = split(file, parts, ":")
+                if (n >= 2) {
+                    eff_line = parts[n]
+                    # Reassemble the path without the trailing :line.
+                    file_clean = parts[1]
+                    for (i = 2; i <= n - 1; i++) file_clean = file_clean ":" parts[i]
+                    file = file_clean
+                }
+            }
+            if (file != "" && eff_line != "" && rule_id != "" && severity != "" && confidence != "") {
+                print file, eff_line, rule_id, severity, confidence
+            }
             file = ""; line = ""; rule_id = ""; severity = ""; confidence = ""
-            state = "between"
+        }
+        BEGIN { OFS = "\t"; file = ""; line = ""; rule_id = ""; severity = ""; confidence = "" }
+        # Finding boundary: a new heading or a second File: starts a new finding.
+        /^### Finding/ { emit_if_complete(); next }
+        /^\*\*Finding [0-9]+\*\*/ { emit_if_complete(); next }
+        # Bold-markdown field bullets.
+        /^- \*\*File:\*\* / {
+            if (file != "") emit_if_complete()
+            v = substr($0, length("- **File:** ") + 1)
+            file = strip_backticks(v)
             next
         }
+        /^- \*\*Line:\*\* / {
+            v = substr($0, length("- **Line:** ") + 1)
+            line = strip_backticks(v)
+            next
+        }
+        /^- \*\*Rule:\*\* / {
+            v = substr($0, length("- **Rule:** ") + 1)
+            v = strip_backticks(v)
+            # First whitespace-separated token is the rule ID. Handles both
+            # `F401 (Pyflakes)` and `F401(Pyflakes)` forms; if the agent
+            # left a backtick mid-string (e.g. `F401`(Pyflakes)) the
+            # strip_backticks above only handles wrap-only cases — split
+            # on space first, then re-strip the first token.
+            split(v, a, /[ \t(]/)
+            rule_id = strip_backticks(a[1])
+            next
+        }
+        /^- \*\*Severity:\*\* / {
+            v = substr($0, length("- **Severity:** ") + 1)
+            severity = strip_backticks(v)
+            next
+        }
+        /^- \*\*Confidence:\*\* / {
+            v = substr($0, length("- **Confidence:** ") + 1)
+            confidence = strip_backticks(v)
+            next
+        }
+        # All other lines (Description, Message, Detail, Suggested fix,
+        # Reference, prose, --- separators) are intentionally ignored.
+        END { emit_if_complete() }
     ' "$trial_dir/agent-output.md" > "$trial_dir/.findings.tsv"
 
     # 5. Sort tuples deterministically (file, line, rule_id) and emit JSON.

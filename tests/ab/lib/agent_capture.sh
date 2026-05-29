@@ -62,7 +62,13 @@ agent_capture_parse_ruff_trial() {
     #    Description: ...
     # Description is intentionally NOT included in the tuple — descriptive
     # prose is rephrased run-to-run by the model and must not affect the hash.
-    trap 'rm -f "$trial_dir/.findings.tsv"' RETURN
+    #
+    # The .findings.tsv scratch file is an intermediate artefact. Write it,
+    # consume it in the sort | jq pipeline, then delete it explicitly. Do not
+    # use a RETURN trap for cleanup: bash RETURN traps set inside a function
+    # are NOT scoped to that function — they persist in the shell environment
+    # and fire on subsequent function returns, causing 'unbound variable'
+    # errors when captured locals (like $trial_dir) are no longer in scope.
     awk '
         BEGIN { state = "between"; OFS = "\t" }
         /^File: / { file = substr($0, 7); state = "in_finding"; next }
@@ -102,6 +108,8 @@ agent_capture_parse_ruff_trial() {
                 confidence: (.[4] | tonumber)
               })
           ' > "$trial_dir/findings.json"
+
+    rm -f "$trial_dir/.findings.tsv"
 
     _agent_capture_compute_hash "$trial_dir/findings.json" "$trial_dir/findings_hash.txt"
 }

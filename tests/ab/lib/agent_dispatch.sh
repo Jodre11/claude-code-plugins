@@ -108,6 +108,7 @@ agent_dispatch_run_trial() {
     local timeout_bin="$6"
     local timeout_seconds="$7"
     local working_dir="$8"
+    local stream_json="${9:-false}"
 
     local agent_md="$REPO_ROOT/plugins/code-review-suite/agents/${agent_name}.md"
     if [[ ! -f "$agent_md" ]]; then
@@ -135,6 +136,7 @@ agent_dispatch_run_trial() {
         "$user_msg_tmp" \
         "$timeout_bin" \
         "$working_dir" \
+        "$stream_json" \
         || rc=$?
 
     rm -f "$body_tmp" "$user_msg_tmp"

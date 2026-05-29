@@ -1,7 +1,6 @@
 # Orchestrator empty-stdout anomaly under `claude -p`
 
-> **Status:** Open — anomaly worth investigating. **Not a confirmed
-> defect.** Surfaced 2026-05-21 by the A/B harness Phase 1 no-ultrathink
+> **Status:** Investigated 2026-05-29; bug confirmed at 30 % incidence (95 % CI [14.55 %, 51.90 %]) on the per-agent codepath at Haiku/`low`; cause is the Claude Code CLI's stream-json envelope-final-text emission gap; see [`../notes/2026-05-29-empty-stdout-investigation-result.md`](../notes/2026-05-29-empty-stdout-investigation-result.md). Surfaced 2026-05-21 by the A/B harness Phase 1 no-ultrathink
 > arm trial 2 (run dir `tests/ab/runs/20260521T162805Z-no-ultrathink/`).
 >
 > **Replaces an earlier draft** that prematurely attributed this to
@@ -161,6 +160,30 @@ this report stops short of attribution. Promote to a design doc + plan
 if reproduction confirms the failure mode is a real defect requiring
 fix. Until reproduction lands, the right disposition is
 "investigate".
+
+## Results — Phase 3.1a investigation
+
+A 20-trial sweep at Haiku/`low` against `ruff-smoke-bad-py` on the per-agent
+codepath was completed on 2026-05-29 as Phase 3.1a of the static-specialist
+tuning sweep. **EMPTY incidence: 6/20 = 30 % (Wilson 95 % CI [14.55 %, 51.90 %]).**
+Every EMPTY trial in the sweep is Category C (envelope-final-text emission gap):
+the terminal `stream.jsonl` event has `subtype="success"`, `is_error=false`,
+`stop_reason="end_turn"`, and `result.result == ""`, despite preceding
+`assistant.message.content[]` events containing 364–671 chars of canonical
+ruff-finding prose. The bug is in the Claude Code CLI's stream-json envelope
+finalisation, not Bedrock and not the orchestrator.
+
+Full result and recommended fix surface (harness-level fallback + validate-or-die
++ upstream filing) at
+[`../notes/2026-05-29-empty-stdout-investigation-result.md`](../notes/2026-05-29-empty-stdout-investigation-result.md).
+
+The original spec's hypothesis space, observation, and "What we should do"
+§1 + §2 actions are superseded by the executed Phase 3.1a methodology
+captured in [`2026-05-29-empty-stdout-investigation-design.md`](2026-05-29-empty-stdout-investigation-design.md).
+§3 (harness assertion), §4 (orchestrator safety net), and §5 (stream-json
+reproduction) are picked up by **Phase 3.1c** ("tighten contracts +
+fail-loud" — not yet brainstormed). §5 (stream-json reproduction) is
+already executed by 3.1a; §3 and §4 land in 3.1c.
 
 ## Cross-references
 

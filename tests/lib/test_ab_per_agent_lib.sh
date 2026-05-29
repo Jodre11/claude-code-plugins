@@ -614,3 +614,24 @@ test_ab_config_per_agent_ruff_haiku_low_parses() {
     assert_equals "haiku" "$model" "A/B config: ruff-haiku-low.session.model = haiku"
     assert_equals "low" "$effort" "A/B config: ruff-haiku-low.session.effort = low"
 }
+
+test_ab_run_sh_stream_json_flag_recognised() {
+    # Phase 3.1a: --stream-json must be a recognised flag and listed in
+    # run.sh's --help output so operators can discover it. Propagation
+    # through to launch.sh's argv is verified by the smoke tests, not by
+    # this structural test.
+    local run="$REPO_ROOT/tests/ab/run.sh"
+    if [[ ! -x "$run" ]]; then
+        fail "A/B run.sh: --stream-json flag" "missing or not +x"
+        return
+    fi
+
+    # The flag must be listed in --help so operators can discover it.
+    local out
+    out=$("$run" --help 2>&1)
+    if echo "$out" | grep -qF -- "--stream-json"; then
+        pass "A/B run.sh: --stream-json listed in usage"
+    else
+        fail "A/B run.sh: --stream-json listed in usage" "out=$out"
+    fi
+}

@@ -48,6 +48,9 @@ Per-agent mode (--mode per-agent or config-derived):
   --faithfulness-check      Phase 2b: load the fixture's captured config and
                             compare the trial's findings against the captured
                             baseline; non-zero exit if they diverge
+  --stream-json             Phase 3.1a: capture --output-format stream-json
+                            JSONL trace per trial at trial-NNN/stream.jsonl;
+                            reconstruct stdout.log from text events
   --include-tag <tag>       Reserved for sweep mode; not implemented in P2
   --exclude-tag <tag>       Reserved for sweep mode; not implemented in P2
 
@@ -66,6 +69,7 @@ main() {
     local timeout_seconds=1800
     local corpus_id=""
     local faithfulness_check="false"
+    local stream_json="false"
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
@@ -75,6 +79,7 @@ main() {
             --timeout-seconds) timeout_seconds="$2"; shift 2 ;;
             --corpus) corpus_id="$2"; shift 2 ;;
             --faithfulness-check) faithfulness_check="true"; shift ;;
+            --stream-json) stream_json="true"; shift ;;
             --include-tag) shift 2 ;;  # reserved; no-op
             --exclude-tag) shift 2 ;;  # reserved; no-op
             -h|--help) usage; exit 0 ;;
@@ -102,7 +107,7 @@ main() {
                 echo "run.sh: --corpus <fixture-id> is required for mode: per-agent" >&2
                 exit 64
             fi
-            _ab_run_per_agent "$config_path" "$trials" "$experiment_name" "$timeout_seconds" "$corpus_id" "$faithfulness_check"
+            _ab_run_per_agent "$config_path" "$trials" "$experiment_name" "$timeout_seconds" "$corpus_id" "$faithfulness_check" "$stream_json"
             ;;
     esac
 }
@@ -215,6 +220,7 @@ _ab_run_per_agent() {
     local timeout_seconds="$4"
     local corpus_id="$5"
     local faithfulness_check="$6"  # "true" | "false"
+    local stream_json="${7:-false}"
 
     # Preflight: same as end-to-end except no clean-tree check (per-agent
     # never edits tracked files) and we resolve the fixture before going
@@ -268,6 +274,7 @@ _ab_run_per_agent() {
             "$timeout_bin" \
             "$timeout_seconds" \
             "$working_dir" \
+            "$stream_json" \
             || rc=$?
 
         agent_capture_parse_ruff_trial "$trial_dir"

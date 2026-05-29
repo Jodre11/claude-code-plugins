@@ -188,10 +188,12 @@ launch_run_per_agent_trial() {
     local user_msg_path="$6"
     local timeout_bin="$7"
     local working_dir="$8"
+    local stream_json="${9:-false}"
 
     local stdout="$trial_dir/stdout.log"
     local stderr="$trial_dir/stderr.log"
     local timing="$trial_dir/timing.json"
+    local stream_jsonl="$trial_dir/stream.jsonl"
 
     local user_msg
     user_msg=$(cat "$user_msg_path")
@@ -220,9 +222,31 @@ launch_run_per_agent_trial() {
     # effort=default (or empty) means "let the model use its built-in default".
     # The claude CLI does not accept "default" as a valid --effort value, so we
     # omit the flag entirely when the config specifies it.
-    local rc=0
+    #
+    # stream_json=true (Phase 3.1a) opts into --output-format stream-json. The
+    # CLI mandates --verbose as a companion flag in this mode (verified
+    # empirically by Phase 3.1a Task 1; without it the CLI exits rc=1 with
+    # "Error: When using --print, --output-format=stream-json requires
+    # --verbose"). In stream-json mode, fd 1 is the JSONL trace; we capture it
+    # to stream.jsonl and reconstruct stdout.log via a jq filter on the
+    # terminal `result` event so downstream parsers continue to work.
+    local -a extra_flags=()
     if [[ -n "$effort" && "$effort" != "default" ]]; then
-        # Named effort level: pass --effort explicitly.
+        extra_flags+=("--effort" "$effort")
+    fi
+    if [[ "$stream_json" == "true" ]]; then
+        extra_flags+=("--output-format" "stream-json" "--verbose")
+    fi
+
+    local rc=0
+    if [[ "$stream_json" == "true" ]]; then
+        # stream-json mode: stdout IS the JSONL trace. Capture it to
+        # stream.jsonl and reconstruct the final-text stdout.log via a jq
+        # filter. Schema is the Claude Code SDK envelope; canonical final-text
+        # lives at .result on the single {type:"result", subtype:"success"}
+        # event at EOF. If subtype is "error" or no result event exists, the
+        # reconstructed stdout.log is empty — exactly the diagnostic signal
+        # Phase 3.1a is hunting.
         (
             cd "$working_dir"
             CLAUDE_CODE_SUBPROCESS_ENV_SCRUB=0 \
@@ -231,15 +255,21 @@ launch_run_per_agent_trial() {
                     -p \
                     --permission-mode bypassPermissions \
                     --model "$model" \
-                    --effort "$effort" \
+                    "${extra_flags[@]}" \
                     --append-system-prompt-file "$body_path" \
                     --exclude-dynamic-system-prompt-sections \
                     "$user_msg" \
-                > "$stdout" 2> "$stderr"
+                > "$stream_jsonl" 2> "$stderr"
         ) || rc=$?
+
+        if [[ -s "$stream_jsonl" ]]; then
+            jq -r 'select(.type == "result" and .subtype == "success") | .result' \
+                "$stream_jsonl" > "$stdout"
+        else
+            : > "$stdout"
+        fi
     else
-        # effort=default (or empty): omit --effort; let the CLI use its default.
-        # "default" is not a valid --effort argument value for the claude CLI.
+        # Pre-3.1a behaviour: stdout is the final text directly.
         (
             cd "$working_dir"
             CLAUDE_CODE_SUBPROCESS_ENV_SCRUB=0 \
@@ -248,6 +278,7 @@ launch_run_per_agent_trial() {
                     -p \
                     --permission-mode bypassPermissions \
                     --model "$model" \
+                    "${extra_flags[@]}" \
                     --append-system-prompt-file "$body_path" \
                     --exclude-dynamic-system-prompt-sections \
                     "$user_msg" \

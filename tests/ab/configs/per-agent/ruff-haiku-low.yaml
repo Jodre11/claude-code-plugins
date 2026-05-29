@@ -1,0 +1,7 @@
+name: ruff-haiku-low
+description: Phase 3.1 directional probe — ruff-reviewer at Haiku/low. Compared against ruff-baseline (sonnet/default) on per-trial findings hash. Three-trial faithfulness check; positive verdict adopts Haiku/low for the production agent file.
+mode: per-agent
+agent: ruff-reviewer
+session:
+  model: haiku
+  effort: low

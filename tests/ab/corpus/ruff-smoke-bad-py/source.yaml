@@ -1,8 +1,8 @@
 id: ruff-smoke-bad-py
 agent: ruff-reviewer
-captured_at: 2026-05-28T00:00:00Z
+captured_at: 2026-05-29T06:05:22Z
 captured_under:
-  suite_sha: pending  # rewritten by Task 8 once expected/findings-ruff.md is captured
+  suite_sha: f3f73270cebf7bacf371972f42b718760ace1ce1
   agent_model: sonnet
   agent_effort: default
 working_dir_strategy: copy

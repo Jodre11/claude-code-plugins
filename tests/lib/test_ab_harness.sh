@@ -635,3 +635,22 @@ test_ab_config_rejects_unknown_mode() {
             "config_load accepted mode: drift-detector — only 'end-to-end' and 'per-agent' are valid"
     fi
 }
+
+test_ab_run_sh_faithfulness_check_help_recognised() {
+    # Smoke: --faithfulness-check is a recognised flag (does not error out
+    # the parser). Behaviour test (actual exit code on a real divergence) is
+    # cost-prohibitive to put in the structural suite.
+    local run="$REPO_ROOT/tests/ab/run.sh"
+    if [[ ! -x "$run" ]]; then
+        fail "A/B run.sh: faithfulness flag" "missing or not +x"
+        return
+    fi
+
+    local out
+    out=$("$run" --help 2>&1)
+    if echo "$out" | grep -qF -- "--faithfulness-check"; then
+        pass "A/B run.sh: --faithfulness-check listed in usage"
+    else
+        fail "A/B run.sh: --faithfulness-check listed in usage" "out=$out"
+    fi
+}

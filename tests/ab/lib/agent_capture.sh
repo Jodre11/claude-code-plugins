@@ -171,3 +171,32 @@ _agent_capture_compute_hash() {
     local out="$2"
     shasum -a 256 "$in" | awk '{print $1}' > "$out"
 }
+
+# Compare two findings.json files. Exit 0 if normalised tuple sets are
+# identical, non-zero with a per-line diff on stderr otherwise. The hash
+# comparison is the fast path; the diff is the human-readable fallback.
+agent_capture_compare_findings() {
+    local baseline="$1"
+    local trial="$2"
+
+    if [[ ! -f "$baseline" ]]; then
+        echo "agent_capture_compare_findings: $baseline: not found" >&2
+        return 1
+    fi
+    if [[ ! -f "$trial" ]]; then
+        echo "agent_capture_compare_findings: $trial: not found" >&2
+        return 1
+    fi
+
+    local b_hash t_hash
+    b_hash=$(jq -c -S '.' "$baseline" | shasum -a 256 | awk '{print $1}')
+    t_hash=$(jq -c -S '.' "$trial" | shasum -a 256 | awk '{print $1}')
+
+    if [[ "$b_hash" == "$t_hash" ]]; then
+        return 0
+    fi
+
+    echo "agent_capture_compare_findings: divergence detected" >&2
+    diff -u <(jq -S '.' "$baseline") <(jq -S '.' "$trial") >&2 || true
+    return 1
+}

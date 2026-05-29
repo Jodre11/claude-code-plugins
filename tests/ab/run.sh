@@ -280,9 +280,40 @@ _ab_run_per_agent() {
 
     _ab_emit_completion_summary "$trials"
 
-    # Faithfulness check (Phase 2b): no-op in this task; full path in Task 9.
     if [[ "$faithfulness_check" == "true" ]]; then
-        echo "run.sh: --faithfulness-check arrives in Phase 2b; results emitted but no comparison performed yet" >&2
+        local baseline="$_AB_FIXTURE_DIR/expected/findings.json"
+        # Convert the captured agent-output.md to a normalised findings.json
+        # one-shot if not already present (older fixtures store only the
+        # markdown). The helper does this idempotently.
+        if [[ ! -f "$baseline" ]]; then
+            local md="$_AB_FIXTURE_DIR/expected/findings-ruff.md"
+            if [[ ! -f "$md" ]]; then
+                echo "run.sh: $md: not found; cannot run faithfulness check" >&2
+                exit 1
+            fi
+            local synth_dir
+            synth_dir=$(mktemp -d)
+            cp "$md" "$synth_dir/stdout.log"
+            agent_capture_parse_ruff_trial "$synth_dir"
+            cp "$synth_dir/findings.json" "$baseline"
+            rm -rf "$synth_dir"
+        fi
+
+        local fail_count=0
+        for ((i = 1; i <= trials; i++)); do
+            local trial_num
+            trial_num=$(printf 'trial-%03d' "$i")
+            local trial_dir="$_AB_RUN_DIR/$trial_num"
+            if ! agent_capture_compare_findings "$baseline" "$trial_dir/findings.json" 2> "$trial_dir/faithfulness.diff"; then
+                fail_count=$((fail_count + 1))
+            fi
+        done
+
+        if [[ "$fail_count" -gt 0 ]]; then
+            echo "run.sh: faithfulness check FAILED on $fail_count of $trials trials" >&2
+            exit 1
+        fi
+        echo "run.sh: faithfulness check PASSED ($trials/$trials trials matched)" >&2
     fi
 }
 

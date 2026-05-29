@@ -518,3 +518,51 @@ test_ab_fixture_decay_warner_against_fake_history() {
     rm -f "$old_warn_file" "$head_warn_file"
     rm -rf "$repo"
 }
+
+test_ab_faithfulness_compares_finding_sets_correctly() {
+    local lib="$REPO_ROOT/tests/ab/lib/agent_capture.sh"
+    if [[ ! -f "$lib" ]]; then
+        fail "A/B faithfulness: lib present" "missing"
+        return
+    fi
+
+    local d_baseline d_trial_match d_trial_diff match_result diff_result
+    d_baseline=$(mktemp -d)
+    d_trial_match=$(mktemp -d)
+    d_trial_diff=$(mktemp -d)
+    match_result=$(mktemp)
+    diff_result=$(mktemp)
+
+    cat > "$d_baseline/findings.json" <<'JSON'
+[{"file":"a.py","line":1,"rule_id":"F401","severity":"Important","confidence":100}]
+JSON
+    cp "$d_baseline/findings.json" "$d_trial_match/findings.json"
+    cat > "$d_trial_diff/findings.json" <<'JSON'
+[{"file":"a.py","line":2,"rule_id":"E501","severity":"Important","confidence":100}]
+JSON
+
+    (
+        # shellcheck disable=SC1090
+        source "$lib"
+        set +e
+        agent_capture_compare_findings "$d_baseline/findings.json" "$d_trial_match/findings.json" >/dev/null 2>&1
+        echo $? > "$match_result"
+        agent_capture_compare_findings "$d_baseline/findings.json" "$d_trial_diff/findings.json" >/dev/null 2>&1
+        echo $? > "$diff_result"
+    )
+
+    if [[ "$(cat "$match_result")" == "0" ]]; then
+        pass "A/B faithfulness: identical finding sets compare equal"
+    else
+        fail "A/B faithfulness: identical finding sets compare equal" "expected exit 0; got $(cat "$match_result")"
+    fi
+
+    if [[ "$(cat "$diff_result")" != "0" ]]; then
+        pass "A/B faithfulness: divergent finding sets compare unequal"
+    else
+        fail "A/B faithfulness: divergent finding sets compare unequal" "expected non-zero exit"
+    fi
+
+    rm -rf "$d_baseline" "$d_trial_match" "$d_trial_diff"
+    rm -f "$match_result" "$diff_result"
+}

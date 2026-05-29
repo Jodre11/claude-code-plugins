@@ -15,6 +15,12 @@ source "$SCRIPT_DIR/lib/mutate.sh"
 source "$SCRIPT_DIR/lib/launch.sh"
 # shellcheck source=lib/capture.sh
 source "$SCRIPT_DIR/lib/capture.sh"
+# shellcheck source=lib/agent_dispatch.sh
+source "$SCRIPT_DIR/lib/agent_dispatch.sh"
+# shellcheck source=lib/fixture.sh
+source "$SCRIPT_DIR/lib/fixture.sh"
+# shellcheck source=lib/agent_capture.sh
+source "$SCRIPT_DIR/lib/agent_capture.sh"
 
 # Phase 1 hard-coded corpus PR. Phase 2 replaces this with corpus/<id>.yaml
 # loading.
@@ -27,18 +33,29 @@ _AB_PREAMBLE="This is a non-interactive harness run. Auto-confirm any 'Proceed?'
 
 usage() {
     cat <<'EOF'
-Usage: tests/ab/run.sh --config <path> --trials <n> [--name <experiment-name>] [--timeout-seconds <n>]
+Usage: tests/ab/run.sh --config <path> --trials <n> [options]
 
 Required:
   --config <path>           Path to a YAML config under tests/ab/configs/
   --trials <n>              Number of trials to run (positive integer)
 
-Optional:
-  --name <name>             Human label for the run directory (default: derived from config name)
+End-to-end mode (--mode end-to-end, default):
+  --name <name>             Human label for the run directory
   --timeout-seconds <n>     Per-trial timeout in seconds (default: 1800)
+
+Per-agent mode (--mode per-agent or config-derived):
+  --corpus <fixture-id>     Required: id present in tests/ab/corpus/index.yaml
+  --faithfulness-check      Phase 2b: load the fixture's captured config and
+                            compare the trial's findings against the captured
+                            baseline; non-zero exit if they diverge
+  --include-tag <tag>       Reserved for sweep mode; not implemented in P2
+  --exclude-tag <tag>       Reserved for sweep mode; not implemented in P2
+
+Common:
   -h, --help                Show this help
 
-Phase 1 limitation: the corpus PR is hard-coded. See tests/ab/README.md.
+Phase 1 hard-codes the end-to-end corpus PR; per-agent mode resolves
+fixtures via tests/ab/corpus/index.yaml. See tests/ab/README.md.
 EOF
 }
 
@@ -47,6 +64,8 @@ main() {
     local trials=""
     local experiment_name=""
     local timeout_seconds=1800
+    local corpus_id=""
+    local faithfulness_check="false"
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
@@ -54,6 +73,10 @@ main() {
             --trials) trials="$2"; shift 2 ;;
             --name) experiment_name="$2"; shift 2 ;;
             --timeout-seconds) timeout_seconds="$2"; shift 2 ;;
+            --corpus) corpus_id="$2"; shift 2 ;;
+            --faithfulness-check) faithfulness_check="true"; shift ;;
+            --include-tag) shift 2 ;;  # reserved; no-op
+            --exclude-tag) shift 2 ;;  # reserved; no-op
             -h|--help) usage; exit 0 ;;
             *) echo "unknown arg: $1" >&2; usage >&2; exit 64 ;;
         esac
@@ -68,11 +91,35 @@ main() {
         exit 64
     fi
 
+    config_load "$config_path"
+
+    case "${_AB_CONFIG_MODE:-end-to-end}" in
+        end-to-end)
+            _ab_run_end_to_end "$config_path" "$trials" "$experiment_name" "$timeout_seconds"
+            ;;
+        per-agent)
+            if [[ -z "$corpus_id" ]]; then
+                echo "run.sh: --corpus <fixture-id> is required for mode: per-agent" >&2
+                exit 64
+            fi
+            _ab_run_per_agent "$config_path" "$trials" "$experiment_name" "$timeout_seconds" "$corpus_id" "$faithfulness_check"
+            ;;
+    esac
+}
+
+# ---------------------------------------------------------------------------
+# End-to-end mode (Phase 1). Preflight → manifest → mutate → loop → revert.
+# ---------------------------------------------------------------------------
+_ab_run_end_to_end() {
+    local config_path="$1"
+    local trials="$2"
+    local experiment_name="$3"
+    local timeout_seconds="$4"
+
     # 1. Preflight (in order — each step halts on failure).
     _ab_preflight_marketplace_root
     _ab_preflight_clean_tree
     _ab_preflight_required_tools
-    config_load "$config_path"
     _ab_preflight_corpus_reachable
     launch_preflight_environment
 
@@ -158,6 +205,90 @@ main() {
     # Trap fires on EXIT and reverts mutations.
 }
 
+# ---------------------------------------------------------------------------
+# Per-agent mode (Phase 2). Preflight → fixture → materialise → loop → summary.
+# ---------------------------------------------------------------------------
+_ab_run_per_agent() {
+    local config_path="$1"
+    local trials="$2"
+    local experiment_name="$3"
+    local timeout_seconds="$4"
+    local corpus_id="$5"
+    local faithfulness_check="$6"  # "true" | "false"
+
+    # Preflight: same as end-to-end except no clean-tree check (per-agent
+    # never edits tracked files) and we resolve the fixture before going
+    # near Bedrock.
+    _ab_preflight_marketplace_root
+    _ab_preflight_required_tools
+    fixture_load "$corpus_id"
+    launch_preflight_environment
+
+    # Run dir.
+    if [[ -z "$experiment_name" ]]; then
+        experiment_name="$_AB_CONFIG_NAME"
+    fi
+    local timestamp
+    timestamp=$(date -u +'%Y%m%dT%H%M%SZ')
+    _AB_RUN_DIR="$SCRIPT_DIR/runs/${timestamp}-${experiment_name}"
+    mkdir -p "$_AB_RUN_DIR"
+
+    # Decay warnings — recorded but warn-only.
+    local decay_warnings
+    decay_warnings=$(fixture_check_decay || true)
+
+    _ab_write_manifest_per_agent "$config_path" "$timestamp" "$experiment_name" "$trials" "$timeout_seconds" "$corpus_id" "$decay_warnings"
+
+    # Materialise the working dir once and reuse across trials.
+    local working_dir="${CLAUDE_TEMP_DIR:-/tmp}/per-agent-${timestamp}"
+    fixture_materialise "$working_dir"
+    trap "fixture_cleanup '$working_dir'" EXIT
+
+    local timeout_bin
+    timeout_bin=$(launch_resolve_timeout_binary)
+
+    local summary="$_AB_RUN_DIR/summary.csv"
+    echo "trial,exit_code,wall_clock_seconds,findings_count,findings_hash,first_finding_rule,inconclusive,timed_out" > "$summary"
+
+    local i
+    for ((i = 1; i <= trials; i++)); do
+        local trial_num
+        trial_num=$(printf 'trial-%03d' "$i")
+        local trial_dir="$_AB_RUN_DIR/$trial_num"
+        mkdir -p "$trial_dir"
+        echo "[$(date +'%H:%M:%S')] $trial_num: launching..." >&2
+
+        local rc=0
+        agent_dispatch_run_trial \
+            "$trial_dir" \
+            "$_AB_CONFIG_AGENT" \
+            "$_AB_FIXTURE_DIR" \
+            "$_AB_CONFIG_SESSION_MODEL" \
+            "$_AB_CONFIG_SESSION_EFFORT" \
+            "$timeout_bin" \
+            "$timeout_seconds" \
+            "$working_dir" \
+            || rc=$?
+
+        agent_capture_parse_ruff_trial "$trial_dir"
+        _ab_append_per_agent_summary_row "$trial_dir" "$i" "$rc"
+
+        if [[ "$i" -lt "$trials" ]]; then
+            sleep 5
+        fi
+    done
+
+    _ab_emit_completion_summary "$trials"
+
+    # Faithfulness check (Phase 2b): no-op in this task; full path in Task 9.
+    if [[ "$faithfulness_check" == "true" ]]; then
+        echo "run.sh: --faithfulness-check arrives in Phase 2b; results emitted but no comparison performed yet" >&2
+    fi
+}
+
+# ---------------------------------------------------------------------------
+# Preflight helpers (shared by both modes).
+# ---------------------------------------------------------------------------
 _ab_preflight_marketplace_root() {
     if [[ ! -f "$REPO_ROOT/.claude-plugin/marketplace.json" ]]; then
         echo "preflight: not at marketplace root (expected $REPO_ROOT/.claude-plugin/marketplace.json)" >&2
@@ -195,6 +326,9 @@ _ab_preflight_corpus_reachable() {
     fi
 }
 
+# ---------------------------------------------------------------------------
+# Manifest writers.
+# ---------------------------------------------------------------------------
 _ab_write_manifest() {
     local config_path="$1"
     local timestamp="$2"
@@ -237,6 +371,55 @@ mutations:
 EOF
 }
 
+_ab_write_manifest_per_agent() {
+    local config_path="$1"
+    local timestamp="$2"
+    local experiment_name="$3"
+    local trials="$4"
+    local timeout_seconds="$5"
+    local corpus_id="$6"
+    local decay_warnings="$7"
+
+    local config_sha source_yaml_sha suite_sha hostname
+    config_sha=$(shasum -a 256 "$config_path" | awk '{print $1}')
+    source_yaml_sha=$(shasum -a 256 "$_AB_FIXTURE_SOURCE_YAML" | awk '{print $1}')
+    suite_sha=$(git -C "$REPO_ROOT" rev-parse HEAD)
+    hostname=$(hostname)
+
+    {
+        echo "mode: per-agent"
+        echo "experiment_name: $experiment_name"
+        echo "timestamp: $timestamp"
+        echo "trials: $trials"
+        echo "timeout_seconds: $timeout_seconds"
+        echo "config:"
+        echo "  path: ${config_path#"$REPO_ROOT/"}"
+        echo "  sha256: $config_sha"
+        echo "  name: $_AB_CONFIG_NAME"
+        echo "fixture:"
+        echo "  id: $corpus_id"
+        echo "  source_yaml_sha256: $source_yaml_sha"
+        if [[ -n "$decay_warnings" ]]; then
+            echo "  decay_warnings:"
+            while IFS= read -r warn; do
+                [[ -z "$warn" ]] && continue
+                echo "    - \"$warn\""
+            done <<< "$decay_warnings"
+        else
+            echo "  decay_warnings: []"
+        fi
+        echo "agent_under_test: $_AB_CONFIG_AGENT"
+        echo "suite_git_sha: $suite_sha"
+        echo "host: $hostname"
+        echo "session:"
+        echo "  model: $_AB_CONFIG_SESSION_MODEL"
+        echo "  effort: $_AB_CONFIG_SESSION_EFFORT"
+    } > "$_AB_RUN_DIR/manifest.yaml"
+}
+
+# ---------------------------------------------------------------------------
+# Summary row appenders.
+# ---------------------------------------------------------------------------
 _ab_append_summary_row() {
     local trial_dir="$1"
     local trial_num="$2"
@@ -263,6 +446,31 @@ _ab_append_summary_row() {
         >> "$_AB_RUN_DIR/summary.csv"
 }
 
+_ab_append_per_agent_summary_row() {
+    local trial_dir="$1"
+    local trial_num="$2"
+    local rc="$3"
+
+    local wall timed_out findings_count findings_hash first_rule inconclusive
+    wall=$(jq -r '.wall_clock_seconds' "$trial_dir/timing.json")
+    timed_out=$(jq -r '.timed_out' "$trial_dir/timing.json")
+    findings_count=$(jq -r 'length' "$trial_dir/findings.json")
+    findings_hash=$(cat "$trial_dir/findings_hash.txt")
+    first_rule=$(jq -r 'if length > 0 then .[0].rule_id else "" end' "$trial_dir/findings.json")
+    if [[ -f "$trial_dir/INCONCLUSIVE" ]]; then
+        inconclusive="true"
+    else
+        inconclusive="false"
+    fi
+
+    printf '%d,%d,%d,%d,%s,%s,%s,%s\n' \
+        "$trial_num" "$rc" "$wall" "$findings_count" "$findings_hash" "$first_rule" "$inconclusive" "$timed_out" \
+        >> "$_AB_RUN_DIR/summary.csv"
+}
+
+# ---------------------------------------------------------------------------
+# Completion summary (shared by both modes).
+# ---------------------------------------------------------------------------
 _ab_emit_completion_summary() {
     local trials="$1"
     local summary="$_AB_RUN_DIR/summary.csv"

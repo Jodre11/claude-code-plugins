@@ -566,3 +566,51 @@ JSON
     rm -rf "$d_baseline" "$d_trial_match" "$d_trial_diff"
     rm -f "$match_result" "$diff_result"
 }
+
+test_ab_config_per_agent_ruff_haiku_low_parses() {
+    # Phase 3.1: the haiku-low probe arm config must parse and expose
+    # session.model=haiku, session.effort=low. The harness drives all
+    # variation; the agent file is never touched at runtime.
+    local config="$REPO_ROOT/tests/ab/lib/config.sh"
+    local probe="$REPO_ROOT/tests/ab/configs/per-agent/ruff-haiku-low.yaml"
+
+    if [[ ! -f "$config" ]]; then
+        fail "A/B config: per-agent ruff-haiku-low parses" "config.sh missing"
+        return
+    fi
+    if [[ ! -f "$probe" ]]; then
+        fail "A/B config: per-agent ruff-haiku-low parses" "ruff-haiku-low.yaml not yet authored"
+        return
+    fi
+
+    local mode agent model effort
+    mode=$(
+        # shellcheck disable=SC1090
+        source "$config"
+        config_load "$probe" >/dev/null
+        echo "${_AB_CONFIG_MODE:-}"
+    )
+    agent=$(
+        # shellcheck disable=SC1090
+        source "$config"
+        config_load "$probe" >/dev/null
+        echo "${_AB_CONFIG_AGENT:-}"
+    )
+    model=$(
+        # shellcheck disable=SC1090
+        source "$config"
+        config_load "$probe" >/dev/null
+        echo "${_AB_CONFIG_SESSION_MODEL:-}"
+    )
+    effort=$(
+        # shellcheck disable=SC1090
+        source "$config"
+        config_load "$probe" >/dev/null
+        echo "${_AB_CONFIG_SESSION_EFFORT:-}"
+    )
+
+    assert_equals "per-agent" "$mode" "A/B config: ruff-haiku-low.mode = per-agent"
+    assert_equals "ruff-reviewer" "$agent" "A/B config: ruff-haiku-low.agent = ruff-reviewer"
+    assert_equals "haiku" "$model" "A/B config: ruff-haiku-low.session.model = haiku"
+    assert_equals "low" "$effort" "A/B config: ruff-haiku-low.session.effort = low"
+}

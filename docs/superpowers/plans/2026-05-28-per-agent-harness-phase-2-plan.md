@@ -14,6 +14,27 @@
 
 ---
 
+## Phase 2c — DEFERRED to Phase 3 (decision recorded 2026-05-29)
+
+After Phase 2b shipped (faithfulness check passing 3/3, decay-warner verified), execution paused at the Phase 2b operator review gate to assess Phase 2c. Two findings drove the decision to defer Tasks 10 and 11:
+
+1. **No real-PR ruff fixture available in this repo.** A survey of `git log --diff-filter=AM --name-only -- '*.py' '*.ipynb'` returned exactly one commit, and that commit is `tests/fixtures/static-analysis/ruff/` — i.e. the smoke fixture itself. The plan's Task 10 Step 1 ("pick a real PR that exercises ruff non-trivially") cannot be satisfied from this repo's history.
+
+2. **A bespoke ruff-only headline experiment is the wrong unit of investment.** Static-analysis specialists are mechanical *transmission* tasks: run the tool, parse its JSON, map prefixes to severity tiers, emit canonical §7 markdown. Cost-tuning across these specialists almost certainly converges on the same answer (haiku-low likely sufficient for all four). A *directional* probe across all four static specialists — ruff, eslint, trivy, jbinspect — costs roughly the same as a richly-fixtured ruff-only experiment (~150k tokens) and yields four answers instead of one.
+
+3. **The fixture-author bias problem is partially escapable for static specialists** because the *tool's deterministic output* (e.g. `ruff check --output-format=json`) is the ground truth, not the harness author's judgement. The agent's job is to faithfully transmit the tool's verdict. This neutralisation does NOT generalise to reasoning specialists, where the model authoring the fixture is also the model judging it — that's a deeper problem deferred to its own future spec when a reasoning-specialist phase approaches.
+
+**What this means for execution:**
+
+- Tasks 10 (capture real-PR ruff fixture) and 11 (haiku-low vs sonnet headline experiment) are NOT executed under this plan.
+- Phase 2 ships as Phase 2a (Tasks 1-7) + Task 8 (smoke baseline capture) + Phase 2b (Task 9 — faithfulness check + decay-warner verification) + Tasks 12-13 (README + PR).
+- The headline cost-tuning question for ruff-reviewer specifically is answered by the directional probe in Phase 3 (cheap: ~30k tokens for ruff-haiku-low vs the existing baseline against the smoke fixture), not by a bespoke richer-fixture experiment.
+- A new spec at `docs/superpowers/specs/2026-05-29-static-specialist-tuning-sweep.md` captures the Phase 3 methodology: per-specialist directional probes against tool-as-ground-truth synthetic fixtures, with a richer-fixture investment only triggered if a probe surfaces a no.
+
+The harness chassis Phase 2 ships is the deliverable. Phase 3 is the first real use of it across the four static specialists.
+
+---
+
 ## File Structure
 
 **New files (Phase 2):**

@@ -28,6 +28,11 @@
       "name": "pdf-reader",
       "description": "Extract text from any PDF — native text via poppler, scanned/image via tesseract OCR",
       "source": "./plugins/pdf-reader"
+    },
+    {
+      "name": "roslyn-lsp",
+      "description": "Solution-aware C# LSP via Microsoft Roslyn + ClaudeCodeRoslynLspProxy. Re-host of unsafePtr/ClaudeCodeRoslynLspProxy (MIT) with locally-tuned defaults",
+      "source": "./plugins/roslyn-lsp"
     }
   ]
 }

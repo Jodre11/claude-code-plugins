@@ -19,6 +19,9 @@ __pycache__/
 # Node
 node_modules/
 package-lock.json
+# Exception: the eslint A/B fixture commits its lockfile so `npm ci` is
+# reproducible in the per-agent harness (Phase 3.2b apparatus fix).
+!tests/fixtures/static-analysis/eslint/package-lock.json
 
 # Test artefacts
 tests/lib/.static-analysis-smoke-results.json

@@ -82,3 +82,21 @@ After parsing, intersect each finding's `(file, line)` against `$CHANGED_LINES[<
 Every finding emits the literal `Confidence: 100` per §6.
 
 Clean up `$CLAUDE_TEMP_DIR/ruff-*.json` after parsing.
+
+### Worked example — single F401
+
+For a Python file `bad.py` with `import sys` on line 1 and no use of `sys` anywhere, the canonical §7 output is:
+
+```
+## Ruff Findings
+
+### Finding — `sys` imported but unused
+- **File:** bad.py:1
+- **Confidence:** 100
+- **Severity:** Important
+- **Rule:** F401 (Pyflakes)
+- **Description:** `sys` imported but unused
+- **Suggested fix:** Remove the `import sys` statement on line 1; ruff's safe auto-fix removes the import entirely.
+```
+
+The heading is `### Finding — <title>` (em-dash, U+2014). The bullet field names are `File`, `Confidence`, `Severity`, `Rule`, `Description`, `Suggested fix` — exactly as canonicalised in `includes/static-analysis-context.md` §7. Do not substitute synonyms (`Message`, `Detail`) — the harness parser pins to the §7 names.

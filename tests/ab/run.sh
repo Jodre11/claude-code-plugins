@@ -277,7 +277,7 @@ _ab_run_per_agent() {
             "$stream_json" \
             || rc=$?
 
-        agent_capture_parse_ruff_trial "$trial_dir"
+        agent_capture_parse_trial "$_AB_CONFIG_AGENT" "$trial_dir"
         _ab_append_per_agent_summary_row "$trial_dir" "$i" "$rc"
 
         if [[ "$i" -lt "$trials" ]]; then
@@ -293,7 +293,11 @@ _ab_run_per_agent() {
         # one-shot if not already present (older fixtures store only the
         # markdown). The helper does this idempotently.
         if [[ ! -f "$baseline" ]]; then
-            local md="$_AB_FIXTURE_DIR/expected/findings-ruff.md"
+            # The expected-markdown filename uses the short tool key
+            # (findings-ruff.md, findings-eslint.md), while $_AB_CONFIG_AGENT
+            # carries the full `<tool>-reviewer` name — strip the suffix.
+            local agent_key="${_AB_CONFIG_AGENT%-reviewer}"
+            local md="$_AB_FIXTURE_DIR/expected/findings-$agent_key.md"
             if [[ ! -f "$md" ]]; then
                 echo "run.sh: $md: not found; cannot run faithfulness check" >&2
                 exit 1
@@ -301,7 +305,7 @@ _ab_run_per_agent() {
             local synth_dir
             synth_dir=$(mktemp -d)
             cp "$md" "$synth_dir/stdout.log"
-            agent_capture_parse_ruff_trial "$synth_dir"
+            agent_capture_parse_trial "$_AB_CONFIG_AGENT" "$synth_dir"
             cp "$synth_dir/findings.json" "$baseline"
             rm -rf "$synth_dir"
         fi

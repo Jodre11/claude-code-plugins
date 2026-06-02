@@ -4,31 +4,65 @@
 # set -euo pipefail.
 set -euo pipefail
 
-# Parse one ruff-reviewer trial. Reads <trial-dir>/stdout.log and writes:
-#   - <trial-dir>/agent-output.md       : the ## Ruff Findings block
+# Per-agent parser parameters. Each agent supplies the three things that
+# differ across static specialists; the §7 state-machine body is shared.
+#   heading       : the findings block heading, anchored (^...$)
+#   skip_sentinel : ERE matching the tool-fully-skipped line
+#   zero_state    : ERE matching the canonical zero-state line
+# The rule-ID tokeniser (split on [ \t(], take token 1) is shared by ruff and
+# eslint — kebab-case IDs have no internal spaces — so it is not parameterised.
+_agent_capture_params() {
+    # Accept both the short table key (used by the parser tests) and the full
+    # `<name>-reviewer` form that run.sh carries in $_AB_CONFIG_AGENT.
+    local agent="$1"
+    case "$agent" in
+        ruff|ruff-reviewer)
+            _AC_HEADING='^## Ruff Findings$'
+            _AC_SKIP='^Skipped — '
+            _AC_ZERO='^0 findings — no Python files in diff\.'
+            ;;
+        eslint|eslint-reviewer)
+            _AC_HEADING='^## ESLint Findings$'
+            _AC_SKIP='^Skipped — eslint/biome not available'
+            _AC_ZERO='^0 findings — no JS/TS files in diff\.'
+            ;;
+        *)
+            echo "_agent_capture_params: unknown agent: $agent" >&2
+            return 1
+            ;;
+    esac
+}
+
+# Public entry point: parse one trial for <agent>. Looks up the agent's
+# parameters, then runs the shared §7 state-machine. Reads <trial-dir>/stdout.log
+# and writes:
+#   - <trial-dir>/agent-output.md       : the findings block
 #   - <trial-dir>/findings.json         : sorted, normalised tuples
 #   - <trial-dir>/findings_hash.txt     : sha256 of findings.json contents
 #   - <trial-dir>/INCONCLUSIVE          : marker file present when the tool
-#                                          did not run (e.g. ruff missing)
+#                                          did not run (e.g. ruff/eslint missing)
 #
 # Tuple shape: {file, line, rule_id, severity, confidence}.
 # Severity is captured verbatim from the agent's output (Important | Critical
 # | Suggestion); confidence is parsed as an integer.
-agent_capture_parse_ruff_trial() {
-    local trial_dir="$1"
+# See agent_capture_parse_ruff_trial (now a shim) for the historical name.
+agent_capture_parse_trial() {
+    local agent="$1"
+    local trial_dir="$2"
     local stdout="$trial_dir/stdout.log"
 
     if [[ ! -f "$stdout" ]]; then
-        echo "agent_capture_parse_ruff_trial: $stdout: not found" >&2
+        echo "agent_capture_parse_trial: $stdout: not found" >&2
         return 1
     fi
+    _agent_capture_params "$agent" || return 1
 
     # 1. Detect the tool-fully-skipped state ('Skipped — ruff not available
     # on PATH.'). The partial-coverage variant ('Notebook files (.ipynb)
     # skipped — ruff < 0.6.0 and nbqa not available on PATH.') is NOT
     # treated as INCONCLUSIVE — it falls through to the finding parser
     # because .py findings may still be present.
-    if grep -qE '^Skipped — ' "$stdout"; then
+    if grep -qE "$_AC_SKIP" "$stdout"; then
         : > "$trial_dir/INCONCLUSIVE"
         : > "$trial_dir/agent-output.md"
         echo '[]' > "$trial_dir/findings.json"
@@ -36,18 +70,19 @@ agent_capture_parse_ruff_trial() {
         return 0
     fi
 
-    # 2. Extract the ## Ruff Findings block: from that heading through the
-    # last finding entry, terminating before any subsequent top-level heading
-    # at the same level.
-    awk '
+    # 2. Extract the findings block: from the heading through the last finding
+    # entry, terminating before any subsequent top-level heading at the same
+    # level. The heading line itself is consumed and `next`-ed, so it never
+    # reaches the `^## ` terminator check.
+    awk -v heading="$_AC_HEADING" '
         BEGIN { in_block = 0 }
-        /^## Ruff Findings$/ { in_block = 1; print; next }
-        in_block && /^## / && !/^## Ruff Findings$/ { in_block = 0 }
+        $0 ~ heading { in_block = 1; print; next }
+        in_block && /^## / { in_block = 0 }
         in_block { print }
     ' "$stdout" > "$trial_dir/agent-output.md"
 
     # 3. Detect the canonical zero-state.
-    if grep -qE '^0 findings — no Python files in diff\.' "$trial_dir/agent-output.md"; then
+    if grep -qE "$_AC_ZERO" "$trial_dir/agent-output.md"; then
         echo '[]' > "$trial_dir/findings.json"
         _agent_capture_compute_hash "$trial_dir/findings.json" "$trial_dir/findings_hash.txt"
         return 0
@@ -167,6 +202,12 @@ agent_capture_parse_ruff_trial() {
     rm -f "$trial_dir/.findings.tsv"
 
     _agent_capture_compute_hash "$trial_dir/findings.json" "$trial_dir/findings_hash.txt"
+}
+
+# Backward-compatible shim. Existing callers and tests reference this name;
+# it now delegates to the parameterised entry point.
+agent_capture_parse_ruff_trial() {
+    agent_capture_parse_trial ruff "$1"
 }
 
 _agent_capture_compute_hash() {

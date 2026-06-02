@@ -59,11 +59,13 @@ agent_capture_parse_ruff_trial() {
     #   - backticks around path values (`bad.py`) and rule IDs (`F401`)
     #   - both `- **File:** path` and `- **File:** path:line` forms
     #   - separate `- **Line:** N` bullets when File doesn't carry the line
-    #   - heading variants: `### Finding — [title]` (canonical) and
-    #     `**Finding N**` (current agent surface drift)
-    #   - non-tuple bullets (Description, Message, Detail, Suggested fix,
-    #     Reference) — parsed and discarded; they live in the visible report
-    #     but are not part of the deterministic tuple.
+    #   - heading: `### Finding — [title]` (canonical §7 only post-3.1c).
+    #     The `**Finding N**` shape was the prior drifted heading; Phase 3.1c
+    #     pins the parser to canonical §7 so drifted shapes parse to zero
+    #     findings (registers as DRIFT in the trial classifier).
+    #   - non-tuple bullets (Description, Suggested fix, Reference) — parsed
+    #     and discarded; they live in the visible report but are not part of
+    #     the deterministic tuple.
     #
     # State machine: a finding boundary (### Finding, **Finding N**, or a
     # second **File:** for the same finding) flushes any complete pending
@@ -100,15 +102,14 @@ agent_capture_parse_ruff_trial() {
                     file = file_clean
                 }
             }
-            if (file != "" && eff_line != "" && rule_id != "" && severity != "" && confidence != "") {
+            if (in_finding_block && file != "" && eff_line != "" && rule_id != "" && severity != "" && confidence != "") {
                 print file, eff_line, rule_id, severity, confidence
             }
             file = ""; line = ""; rule_id = ""; severity = ""; confidence = ""
         }
-        BEGIN { OFS = "\t"; file = ""; line = ""; rule_id = ""; severity = ""; confidence = "" }
+        BEGIN { OFS = "\t"; in_finding_block = 0; file = ""; line = ""; rule_id = ""; severity = ""; confidence = "" }
         # Finding boundary: a new heading or a second File: starts a new finding.
-        /^### Finding/ { emit_if_complete(); next }
-        /^\*\*Finding [0-9]+\*\*/ { emit_if_complete(); next }
+        /^### Finding/ { emit_if_complete(); in_finding_block = 1; next }
         # Bold-markdown field bullets.
         /^- \*\*File:\*\* / {
             if (file != "") emit_if_complete()
@@ -143,8 +144,10 @@ agent_capture_parse_ruff_trial() {
             confidence = strip_backticks(v)
             next
         }
-        # All other lines (Description, Message, Detail, Suggested fix,
-        # Reference, prose, --- separators) are intentionally ignored.
+        # All other lines (Description, Suggested fix, Reference, prose,
+        # --- separators) are intentionally ignored. Pre-3.1c the parser
+        # also tolerated Message / Detail bullets via the catch-all here;
+        # post-3.1c those names no longer appear in canonical agent output.
         END { emit_if_complete() }
     ' "$trial_dir/agent-output.md" > "$trial_dir/.findings.tsv"
 

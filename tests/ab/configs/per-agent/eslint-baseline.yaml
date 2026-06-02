@@ -1,0 +1,7 @@
+name: eslint-baseline
+description: Production reference for eslint-reviewer — sonnet at default effort.
+mode: per-agent
+agent: eslint-reviewer
+session:
+  model: sonnet
+  effort: default

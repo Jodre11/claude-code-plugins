@@ -1,0 +1,24 @@
+id: eslint-smoke-bad-js
+agent: eslint-reviewer
+captured_at: 2026-06-02T00:00:00Z
+baseline_revision: 1
+captured_under:
+  suite_sha: 49e5f5a933c32e2d8e2b73af0e495f2a9b8afe73
+  agent_model: sonnet
+  agent_effort: default
+working_dir_strategy: copy
+source_path: tests/fixtures/static-analysis/eslint/
+base_sha: ""  # synthetic fixture: no real diff
+head_sha: ""
+path_scope: ""
+empty_tree_mode: false
+intent_ledger: |
+  ## Intent ledger
+  - Synthetic smoke fixture exercising eslint-reviewer against a single JS
+    file with a multi-rule finding set (no-var, prefer-const, no-unused-vars,
+    eqeqeq). Phase 3.2 baseline for the Haiku/low cost-tuning probe.
+depends_on:
+  - plugins/code-review-suite/agents/eslint-reviewer.md
+  - plugins/code-review-suite/includes/static-analysis-context.md
+  - tests/fixtures/static-analysis/eslint/bad.js
+  - tests/fixtures/static-analysis/eslint/eslint.config.js

@@ -4,3 +4,8 @@ fixtures:
     type: synthetic
     description: F401 unused import on a single Python file. Bootstraps the per-agent loop.
     tags: [smoke, deterministic]
+  - id: eslint-smoke-bad-js
+    agent: eslint-reviewer
+    type: synthetic
+    description: Multi-rule finding set (no-var, prefer-const, no-unused-vars, eqeqeq) on a single JS file. Phase 3.2 baseline.
+    tags: [smoke, deterministic]

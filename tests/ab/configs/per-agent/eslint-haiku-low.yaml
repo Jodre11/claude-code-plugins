@@ -1,0 +1,7 @@
+name: eslint-haiku-low
+description: Phase 3.2 directional probe — eslint-reviewer at Haiku/low. Compared against eslint-baseline (sonnet/default) on per-trial findings hash.
+mode: per-agent
+agent: eslint-reviewer
+session:
+  model: haiku
+  effort: low

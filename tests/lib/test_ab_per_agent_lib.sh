@@ -1006,3 +1006,96 @@ test_ab_agent_capture_two_canonical_findings_sorted() {
     assert_equals "E501" "$second_rule" "A/B agent_capture: second rule_id"
     rm -rf "$d"
 }
+
+# --- eslint parser tests (Phase 3.2) -----------------------------------------
+# Authored from the captured Sonnet baseline trace
+# (tests/ab/corpus/eslint-smoke-bad-js/expected/findings-eslint.md): a 4-rule
+# finding set (no-var, prefer-const, no-unused-vars, eqeqeq) on bad.js lines
+# 1,2,3,6. The eslint path reuses the shared §7 state-machine via the parser
+# dispatch table; kebab-case rule IDs pass through the existing tokeniser
+# unchanged.
+
+test_ab_agent_capture_eslint_canonical_parses() {
+    local lib="$REPO_ROOT/tests/ab/lib/agent_capture.sh"
+    local fixture="$REPO_ROOT/tests/ab/fixtures/eslint-stdout-canonical.log"
+
+    if [[ ! -f "$lib" || ! -f "$fixture" ]]; then
+        fail "A/B agent_capture eslint: lib + fixture present" "missing"
+        return
+    fi
+
+    local trial_dir
+    trial_dir=$(mktemp -d)
+    cp "$fixture" "$trial_dir/stdout.log"
+
+    (
+        # shellcheck disable=SC1090
+        source "$lib"
+        agent_capture_parse_trial eslint "$trial_dir"
+    )
+
+    local count
+    count=$(jq 'length' "$trial_dir/findings.json")
+    assert_equals "4" "$count" "A/B agent_capture eslint: canonical finding count"
+
+    local first_rule
+    first_rule=$(jq -r '.[0].rule_id' "$trial_dir/findings.json")
+    assert_equals "no-var" "$first_rule" "A/B agent_capture eslint: first rule_id (kebab-case preserved)"
+
+    rm -rf "$trial_dir"
+}
+
+test_ab_agent_capture_eslint_zero_state() {
+    local lib="$REPO_ROOT/tests/ab/lib/agent_capture.sh"
+    local fixture="$REPO_ROOT/tests/ab/fixtures/eslint-stdout-zero-findings.log"
+
+    if [[ ! -f "$lib" || ! -f "$fixture" ]]; then
+        fail "A/B agent_capture eslint: zero-state fixture present" "missing"
+        return
+    fi
+
+    local trial_dir
+    trial_dir=$(mktemp -d)
+    cp "$fixture" "$trial_dir/stdout.log"
+
+    (
+        # shellcheck disable=SC1090
+        source "$lib"
+        agent_capture_parse_trial eslint "$trial_dir"
+    )
+
+    local count
+    count=$(jq 'length' "$trial_dir/findings.json")
+    assert_equals "0" "$count" "A/B agent_capture eslint: zero-state yields empty array"
+
+    rm -rf "$trial_dir"
+}
+
+test_ab_agent_capture_eslint_skipped_marks_inconclusive() {
+    local lib="$REPO_ROOT/tests/ab/lib/agent_capture.sh"
+    local fixture="$REPO_ROOT/tests/ab/fixtures/eslint-stdout-skipped.log"
+
+    if [[ ! -f "$lib" || ! -f "$fixture" ]]; then
+        fail "A/B agent_capture eslint: skipped fixture present" "missing"
+        return
+    fi
+
+    local trial_dir
+    trial_dir=$(mktemp -d)
+    cp "$fixture" "$trial_dir/stdout.log"
+
+    (
+        # shellcheck disable=SC1090
+        source "$lib"
+        agent_capture_parse_trial eslint "$trial_dir"
+    )
+
+    if [[ -f "$trial_dir/INCONCLUSIVE" ]]; then
+        pass "A/B agent_capture eslint: skipped state writes INCONCLUSIVE marker"
+    else
+        fail "A/B agent_capture eslint: skipped state writes INCONCLUSIVE marker" \
+            "expected $trial_dir/INCONCLUSIVE marker file"
+    fi
+
+    rm -rf "$trial_dir"
+}

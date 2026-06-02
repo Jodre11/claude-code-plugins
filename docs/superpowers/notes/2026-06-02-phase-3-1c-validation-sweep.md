@@ -104,4 +104,4 @@ unrecoverable case from a silent success into a loud failure.
 - Spec: `docs/superpowers/specs/2026-06-01-phase-3-1c-tighten-contracts-design.md`
 - Plan: `docs/superpowers/plans/2026-06-01-phase-3-1c-tighten-contracts-plan.md`
 - Phase 3.1a result report: `docs/superpowers/notes/2026-05-29-empty-stdout-investigation-result.md`
-- PR: <pr-url>
+- PR: https://github.com/Jodre11/claude-code-plugins/pull/39

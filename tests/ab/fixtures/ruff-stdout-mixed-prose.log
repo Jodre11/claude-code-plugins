@@ -1,5 +1,7 @@
 ## Ruff Findings
 
+I ran Ruff against the changed Python files and found one issue.
+
 ### Finding — `sys` imported but unused
 - **File:** bad.py:1
 - **Confidence:** 100
@@ -7,3 +9,5 @@
 - **Rule:** F401 (Pyflakes)
 - **Description:** `sys` imported but unused
 - **Suggested fix:** Remove the `import sys` statement on line 1; ruff's safe auto-fix removes the import entirely.
+
+This is a low-risk fix with auto-fix support.

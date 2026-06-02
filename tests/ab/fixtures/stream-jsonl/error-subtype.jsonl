@@ -1,0 +1,2 @@
+{"type":"system","subtype":"init","session_id":"fixture-error"}
+{"type":"result","subtype":"error","is_error":true,"result":"","stop_reason":"error","session_id":"fixture-error"}

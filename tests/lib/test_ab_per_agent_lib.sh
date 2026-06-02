@@ -635,3 +635,374 @@ test_ab_run_sh_stream_json_flag_recognised() {
         fail "A/B run.sh: --stream-json listed in usage" "out=$out"
     fi
 }
+
+test_ab_launch_jq_reduce_canonical_success() {
+    local launch="$REPO_ROOT/tests/ab/lib/launch.sh"
+    local fx="$REPO_ROOT/tests/ab/fixtures/stream-jsonl/canonical-success.jsonl"
+    if [[ ! -f "$launch" || ! -f "$fx" ]]; then
+        fail "A/B launch_jq_reduce: lib + fixture present" "missing"
+        return
+    fi
+
+    local out
+    out=$(mktemp)
+    (
+        # shellcheck disable=SC1090
+        source "$launch"
+        launch_jq_reduce_stream_jsonl "$fx" "$out"
+    )
+
+    if grep -qF -- "### Finding — \`sys\` imported but unused" "$out" \
+        && grep -qF -- "- **File:** bad.py:1" "$out"; then
+        pass "A/B launch_jq_reduce: canonical success → .result verbatim"
+    else
+        fail "A/B launch_jq_reduce: canonical success → .result verbatim" "$(cat "$out")"
+    fi
+    rm -f "$out"
+}
+
+test_ab_launch_jq_reduce_empty_result_falls_back_to_text_blocks() {
+    local launch="$REPO_ROOT/tests/ab/lib/launch.sh"
+    local fx="$REPO_ROOT/tests/ab/fixtures/stream-jsonl/empty-result-three-text-blocks.jsonl"
+    if [[ ! -f "$launch" || ! -f "$fx" ]]; then
+        fail "A/B launch_jq_reduce: empty-result fixture present" "missing"
+        return
+    fi
+
+    local out
+    out=$(mktemp)
+    (
+        # shellcheck disable=SC1090
+        source "$launch"
+        launch_jq_reduce_stream_jsonl "$fx" "$out"
+    )
+
+    # Fallback recovers the canonical text from the third text block.
+    if grep -qF "## Ruff Findings" "$out" \
+        && grep -qF "### Finding — \`sys\` imported but unused" "$out" \
+        && grep -qF "I'll run Ruff on the changed Python file." "$out"; then
+        pass "A/B launch_jq_reduce: empty .result → fallback concatenates text blocks"
+    else
+        fail "A/B launch_jq_reduce: empty .result → fallback concatenates text blocks" \
+            "$(cat "$out")"
+    fi
+    rm -f "$out"
+}
+
+test_ab_launch_jq_reduce_error_subtype_yields_empty() {
+    local launch="$REPO_ROOT/tests/ab/lib/launch.sh"
+    local fx="$REPO_ROOT/tests/ab/fixtures/stream-jsonl/error-subtype.jsonl"
+    if [[ ! -f "$launch" || ! -f "$fx" ]]; then
+        fail "A/B launch_jq_reduce: error fixture present" "missing"
+        return
+    fi
+
+    local out
+    out=$(mktemp)
+    (
+        # shellcheck disable=SC1090
+        source "$launch"
+        launch_jq_reduce_stream_jsonl "$fx" "$out"
+    )
+
+    if [[ ! -s "$out" ]]; then
+        pass "A/B launch_jq_reduce: error subtype + no text blocks → empty stdout"
+    else
+        fail "A/B launch_jq_reduce: error subtype + no text blocks → empty stdout" \
+            "$(cat "$out")"
+    fi
+    rm -f "$out"
+}
+
+test_ab_launch_jq_reduce_no_terminal_event_yields_empty() {
+    local launch="$REPO_ROOT/tests/ab/lib/launch.sh"
+    local fx="$REPO_ROOT/tests/ab/fixtures/stream-jsonl/no-terminal-event.jsonl"
+    if [[ ! -f "$launch" || ! -f "$fx" ]]; then
+        fail "A/B launch_jq_reduce: no-terminal fixture present" "missing"
+        return
+    fi
+
+    local out
+    out=$(mktemp)
+    (
+        # shellcheck disable=SC1090
+        source "$launch"
+        launch_jq_reduce_stream_jsonl "$fx" "$out"
+    )
+
+    if [[ ! -s "$out" ]]; then
+        pass "A/B launch_jq_reduce: no terminal event + no text blocks → empty stdout"
+    else
+        fail "A/B launch_jq_reduce: no terminal event + no text blocks → empty stdout" \
+            "$(cat "$out")"
+    fi
+    rm -f "$out"
+}
+
+_ab_3_1c_setup_trial_dir() {
+    # Helper: build a synthetic trial dir with the given stdout.log size and
+    # an optional stream.jsonl containing the given JSONL events. Echoes the
+    # path on stdout for the caller to consume and clean up.
+    local stdout_bytes="$1"
+    local stream_jsonl_content="$2"  # empty string = no file
+    local d
+    d=$(mktemp -d)
+    if [[ "$stdout_bytes" == "0" ]]; then
+        : > "$d/stdout.log"
+    else
+        # Pad with predictable bytes; exact content does not matter for the predicate.
+        printf '%*s' "$stdout_bytes" '' | tr ' ' 'x' > "$d/stdout.log"
+    fi
+    if [[ -n "$stream_jsonl_content" ]]; then
+        printf '%s' "$stream_jsonl_content" > "$d/stream.jsonl"
+    fi
+    : > "$d/stderr.log"
+    echo '{}' > "$d/timing.json"
+    echo "$d"
+}
+
+test_ab_launch_assert_recovered_fallback_passes() {
+    local launch="$REPO_ROOT/tests/ab/lib/launch.sh"
+    local d
+    d=$(_ab_3_1c_setup_trial_dir 500 \
+        '{"type":"result","subtype":"success","result":""}')
+
+    local rc=0
+    (
+        # shellcheck disable=SC1090
+        source "$launch"
+        launch_assert_trial_recoverable "$d"
+    ) || rc=$?
+    assert_equals "0" "$rc" "A/B launch_assert: recovered-fallback case (500 bytes stdout) is recoverable"
+    rm -rf "$d"
+}
+
+test_ab_launch_assert_empty_no_stream_jsonl_fires() {
+    local launch="$REPO_ROOT/tests/ab/lib/launch.sh"
+    local d
+    d=$(_ab_3_1c_setup_trial_dir 0 "")
+
+    local rc=0 stderr_out
+    stderr_out=$(mktemp)
+    (
+        # shellcheck disable=SC1090
+        source "$launch"
+        launch_assert_trial_recoverable "$d"
+    ) 2> "$stderr_out" || rc=$?
+    if [[ "$rc" != "0" ]] && grep -qF '"reason":"empty_stdout_no_stream_jsonl"' "$stderr_out"; then
+        pass "A/B launch_assert: empty stdout + no stream.jsonl → fires with reason=no_stream_jsonl"
+    else
+        fail "A/B launch_assert: empty stdout + no stream.jsonl → fires with reason=no_stream_jsonl" \
+            "rc=$rc stderr=$(cat "$stderr_out")"
+    fi
+    rm -f "$stderr_out"
+    rm -rf "$d"
+}
+
+test_ab_launch_assert_empty_no_terminal_result_fires() {
+    local launch="$REPO_ROOT/tests/ab/lib/launch.sh"
+    local d
+    d=$(_ab_3_1c_setup_trial_dir 0 \
+        '{"type":"system","subtype":"init","session_id":"x"}')
+
+    local rc=0 stderr_out
+    stderr_out=$(mktemp)
+    (
+        # shellcheck disable=SC1090
+        source "$launch"
+        launch_assert_trial_recoverable "$d"
+    ) 2> "$stderr_out" || rc=$?
+    if [[ "$rc" != "0" ]] && grep -qF '"reason":"empty_stdout_no_terminal_result"' "$stderr_out"; then
+        pass "A/B launch_assert: empty stdout + truncated stream.jsonl → fires with reason=no_terminal_result"
+    else
+        fail "A/B launch_assert: empty stdout + truncated stream.jsonl → fires with reason=no_terminal_result" \
+            "rc=$rc stderr=$(cat "$stderr_out")"
+    fi
+    rm -f "$stderr_out"
+    rm -rf "$d"
+}
+
+test_ab_launch_assert_empty_subtype_error_fires() {
+    local launch="$REPO_ROOT/tests/ab/lib/launch.sh"
+    local d
+    d=$(_ab_3_1c_setup_trial_dir 0 \
+        '{"type":"result","subtype":"error","result":""}')
+
+    local rc=0 stderr_out
+    stderr_out=$(mktemp)
+    (
+        # shellcheck disable=SC1090
+        source "$launch"
+        launch_assert_trial_recoverable "$d"
+    ) 2> "$stderr_out" || rc=$?
+    if [[ "$rc" != "0" ]] && grep -qF '"reason":"empty_stdout_subtype_error"' "$stderr_out"; then
+        pass "A/B launch_assert: empty stdout + subtype=error → fires with reason=subtype_error"
+    else
+        fail "A/B launch_assert: empty stdout + subtype=error → fires with reason=subtype_error" \
+            "rc=$rc stderr=$(cat "$stderr_out")"
+    fi
+    rm -f "$stderr_out"
+    rm -rf "$d"
+}
+
+test_ab_launch_assert_empty_subtype_success_no_recovery_fires() {
+    # The unrecoverable success case: fallback already ran and produced
+    # nothing (no text blocks anywhere in the JSONL), so stdout.log is empty
+    # despite a successful terminal envelope.
+    local launch="$REPO_ROOT/tests/ab/lib/launch.sh"
+    local d
+    d=$(_ab_3_1c_setup_trial_dir 0 \
+        '{"type":"result","subtype":"success","result":""}')
+
+    local rc=0 stderr_out
+    stderr_out=$(mktemp)
+    (
+        # shellcheck disable=SC1090
+        source "$launch"
+        launch_assert_trial_recoverable "$d"
+    ) 2> "$stderr_out" || rc=$?
+    if [[ "$rc" != "0" ]] && grep -qF '"reason":"empty_stdout_no_recovery_signal"' "$stderr_out"; then
+        pass "A/B launch_assert: empty stdout + success-but-no-text → fires with reason=no_recovery_signal"
+    else
+        fail "A/B launch_assert: empty stdout + success-but-no-text → fires with reason=no_recovery_signal" \
+            "rc=$rc stderr=$(cat "$stderr_out")"
+    fi
+    rm -f "$stderr_out"
+    rm -rf "$d"
+}
+
+test_ab_launch_assert_non_stream_json_codepath_passes() {
+    # Non-stream-json codepath: stdout.log has content, no stream.jsonl
+    # exists. Recoverable.
+    local launch="$REPO_ROOT/tests/ab/lib/launch.sh"
+    local d
+    d=$(_ab_3_1c_setup_trial_dir 1234 "")
+
+    local rc=0
+    (
+        # shellcheck disable=SC1090
+        source "$launch"
+        launch_assert_trial_recoverable "$d"
+    ) || rc=$?
+    assert_equals "0" "$rc" "A/B launch_assert: non-empty stdout + no stream.jsonl is recoverable"
+    rm -rf "$d"
+}
+
+test_ab_agent_capture_canonical_shape_yields_canonical_hash() {
+    local lib="$REPO_ROOT/tests/ab/lib/agent_capture.sh"
+    local fx="$REPO_ROOT/tests/ab/fixtures/ruff-stdout-canonical-finding.log"
+    if [[ ! -f "$lib" || ! -f "$fx" ]]; then
+        fail "A/B agent_capture: canonical-fixture present" "missing"
+        return
+    fi
+
+    local d
+    d=$(mktemp -d)
+    cp "$fx" "$d/stdout.log"
+    (
+        # shellcheck disable=SC1090
+        source "$lib"
+        agent_capture_parse_ruff_trial "$d"
+    )
+
+    local count first_rule
+    count=$(jq 'length' "$d/findings.json")
+    first_rule=$(jq -r '.[0].rule_id' "$d/findings.json")
+    assert_equals "1" "$count" "A/B agent_capture: canonical fixture parses one finding"
+    assert_equals "F401" "$first_rule" "A/B agent_capture: canonical fixture rule_id"
+
+    # Hash equality: the canonical tuple must produce the Phase-2 baseline hash.
+    # Use the direct file-shasum form to match the harness invariant
+    # (`_agent_capture_compute_hash` in `agent_capture.sh` writes the same
+    # pipeline into `findings_hash.txt`). The plan's earlier `jq -c -S '.'`
+    # pipeline reordered keys and yielded a different hash; that was a
+    # transcription bug fixed in execution per operator decision 2026-06-01.
+    local expected_hash="7b003236b72b52271484f0b7c44ecd76a1de51e5195b4a7679c4916d74cb91c3"
+    local actual_hash
+    actual_hash=$(shasum -a 256 "$d/findings.json" | awk '{print $1}')
+    assert_equals "$expected_hash" "$actual_hash" "A/B agent_capture: canonical fixture preserves Phase-2 tuple hash"
+
+    rm -rf "$d"
+}
+
+test_ab_agent_capture_drifted_shape_yields_zero_findings() {
+    # Phase 3.1c: the parser is retightened to canonical §7; the drifted
+    # shape (**Finding N** + Message:/Detail:) MUST produce zero findings,
+    # not retrofit-tolerated tuples.
+    local lib="$REPO_ROOT/tests/ab/lib/agent_capture.sh"
+    local fx="$REPO_ROOT/tests/ab/fixtures/ruff-stdout-drifted-finding.log"
+    if [[ ! -f "$lib" || ! -f "$fx" ]]; then
+        fail "A/B agent_capture: drifted-fixture present" "missing"
+        return
+    fi
+
+    local d
+    d=$(mktemp -d)
+    cp "$fx" "$d/stdout.log"
+    (
+        # shellcheck disable=SC1090
+        source "$lib"
+        agent_capture_parse_ruff_trial "$d"
+    )
+
+    local count
+    count=$(jq 'length' "$d/findings.json")
+    assert_equals "0" "$count" "A/B agent_capture: drifted shape parses to zero findings (retrofit removed)"
+    rm -rf "$d"
+}
+
+test_ab_agent_capture_mixed_prose_still_parses_canonical() {
+    local lib="$REPO_ROOT/tests/ab/lib/agent_capture.sh"
+    local fx="$REPO_ROOT/tests/ab/fixtures/ruff-stdout-mixed-prose.log"
+    if [[ ! -f "$lib" || ! -f "$fx" ]]; then
+        fail "A/B agent_capture: mixed-prose fixture present" "missing"
+        return
+    fi
+
+    local d
+    d=$(mktemp -d)
+    cp "$fx" "$d/stdout.log"
+    (
+        # shellcheck disable=SC1090
+        source "$lib"
+        agent_capture_parse_ruff_trial "$d"
+    )
+
+    local count first_rule
+    count=$(jq 'length' "$d/findings.json")
+    first_rule=$(jq -r '.[0].rule_id' "$d/findings.json")
+    assert_equals "1" "$count" "A/B agent_capture: canonical-with-prose parses one finding"
+    assert_equals "F401" "$first_rule" "A/B agent_capture: canonical-with-prose rule_id"
+    rm -rf "$d"
+}
+
+test_ab_agent_capture_two_canonical_findings_sorted() {
+    local lib="$REPO_ROOT/tests/ab/lib/agent_capture.sh"
+    local fx="$REPO_ROOT/tests/ab/fixtures/ruff-stdout-two-findings.log"
+    if [[ ! -f "$lib" || ! -f "$fx" ]]; then
+        fail "A/B agent_capture: two-findings fixture present" "missing"
+        return
+    fi
+
+    local d
+    d=$(mktemp -d)
+    cp "$fx" "$d/stdout.log"
+    (
+        # shellcheck disable=SC1090
+        source "$lib"
+        agent_capture_parse_ruff_trial "$d"
+    )
+
+    local count first_line second_line first_rule second_rule
+    count=$(jq 'length' "$d/findings.json")
+    first_line=$(jq -r '.[0].line' "$d/findings.json")
+    second_line=$(jq -r '.[1].line' "$d/findings.json")
+    first_rule=$(jq -r '.[0].rule_id' "$d/findings.json")
+    second_rule=$(jq -r '.[1].rule_id' "$d/findings.json")
+    assert_equals "2" "$count" "A/B agent_capture: two canonical findings extracted"
+    assert_equals "1" "$first_line" "A/B agent_capture: line-1 finding sorts first"
+    assert_equals "3" "$second_line" "A/B agent_capture: line-3 finding sorts second"
+    assert_equals "F401" "$first_rule" "A/B agent_capture: first rule_id"
+    assert_equals "E501" "$second_rule" "A/B agent_capture: second rule_id"
+    rm -rf "$d"
+}

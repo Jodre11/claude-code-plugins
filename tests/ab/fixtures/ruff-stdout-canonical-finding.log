@@ -1,3 +1,5 @@
+Some preamble.
+
 ## Ruff Findings
 
 ### Finding — `sys` imported but unused

@@ -1,0 +1,17 @@
+## Ruff Findings
+
+### Finding — `sys` imported but unused
+- **File:** bad.py:1
+- **Confidence:** 100
+- **Severity:** Important
+- **Rule:** F401 (Pyflakes)
+- **Description:** `sys` imported but unused
+- **Suggested fix:** Remove the import.
+
+### Finding — Line too long
+- **File:** bad.py:3
+- **Confidence:** 100
+- **Severity:** Important
+- **Rule:** E501 (pycodestyle)
+- **Description:** Line too long (95 > 88 characters).
+- **Suggested fix:** Wrap the line.

@@ -165,6 +165,128 @@ launch_build_per_agent_argv() {
         "$user_msg"
 }
 
+# Reduce a stream-json JSONL trace to a single canonical-text string and write
+# it to the given target path. Tries the canonical path first: the .result
+# field of the terminal {type:"result", subtype:"success"} event. If that's
+# missing or empty (Phase 3.1a Category C envelope-finalisation gap), falls
+# back to concatenating .text blocks from preceding {type:"assistant"} events
+# in stream order, joined by '\n'.
+#
+# The fallback is recovery, not substitution: 3.1a confirmed by inspection
+# (trials 002/005/006/015/016/020) that the canonical text lives in those
+# blocks when the envelope's .result is empty.
+#
+# Returns 0 on any successful reduction (including empty output when neither
+# path produces text); non-zero only on jq invocation failure.
+launch_jq_reduce_stream_jsonl() {
+    local stream_jsonl="$1"
+    local stdout="$2"
+
+    if [[ ! -s "$stream_jsonl" ]]; then
+        : > "$stdout"
+        return 0
+    fi
+
+    # Canonical path: terminal result.subtype="success" with non-empty .result.
+    local canonical
+    canonical=$(jq -r '
+        select(.type == "result" and .subtype == "success") | .result // ""
+    ' "$stream_jsonl")
+
+    if [[ -n "$canonical" ]]; then
+        printf '%s' "$canonical" > "$stdout"
+        return 0
+    fi
+
+    # Fallback: concatenate text blocks from assistant events in stream order,
+    # joined by a single \n.
+    jq -r '
+        select(.type == "assistant") | .message.content[]?
+        | select(.type == "text") | .text
+    ' "$stream_jsonl" | awk 'NR>1 {printf "\n"} {printf "%s", $0}' > "$stdout"
+}
+
+# Validate-or-die post-condition for one per-agent trial. Inspects the
+# captured artefacts in <trial_dir> and returns non-zero with a single-line
+# JSON object on stderr when the trial is unrecoverable.
+#
+# Unrecoverable predicate:
+#   stdout.log <= 1 byte
+#   AND ( no stream.jsonl
+#         OR no terminal {type:"result"} event
+#         OR result.subtype == "error" )
+#
+# Anything else is recoverable: a fallback-recovered stdout.log is recoverable;
+# a stream.jsonl with subtype="error" AND non-empty stdout.log is recoverable;
+# a subtype="error" with empty stdout.log is unrecoverable.
+#
+# Stable structured-stderr fields:
+#   stage, reason, stdout_bytes, stream_jsonl_present, has_terminal_result, result_subtype
+#
+# Reason values are an enumerated set; adding a new reason is a contract bump:
+#   empty_stdout_no_stream_jsonl
+#   empty_stdout_no_terminal_result
+#   empty_stdout_subtype_error
+#   empty_stdout_no_recovery_signal
+launch_assert_trial_recoverable() {
+    local trial_dir="$1"
+    local stdout="$trial_dir/stdout.log"
+    local stream_jsonl="$trial_dir/stream.jsonl"
+
+    local stdout_bytes=0
+    if [[ -f "$stdout" ]]; then
+        stdout_bytes=$(wc -c < "$stdout" | awk '{print $1}')
+    fi
+
+    # Recoverable: stdout.log has more than 1 byte.
+    if [[ "$stdout_bytes" -gt 1 ]]; then
+        return 0
+    fi
+
+    # stdout is empty; classify the unrecoverable reason.
+    local stream_jsonl_present="false"
+    local has_terminal_result="false"
+    local result_subtype=""
+    local reason=""
+
+    if [[ -f "$stream_jsonl" ]]; then
+        stream_jsonl_present="true"
+        # Probe for terminal result event; capture subtype if present.
+        result_subtype=$(jq -r '
+            select(.type == "result") | .subtype // ""
+        ' "$stream_jsonl" | tail -1)
+        if [[ -n "$result_subtype" ]]; then
+            has_terminal_result="true"
+        fi
+    fi
+
+    if [[ "$stream_jsonl_present" == "false" ]]; then
+        reason="empty_stdout_no_stream_jsonl"
+    elif [[ "$has_terminal_result" == "false" ]]; then
+        reason="empty_stdout_no_terminal_result"
+    elif [[ "$result_subtype" == "error" ]]; then
+        reason="empty_stdout_subtype_error"
+    else
+        # Terminal subtype="success" but fallback produced nothing.
+        reason="empty_stdout_no_recovery_signal"
+    fi
+
+    jq -n \
+        --arg stage "launch_assert_trial_recoverable" \
+        --arg reason "$reason" \
+        --argjson stdout_bytes "$stdout_bytes" \
+        --arg stream_jsonl_present "$stream_jsonl_present" \
+        --arg has_terminal_result "$has_terminal_result" \
+        --arg result_subtype "$result_subtype" \
+        '{stage: $stage, reason: $reason, stdout_bytes: $stdout_bytes,
+          stream_jsonl_present: ($stream_jsonl_present == "true"),
+          has_terminal_result: ($has_terminal_result == "true"),
+          result_subtype: $result_subtype}' \
+        | jq -c '.' >&2
+
+    return 1
+}
+
 # Run one per-agent trial. Sibling of launch_run_trial; differs in:
 #  - cwd is <working_dir>, not the marketplace root.
 #  - --append-system-prompt-file is added (file form confirmed via CLI probe).
@@ -262,12 +384,7 @@ launch_run_per_agent_trial() {
                 > "$stream_jsonl" 2> "$stderr"
         ) || rc=$?
 
-        if [[ -s "$stream_jsonl" ]]; then
-            jq -r 'select(.type == "result" and .subtype == "success") | .result' \
-                "$stream_jsonl" > "$stdout"
-        else
-            : > "$stdout"
-        fi
+        launch_jq_reduce_stream_jsonl "$stream_jsonl" "$stdout"
     else
         # Pre-3.1a behaviour: stdout is the final text directly.
         (
@@ -308,6 +425,17 @@ launch_run_per_agent_trial() {
         --arg timed_out "$timed_out" \
         '{start: $start, end: $end, wall_clock_seconds: $elapsed, exit_code: $rc, timed_out: ($timed_out == "true")}' \
         > "$timing"
+
+    # Phase 3.1c: validate-or-die. If the trial is unrecoverable (empty
+    # stdout.log AND no recovery signal in stream.jsonl), the assertion
+    # writes a structured-stderr JSON line to fd 2 and returns non-zero.
+    # We propagate that rc only if rc was 0 — a real subprocess failure
+    # (timeout=124, CLI error) takes precedence over a derived assertion.
+    local assert_rc=0
+    launch_assert_trial_recoverable "$trial_dir" 2>> "$stderr" || assert_rc=$?
+    if [[ "$rc" == "0" && "$assert_rc" != "0" ]]; then
+        rc=$assert_rc
+    fi
 
     return "$rc"
 }

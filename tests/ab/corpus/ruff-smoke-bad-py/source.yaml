@@ -3,7 +3,7 @@ agent: ruff-reviewer
 captured_at: 2026-06-02T00:00:00Z
 baseline_revision: 2
 captured_under:
-  suite_sha: <sweep-sha-tbd>
+  suite_sha: ed437cb5227694817662f1ad74b7ce9e09760597
   agent_model: sonnet
   agent_effort: default
 working_dir_strategy: copy

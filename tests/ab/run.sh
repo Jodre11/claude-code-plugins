@@ -293,7 +293,11 @@ _ab_run_per_agent() {
         # one-shot if not already present (older fixtures store only the
         # markdown). The helper does this idempotently.
         if [[ ! -f "$baseline" ]]; then
-            local md="$_AB_FIXTURE_DIR/expected/findings-$_AB_CONFIG_AGENT.md"
+            # The expected-markdown filename uses the short tool key
+            # (findings-ruff.md, findings-eslint.md), while $_AB_CONFIG_AGENT
+            # carries the full `<tool>-reviewer` name — strip the suffix.
+            local agent_key="${_AB_CONFIG_AGENT%-reviewer}"
+            local md="$_AB_FIXTURE_DIR/expected/findings-$agent_key.md"
             if [[ ! -f "$md" ]]; then
                 echo "run.sh: $md: not found; cannot run faithfulness check" >&2
                 exit 1

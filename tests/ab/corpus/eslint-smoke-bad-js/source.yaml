@@ -1,9 +1,9 @@
 id: eslint-smoke-bad-js
 agent: eslint-reviewer
 captured_at: 2026-06-02T00:00:00Z
-baseline_revision: 1
+baseline_revision: 2
 captured_under:
-  suite_sha: 49e5f5a933c32e2d8e2b73af0e495f2a9b8afe73
+  suite_sha: 055d3fd8f1c90447aaad09e64e4b63cdcd4cf4a3
   agent_model: sonnet
   agent_effort: default
 working_dir_strategy: copy

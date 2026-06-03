@@ -6,7 +6,7 @@
 - **Severity:** Important
 - **Rule:** no-var (eslint)
 - **Description:** Unexpected var, use let or const instead.
-- **Suggested fix:** Replace `var legacy` with `const legacy` on line 1 (or `let` if reassignment is needed — but given `legacy` is only read, `const` is the safer choice).
+- **Suggested fix:** Replace `var legacy` with `let legacy` on line 1 (or `const` if the value is never reassigned, which it is in this file — `legacy` is returned on line 9 but never reassigned, so `const legacy = 1;` is the correct form).
 
 ### Finding — `let` never reassigned
 - **File:** bad.js:2
@@ -14,7 +14,7 @@
 - **Severity:** Important
 - **Rule:** prefer-const (eslint)
 - **Description:** 'neverReassigned' is never reassigned. Use 'const' instead.
-- **Suggested fix:** Change `let neverReassigned = 2;` to `const neverReassigned = 2;` on line 2.
+- **Suggested fix:** Change `let neverReassigned` to `const neverReassigned` on line 2.
 
 ### Finding — unused variable
 - **File:** bad.js:3

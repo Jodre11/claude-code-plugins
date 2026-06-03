@@ -259,7 +259,7 @@ _ab_run_per_agent() {
     timeout_bin=$(launch_resolve_timeout_binary)
 
     local summary="$_AB_RUN_DIR/summary.csv"
-    echo "trial,exit_code,wall_clock_seconds,findings_count,findings_hash,first_finding_rule,inconclusive,timed_out" > "$summary"
+    echo "trial,exit_code,wall_clock_seconds,findings_count,findings_hash,first_finding_rule,inconclusive,timed_out,output_tokens,num_turns,cache_read_input_tokens,total_cost_usd" > "$summary"
 
     local i
     for ((i = 1; i <= trials; i++)); do
@@ -513,8 +513,11 @@ _ab_append_per_agent_summary_row() {
         inconclusive="false"
     fi
 
-    printf '%d,%d,%d,%d,%s,%s,%s,%s\n' \
-        "$trial_num" "$rc" "$wall" "$findings_count" "$findings_hash" "$first_rule" "$inconclusive" "$timed_out" \
+    local cost_csv
+    cost_csv=$(agent_capture_extract_cost_csv "$trial_dir/stream.jsonl")
+
+    printf '%d,%d,%d,%d,%s,%s,%s,%s,%s\n' \
+        "$trial_num" "$rc" "$wall" "$findings_count" "$findings_hash" "$first_rule" "$inconclusive" "$timed_out" "$cost_csv" \
         >> "$_AB_RUN_DIR/summary.csv"
 }
 
@@ -525,9 +528,13 @@ _ab_emit_completion_summary() {
     local trials="$1"
     local summary="$_AB_RUN_DIR/summary.csv"
 
+    # Resolve the timed_out column by header name rather than a fixed index:
+    # this function is shared by both modes, whose schemas place timed_out in
+    # different positions (orchestrator col 7, per-agent col 8). exit_code is
+    # column 2 in both schemas, so a fixed index is safe there.
     local succeeded timeouts
     succeeded=$(awk -F, 'NR>1 && $2==0 {n++} END {print n+0}' "$summary")
-    timeouts=$(awk -F, 'NR>1 && $7=="true" {n++} END {print n+0}' "$summary")
+    timeouts=$(awk -F, 'NR==1 {for (i=1; i<=NF; i++) if ($i=="timed_out") c=i; next} c && $c=="true" {n++} END {print n+0}' "$summary")
 
     local mean_wall
     mean_wall=$(awk -F, 'NR>1 {s+=$3; n++} END {if (n>0) printf "%d", s/n; else print 0}' "$summary")

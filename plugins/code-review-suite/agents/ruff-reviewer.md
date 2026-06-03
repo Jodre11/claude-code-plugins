@@ -1,7 +1,8 @@
 ---
 name: ruff-reviewer
 description: Runs Ruff on Python files in the diff (including notebooks via Ruff ≥ 0.6.0 or nbqa fallback) and reports findings. Standalone or dispatched by the review include.
-model: sonnet
+model: haiku
+effort: low
 tools: Read, Grep, Glob, Bash
 background: true
 ---

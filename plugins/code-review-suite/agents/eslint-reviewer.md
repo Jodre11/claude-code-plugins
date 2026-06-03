@@ -1,7 +1,8 @@
 ---
 name: eslint-reviewer
 description: Runs ESLint (or Biome) on JS/TS files in the diff and reports findings. Standalone or dispatched by the review include.
-model: sonnet
+model: haiku
+effort: low
 tools: Read, Grep, Glob, Bash
 background: true
 ---

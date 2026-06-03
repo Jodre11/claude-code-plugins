@@ -1,14 +1,22 @@
 # Phase 3.3 — trivy-reviewer Haiku/low A/B result
 
 **Date:** 2026-06-03
-**Status:** inconclusive (decision-4) — residual tail is agent-side, not apparatus
+**Status:** EQUIVALENT after fix (initial probe inconclusive; two characterised fixes closed an agent-side tail, re-sweep is clean 20/20 both arms)
 **Spec:** ../specs/2026-05-29-static-specialist-tuning-sweep.md
 **Plan:** ../plans/2026-06-03-phase-3-3-trivy-ab-baseline.md
-**Precedent (eslint, inconclusive + agent-side tail):** ./2026-06-02-eslint-haiku-low-reprobe-result.md
+**Precedent (eslint, inconclusive + agent-side tail + PR C fix):** ./2026-06-02-eslint-haiku-low-reprobe-result.md
 **Precedent (ruff, equivalent):** ./2026-06-02-ruff-haiku-low-result.md
-**Baseline run dir:** `tests/ab/runs/20260603T153718Z-trivy-baseline/` (gitignored)
-**Sweep run dir:** `tests/ab/runs/20260603T153722Z-trivy-haiku-low/` (gitignored)
-**Sweep SHA:** `5e28ed0`
+**Initial baseline run dir:** `tests/ab/runs/20260603T153718Z-trivy-baseline/` (gitignored)
+**Initial sweep run dir:** `tests/ab/runs/20260603T153722Z-trivy-haiku-low/` (gitignored)
+**Initial sweep SHA:** `5e28ed0`
+**Fix-validation baseline run dir:** `tests/ab/runs/20260603T173116Z-trivy-baseline/` (gitignored)
+**Fix-validation sweep run dir:** `tests/ab/runs/20260603T173119Z-trivy-haiku-low/` (gitignored)
+**Fix-validation sweep SHA:** `5ccb692`
+
+> **Reading order.** The body below documents the **initial** probe (inconclusive,
+> with the agent-side tail characterised). The **fix-validation re-sweep** that
+> upgrades the verdict to EQUIVALENT is in the final section — start there for the
+> headline, read the body for how the tail was diagnosed.
 
 ## Sweep configuration
 
@@ -177,6 +185,70 @@ correctness improvements that pass the asymmetry test. If the operator wants to
 pursue a Haiku/low trivy adoption, the next step mirrors eslint's PR C: ship both
 fixes, then re-sweep both arms at n=20 as a fix-validation pass. Until then,
 trivy stays `model: sonnet`.
+
+## Fixes SHIPPED + re-sweep VALIDATED 2026-06-03
+
+Operator approved the two characterised fixes. Both shipped (trivy-body scope
+only — shared §4 left untouched so ruff/eslint verdicts need no re-validation):
+
+- **Fix A** (`91bb36d`, `agent_capture.sh`): the trivy skip sentinel widened from
+  `^Skipped — trivy not available` to the broad `^Skipped — ` opener (trivy has a
+  single invocation, no partial-coverage variant, so any skip is a full skip →
+  INCONCLUSIVE). TDD'd with a regression test asserting the temp-dir-abort
+  phrasing marks INCONCLUSIVE rather than laundering to false 0-findings. Mirrors
+  eslint PR C-2.
+- **Fix B** (`5ccb692`, `trivy-reviewer.md`): the Tool-invocation section now
+  states that the literal `$CLAUDE_TEMP_DIR` token in the prompt is delivered
+  **unexpanded** (Bash resolves it at command time), that seeing the unexpanded
+  token is expected and **does** satisfy the §4 contract, and that trivy's stdout
+  can be parsed inline with no temp file at all. This is the fix that closes the
+  tail — it directly targets the trial-016 mechanism (Haiku read the unexpanded
+  token as a missing temp dir and self-aborted). General correctness improvement:
+  production (`pre-review.md:715`, `review-pipeline.md:714`) passes the
+  byte-identical literal token via the `Agent` tool prompt, so the clarification
+  helps any model on the real pipeline, not just the A/B harness.
+
+**Fix-validation re-sweep (both arms n=20, sweep SHA `5ccb692`):**
+run dirs `tests/ab/runs/20260603T173116Z-trivy-baseline/` and
+`tests/ab/runs/20260603T173119Z-trivy-haiku-low/`.
+
+| Arm | canonical `b0888193…` | other | skipped/INCONCLUSIVE | NORMAL rate |
+|---|---|---|---|---|
+| **Sonnet/default** | **20 / 20** | 0 | 0 | **100 %** |
+| **Haiku/low** | **20 / 20** | 0 | 0 | **100 %** |
+
+The Haiku tail is **fully closed**: 19/20 → **20/20**, the trial-016
+temp-dir-abort failure mode did not recur, and both arms are single-hash with
+zero divergence. This is a genuine correctness fix, not fixture-chasing — Fix B
+helps any model on the real pipeline, and it closed the observed mechanism rather
+than being tuned to the hash.
+
+**Fix-validation cost delta:**
+
+| Arm | n | mean cost/trial* | mean turns | mean out tok | mean cache-read tok |
+|---|---|---|---|---|---|
+| Sonnet/default | 20 | **$0.12748** | 6.30 | 2,094 | 165,544 |
+| Haiku/low | 20 | **$0.05458** | 7.15 | 1,720 | 192,301 |
+
+**Post-fix cost ratio Sonnet ÷ Haiku = 2.34×** (was 2.04× pre-fix; the initial
+Haiku arm was slightly cheaper because one trial self-aborted early — the clean
+arm does the full work on every trial). List-price caveat as above; in family
+with ruff ~2.2× and eslint 2.17×/2.46×.
+
+## Verdict (upgraded): EQUIVALENT
+
+On the fix-validation re-sweep, Haiku/low matches the Sonnet/default baseline
+exactly — 20/20 identical canonical hash on both arms, no within-arm
+non-determinism, no skips, no fabrications. This clears the EQUIVALENT bar (clean
+single-hash arm, zero movement against the 25 % guard).
+
+**Production flip: RECOMMENDED — operator-gated.** trivy now meets the clean-
+EQUIVALENT flip gate. The effort-field blocker is resolved (`effort:` is a
+documented subagent key; eslint/ruff carry `model: haiku` + `effort: low` from
+`3b3a255`), so the flip is to set BOTH `model: haiku` AND `effort: low` in
+`plugins/code-review-suite/agents/trivy-reviewer.md` frontmatter, mirroring
+eslint/ruff. **Not executed here** — it changes a dispatched-agent definition; if
+approved and wanted live mid-session, `/plugins update` then `/reload-plugins`.
 
 ## Cross-references
 

@@ -7,6 +7,8 @@ captured_under:
   agent_model: sonnet
   agent_effort: default
 working_dir_strategy: copy
+setup:
+  command: npm ci
 source_path: tests/fixtures/static-analysis/eslint/
 base_sha: ""  # synthetic fixture: no real diff
 head_sha: ""

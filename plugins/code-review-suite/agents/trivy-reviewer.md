@@ -33,15 +33,15 @@ Run `trivy --version`. If absent, emit `Skipped — trivy not available on PATH.
 
 ## Tool invocation
 
-Check `$CLAUDE_TEMP_DIR` is present in your prompt — see `includes/static-analysis-context.md` §4.
+The temp-dir contract (`includes/static-analysis-context.md` §4) is satisfied by the literal `Use $CLAUDE_TEMP_DIR for temporary files.` instruction line in your prompt. That line carries the token `$CLAUDE_TEMP_DIR` **unexpanded** — the dispatcher does not substitute the resolved path into the prompt text; Bash expands it from your environment when a command actually runs. Seeing the literal `$CLAUDE_TEMP_DIR` in your prompt is expected and **does** satisfy the contract — do not treat the unexpanded token as a missing temp dir and abort. The contract is violated only if the instruction line is entirely absent.
+
+Trivy writes its report to stdout, so a temp file is optional: you may stream the JSON directly and parse it inline, or redirect to `$CLAUDE_TEMP_DIR/trivy-config.json` (Bash resolves the path at redirect time). Never invent or fall back to a bare `/tmp/` path.
 
 Single invocation across all matched files:
 
 ```
 trivy config --format=json --severity=MEDIUM,HIGH,CRITICAL --exit-code=0 <list-of-changed-files>
 ```
-
-→ `$CLAUDE_TEMP_DIR/trivy-config.json`.
 
 - `--exit-code=0` so the agent doesn't error on findings.
 - `LOW` and `UNKNOWN` are filtered at the source via `--severity`.
@@ -76,7 +76,7 @@ After parsing, intersect each finding's `(file, line)` against `$CHANGED_LINES[<
 
 Every finding emits the literal `Confidence: 100` per §6.
 
-Clean up `$CLAUDE_TEMP_DIR/trivy-config.json` after parsing.
+If you redirected trivy's output to `$CLAUDE_TEMP_DIR/trivy-config.json`, clean it up after parsing. If you streamed and parsed inline, there is nothing to clean.
 
 ### Worked example
 

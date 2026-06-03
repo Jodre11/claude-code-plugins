@@ -245,10 +245,15 @@ _ab_run_per_agent() {
 
     _ab_write_manifest_per_agent "$config_path" "$timestamp" "$experiment_name" "$trials" "$timeout_seconds" "$corpus_id" "$decay_warnings"
 
-    # Materialise the working dir once and reuse across trials.
-    local working_dir="${CLAUDE_TEMP_DIR:-/tmp}/per-agent-${timestamp}"
-    fixture_materialise "$working_dir"
-    trap "fixture_cleanup '$working_dir'" EXIT
+    # Materialise + provision a TEMPLATE once, then give each trial a fresh
+    # per-trial copy of the template (Phase 3.2b: hermetic, order-independent
+    # trials — no shared mutable working dir, no install race).
+    local template_dir="${CLAUDE_TEMP_DIR:-/tmp}/per-agent-${timestamp}-template"
+    fixture_materialise "$template_dir"
+    fixture_run_setup "$template_dir"
+    local trials_root="${CLAUDE_TEMP_DIR:-/tmp}/per-agent-${timestamp}-trials"
+    mkdir -p "$trials_root"
+    trap "fixture_cleanup '$template_dir'; rm -rf '$trials_root'" EXIT
 
     local timeout_bin
     timeout_bin=$(launch_resolve_timeout_binary)
@@ -262,6 +267,9 @@ _ab_run_per_agent() {
         trial_num=$(printf 'trial-%03d' "$i")
         local trial_dir="$_AB_RUN_DIR/$trial_num"
         mkdir -p "$trial_dir"
+        local trial_work="$trials_root/$trial_num"
+        mkdir -p "$trial_work"
+        cp -R "$template_dir/." "$trial_work/"
         echo "[$(date +'%H:%M:%S')] $trial_num: launching..." >&2
 
         local rc=0
@@ -273,7 +281,7 @@ _ab_run_per_agent() {
             "$_AB_CONFIG_SESSION_EFFORT" \
             "$timeout_bin" \
             "$timeout_seconds" \
-            "$working_dir" \
+            "$trial_work" \
             "$stream_json" \
             || rc=$?
 

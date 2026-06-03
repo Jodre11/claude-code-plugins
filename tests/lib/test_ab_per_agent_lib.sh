@@ -390,7 +390,7 @@ test_ab_agent_capture_trivy_parses_three_findings() {
     count=$(jq 'length' "$trial_dir/findings.json")
     assert_equals "3" "$count" "A/B agent_capture trivy: three findings extracted"
 
-    local first_rule first_file first_line first_sev
+    local first_rule first_file first_line
     first_rule=$(jq -r '.[0].rule_id' "$trial_dir/findings.json")
     first_file=$(jq -r '.[0].file' "$trial_dir/findings.json")
     first_line=$(jq -r '.[0].line' "$trial_dir/findings.json")
@@ -413,7 +413,7 @@ test_ab_agent_capture_trivy_zero_findings_is_empty_array() {
 
     (
         # shellcheck disable=SC1090
-        source "$REPO_ROOT/tests/ab/lib/agent_capture.sh"
+        source "$lib"
         agent_capture_parse_trial trivy "$trial_dir"
     )
 
@@ -424,13 +424,14 @@ test_ab_agent_capture_trivy_zero_findings_is_empty_array() {
 }
 
 test_ab_agent_capture_trivy_skipped_marks_inconclusive() {
+    local lib="$REPO_ROOT/tests/ab/lib/agent_capture.sh"
     local trial_dir
     trial_dir=$(mktemp -d)
     printf 'Skipped — trivy not available on PATH.\n' > "$trial_dir/stdout.log"
 
     (
         # shellcheck disable=SC1090
-        source "$REPO_ROOT/tests/ab/lib/agent_capture.sh"
+        source "$lib"
         agent_capture_parse_trial trivy "$trial_dir"
     )
 

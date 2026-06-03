@@ -244,3 +244,25 @@ agent_capture_compare_findings() {
     diff -u <(jq -S '.' "$baseline") <(jq -S '.' "$trial") >&2 || true
     return 1
 }
+
+# Extract the four per-trial cost columns from a trial's stream.jsonl, as a
+# CSV fragment in the order: output_tokens,num_turns,cache_read_input_tokens,
+# total_cost_usd. Reads the LAST {type:"result"} event (robust to repeats).
+# Emits four empty fields (",,,") and returns 0 when no result event exists,
+# so a truncated/absent stream never aborts the summary row. The CC stream's
+# total_cost_usd is Anthropic LIST price, not Bedrock — report the RATIO.
+agent_capture_extract_cost_csv() {
+    local stream_jsonl="$1"
+    if [[ ! -s "$stream_jsonl" ]]; then
+        echo ",,,"
+        return 0
+    fi
+    jq -rs '
+        (map(select(.type == "result")) | last) as $r
+        | [ ($r.usage.output_tokens // ""),
+            ($r.num_turns // ""),
+            ($r.usage.cache_read_input_tokens // ""),
+            ($r.total_cost_usd // "") ]
+        | map(tostring) | join(",")
+    ' "$stream_jsonl"
+}

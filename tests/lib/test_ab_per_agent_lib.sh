@@ -1195,3 +1195,43 @@ test_ab_fixture_run_setup_executes_in_dir() {
 
     rm -rf "$d"
 }
+
+test_ab_cost_extract_present() {
+    local lib="$REPO_ROOT/tests/ab/lib/agent_capture.sh"
+    local fix="$REPO_ROOT/tests/ab/fixtures/stream-jsonl/result-with-cost-fields.jsonl"
+
+    if [[ ! -f "$lib" || ! -f "$fix" ]]; then
+        fail "A/B cost: lib + fixture present" "missing"
+        return
+    fi
+
+    local out
+    out=$(
+        # shellcheck disable=SC1090
+        source "$lib"
+        agent_capture_extract_cost_csv "$fix"
+    )
+
+    assert_equals "1234,7,98765,0.0625" "$out" \
+        "A/B cost: extract_cost_csv emits out_tok,turns,cache_read,cost in order"
+}
+
+test_ab_cost_extract_no_result_event() {
+    local lib="$REPO_ROOT/tests/ab/lib/agent_capture.sh"
+    local fix="$REPO_ROOT/tests/ab/fixtures/stream-jsonl/no-terminal-event.jsonl"
+
+    if [[ ! -f "$lib" || ! -f "$fix" ]]; then
+        fail "A/B cost: lib + no-terminal fixture present" "missing"
+        return
+    fi
+
+    local out
+    out=$(
+        # shellcheck disable=SC1090
+        source "$lib"
+        agent_capture_extract_cost_csv "$fix"
+    )
+
+    assert_equals ",,," "$out" \
+        "A/B cost: extract_cost_csv emits four empty fields when no result event"
+}

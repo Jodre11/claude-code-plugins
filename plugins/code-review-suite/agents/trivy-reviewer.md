@@ -70,10 +70,47 @@ New secret-finding rules added by Trivy upstream fall under the patterns above w
 
 ## Output
 
-Per `includes/static-analysis-context.md` §7. Heading: `## Trivy IaC Findings`. The `Rule:` field shows `AVD-XX-NNNN (provider)` or the policy ID. The `Reference:` field is optional — set it to Trivy's emitted URL when present.
+Per `includes/static-analysis-context.md` §7. Heading: `## Trivy IaC Findings`. The `Rule:` field shows the trivy rule ID with its provider — e.g. `DS-NNNN (Dockerfile)` for Dockerfile checks, `AVD-XX-NNNN (provider)` for cloud-provider checks, or the policy ID for a custom policy. The `Reference:` field is optional — set it to Trivy's emitted URL when present.
 
 After parsing, intersect each finding's `(file, line)` against `$CHANGED_LINES[<file>]` per §5. Drop non-matching findings.
 
 Every finding emits the literal `Confidence: 100` per §6.
 
 Clean up `$CLAUDE_TEMP_DIR/trivy-config.json` after parsing.
+
+### Worked example
+
+For a `Dockerfile` whose changed lines 1, 7, 9 trip three trivy rules (a `:latest` base tag on line 1, an `EXPOSE 22` on line 7, and a secret injected via `ENV` on line 9), the canonical §7 output is:
+
+```
+## Trivy IaC Findings
+
+### Finding — secret passed via ENV
+- **File:** Dockerfile:9
+- **Confidence:** 100
+- **Severity:** Critical
+- **Rule:** DS-0031 (Dockerfile)
+- **Description:** Secrets passed via build-args or envs or copied secret files.
+- **Suggested fix:** Remove the `ENV API_TOKEN=...` on line 9 and inject the secret at runtime via `--secret` mounts or the container's runtime environment, so it never bakes into an image layer.
+- **Reference:** https://avd.aquasec.com/misconfig/ds-0031
+
+### Finding — `:latest` tag used
+- **File:** Dockerfile:1
+- **Confidence:** 100
+- **Severity:** Suggestion
+- **Rule:** DS-0001 (Dockerfile)
+- **Description:** ':latest' tag used.
+- **Suggested fix:** Pin the base image to an explicit, immutable tag or digest (e.g. `FROM node:20.11.1-bookworm`) on line 1 so builds are reproducible.
+- **Reference:** https://avd.aquasec.com/misconfig/ds-0001
+
+### Finding — port 22 exposed
+- **File:** Dockerfile:7
+- **Confidence:** 100
+- **Severity:** Suggestion
+- **Rule:** DS-0004 (Dockerfile)
+- **Description:** Port 22 exposed.
+- **Suggested fix:** Remove the `EXPOSE 22` instruction on line 7 unless SSH is genuinely required; prefer `docker exec`/`kubectl exec` for shell access instead of running sshd in the container.
+- **Reference:** https://avd.aquasec.com/misconfig/ds-0004
+```
+
+The heading is `### Finding — <title>` (em-dash, U+2014). The bullet field names are exactly `File`, `Confidence`, `Severity`, `Rule`, `Description`, `Suggested fix`, and optionally `Reference` — as canonicalised in `includes/static-analysis-context.md` §7. Do not substitute synonyms (`Detail`, `Message`), do not group findings under a `### <Severity>` sub-heading, and do not use a `**Title:**`/`**Rule:**` prose-block or `---`-separated layout — the harness parser pins to the §7 names and per-finding `### Finding` blocks. Severity is the mapped tier (`Critical` for `DS-0031` via the secret allow-list, `Suggestion` for the `MEDIUM` rules), not the raw trivy token.

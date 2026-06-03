@@ -6,7 +6,7 @@ Some preamble noise from the dispatched session.
 - **File:** Dockerfile:1
 - **Confidence:** 100
 - **Severity:** Suggestion
-- **Rule:** DS-0001 (dockerfile)
+- **Rule:** DS-0001 (Dockerfile)
 - **Description:** ':latest' tag used.
 - **Suggested fix:** Pin the base image to an explicit version.
 
@@ -14,7 +14,7 @@ Some preamble noise from the dispatched session.
 - **File:** Dockerfile:7
 - **Confidence:** 100
 - **Severity:** Suggestion
-- **Rule:** DS-0004 (dockerfile)
+- **Rule:** DS-0004 (Dockerfile)
 - **Description:** Port 22 exposed.
 - **Suggested fix:** Remove the EXPOSE 22 instruction unless SSH is required.
 
@@ -22,7 +22,7 @@ Some preamble noise from the dispatched session.
 - **File:** Dockerfile:9
 - **Confidence:** 100
 - **Severity:** Critical
-- **Rule:** DS-0031 (dockerfile)
+- **Rule:** DS-0031 (Dockerfile)
 - **Description:** Secrets passed via build-args or envs or copied secret files.
 - **Suggested fix:** Inject the secret at runtime, not via ENV in the image.
 

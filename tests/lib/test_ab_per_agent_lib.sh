@@ -691,6 +691,54 @@ test_ab_config_per_agent_ruff_haiku_low_parses() {
     assert_equals "low" "$effort" "A/B config: ruff-haiku-low.session.effort = low"
 }
 
+test_ab_config_per_agent_trivy_haiku_low_parses() {
+    # Phase 3.3: the haiku-low probe arm config must parse and expose
+    # session.model=haiku, session.effort=low. The harness drives all
+    # variation; the agent file is never touched at runtime.
+    local config="$REPO_ROOT/tests/ab/lib/config.sh"
+    local probe="$REPO_ROOT/tests/ab/configs/per-agent/trivy-haiku-low.yaml"
+
+    if [[ ! -f "$config" ]]; then
+        fail "A/B config: per-agent trivy-haiku-low parses" "config.sh missing"
+        return
+    fi
+    if [[ ! -f "$probe" ]]; then
+        fail "A/B config: per-agent trivy-haiku-low parses" "trivy-haiku-low.yaml not yet authored"
+        return
+    fi
+
+    local mode agent model effort
+    mode=$(
+        # shellcheck disable=SC1090
+        source "$config"
+        config_load "$probe" >/dev/null
+        echo "${_AB_CONFIG_MODE:-}"
+    )
+    agent=$(
+        # shellcheck disable=SC1090
+        source "$config"
+        config_load "$probe" >/dev/null
+        echo "${_AB_CONFIG_AGENT:-}"
+    )
+    model=$(
+        # shellcheck disable=SC1090
+        source "$config"
+        config_load "$probe" >/dev/null
+        echo "${_AB_CONFIG_SESSION_MODEL:-}"
+    )
+    effort=$(
+        # shellcheck disable=SC1090
+        source "$config"
+        config_load "$probe" >/dev/null
+        echo "${_AB_CONFIG_SESSION_EFFORT:-}"
+    )
+
+    assert_equals "per-agent" "$mode" "A/B config: trivy-haiku-low.mode = per-agent"
+    assert_equals "trivy-reviewer" "$agent" "A/B config: trivy-haiku-low.agent = trivy-reviewer"
+    assert_equals "haiku" "$model" "A/B config: trivy-haiku-low.session.model = haiku"
+    assert_equals "low" "$effort" "A/B config: trivy-haiku-low.session.effort = low"
+}
+
 test_ab_run_sh_stream_json_flag_recognised() {
     # Phase 3.1a: --stream-json must be a recognised flag and listed in
     # run.sh's --help output so operators can discover it. Propagation

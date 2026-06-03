@@ -31,19 +31,21 @@ A diff may span multiple JS/TS workspaces in a monorepo. For each changed JS/TS 
 
 Group changed files by their resolved config root → one or more projects to scan. If a project root contains both Biome and ESLint configs, prefer Biome and emit a single-line note in the findings header: `note: both biome and eslint configs present — using biome`.
 
-Resolve the binary per project, in this priority order:
+Resolve the binary per project, in this priority order. The first tier that exists wins; call the resolved absolute path `<bin>` and use it for every invocation below — **never invoke the bare name `eslint`/`biome` directly, since neither is guaranteed on `PATH`.** A project ships its linter under `node_modules/.bin/` (a symlink — test it with `[ -x <path> ]` or `ls`, not `find -type f`, which skips symlinks):
 
 1. Project-local: `<project-root>/node_modules/.bin/biome` (or `.../eslint`)
 2. Repo-root local: `<repo-root>/node_modules/.bin/{biome,eslint}` (handles workspaces with hoisted deps)
-3. Global on PATH: `biome` / `eslint`
-4. None resolve → emit `Skipped — eslint/biome not available on PATH or in node_modules.` for that project and continue with the next project.
+3. Global on PATH: `biome` / `eslint` (only if `command -v` finds it)
+4. None resolve → emit `Skipped — eslint/biome not available on PATH or in node_modules.` for that project and continue with the next project. Emit this exact line verbatim — do not paraphrase it (e.g. dropping `/biome`), or downstream tooling cannot distinguish a genuine skip from a clean zero-findings result.
 
 ## Tool invocation
 
 Check `$CLAUDE_TEMP_DIR` is present in your prompt before invoking either tool — see `includes/static-analysis-context.md` §4.
 
-- **Biome:** `biome check --reporter=json --files-ignore-unknown=true <changed-files-in-project>` → `$CLAUDE_TEMP_DIR/biome-<sanitised-project>.json`. Pass the exact list of changed files; do not let Biome scan the whole tree.
-- **ESLint:** `eslint --format=json --no-warn-ignored <changed-files-in-project>` → `$CLAUDE_TEMP_DIR/eslint-<sanitised-project>.json`.
+`<bin>` below is the absolute path resolved by the ladder above (e.g. `<project-root>/node_modules/.bin/eslint`), not the bare command name:
+
+- **Biome:** `<bin> check --reporter=json --files-ignore-unknown=true <changed-files-in-project>` → `$CLAUDE_TEMP_DIR/biome-<sanitised-project>.json`. Pass the exact list of changed files; do not let Biome scan the whole tree.
+- **ESLint:** `<bin> --format=json --no-warn-ignored <changed-files-in-project>` → `$CLAUDE_TEMP_DIR/eslint-<sanitised-project>.json`.
 
 `<sanitised-project>` is the basename of the config-root directory (no path traversal, no collisions across multiple workspaces).
 

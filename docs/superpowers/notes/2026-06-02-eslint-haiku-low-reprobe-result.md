@@ -168,6 +168,44 @@ numbers above go to the operator; no body or config edit is made until PR C is
 approved, and any edit earns its own before/after re-measurement at n=20 on both
 arms.
 
+## PR C — SHIPPED + VALIDATED 2026-06-03
+
+Operator approved PR C and the switch to Haiku/low. Both fixes shipped:
+
+- **PR C-1** (`36e304b`, `eslint-reviewer.md`): the binary-resolution ladder now
+  names the resolved absolute path `<bin>` and the Tool-invocation section uses
+  `<bin>` instead of bare `eslint`/`biome`, explicitly forbidding the bare name,
+  fixing the `find -type f` symlink trap, and requiring the skip line verbatim.
+- **PR C-2** (`56844cd`, `agent_capture.sh`): the eslint skip sentinel widened to
+  `^Skipped — (eslint/biome|eslint|biome) not available` with a TDD fixture.
+
+**Validation sweep (Haiku/low n=20, post-fix, fix-validation NOT a verdict A/B):**
+run dir `tests/ab/runs/20260603T121608Z-eslint-haiku-low/`.
+
+- **20/20 canonical hash `8d62c08e…1148`** (was 17/20). The tail is fully closed.
+- **Zero skips.** Every trial resolved the tier-1 `node_modules/.bin/eslint` path
+  — the exact mechanism PR C-1 targeted, confirmed by the command traces.
+- Post-fix cost ratio Sonnet ÷ Haiku = **2.17×** (was 2.46× pre-fix; the fix adds
+  ~1.5 turns/trial doing proper resolution — 10.5 vs 8.95 — so the ratio narrows
+  slightly but the saving is large and real). List-price caveat as above.
+
+This is a genuine correctness fix, not fixture-chasing: PR C-1 helps any model
+(the resolved-path invocation is unambiguously more correct), and it closed the
+observed mechanism rather than being tuned to the hash.
+
+**The production `model:` flip is decided in principle but NOT executed this
+session — deliberately held.** The A/B validated `model: haiku` + `effort: low`,
+but the production agent frontmatter
+(`plugins/code-review-suite/agents/*-reviewer.md`) carries only a `model:` field;
+there is **no `effort:` field** in that schema (effort is set per-trial by the
+A/B harness session, not by the agent definition). So flipping `model: haiku`
+alone would NOT reproduce the validated `haiku`/`low` config — the effort
+dimension is unexpressed. ruff (3.1b EQUIVALENT) is likewise still `model:
+sonnet`, so there is no existing flip precedent to copy. **Open question for the
+next session:** determine how production expresses (or inherits) effort for these
+agents, then flip eslint AND ruff together to the correct, validated config. Do
+not flip `model:` until this is resolved. See the trivy-phase handover.
+
 ## Cross-references
 
 - Parent spec: ../specs/2026-05-29-static-specialist-tuning-sweep.md

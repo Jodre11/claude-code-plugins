@@ -1,7 +1,8 @@
 ---
 name: trivy-reviewer
 description: Runs trivy config on Terraform / Dockerfile / Kubernetes / Helm / CFN files in the diff and reports IaC security findings. Standalone or dispatched by the review include.
-model: sonnet
+model: haiku
+effort: low
 tools: Read, Grep, Glob, Bash
 background: true
 ---

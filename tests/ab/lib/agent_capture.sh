@@ -11,6 +11,8 @@ set -euo pipefail
 #   zero_state    : ERE matching the canonical zero-state line
 # The rule-ID tokeniser (split on [ \t(], take token 1) is shared by ruff and
 # eslint — kebab-case IDs have no internal spaces — so it is not parameterised.
+# Trivy's `DS-NNNN` and `AVD-XX-NNNN` IDs likewise carry no internal spaces, so
+# the same tokeniser covers them too.
 _agent_capture_params() {
     # Accept both the short table key (used by the parser tests) and the full
     # `<name>-reviewer` form that run.sh carries in $_AB_CONFIG_AGENT.
@@ -29,6 +31,11 @@ _agent_capture_params() {
             # trials 003/017). The agent body still instructs the verbatim form.
             _AC_SKIP='^Skipped — (eslint/biome|eslint|biome) not available'
             _AC_ZERO='^0 findings — no JS/TS files in diff\.'
+            ;;
+        trivy|trivy-reviewer)
+            _AC_HEADING='^## Trivy IaC Findings$'
+            _AC_SKIP='^Skipped — trivy not available'
+            _AC_ZERO='^0 findings — no IaC files in diff\.'
             ;;
         *)
             echo "_agent_capture_params: unknown agent: $agent" >&2

@@ -1,0 +1,29 @@
+Some preamble noise from the dispatched session.
+
+## Trivy IaC Findings
+
+### Finding — latest tag used
+- **File:** Dockerfile:1
+- **Confidence:** 100
+- **Severity:** Suggestion
+- **Rule:** DS-0001 (dockerfile)
+- **Description:** ':latest' tag used.
+- **Suggested fix:** Pin the base image to an explicit version.
+
+### Finding — port 22 exposed
+- **File:** Dockerfile:7
+- **Confidence:** 100
+- **Severity:** Suggestion
+- **Rule:** DS-0004 (dockerfile)
+- **Description:** Port 22 exposed.
+- **Suggested fix:** Remove the EXPOSE 22 instruction unless SSH is required.
+
+### Finding — secret in env
+- **File:** Dockerfile:9
+- **Confidence:** 100
+- **Severity:** Critical
+- **Rule:** DS-0031 (dockerfile)
+- **Description:** Secrets passed via build-args or envs or copied secret files.
+- **Suggested fix:** Inject the secret at runtime, not via ENV in the image.
+
+Trailing prose that must not be parsed as a finding.

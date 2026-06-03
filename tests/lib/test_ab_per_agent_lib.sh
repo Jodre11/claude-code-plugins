@@ -367,6 +367,81 @@ test_ab_agent_capture_skipped_marks_inconclusive() {
     rm -rf "$trial_dir"
 }
 
+test_ab_agent_capture_trivy_parses_three_findings() {
+    local lib="$REPO_ROOT/tests/ab/lib/agent_capture.sh"
+    local fixture="$REPO_ROOT/tests/ab/fixtures/trivy-stdout-three-findings.log"
+
+    if [[ ! -f "$lib" || ! -f "$fixture" ]]; then
+        fail "A/B agent_capture trivy: lib + fixture present" "missing"
+        return
+    fi
+
+    local trial_dir
+    trial_dir=$(mktemp -d)
+    cp "$fixture" "$trial_dir/stdout.log"
+
+    (
+        # shellcheck disable=SC1090
+        source "$lib"
+        agent_capture_parse_trial trivy "$trial_dir"
+    )
+
+    local count
+    count=$(jq 'length' "$trial_dir/findings.json")
+    assert_equals "3" "$count" "A/B agent_capture trivy: three findings extracted"
+
+    local first_rule first_file first_line first_sev
+    first_rule=$(jq -r '.[0].rule_id' "$trial_dir/findings.json")
+    first_file=$(jq -r '.[0].file' "$trial_dir/findings.json")
+    first_line=$(jq -r '.[0].line' "$trial_dir/findings.json")
+    assert_equals "DS-0001" "$first_rule" "A/B agent_capture trivy: bare DS-NNNN rule_id tokenises cleanly"
+    assert_equals "Dockerfile" "$first_file" "A/B agent_capture trivy: file parsed"
+    assert_equals "1" "$first_line" "A/B agent_capture trivy: line parsed"
+
+    local crit_sev
+    crit_sev=$(jq -r '.[] | select(.rule_id == "DS-0031") | .severity' "$trial_dir/findings.json")
+    assert_equals "Critical" "$crit_sev" "A/B agent_capture trivy: DS-0031 severity Critical"
+
+    rm -rf "$trial_dir"
+}
+
+test_ab_agent_capture_trivy_zero_findings_is_empty_array() {
+    local lib="$REPO_ROOT/tests/ab/lib/agent_capture.sh"
+    local trial_dir
+    trial_dir=$(mktemp -d)
+    printf '## Trivy IaC Findings\n\n0 findings — no IaC files in diff.\n' > "$trial_dir/stdout.log"
+
+    (
+        # shellcheck disable=SC1090
+        source "$REPO_ROOT/tests/ab/lib/agent_capture.sh"
+        agent_capture_parse_trial trivy "$trial_dir"
+    )
+
+    local count
+    count=$(jq 'length' "$trial_dir/findings.json")
+    assert_equals "0" "$count" "A/B agent_capture trivy: zero-state yields empty array"
+    rm -rf "$trial_dir"
+}
+
+test_ab_agent_capture_trivy_skipped_marks_inconclusive() {
+    local trial_dir
+    trial_dir=$(mktemp -d)
+    printf 'Skipped — trivy not available on PATH.\n' > "$trial_dir/stdout.log"
+
+    (
+        # shellcheck disable=SC1090
+        source "$REPO_ROOT/tests/ab/lib/agent_capture.sh"
+        agent_capture_parse_trial trivy "$trial_dir"
+    )
+
+    if [[ -f "$trial_dir/INCONCLUSIVE" ]]; then
+        pass "A/B agent_capture trivy: skip marks INCONCLUSIVE"
+    else
+        fail "A/B agent_capture trivy: skip marks INCONCLUSIVE" "marker absent"
+    fi
+    rm -rf "$trial_dir"
+}
+
 test_ab_agent_capture_findings_hash_is_deterministic() {
     # Two runs over the same stdout must produce identical findings_hash.
     # This is the cross-trial comparison primitive — if it is order-sensitive

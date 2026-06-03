@@ -1,7 +1,15 @@
 # Phase 3.2 — eslint-reviewer Haiku/low probe result
 
+> **Superseded by** [the Phase 3.2b PR B clean re-probe](./2026-06-02-eslint-haiku-low-reprobe-result.md).
+> This 3.2 verdict was inconclusive largely because of two apparatus confounds
+> (a shared-working-dir install race and a terminal-`.result` capture drop),
+> both fixed in PR A. The clean re-probe re-established a symmetric n=20 Sonnet
+> baseline and found the residual Haiku tail is **agent-side** (tier-1
+> binary-resolution skips), not apparatus. Read this note for the original
+> diagnosis; read the re-probe for the corrected framing and the cost delta.
+
 **Date:** 2026-06-02
-**Status:** inconclusive
+**Status:** inconclusive (superseded)
 **Spec:** ../specs/2026-06-02-phase-3-2-eslint-haiku-low-design.md
 **Plan:** ../plans/2026-06-02-phase-3-2-eslint-haiku-low.md
 **Precedent (ruff):** ./2026-06-02-ruff-haiku-low-result.md

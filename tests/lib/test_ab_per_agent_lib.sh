@@ -443,6 +443,31 @@ test_ab_agent_capture_trivy_skipped_marks_inconclusive() {
     rm -rf "$trial_dir"
 }
 
+test_ab_agent_capture_trivy_non_path_skip_marks_inconclusive() {
+    # A skip line whose reason is NOT 'trivy not available' (e.g. the agent
+    # self-aborts on the temp-dir contract) must still be classified
+    # INCONCLUSIVE, not laundered into a false 0-findings result. Phase 3.3
+    # trial-016 emitted this exact phrasing and the narrow sentinel mis-classed
+    # it as an empty findings array (hash of literal `[]`).
+    local lib="$REPO_ROOT/tests/ab/lib/agent_capture.sh"
+    local trial_dir
+    trial_dir=$(mktemp -d)
+    printf '## Trivy IaC Findings\n\nSkipped — unable to create temporary files. The scan requires CLAUDE_TEMP_DIR.\n' > "$trial_dir/stdout.log"
+
+    (
+        # shellcheck disable=SC1090
+        source "$lib"
+        agent_capture_parse_trial trivy "$trial_dir"
+    )
+
+    if [[ -f "$trial_dir/INCONCLUSIVE" ]]; then
+        pass "A/B agent_capture trivy: non-PATH skip marks INCONCLUSIVE"
+    else
+        fail "A/B agent_capture trivy: non-PATH skip marks INCONCLUSIVE" "marker absent (laundered to 0-findings)"
+    fi
+    rm -rf "$trial_dir"
+}
+
 test_ab_agent_capture_findings_hash_is_deterministic() {
     # Two runs over the same stdout must produce identical findings_hash.
     # This is the cross-trial comparison primitive — if it is order-sensitive

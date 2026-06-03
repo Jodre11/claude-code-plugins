@@ -34,7 +34,13 @@ _agent_capture_params() {
             ;;
         trivy|trivy-reviewer)
             _AC_HEADING='^## Trivy IaC Findings$'
-            _AC_SKIP='^Skipped — trivy not available'
+            # Match any 'Skipped — …' opener, not just the PATH-miss reason.
+            # trivy has a single invocation (no partial-coverage variant like
+            # ruff's notebooks), so every skip is a full skip → INCONCLUSIVE.
+            # The narrow '^Skipped — trivy not available' form let a self-abort
+            # skip (Phase 3.3 trial-016, temp-dir contract) launder into a false
+            # 0-findings result; the broad opener classifies it correctly.
+            _AC_SKIP='^Skipped — '
             _AC_ZERO='^0 findings — no IaC files in diff\.'
             ;;
         *)

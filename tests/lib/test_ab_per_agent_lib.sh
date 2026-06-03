@@ -689,6 +689,35 @@ test_ab_launch_jq_reduce_empty_result_falls_back_to_text_blocks() {
     rm -f "$out"
 }
 
+test_ab_launch_jq_reduce_report_midstream_trailing_closer() {
+    local launch="$REPO_ROOT/tests/ab/lib/launch.sh"
+    local fx="$REPO_ROOT/tests/ab/fixtures/stream-jsonl/report-midstream-trailing-closer.jsonl"
+    if [[ ! -f "$launch" || ! -f "$fx" ]]; then
+        fail "A/B launch_jq_reduce: midstream-report fixture present" "missing"
+        return
+    fi
+
+    local out
+    out=$(mktemp)
+    (
+        # shellcheck disable=SC1090
+        source "$launch"
+        launch_jq_reduce_stream_jsonl "$fx" "$out"
+    )
+
+    # Report lives in a mid-stream assistant turn; the terminal .result is a
+    # short heading-less closer. The reducer must reconstruct the report, and
+    # must NOT emit the closer (guards against reintroducing .result-first).
+    if grep -qF -- "### Finding — \`sys\` imported but unused" "$out" \
+        && grep -qF -- "- **File:** bad.py:1" "$out" \
+        && ! grep -qF -- "Review complete." "$out"; then
+        pass "A/B launch_jq_reduce: midstream report survives a trailing closer"
+    else
+        fail "A/B launch_jq_reduce: midstream report survives a trailing closer" "$(cat "$out")"
+    fi
+    rm -f "$out"
+}
+
 test_ab_launch_jq_reduce_error_subtype_yields_empty() {
     local launch="$REPO_ROOT/tests/ab/lib/launch.sh"
     local fx="$REPO_ROOT/tests/ab/fixtures/stream-jsonl/error-subtype.jsonl"

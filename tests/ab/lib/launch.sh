@@ -166,18 +166,26 @@ launch_build_per_agent_argv() {
 }
 
 # Reduce a stream-json JSONL trace to a single canonical-text string and write
-# it to the given target path. Tries the canonical path first: the .result
-# field of the terminal {type:"result", subtype:"success"} event. If that's
-# missing or empty (Phase 3.1a Category C envelope-finalisation gap), falls
-# back to concatenating .text blocks from preceding {type:"assistant"} events
-# in stream order, joined by '\n'.
+# it to the given target path by concatenating the .text blocks from all
+# {type:"assistant"} events in stream order, joined by '\n'.
 #
-# The fallback is recovery, not substitution: 3.1a confirmed by inspection
-# (trials 002/005/006/015/016/020) that the canonical text lives in those
-# blocks when the envelope's .result is empty.
+# We deliberately do NOT use the terminal {type:"result",subtype:"success"}
+# .result field. An agent may emit its full findings report in a
+# mid-conversation turn and then take further tool-use turns (e.g. temp-file
+# cleanup), leaving .result as a short heading-less closer that drops the
+# report (eslint Haiku/low run 20260603T061349Z, trials 008/010). The
+# downstream parser (agent_capture.sh) is heading-anchored and
+# narration-tolerant, so concatenating narration + report + closer yields the
+# same findings.json as a clean trial. This also subsumes the Phase 3.1a
+# empty-.result recovery (the report always lives in the assistant text blocks).
 #
-# Returns 0 on any successful reduction (including empty output when neither
-# path produces text); non-zero only on jq invocation failure.
+# Known limitation: agent_capture.sh has no de-duplication, so a trace carrying
+# two findings reports (a report then a revised re-emit) would double-count.
+# Review specialists run their tool once and emit one report, so this is out of
+# scope here.
+#
+# Returns 0 on any successful reduction (including empty output when there are
+# no assistant text blocks); non-zero only on jq invocation failure.
 launch_jq_reduce_stream_jsonl() {
     local stream_jsonl="$1"
     local stdout="$2"
@@ -187,19 +195,8 @@ launch_jq_reduce_stream_jsonl() {
         return 0
     fi
 
-    # Canonical path: terminal result.subtype="success" with non-empty .result.
-    local canonical
-    canonical=$(jq -r '
-        select(.type == "result" and .subtype == "success") | .result // ""
-    ' "$stream_jsonl")
-
-    if [[ -n "$canonical" ]]; then
-        printf '%s' "$canonical" > "$stdout"
-        return 0
-    fi
-
-    # Fallback: concatenate text blocks from assistant events in stream order,
-    # joined by a single \n.
+    # Reconstruct the report by concatenating .text blocks from assistant
+    # events in stream order, joined by a single \n.
     jq -r '
         select(.type == "assistant") | .message.content[]?
         | select(.type == "text") | .text

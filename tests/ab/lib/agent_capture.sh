@@ -23,7 +23,11 @@ _agent_capture_params() {
             ;;
         eslint|eslint-reviewer)
             _AC_HEADING='^## ESLint Findings$'
-            _AC_SKIP='^Skipped — eslint/biome not available'
+            # Tolerate the canonical 'eslint/biome' phrasing AND the paraphrases
+            # models emit (eslint-only, biome-only). Without this, a '/biome'-less
+            # skip line slips through as a false zero-findings result (Phase 3.2b
+            # trials 003/017). The agent body still instructs the verbatim form.
+            _AC_SKIP='^Skipped — (eslint/biome|eslint|biome) not available'
             _AC_ZERO='^0 findings — no JS/TS files in diff\.'
             ;;
         *)

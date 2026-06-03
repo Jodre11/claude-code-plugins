@@ -1129,6 +1129,39 @@ test_ab_agent_capture_eslint_skipped_marks_inconclusive() {
     rm -rf "$trial_dir"
 }
 
+test_ab_agent_capture_eslint_skipped_eslint_only_marks_inconclusive() {
+    # Phase 3.2b PR C: Haiku paraphrased the skip line as 'Skipped — eslint
+    # not available …' (dropping '/biome'). The old sentinel matched only the
+    # 'eslint/biome' phrasing, so this slipped through as a false zero-findings
+    # result instead of a skip. The widened sentinel must mark it INCONCLUSIVE.
+    local lib="$REPO_ROOT/tests/ab/lib/agent_capture.sh"
+    local fixture="$REPO_ROOT/tests/ab/fixtures/eslint-stdout-skipped-eslint-only.log"
+
+    if [[ ! -f "$lib" || ! -f "$fixture" ]]; then
+        fail "A/B agent_capture eslint: eslint-only skip fixture present" "missing"
+        return
+    fi
+
+    local trial_dir
+    trial_dir=$(mktemp -d)
+    cp "$fixture" "$trial_dir/stdout.log"
+
+    (
+        # shellcheck disable=SC1090
+        source "$lib"
+        agent_capture_parse_trial eslint "$trial_dir"
+    )
+
+    if [[ -f "$trial_dir/INCONCLUSIVE" ]]; then
+        pass "A/B agent_capture eslint: eslint-only skip phrasing marks INCONCLUSIVE"
+    else
+        fail "A/B agent_capture eslint: eslint-only skip phrasing marks INCONCLUSIVE" \
+            "expected $trial_dir/INCONCLUSIVE marker file — widened skip sentinel should catch the '/biome'-less phrasing"
+    fi
+
+    rm -rf "$trial_dir"
+}
+
 test_ab_fixture_parses_setup_command() {
     local lib="$REPO_ROOT/tests/ab/lib/fixture.sh"
     local with_setup="$REPO_ROOT/tests/ab/fixtures/source-yaml-with-setup.yaml"

@@ -1099,3 +1099,70 @@ test_ab_agent_capture_eslint_skipped_marks_inconclusive() {
 
     rm -rf "$trial_dir"
 }
+
+test_ab_fixture_parses_setup_command() {
+    local lib="$REPO_ROOT/tests/ab/lib/fixture.sh"
+    local with_setup="$REPO_ROOT/tests/ab/fixtures/source-yaml-with-setup.yaml"
+    local good="$REPO_ROOT/tests/ab/fixtures/source-yaml-good.yaml"
+
+    if [[ ! -f "$lib" || ! -f "$with_setup" || ! -f "$good" ]]; then
+        fail "A/B fixture: setup-command fixtures present" "missing"
+        return
+    fi
+
+    local cmd_present cmd_absent
+    cmd_present=$(
+        # shellcheck disable=SC1090
+        source "$lib"
+        fixture_load_from_path "$with_setup" >/dev/null
+        echo "${_AB_FIXTURE_SETUP_COMMAND:-}"
+    )
+    cmd_absent=$(
+        # shellcheck disable=SC1090
+        source "$lib"
+        fixture_load_from_path "$good" >/dev/null
+        echo "${_AB_FIXTURE_SETUP_COMMAND:-EMPTY}"
+    )
+
+    assert_equals "npm ci" "$cmd_present" "A/B fixture: setup.command parsed when present"
+    assert_equals "EMPTY" "$cmd_absent" "A/B fixture: setup.command empty when absent"
+}
+
+test_ab_fixture_run_setup_executes_in_dir() {
+    local lib="$REPO_ROOT/tests/ab/lib/fixture.sh"
+    if [[ ! -f "$lib" ]]; then
+        fail "A/B fixture: lib present for run_setup" "missing"
+        return
+    fi
+
+    local d marker rc_noop
+    d=$(mktemp -d)
+
+    # With a command set, fixture_run_setup runs it with $d as cwd.
+    (
+        # shellcheck disable=SC1090
+        source "$lib"
+        _AB_FIXTURE_SETUP_COMMAND="touch setup-ran"
+        fixture_run_setup "$d"
+    )
+    if [[ -f "$d/setup-ran" ]]; then
+        marker=PRESENT
+    else
+        marker=ABSENT
+    fi
+
+    # With no command, fixture_run_setup is a no-op returning success.
+    rc_noop=$(
+        # shellcheck disable=SC1090
+        source "$lib"
+        _AB_FIXTURE_SETUP_COMMAND=""
+        set +e
+        fixture_run_setup "$d"
+        echo $?
+    )
+
+    assert_equals "PRESENT" "$marker" "A/B fixture: run_setup executes command in target dir"
+    assert_equals "0" "$rc_noop" "A/B fixture: run_setup is a no-op when no command set"
+
+    rm -rf "$d"
+}

@@ -62,6 +62,7 @@ fixture_load_from_path() {
     _AB_FIXTURE_HEAD_SHA=$(yq -r '.head_sha // ""' "$path")
     _AB_FIXTURE_CAPTURED_SUITE_SHA=$(yq -r '.captured_under.suite_sha' "$path")
     _AB_FIXTURE_SOURCE_YAML="$path"
+    _AB_FIXTURE_SETUP_COMMAND=$(yq -r '.setup.command // ""' "$path")
 
     if ! _ab_key_in_set_lib "$_AB_FIXTURE_STRATEGY" "$_AB_FIXTURE_VALID_STRATEGIES"; then
         echo "fixture_load_from_path: $path: invalid working_dir_strategy '$_AB_FIXTURE_STRATEGY'" >&2
@@ -105,6 +106,16 @@ fixture_materialise() {
             ( cd "$out_dir" && git apply "$patch" )
             ;;
     esac
+}
+
+# Run the fixture's optional setup command (e.g. `npm ci`) once into <dir>,
+# with <dir> as cwd. No-op (success) when no setup.command is declared.
+fixture_run_setup() {
+    local dir="$1"
+    if [[ -z "${_AB_FIXTURE_SETUP_COMMAND:-}" ]]; then
+        return 0
+    fi
+    ( cd "$dir" && eval "$_AB_FIXTURE_SETUP_COMMAND" )
 }
 
 # Clean up a per-trial working directory. For worktree-strategy fixtures the

@@ -41,14 +41,16 @@ Resolve the binary per project, in this priority order. The first tier that exis
 
 ## Tool invocation
 
-Check `$CLAUDE_TEMP_DIR` is present in your prompt before invoking either tool — see `includes/static-analysis-context.md` §4.
+The temp-dir contract (`includes/static-analysis-context.md` §4) is satisfied by the literal `Use $CLAUDE_TEMP_DIR for temporary files.` instruction line in your prompt. That line carries the token `$CLAUDE_TEMP_DIR` **unexpanded** — the dispatcher does not substitute the resolved path into the prompt text; Bash expands it from your environment when a command actually runs. Seeing the literal `$CLAUDE_TEMP_DIR` in your prompt is expected and **does** satisfy the contract — do not treat the unexpanded token as a missing temp dir and abort. The contract is violated only if the instruction line is entirely absent.
+
+Both tools write their JSON report to stdout (`--format=json` / `--reporter=json` default to stdout), so **no temp file is needed** — stream the JSON directly and parse it inline. Both exit non-zero when they report `error`-severity findings; that is expected, not an error. Never invent or fall back to a bare `/tmp/` path.
 
 `<bin>` below is the absolute path resolved by the ladder above (e.g. `<project-root>/node_modules/.bin/eslint`), not the bare command name:
 
-- **Biome:** `<bin> check --reporter=json --files-ignore-unknown=true <changed-files-in-project>` → `$CLAUDE_TEMP_DIR/biome-<sanitised-project>.json`. Pass the exact list of changed files; do not let Biome scan the whole tree.
-- **ESLint:** `<bin> --format=json --no-warn-ignored <changed-files-in-project>` → `$CLAUDE_TEMP_DIR/eslint-<sanitised-project>.json`.
+- **Biome:** `<bin> check --reporter=json --files-ignore-unknown=true <changed-files-in-project>` — parse the stdout JSON inline. Pass the exact list of changed files; do not let Biome scan the whole tree.
+- **ESLint:** `<bin> --format=json --no-warn-ignored <changed-files-in-project>` — parse the stdout JSON inline.
 
-`<sanitised-project>` is the basename of the config-root directory (no path traversal, no collisions across multiple workspaces).
+When several projects resolve in a monorepo, run one invocation per project and parse each result before moving to the next; keep the per-project results distinct (do not merge raw JSON across projects with differing configs).
 
 ## Severity mapping
 
@@ -85,7 +87,7 @@ After parsing, intersect each finding's `(file, line)` against `$CHANGED_LINES[<
 
 Every finding emits the literal `Confidence: 100` per §6 of the include.
 
-Clean up `$CLAUDE_TEMP_DIR/biome-*.json` and `$CLAUDE_TEMP_DIR/eslint-*.json` after parsing.
+Streaming the JSON from stdout writes no temp file, so there is nothing to clean up.
 
 ### Worked example — multi-rule JS file
 

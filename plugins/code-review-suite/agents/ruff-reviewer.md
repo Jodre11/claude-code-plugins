@@ -42,13 +42,15 @@ Walk up for `pyproject.toml` (with `[tool.ruff]`), `ruff.toml`, or `.ruff.toml`.
 
 ## Tool invocation
 
-Check `$CLAUDE_TEMP_DIR` is present in your prompt before invoking ruff — see `includes/static-analysis-context.md` §4.
+The temp-dir contract (`includes/static-analysis-context.md` §4) is satisfied by the literal `Use $CLAUDE_TEMP_DIR for temporary files.` instruction line in your prompt. That line carries the token `$CLAUDE_TEMP_DIR` **unexpanded** — the dispatcher does not substitute the resolved path into the prompt text; Bash expands it from your environment when a command actually runs. Seeing the literal `$CLAUDE_TEMP_DIR` in your prompt is expected and **does** satisfy the contract — do not treat the unexpanded token as a missing temp dir and abort. The contract is violated only if the instruction line is entirely absent.
 
-- `.py` files: `ruff check --output-format=json <changed-py-files>` → `$CLAUDE_TEMP_DIR/ruff-py.json`
-- `.ipynb` files (Ruff ≥ 0.6.0): `ruff check --output-format=json <changed-ipynb-files>` → `$CLAUDE_TEMP_DIR/ruff-ipynb.json`
-- `.ipynb` files (`nbqa` fallback): one invocation per notebook because `nbqa` JSON paths refer to the temp `.py` extraction, not the source notebook. For each notebook:
-  1. `nbqa --addopts='--output-format=json' ruff <notebook>` → JSON
-  2. Parse the `.ipynb` to map cell index + within-cell line back to the notebook's overall line space. Each finding's `location.row` field references the temp file; remap to the `.ipynb` source line.
+Ruff writes its JSON report to stdout (build/parse diagnostics, if any, go to stderr), so **no temp file is needed** — stream the JSON directly and parse it inline. `ruff check` exits non-zero when it reports findings; that is expected, not an error. Never invent or fall back to a bare `/tmp/` path.
+
+- `.py` files: `ruff check --output-format=json <changed-py-files>` — parse the stdout JSON inline.
+- `.ipynb` files (Ruff ≥ 0.6.0): `ruff check --output-format=json <changed-ipynb-files>` — parse the stdout JSON inline.
+- `.ipynb` files (`nbqa` fallback): one invocation per notebook because `nbqa` JSON `location.row` values refer to nbqa's internal `.py` extraction, not the source notebook. For each notebook:
+  1. `nbqa --addopts='--output-format=json' ruff <notebook>` — parse the stdout JSON inline.
+  2. Parse the `.ipynb` to map cell index + within-cell line back to the notebook's overall line space. Each finding's `location.row` field references the extraction; remap to the `.ipynb` source line.
   3. Apply `$CHANGED_LINES` filtering against the remapped notebook line numbers.
 
 The `nbqa` line-remap is the most fiddly part of the specialist — keep this procedure verbatim if you reproduce it elsewhere.
@@ -82,7 +84,7 @@ After parsing, intersect each finding's `(file, line)` against `$CHANGED_LINES[<
 
 Every finding emits the literal `Confidence: 100` per §6.
 
-Clean up `$CLAUDE_TEMP_DIR/ruff-*.json` after parsing.
+Streaming ruff's JSON from stdout writes no temp file, so there is nothing to clean up.
 
 ### Worked example — single F401
 

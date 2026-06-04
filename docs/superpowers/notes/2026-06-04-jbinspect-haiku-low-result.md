@@ -1,7 +1,12 @@
 # Phase 3.4 — jbinspect-reviewer Haiku/low A/B result
 
 **Date:** 2026-06-04
-**Status:** INCONCLUSIVE (decision-4) — clean apparatus, baseline 20/20, but the Haiku arm carries a characterised agent-side tail (2/20 temp-dir self-abort skips). A fix-and-re-sweep arc (the trivy `5ccb692` precedent) is the path to a clean verdict.
+**Status:** EQUIVALENT after two fixes — the initial probe was INCONCLUSIVE (2/20 Haiku temp-dir self-abort skips); a `--stdout` streaming fix removed the up-front abort and recovered the cost ratio, then an apparatus fix (harness trial dirs moved under the hook-exempt `/tmp/claude-` namespace) closed a residual non-deterministic hook-leak skip. The final validation re-sweep is a clean **20/20 on both arms**.
+
+> **Reading order.** The body documents the **initial** probe (INCONCLUSIVE,
+> tail characterised). The two fixes and the clean re-sweeps that upgrade the
+> verdict to EQUIVALENT are in the final section ("Fixes SHIPPED + re-sweep
+> VALIDATED") — start there for the headline.
 **Spec:** ../specs/2026-05-29-static-specialist-tuning-sweep.md
 **Plan:** ../plans/2026-06-04-phase-3-4-jbinspect-ab-baseline.md
 **Precedent (trivy, inconclusive → fix → EQUIVALENT; the temp-dir tail):** ./2026-06-03-trivy-haiku-low-result.md
@@ -192,6 +197,99 @@ so it MUST propagate to `agents/code-analysis.md`'s InspectCode section (lines
 If the operator wants to pursue Haiku/low adoption for jbinspect, the next step
 mirrors trivy's `5ccb692`: ship the fix (with its sync mirror), then re-sweep both
 arms at n=20 as a fix-validation pass. Until then, jbinspect stays `model: sonnet`.
+
+## Fixes SHIPPED + re-sweep VALIDATED 2026-06-04
+
+Operator approved pursuing the Haiku/low adoption. Two distinct root causes
+surfaced — neither was a model-quality deficiency — and each earned its own fix
+and re-sweep, mirroring the trivy/eslint fix-validation discipline.
+
+### Fix 1 — `--stdout` streaming (`aef3c4f`, `jbinspect-reviewer.md`)
+
+The file-based invocation (`--output="$CLAUDE_TEMP_DIR/inspectcode-<sln>.xml"`
+then read it back) was the source of the initial tail. Switched to
+`jb inspectcode <sln> --stdout --format=Xml --severity=WARNING`, parsed inline.
+Verified offline that `--stdout` emits pure XML on stdout (`<?xml>` … `</Report>`)
+with build/progress logging on stderr (empty for the fixture). Also added the
+temp-dir-contract clarification mirroring trivy `5ccb692` (the literal unexpanded
+`$CLAUDE_TEMP_DIR` token satisfies §4; do not abort on it). General correctness +
+efficiency improvement (helps Sonnet too — passes the tuning-to-the-test guard).
+`code-analysis.md` delegates the invocation by reference (line 15), so it inherits
+the change with no mirror edit needed.
+
+**Re-sweep #1 (both arms n=20, SHA `aef3c4f`):** run dirs
+`tests/ab/runs/20260604T104855Z-jbinspect-baseline/` and
+`tests/ab/runs/20260604T110312Z-jbinspect-haiku-low/`.
+
+| Arm | canonical | skip | NORMAL rate | mean turns | mean cost |
+|---|---|---|---|---|---|
+| **Sonnet/default** | **20/20** | 0 | 100 % | 4.25 (was 5.95) | $0.0861 |
+| **Haiku/low** | 19/20 | 1 (trial 8) | 95 % | 5.89 (was 9.83) | $0.0468 |
+
+The efficiency thesis confirmed: turns and wall-clock collapsed (Haiku 48s→34s),
+cost ratio recovered 1.53× → **1.84×**. The up-front self-abort was gone — all 20
+Haiku trials actually invoked InspectCode. But one skip (trial 8) remained, from a
+**different** mechanism.
+
+### Fix 2 — apparatus hook-leak (`830905b`, `tests/ab/run.sh`)
+
+Trial 8 was NOT an agent-quality skip. It ran the correct command but with the
+**absolute** trial path (`jb inspectcode /private/tmp/per-agent-…/trial-008/JbInspectSmoke.sln`).
+The per-agent harness placed trial dirs at `${CLAUDE_TEMP_DIR:-/tmp}/per-agent-…`;
+`CLAUDE_TEMP_DIR` is not exported into the harness shell, so it fell back to bare
+`/tmp` → macOS `/private/tmp/per-agent-…`, **outside** the operator's hook-exempt
+`/tmp/claude-*` namespace. That absolute path tripped the operator's global
+`bash-guard.sh` temp-path policy (`TEMP DIRECTORY VIOLATION`) — and `jb` is not on
+the hook's read-only allowlist. The 19 passing trials used a **relative** path
+(`./JbInspectSmoke.sln`) which never contains `/tmp/`, so whether a trial was
+denied depended on the model's path choice: a non-deterministic apparatus confound
+that mis-scored as an agent-side skip. Same class as the Phase 3.2b install-race
+confound (the rig leaking host state into the subagent).
+
+Fixed by basing the fallback under `/tmp/claude-ab-<ts>` when `CLAUDE_TEMP_DIR` is
+unset, so the trial dir (and any absolute path referencing it) stays inside the
+hook exemption — the predicate is a `/tmp/claude-` substring match, so it holds
+for `/private/tmp/claude-` too. Added a grep regression test asserting `run.sh`
+never reintroduces the bare-`/tmp` per-agent fallback.
+
+**Re-sweep #2 / validation (both arms n=20, SHA `830905b`):** run dirs
+`tests/ab/runs/20260604T112947Z-jbinspect-baseline/` and
+`tests/ab/runs/20260604T114635Z-jbinspect-haiku-low/`.
+
+| Arm | canonical `bbd92cd5…` | skip | NORMAL rate | mean cost | mean turns | mean cache-read |
+|---|---|---|---|---|---|---|
+| **Sonnet/default** | **20/20** | 0 | 100 % | $0.07530 | 3.95 | 83,990 |
+| **Haiku/low** | **20/20** | 0 | 100 % | $0.03980 | 4.60 | 107,842 |
+
+The tail is **fully closed**: 19/20 → **20/20**, zero skips, both arms single-hash
+with zero divergence. **Post-fix cost ratio Sonnet ÷ Haiku = 1.89×** (list-price
+caveat as above; jbinspect's ratio sits below the other specialists' ~2.2-2.3×
+because even after streaming, its read-and-parse-the-XML workflow costs Haiku
+slightly more cache-read than the stdout-only specialists — but the saving is
+real and stable).
+
+### Verdict (upgraded): EQUIVALENT
+
+On the validation re-sweep, Haiku/low matches the Sonnet/default baseline exactly
+— 20/20 identical canonical hash on both arms, no within-arm non-determinism, no
+skips, no fabrications. This clears the EQUIVALENT bar (clean single-hash arm,
+zero movement against the 25 % guard). Both fixes are genuine correctness/apparatus
+improvements, not fixture-chasing: Fix 1 helps any model on the real
+`/code-review` pipeline, and Fix 2 corrects a rig confound that would have
+mis-scored any specialist whose agent used an absolute path.
+
+**Production flip: RECOMMENDED — operator-gated.** jbinspect now meets the
+clean-EQUIVALENT flip gate. The flip is to set BOTH `model: haiku` AND
+`effort: low` in `plugins/code-review-suite/agents/jbinspect-reviewer.md`
+frontmatter (currently only `model: sonnet`, no `effort:` line — ADD it),
+mirroring trivy `ee23a79` / eslint+ruff `3b3a255`. Operator-gated even on clean
+EQUIVALENT — it changes a dispatched-agent definition. If wanted live mid-session:
+`/plugins update` then `/reload-plugins` (the A/B harness reads the working-tree
+file directly, so the sweep needs no reload — only the live pipeline does).
+
+This **closes the Phase 3 static-specialist tuning sweep** — all four specialists
+(ruff, eslint, trivy, jbinspect) now reach EQUIVALENT and carry (or are cleared
+to carry) `model: haiku` + `effort: low`.
 
 ## Cross-references
 

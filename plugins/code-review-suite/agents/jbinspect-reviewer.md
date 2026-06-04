@@ -40,21 +40,21 @@ The repo may contain multiple `.sln` files. Determine which solutions are affect
 
 ## Tool invocation
 
-Check `$CLAUDE_TEMP_DIR` is present in your prompt before invoking — see `includes/static-analysis-context.md` §4.
+The temp-dir contract (`includes/static-analysis-context.md` §4) is satisfied by the literal `Use $CLAUDE_TEMP_DIR for temporary files.` instruction line in your prompt. That line carries the token `$CLAUDE_TEMP_DIR` **unexpanded** — the dispatcher does not substitute the resolved path into the prompt text; Bash expands it from your environment when a command actually runs. Seeing the literal `$CLAUDE_TEMP_DIR` in your prompt is expected and **does** satisfy the contract — do not treat the unexpanded token as a missing temp dir and abort. The contract is violated only if the instruction line is entirely absent.
 
-For each affected solution:
+InspectCode writes its report to stdout when invoked with `--stdout`, so **no temp file is needed** — stream the XML directly and parse it inline. For each affected solution:
 
 ```
-jb inspectcode <solution.sln> --output="$CLAUDE_TEMP_DIR/inspectcode-<solution-name>.xml" --format=Xml --severity=WARNING
+jb inspectcode <solution.sln> --stdout --format=Xml --severity=WARNING
 ```
 
-`<solution-name>` is the basename of the solution file without extension — not the full path (avoids path traversal and collisions when multiple solutions are inspected).
+With `--stdout`, the report XML goes to stdout and the tool's build/progress logging goes to stderr, so stdout is clean XML you can parse inline. Never invent or fall back to a bare `/tmp/` path.
 
 If `jb` is not installed or not on PATH, emit `Skipped — jb inspectcode not available on PATH.` per `includes/static-analysis-context.md` §3 and stop. If the command fails on a particular solution, report the error and continue with any remaining solutions.
 
 ## Parse results
 
-Read each output XML file. Look for `<Issue>` elements within `<Issues>` > `<Project>` sections. Each `<Issue>` has attributes:
+Read the report XML from each invocation's stdout. Look for `<Issue>` elements within `<Issues>` > `<Project>` sections. Each `<Issue>` has attributes:
 
 - `TypeId` — the inspection rule identifier
 - `File` — relative file path
@@ -87,7 +87,7 @@ Per `includes/static-analysis-context.md` §7. Heading: `## JetBrains InspectCod
 
 Every finding emits the literal `Confidence: 100` per §6.
 
-Clean up `$CLAUDE_TEMP_DIR/inspectcode-*.xml` after parsing.
+Streaming `--stdout` writes no temp file, so there is nothing to clean up.
 
 ### Worked example
 

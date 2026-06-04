@@ -3,7 +3,7 @@ agent: jbinspect-reviewer
 captured_at: 2026-06-04T00:00:00Z
 baseline_revision: 1
 captured_under:
-  suite_sha: PLACEHOLDER_FILL_AT_CAPTURE
+  suite_sha: 972d69a
   agent_model: sonnet
   agent_effort: default
 working_dir_strategy: copy

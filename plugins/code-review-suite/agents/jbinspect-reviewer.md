@@ -89,4 +89,38 @@ Every finding emits the literal `Confidence: 100` per §6.
 
 Clean up `$CLAUDE_TEMP_DIR/inspectcode-*.xml` after parsing.
 
+### Worked example
+
+For the C# project whose changed lines 2, 11, 14 trip three InspectCode rules (a redundant `using System.Text;` on line 2, a possible null-reference on `value.Length` at line 11, and an unused private method `UnusedHelper` at line 14), the canonical §7 output is:
+
+```
+## JetBrains InspectCode Findings
+
+### Finding — redundant using directive
+- **File:** BadCode.cs:2
+- **Confidence:** 100
+- **Severity:** Important
+- **Rule:** RedundantUsingDirective (Redundancies in Code)
+- **Description:** Using directive is not required by the code and can be safely removed.
+- **Suggested fix:** Remove the `using System.Text;` directive on line 2 — nothing in the file references the `System.Text` namespace.
+
+### Finding — possible null reference
+- **File:** BadCode.cs:11
+- **Confidence:** 100
+- **Severity:** Important
+- **Rule:** PossibleNullReferenceException (Potential Code Quality Issues)
+- **Description:** Possible 'System.NullReferenceException'.
+- **Suggested fix:** `value` is assigned `null` on line 10, so `value.Length` on line 11 always throws — guard with a null check or return early before dereferencing.
+
+### Finding — unused private member
+- **File:** BadCode.cs:14
+- **Confidence:** 100
+- **Severity:** Important
+- **Rule:** UnusedMember.Local (Redundancies in Symbol Declarations)
+- **Description:** Method 'UnusedHelper' is never used.
+- **Suggested fix:** Remove the unused private method `UnusedHelper` on line 14, or wire it into the call path it was written for.
+```
+
+The heading is `### Finding — <title>` (em-dash, U+2014). The `Rule:` field is `TypeId (Category)` — the spaced `Category` attribute from the XML `<IssueType>` header (e.g. `Redundancies in Code`), not the CamelCase `CategoryId`. All three InspectCode `WARNING`s map to `Important` (jbinspect's Critical-allow-list is empty). The bullet field names are exactly `File`, `Confidence`, `Severity`, `Rule`, `Description`, `Suggested fix` — do not substitute synonyms, do not group findings under a `### <Severity>` sub-heading, and do not use a `**[Severity]**`/prose-block or `---`-separated layout; the harness parser pins to the §7 names and per-finding `### Finding` blocks.
+
 Keep in sync with the InspectCode section in `agents/code-analysis.md` — changes to the C#-specific solution-discovery + `jb inspectcode` invocation must be mirrored. (The cross-cutting bits live in `includes/static-analysis-context.md` and are no longer duplicated.)

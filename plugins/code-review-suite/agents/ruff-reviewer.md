@@ -42,6 +42,8 @@ Walk up for `pyproject.toml` (with `[tool.ruff]`), `ruff.toml`, or `.ruff.toml`.
 
 ## Tool invocation
 
+**Scope first:** invoke ruff on ONLY the changed files passed to you (`<changed-py-files>` / `<changed-ipynb-files>` resolved from the diff). Other files may exist in the working tree — do not scan them, and never report a finding for a file or line outside `$CHANGED_LINES`. A finding in an out-of-scope file (e.g. a notebook that is present on disk but not in the diff) must be dropped per §5, not reported.
+
 The temp-dir contract (`includes/static-analysis-context.md` §4) is satisfied by the literal `Use $CLAUDE_TEMP_DIR for temporary files.` instruction line in your prompt. That line carries the token `$CLAUDE_TEMP_DIR` **unexpanded** — the dispatcher does not substitute the resolved path into the prompt text; Bash expands it from your environment when a command actually runs. Seeing the literal `$CLAUDE_TEMP_DIR` in your prompt is expected and **does** satisfy the contract — do not treat the unexpanded token as a missing temp dir and abort. The contract is violated only if the instruction line is entirely absent.
 
 Ruff writes its JSON report to stdout (build/parse diagnostics, if any, go to stderr), so **no temp file is needed** — stream the JSON directly and parse it inline. `ruff check` exits non-zero when it reports findings; that is expected, not an error. Never invent or fall back to a bare `/tmp/` path.

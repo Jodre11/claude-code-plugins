@@ -41,6 +41,8 @@ Resolve the binary per project, in this priority order. The first tier that exis
 
 ## Tool invocation
 
+**Scope first:** invoke the linter on ONLY the changed files passed to you (`<changed-files-in-project>` resolved from the diff), never the whole tree. Other files may exist in the working tree — do not scan them, and never report a finding for a file or line outside `$CHANGED_LINES`. A finding in an out-of-scope file (present on disk but not in the diff) must be dropped per §5, not reported.
+
 The temp-dir contract (`includes/static-analysis-context.md` §4) is satisfied by the literal `Use $CLAUDE_TEMP_DIR for temporary files.` instruction line in your prompt. That line carries the token `$CLAUDE_TEMP_DIR` **unexpanded** — the dispatcher does not substitute the resolved path into the prompt text; Bash expands it from your environment when a command actually runs. Seeing the literal `$CLAUDE_TEMP_DIR` in your prompt is expected and **does** satisfy the contract — do not treat the unexpanded token as a missing temp dir and abort. The contract is violated only if the instruction line is entirely absent.
 
 Both tools write their JSON report to stdout (`--format=json` / `--reporter=json` default to stdout), so **no temp file is needed** — stream the JSON directly and parse it inline. Both exit non-zero when they report `error`-severity findings; that is expected, not an error. Never invent or fall back to a bare `/tmp/` path.

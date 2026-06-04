@@ -2,7 +2,7 @@
 name: security-reviewer
 description: Reviews code changes for security vulnerabilities. Standalone or dispatched by the review include.
 model: sonnet
-tools: Read, Grep, Glob, Bash
+tools: Read, Grep, Glob, Bash, WebFetch, WebSearch
 background: true
 ---
 
@@ -80,18 +80,27 @@ Review every change for:
 - **Version safety (#6a)** — new dependencies with known CVEs or advisories. Read the
   lockfile or manifest, identify newly-introduced or modified entries, and check at least
   one advisory source (e.g. GitHub Advisory Database for the relevant ecosystem) for the
-  pinned version. Use Important or Critical severity when an advisory hits.
+  pinned version. Use `WebSearch` (open-ended CVE/GHSA lookup) or `WebFetch` (a known
+  advisory URL) — you have both tools; do NOT answer from trained knowledge, which is
+  stale and misses recent advisories. Use Important or Critical severity when an advisory
+  hits.
 - **Version pinning (#6b)** — lockfile hygiene. Mutable tags (`@latest`, floating
   semver ranges where the project elsewhere pins exactly), missing lockfile updates after
   a manifest change, importing from untrusted registries.
 - **Version freshness (#7)** — for newly introduced or modified dependencies and GitHub
-  Actions, verify against the live registry that the chosen version is current. Use
-  `includes/version-freshness-cookbook.md` for endpoints per ecosystem. Always emit a
+  Actions, verify against the live registry that the chosen version is the current latest
+  GA (general-availability) release. Use `includes/version-freshness-cookbook.md` for the
+  exact registry endpoint per ecosystem and which JSON field holds "latest". Always emit a
   **Suggestion finding** for stale versions; framing differs by whether justification is
   present (see the cookbook). Severity is intentionally low — staleness alone is a smell,
   not a defect. When a stale version *also* has a known vulnerability, escalate via
   version-safety, not freshness.
-  - Live web fetch is required; do not rely on cached or trained-knowledge answers.
+  - `WebFetch` the cookbook's registry endpoint for each touched dependency/Action and
+    read the latest-GA version from the documented field. You have the `WebFetch` tool —
+    this is REQUIRED; do NOT rely on cached or trained-knowledge answers, which are stale
+    by construction. Issue fetches in parallel, capped at 10 concurrent (per the cookbook).
+  - Compare latest GA against the version the diff introduced/modified. Flag only when the
+    diff's version is behind latest GA.
   - Do not flag versions the diff did not touch.
 - **Sensitive data exposure** — logging PII/secrets, returning internal errors to clients, overly verbose error messages
 - **Remote code execution** — eval injection, dynamic code execution with untrusted input

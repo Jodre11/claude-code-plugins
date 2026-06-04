@@ -468,6 +468,105 @@ test_ab_agent_capture_trivy_non_path_skip_marks_inconclusive() {
     rm -rf "$trial_dir"
 }
 
+test_ab_agent_capture_jbinspect_parses_three_findings() {
+    local lib="$REPO_ROOT/tests/ab/lib/agent_capture.sh"
+    local fixture="$REPO_ROOT/tests/ab/fixtures/jbinspect-stdout-three-findings.log"
+
+    if [[ ! -f "$lib" || ! -f "$fixture" ]]; then
+        fail "A/B agent_capture jbinspect: lib + fixture present" "missing"
+        return
+    fi
+
+    local trial_dir
+    trial_dir=$(mktemp -d)
+    cp "$fixture" "$trial_dir/stdout.log"
+
+    (
+        # shellcheck disable=SC1090
+        source "$lib"
+        agent_capture_parse_trial jbinspect "$trial_dir"
+    )
+
+    local count
+    count=$(jq 'length' "$trial_dir/findings.json")
+    assert_equals "3" "$count" "A/B agent_capture jbinspect: three findings extracted"
+
+    local first_rule first_file first_line
+    first_rule=$(jq -r '.[0].rule_id' "$trial_dir/findings.json")
+    first_file=$(jq -r '.[0].file' "$trial_dir/findings.json")
+    first_line=$(jq -r '.[0].line' "$trial_dir/findings.json")
+    assert_equals "RedundantUsingDirective" "$first_rule" "A/B agent_capture jbinspect: line-2 finding sorts first"
+    assert_equals "BadCode.cs" "$first_file" "A/B agent_capture jbinspect: file parsed"
+    assert_equals "2" "$first_line" "A/B agent_capture jbinspect: line parsed"
+
+    local unused_rule
+    unused_rule=$(jq -r '.[] | select(.line == 14) | .rule_id' "$trial_dir/findings.json")
+    assert_equals "UnusedMember.Local" "$unused_rule" "A/B agent_capture jbinspect: CamelCase rule_id with spaced category tokenises cleanly"
+
+    rm -rf "$trial_dir"
+}
+
+test_ab_agent_capture_jbinspect_zero_findings_is_empty_array() {
+    local lib="$REPO_ROOT/tests/ab/lib/agent_capture.sh"
+    local trial_dir
+    trial_dir=$(mktemp -d)
+    printf '## JetBrains InspectCode Findings\n\n0 findings — no C# files in diff.\n' > "$trial_dir/stdout.log"
+
+    (
+        # shellcheck disable=SC1090
+        source "$lib"
+        agent_capture_parse_trial jbinspect "$trial_dir"
+    )
+
+    local count
+    count=$(jq 'length' "$trial_dir/findings.json")
+    assert_equals "0" "$count" "A/B agent_capture jbinspect: zero-state yields empty array"
+    rm -rf "$trial_dir"
+}
+
+test_ab_agent_capture_jbinspect_no_solution_is_empty_array() {
+    local lib="$REPO_ROOT/tests/ab/lib/agent_capture.sh"
+    local trial_dir
+    trial_dir=$(mktemp -d)
+    printf '## JetBrains InspectCode Findings\n\n0 findings — could not determine solution for changed C# files.\n' > "$trial_dir/stdout.log"
+
+    (
+        # shellcheck disable=SC1090
+        source "$lib"
+        agent_capture_parse_trial jbinspect "$trial_dir"
+    )
+
+    local count
+    count=$(jq 'length' "$trial_dir/findings.json")
+    assert_equals "0" "$count" "A/B agent_capture jbinspect: no-solution zero-state yields empty array (not skip)"
+    if [[ -f "$trial_dir/INCONCLUSIVE" ]]; then
+        fail "A/B agent_capture jbinspect: no-solution is zero not INCONCLUSIVE" "INCONCLUSIVE marker present"
+    else
+        pass "A/B agent_capture jbinspect: no-solution is zero not INCONCLUSIVE"
+    fi
+    rm -rf "$trial_dir"
+}
+
+test_ab_agent_capture_jbinspect_skipped_marks_inconclusive() {
+    local lib="$REPO_ROOT/tests/ab/lib/agent_capture.sh"
+    local trial_dir
+    trial_dir=$(mktemp -d)
+    printf '## JetBrains InspectCode Findings\n\nSkipped — jb inspectcode not available on PATH.\n' > "$trial_dir/stdout.log"
+
+    (
+        # shellcheck disable=SC1090
+        source "$lib"
+        agent_capture_parse_trial jbinspect "$trial_dir"
+    )
+
+    if [[ -f "$trial_dir/INCONCLUSIVE" ]]; then
+        pass "A/B agent_capture jbinspect: skip marks INCONCLUSIVE"
+    else
+        fail "A/B agent_capture jbinspect: skip marks INCONCLUSIVE" "marker absent"
+    fi
+    rm -rf "$trial_dir"
+}
+
 test_ab_agent_capture_findings_hash_is_deterministic() {
     # Two runs over the same stdout must produce identical findings_hash.
     # This is the cross-trial comparison primitive — if it is order-sensitive

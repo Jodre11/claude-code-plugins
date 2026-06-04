@@ -13,6 +13,11 @@ set -euo pipefail
 # eslint — kebab-case IDs have no internal spaces — so it is not parameterised.
 # Trivy's `DS-NNNN` and `AVD-XX-NNNN` IDs likewise carry no internal spaces, so
 # the same tokeniser covers them too.
+# jbinspect's CamelCase TypeIds with a spaced `(Category)` suffix (e.g.
+# `UnusedMember.Local (Redundancies in Symbol Declarations)`) also tokenise
+# cleanly: the first space/tab/paren delimits token 1 = the bare TypeId, and the
+# `.` in `UnusedMember.Local` is internal (no preceding delimiter) so it never
+# splits the ID. The shared tokeniser therefore needs no jbinspect change.
 _agent_capture_params() {
     # Accept both the short table key (used by the parser tests) and the full
     # `<name>-reviewer` form that run.sh carries in $_AB_CONFIG_AGENT.
@@ -42,6 +47,16 @@ _agent_capture_params() {
             # 0-findings result; the broad opener classifies it correctly.
             _AC_SKIP='^Skipped — '
             _AC_ZERO='^0 findings — no IaC files in diff\.'
+            ;;
+        jbinspect|jbinspect-reviewer)
+            _AC_HEADING='^## JetBrains InspectCode Findings$'
+            # jbinspect has a single invocation path (jb not on PATH) → any
+            # skip is a full skip → INCONCLUSIVE. Broad opener from the start.
+            _AC_SKIP='^Skipped — '
+            # Two zero-states: the file-extension miss and the solution-discovery
+            # miss. Both are genuine 'nothing to inspect' (not tool failures), so
+            # both map to zero findings, not skip.
+            _AC_ZERO='^0 findings — (no C# files in diff|could not determine solution for changed C# files)\.'
             ;;
         *)
             echo "_agent_capture_params: unknown agent: $agent" >&2

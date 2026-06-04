@@ -524,6 +524,40 @@ test_ab_run_sh_help_succeeds() {
     fi
 }
 
+test_ab_run_sh_per_agent_tmp_base_is_hook_exempt() {
+    # Regression (Phase 3.4 jbinspect fix-validation trial 8): the per-agent
+    # trial working dirs must live under a /tmp/claude- prefix, NOT bare /tmp.
+    # CLAUDE_TEMP_DIR is not exported into the harness shell, so a bare
+    # `${CLAUDE_TEMP_DIR:-/tmp}` fallback put trial copies at /private/tmp/...,
+    # outside the operator's hook-exempt /tmp/claude-* namespace. A dispatched
+    # agent that referenced the ABSOLUTE trial path in a tool command (e.g.
+    # `jb inspectcode /private/tmp/.../foo.sln`) then tripped the global
+    # bash-guard temp-path policy and was denied — a non-deterministic
+    # apparatus confound mis-scored as an agent-side skip. The fallback must
+    # base under /tmp/claude- so the exemption holds for absolute paths too.
+    local run="$REPO_ROOT/tests/ab/run.sh"
+    if [[ ! -f "$run" ]]; then
+        fail "A/B run.sh: per-agent tmp base is hook-exempt" "run.sh missing"
+        return
+    fi
+
+    # The fallback base must be a /tmp/claude- path, never bare /tmp.
+    if grep -qE 'CLAUDE_TEMP_DIR:-/tmp/claude-' "$run"; then
+        pass "A/B run.sh: per-agent tmp base falls back under /tmp/claude- (hook-exempt)"
+    else
+        fail "A/B run.sh: per-agent tmp base falls back under /tmp/claude- (hook-exempt)" \
+            "expected a \${CLAUDE_TEMP_DIR:-/tmp/claude-...} fallback for the per-agent base dir"
+    fi
+
+    # No per-agent dir may use the bare-/tmp fallback form that caused the confound.
+    if grep -qE '\$\{CLAUDE_TEMP_DIR:-/tmp\}/per-agent-' "$run"; then
+        fail "A/B run.sh: per-agent dirs do not use bare-/tmp fallback" \
+            "found a \${CLAUDE_TEMP_DIR:-/tmp}/per-agent- path — this lands at /private/tmp and trips the global temp-path hook"
+    else
+        pass "A/B run.sh: per-agent dirs do not use bare-/tmp fallback"
+    fi
+}
+
 test_ab_run_sh_rejects_unknown_config_key() {
     local run="$REPO_ROOT/tests/ab/run.sh"
     local bad="$REPO_ROOT/tests/ab/fixtures/config-bad-key.yaml"

@@ -248,12 +248,35 @@ _ab_run_per_agent() {
     # Materialise + provision a TEMPLATE once, then give each trial a fresh
     # per-trial copy of the template (Phase 3.2b: hermetic, order-independent
     # trials — no shared mutable working dir, no install race).
-    local template_dir="${CLAUDE_TEMP_DIR:-/tmp}/per-agent-${timestamp}-template"
+    #
+    # Base the ephemeral dirs under a /tmp/claude- prefix. CLAUDE_TEMP_DIR is
+    # already session-scoped under /tmp/claude-<id>/; when it is unset (the
+    # harness shell does not export it) fall back to a /tmp/claude-ab-<ts> dir
+    # rather than bare /tmp. This keeps the trial working dir inside the
+    # operator's hook-exempt /tmp/claude-* namespace — a dispatched agent that
+    # invokes a tool with the ABSOLUTE trial path (e.g.
+    # `jb inspectcode /private/tmp/.../foo.sln`) must not trip the global
+    # bash-guard temp-path policy that denies bare /tmp/ writes. Without this,
+    # whether a trial is denied depends on whether the model happened to use a
+    # relative or absolute path — a non-deterministic apparatus confound that
+    # mis-scores as an agent-side skip (Phase 3.4 jbinspect fix-validation
+    # trial 8).
+    local tmp_base="${CLAUDE_TEMP_DIR:-/tmp/claude-ab-${timestamp}}"
+    mkdir -p "$tmp_base"
+    local template_dir="${tmp_base}/per-agent-${timestamp}-template"
     fixture_materialise "$template_dir"
     fixture_run_setup "$template_dir"
-    local trials_root="${CLAUDE_TEMP_DIR:-/tmp}/per-agent-${timestamp}-trials"
+    local trials_root="${tmp_base}/per-agent-${timestamp}-trials"
     mkdir -p "$trials_root"
-    trap "fixture_cleanup '$template_dir'; rm -rf '$trials_root'" EXIT
+    # Remove the fallback base dir on exit too, but only when WE created it
+    # (CLAUDE_TEMP_DIR unset). When CLAUDE_TEMP_DIR is set, tmp_base IS the
+    # session dir and must be left intact. rmdir (not rm -rf) so a non-empty
+    # session dir is never clobbered.
+    local tmp_base_cleanup=""
+    if [[ -z "${CLAUDE_TEMP_DIR:-}" ]]; then
+        tmp_base_cleanup="rmdir '$tmp_base' 2>/dev/null || true"
+    fi
+    trap "fixture_cleanup '$template_dir'; rm -rf '$trials_root'; ${tmp_base_cleanup:-true}" EXIT
 
     local timeout_bin
     timeout_bin=$(launch_resolve_timeout_binary)

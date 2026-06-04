@@ -1,5 +1,18 @@
 # Handover — add a "housekeeper" specialist to the code-review-suite
 
+> **STATUS: DEFERRED (2026-06-04, same day as written) — do NOT build yet.**
+> After this handover was drafted, the user chose to first FIX the root cause it
+> identified rather than build around it: `security-reviewer` was granted
+> `WebFetch + WebSearch` (commit `4a847e9`) and its #6a/#7 Focus Areas now name
+> the fetch tool concretely, so it can actually verify versions against latest-GA
+> live registry data — the capability gap that justified the housekeeper. The
+> housekeeper is **parked pending evidence** of how the tweaked security-reviewer
+> behaves in practice. If security-reviewer now covers freshness well, the
+> housekeeper may not be needed at all. Revisit ONLY if real-world use shows
+> security-reviewer's freshness coverage is insufficient or that a dedicated,
+> deterministic, A/B-testable freshness specialist earns its keep. The design
+> analysis below remains valid input for that decision.
+
 **Date:** 2026-06-04
 **Repo:** `~/.claude/plugins/marketplaces/jodre11-plugins` (the personal plugin
 marketplace; its own git remote `Jodre11/claude-code-plugins`, direct-push to
@@ -30,51 +43,110 @@ that domain on a PR/diff. The domain (verbatim drivers from CLAUDE.md):
 So "housekeeper" ≈ a **freshness/hygiene reviewer**: dependencies, Actions,
 runners, IaC currency.
 
+### THE CORE PROBLEM the housekeeper solves (user's framing, 2026-06-04)
+
+**`security-reviewer` does not actually check live data — and structurally
+cannot.** Its body (`security-reviewer.md:87-95`) and the cookbook
+(`version-freshness-cookbook.md:7`) both MANDATE a live registry fetch ("Live web
+fetch is required; do not rely on cached or trained-knowledge answers"). But
+`security-reviewer`'s tool grant is `Read, Grep, Glob, Bash` — **no `WebFetch` /
+`WebSearch`**. So that instruction is UNENFORCEABLE: with no fetch tool the agent
+falls back to trained-knowledge answers, which are stale and non-deterministic.
+The "Version freshness (#7)" Focus Area is effectively a dead instruction.
+
+**The user wants to AUTOMATE the live-data lookup and FEED IT INTO CROSS-REVIEW.**
+That reframes the housekeeper entirely:
+
+- The housekeeper is the agent that **actually fetches live registry data** — the
+  cookbook endpoints (npm/NuGet/PyPI/RubyGems/crates/Go/GitHub Actions releases),
+  parallel, capped at 10. It must therefore be granted a fetch capability:
+  `WebFetch` in its `tools:` list, OR a deterministic `Bash` script that curls the
+  registry JSON endpoints (the cookbook lists exact URLs + which field to read).
+  **Prefer the deterministic-tool route** — relying on an LLM to remember to fetch
+  10 registries reproduces exactly the failure security-reviewer has now. A script
+  that emits `{package, current, latest, stale: bool}` tuples is hash-comparable
+  and A/B-testable (this nudges housekeeper toward the STATIC-specialist contract).
+- Its freshness findings are then **fed to the cross-reviewers** — especially
+  `security-cross-review`, which can escalate any stale dependency that also
+  carries a known advisory (the version-*safety* path security-reviewer DOES own).
+  This is the "feed for cross review" requirement: housekeeper produces the live
+  facts; security judges their security implications.
+
+So the relationship is **not** overlap-and-dedupe — it's a **division of labour**:
+housekeeper owns live-data freshness (because it's the only one that can fetch),
+security owns vulnerability judgement and consumes housekeeper's findings via
+cross-review.
+
 ---
 
-## CRITICAL — this is NOT a greenfield. Overlap MUST be resolved in brainstorming
+## NOT a greenfield — existing coverage to carve around (and CLEAN UP)
 
-There is **substantial existing coverage** of this domain. The single most
-important brainstorming output is the **boundary**: what the housekeeper owns vs.
-what already exists. Do not build until this is settled, or you will create
-duplicate/conflicting findings the synthesiser then has to dedupe.
+There is existing coverage of this domain, but given the core problem above the
+relationship is **division of labour**, not overlap-and-dedupe. Map it in
+brainstorming, then act on it.
 
 Existing coverage found (2026-06-04):
-1. **`trivy-reviewer`** — already owns Trivy/IaC findings (Dockerfile/TF/K8s/Helm/
-   CFN), dispatched on `$IAC_DETECTED`. A housekeeper that also runs trivy would
-   double up. Decide: does housekeeper EXCLUDE IaC (defer to trivy), or is trivy
-   folded in?
-2. **`security-reviewer`** — already carries a **Version freshness (#7)** Focus
-   Area (Suggestion-level, never Critical) for newly introduced/modified
-   dependencies and GitHub Actions, AND a version-*safety* path (vulnerable old
-   versions). It cites `includes/version-freshness-cookbook.md`. The synthesiser
-   ALREADY dedupes when security's freshness path and another source flag the same
-   dependency (`security-reviewer.md:128-130`). So freshness is NOT virgin
-   territory — housekeeper would overlap security-reviewer directly.
-3. **`includes/version-freshness-cookbook.md`** — the shared endpoint/ecosystem
-   reference for freshness checks. Consumed by security-reviewer, pre-review,
-   review-gh-pr SKILL. The housekeeper should almost certainly cite this rather
-   than re-derive it.
+1. **`security-reviewer` "Version freshness (#7)"** (`security-reviewer.md:87-95`)
+   — the DEAD path described above (mandates a live fetch it has no tool to do).
+   **Brainstorming must decide what happens to it:** most likely the housekeeper
+   TAKES OVER live freshness, and #7 is either removed from security-reviewer or
+   reduced to "freshness is owned by housekeeper; consume its findings via
+   cross-review." Leaving two specialists both claiming freshness (one of which
+   can't actually fetch) is the worst outcome. Also touches False-Positive Rule #9
+   and the dedupe note (`security-reviewer.md:127-130`) — both reference the #7
+   path and must be updated in lockstep.
+2. **`security-reviewer` version-*safety* path** — vulnerable old versions raised
+   at Important/Critical. This STAYS with security (it's vulnerability judgement,
+   not freshness). The housekeeper FEEDS this: housekeeper says "X is stale → Y is
+   latest", security-cross-review escalates if X has a known advisory. Keep the
+   boundary crisp: housekeeper = "is it current?" (live fact); security = "is the
+   old version dangerous?" (judgement).
+3. **`trivy-reviewer`** — owns Trivy/IaC findings (Dockerfile/TF/K8s/Helm/CFN) on
+   `$IAC_DETECTED`. Housekeeper should **EXCLUDE IaC** (defer to trivy) unless
+   brainstorming finds a strong reason to fold it in — running trivy in two places
+   is pure duplication. The CLAUDE.md "Trivy/IaC" housekeeping bullet is already
+   served by trivy-reviewer; the housekeeper's novel contribution is deps + Actions
+   + runners freshness, not IaC.
+4. **`includes/version-freshness-cookbook.md`** — the shared endpoint/ecosystem
+   reference (exact registry URLs + which JSON field = "latest"). The housekeeper
+   should CITE and CONSUME this (it is literally the fetch spec the housekeeper
+   needs), not re-derive it. Currently consumed by security-reviewer, pre-review,
+   review-gh-pr SKILL — check whether those citations move to housekeeper too.
 
-**Brainstorming must decide:** is housekeeper a NEW specialist, or is this better
-served by *strengthening security-reviewer's #7 Focus Area* + trivy? If a new
-specialist is justified, the cleanest carve is probably "Actions + runners +
-dependency-GA-currency (non-security)" — i.e. the hygiene that is NOT a
-vulnerability and NOT IaC — leaving security-reviewer for version-*safety* and
-trivy for IaC. But that is a hypothesis to test, not a decision. The user values
-[[feedback-scope-discipline]] — don't over-build.
+**Brainstorming decides:** the housekeeper IS justified (it fills a real
+capability gap security-reviewer structurally cannot). The open questions are
+(a) the exact carve (recommend: deps + Actions + runners freshness, EXCLUDE IaC
+and vulnerability-judgement), (b) how to retire/redirect security's dead #7 path,
+and (c) the fetch mechanism (deterministic Bash/curl script vs `WebFetch` tool —
+see the static-vs-LLM axis below). The user values [[feedback-scope-discipline]] —
+the cleanup of the dead path is part of the job, not scope creep.
 
 A second brainstorming axis: **static-analysis specialist vs LLM specialist?**
+The live-fetch core problem pushes HARD toward the static/deterministic end —
+re-read "THE CORE PROBLEM" above before deciding.
 - The 4 static specialists (ruff/eslint/trivy/jbinspect) run a deterministic
   external tool, parse it, hash-comparable. They follow
   `includes/static-analysis-context.md` and have A/B harness coverage.
 - The 8 core LLM specialists (security/correctness/…) are judgement reviewers
   following `includes/specialist-context.md`.
-- Housekeeper is a HYBRID candidate: `dotnet list package --outdated` is a
-  deterministic tool (static-style), but "is this Action major stale?" is
-  judgement (LLM-style). Decide which contract it follows — or whether it is a
-  static specialist with an LLM-ish output. This materially changes the wiring
-  (detection flag, cross-review opt-out, A/B treatment).
+- Housekeeper leans STATIC: the whole point is to replace trained-knowledge
+  guessing with a deterministic live lookup. A Bash/curl script hitting the
+  cookbook endpoints and emitting `{package, current, latest, stale}` tuples is
+  exactly the static-specialist shape (tool → parse → hash) and is A/B-testable.
+  `dotnet list package --outdated` / `npm outdated` are also deterministic tools.
+  The judgement-ish parts ("is this Action major bump safe to suggest?") are thin
+  and can be left to the synthesiser/cross-review. **Recommendation to test in
+  brainstorming: build it as a static specialist** following
+  `static-analysis-context.md`, granted whatever fetch capability the chosen
+  mechanism needs. If it's static, it also gets the §10 severity-locked/
+  confidence-100 carve-out and an A/B sweep before any haiku flip.
+- Caveat the static route must handle: live registry fetches are
+  **non-deterministic across time** (today's "latest" differs from next month's),
+  so the A/B corpus can't hash against a frozen "latest". Brainstorm how to make
+  it testable — e.g. a mock/recorded registry fixture, or hash the
+  stale-vs-current DECISION against a pinned fixture manifest rather than the live
+  number. This is a genuinely new wrinkle none of the 4 existing static
+  specialists had (their tools are offline/deterministic).
 
 ---
 

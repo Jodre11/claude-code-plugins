@@ -14,3 +14,8 @@ fixtures:
     type: synthetic
     description: Three-finding IaC set (DS-0001 latest-tag, DS-0004 port-22, DS-0031 secret-env) on a single Dockerfile. Phase 3.3 baseline.
     tags: [smoke, deterministic]
+  - id: jbinspect-smoke-bad-cs
+    agent: jbinspect-reviewer
+    type: synthetic
+    description: Three-finding C# set (RedundantUsingDirective line 2, PossibleNullReferenceException line 11, UnusedMember.Local line 14) on a single project. Phase 3.4 baseline.
+    tags: [smoke, deterministic]

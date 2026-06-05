@@ -322,6 +322,23 @@ class NpmTest(unittest.TestCase):
         text = '{\n  "dependencies": {\n    "react": "^18.2.0",\n    "x": "github:a/b"\n  }\n}\n'
         self.assertEqual(self.m.collect_npm({"package.json": text}, {"package.json": {3, 4}}, reg), [])
 
+    def test_npm_licence_diff_uses_target_not_latest(self):
+        doc = {
+            "dist-tags": {"latest": "19.0.0"},
+            "versions": {
+                "18.2.0": {"license": "MIT"},
+                "18.3.1": {"license": "MIT"},
+                "19.0.0": {"license": "BSL-1.1"},
+            },
+        }
+        reg = self.m.Registry(fixtures_dir=None)
+        reg.fetch = lambda *a, **k: doc
+        text = '{\n  "dependencies": {\n    "react": "^18.2.0"\n  }\n}\n'
+        findings = self.m.collect_npm({"package.json": text}, {"package.json": set()}, reg)
+        self.assertEqual(findings[0]["target"], "18.3.1")
+        self.assertEqual(findings[0]["licence_current"], "MIT")
+        self.assertEqual(findings[0]["licence_latest"], "MIT")  # target 18.3.1 is MIT, not the 19.0.0 BSL flip
+
 
 class EndToEndTest(unittest.TestCase):
     def test_cli_against_recorded_fixtures(self):

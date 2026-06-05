@@ -304,7 +304,10 @@ def parse_package_json(text):
 
     Line-based so we can attribute a 1-based source line to each dep (the
     JSON parser loses line numbers). Tracks which dep-section we are inside
-    via a brace-aware scan of the section headers."""
+    via a brace-aware scan of the section headers.
+
+    Known limitation: a name appearing in multiple dep sections collapses to a
+    single entry keyed on its last occurrence."""
     deps = {}
     in_section = False
     for i, raw in enumerate(text.splitlines(), start=1):
@@ -387,9 +390,14 @@ def collect_npm(file_text, changed_lines, registry):
                 target = nearest_in_major(current, versions)
                 if compare_versions(target, current) <= 0:
                     continue  # nothing newer within the current major
+            # Licence diff is against the RECOMMENDED target, not latest GA:
+            # an untouched-line finding targets the nearest in-major, which may
+            # carry a different licence than latest (e.g. a BSL flip at the next
+            # major we are not recommending). Reporting latest's licence here
+            # would be a factually wrong claim about the suggested upgrade.
             vmap = doc.get("versions") or {}
             lic_cur = (vmap.get(current) or {}).get("license")
-            lic_new = (vmap.get(latest) or {}).get("license")
+            lic_new = (vmap.get(target) or {}).get("license")
             findings.append({
                 "source": "npm", "item": name,
                 "current": current, "latest_ga": latest, "target": target,
@@ -416,9 +424,11 @@ def collect_findings(root, changed_files, changed_lines, registry):
     # npm solution gate: discover every package.json in the tree, then map
     # changed files to their nearest ancestor manifest.
     all_pkgs = set()
-    for dirpath, _dirs, names in os.walk(root):
-        if "node_modules" in dirpath.split(os.sep):
-            continue
+    for dirpath, dirs, names in os.walk(root):
+        # Prune node_modules in place so os.walk does not recurse into the
+        # (potentially enormous) dependency tree.
+        if "node_modules" in dirs:
+            dirs.remove("node_modules")
         if "package.json" in names:
             rel = os.path.relpath(os.path.join(dirpath, "package.json"), root)
             all_pkgs.add(rel.replace(os.sep, "/"))

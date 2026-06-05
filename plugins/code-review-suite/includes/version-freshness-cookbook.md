@@ -20,6 +20,30 @@ Cap at 10 concurrent fetches to avoid registry rate-limits.
 | Go modules       | `go.mod`, `go.sum`                    | `https://proxy.golang.org/<module>/@latest`                                     |
 | GitHub Actions   | `.github/workflows/*.yml`             | `https://api.github.com/repos/<owner>/<action>/releases/latest` (read `tag_name`) |
 
+### Runner labels (no live registry)
+
+GitHub-hosted runner images have no registry endpoint. The housekeeper engine
+ships a manually-maintained latest-label table (`LATEST_RUNNERS` in
+`bin/housekeeper-freshness`). Keep this table in sync with that constant.
+Reviewed 2026-06-05.
+
+| Family   | Latest GA label |
+|----------|-----------------|
+| ubuntu   | `ubuntu-24.04`  |
+| windows  | `windows-2025`  |
+| macos    | `macos-15`      |
+
+Unknown families (self-hosted, custom) and `-latest` floating labels are never
+flagged — there is no trustworthy "latest GA" answer for them.
+
+### GitHub Actions latest-major
+
+A `uses: org/action@vN` pin floats minor/patch within major `N`. The housekeeper
+reads the latest release `tag_name` (the existing GitHub Actions row above) and
+flags only when the latest GA major exceeds `N`; the suggested target is the
+latest major tag (`vM`). SHA pins (`@<sha>  # vX.Y.Z`) read the current version
+from the trailing comment; a SHA pin without a version comment is never flagged.
+
 ### What counts as "stated justification"
 
 A justification must explain *why* this older version is required — not merely state which

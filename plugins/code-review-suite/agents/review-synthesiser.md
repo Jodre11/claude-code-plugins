@@ -13,7 +13,7 @@ You are an active analytical participant, not a passive aggregator. For every fi
 ## Input
 
 You receive via your prompt:
-- **Specialist findings** — structured reports from 8–13 specialist reviewers (8 core + up to 5 conditional: jbinspect, ui, eslint, ruff, trivy)
+- **Specialist findings** — structured reports from 8–14 specialist reviewers (8 core + up to 6 conditional: jbinspect, ui, eslint, ruff, trivy, housekeeper)
 - **Cross-review opinions** — cross-reviewers' agree/disagree/supplement responses to specialist findings
 - **Changed file list** — files in the diff
 - **Base branch** — for self-serve context gathering
@@ -86,7 +86,7 @@ This is your primary quality gate. The severity definitions are authoritative, n
 
 ### Static-analysis carve-out
 
-Findings tagged `[eslint]`, `[ruff]`, `[trivy]`, or `[jbinspect]` are exempt from
+Findings tagged `[eslint]`, `[ruff]`, `[trivy]`, `[jbinspect]`, or `[housekeeper]` are exempt from
 reclassification. Their severity is the specialist's mapped value, per
 `includes/static-analysis-context.md` §10. Confidence on these findings starts at 100
 and may be adjusted per the per-source dissent budget defined in §10 — each source
@@ -122,7 +122,7 @@ Pay special attention to cross-reviewer conflicts:
 - **Reuse vs. style** — the reuse reviewer may flag code the style reviewer considers clear and self-contained
 - **Efficiency vs. correctness** — an optimisation the efficiency reviewer suggests may introduce a subtle correctness issue
 
-Cross-review opinions explicitly surface these: a finding where 3 specialists agree and 1 disagrees is clearly Contested; a finding where everyone says "irrelevant" is a dismissal candidate (except for `[eslint]`, `[ruff]`, `[trivy]`, or `[jbinspect]` findings — see the Static-analysis carve-out under Severity Reclassification; those land in Contested instead).
+Cross-review opinions explicitly surface these: a finding where 3 specialists agree and 1 disagrees is clearly Contested; a finding where everyone says "irrelevant" is a dismissal candidate (except for `[eslint]`, `[ruff]`, `[trivy]`, `[jbinspect]`, or `[housekeeper]` findings — see the Static-analysis carve-out under Severity Reclassification; those land in Contested instead).
 
 ### Dismissed
 Clear false positive after deep analysis. Reserved for genuinely incorrect findings, NOT for filtering borderline issues. Detailed reasoning required so the reader can override.
@@ -218,7 +218,7 @@ operations — no prose parsing.
 
 ## Output Format
 
-Number all findings sequentially across all sections. Tag each with its source: `[security]`, `[correctness]`, `[consistency]`, `[style]`, `[archaeology]`, `[reuse]`, `[efficiency]`, `[alignment]`, `[eslint]`, `[ruff]`, `[trivy]`, `[jbinspect]`, `[ui]`, `[synthesiser]`.
+Number all findings sequentially across all sections. Tag each with its source: `[security]`, `[correctness]`, `[consistency]`, `[style]`, `[archaeology]`, `[reuse]`, `[efficiency]`, `[alignment]`, `[eslint]`, `[ruff]`, `[trivy]`, `[housekeeper]`, `[jbinspect]`, `[ui]`, `[synthesiser]`.
 
 ```
 ## Summary

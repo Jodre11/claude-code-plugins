@@ -133,8 +133,8 @@ contract. The synthesiser cites it from `agents/review-synthesiser.md` under its
 ESLint mapping in `agents/eslint-reviewer.md`, Ruff in `agents/ruff-reviewer.md`,
 Trivy in `agents/trivy-reviewer.md`, JetBrains InspectCode in
 `agents/jbinspect-reviewer.md`) is authoritative. The synthesiser's "Severity
-Reclassification" pass skips findings tagged `[eslint]`, `[ruff]`, `[trivy]`, or
-`[jbinspect]`. There is no LLM override on severity for these findings.
+Reclassification" pass skips findings tagged `[eslint]`, `[ruff]`, `[trivy]`,
+`[jbinspect]`, or `[housekeeper]`. There is no LLM override on severity for these findings.
 
 **Confidence starts at 100.** Every static-analysis finding emits the literal
 `Confidence: 100` (per §6). The synthesiser may cap it down within a bounded envelope
@@ -167,6 +167,8 @@ subsection in each specialist file. The list is an explicit override rather than
 heuristic: a rule must be enumerated to escalate. This fails *safe* — a new tool rule
 that should be Critical but is not on the list maps to its default cap; the LLM
 `security-reviewer` can still flag it separately under the LLM-specialist contract.
+
+The `housekeeper` specialist emits a uniform `Suggestion` severity (staleness is a smell, not a defect) and has no Critical-allow-list — its findings are severity-locked at `Suggestion`.
 
 **Rendered output.** When the synthesiser adjusts confidence (`C < 100`), render the
 adjusted value with this literal:

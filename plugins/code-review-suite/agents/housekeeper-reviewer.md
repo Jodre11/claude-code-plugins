@@ -29,11 +29,11 @@ Run `python3 --version`. If absent, emit `Skipped — python3 not available on P
 
 The temp-dir contract (`includes/static-analysis-context.md` §4) is satisfied by the literal `Use $CLAUDE_TEMP_DIR for temporary files.` line in your prompt. That line carries `$CLAUDE_TEMP_DIR` **unexpanded** — Bash expands it from your environment when a command runs. Seeing the literal token is expected and DOES satisfy the contract; do not treat it as a missing temp dir and abort.
 
-1. Write the changed file list to `$CLAUDE_TEMP_DIR/housekeeper-files.txt`:
+1. Write the changed file list to `$CLAUDE_TEMP_DIR/housekeeper-files.txt`. The authoritative source is the diff:
    ```
    git diff --name-only <diff-args> > $CLAUDE_TEMP_DIR/housekeeper-files.txt
    ```
-   Use the diff syntax determined by `$EMPTY_TREE_MODE` (two-arg when true, three-dot when false), as resolved by the base-context procedure.
+   Use the diff syntax determined by `$EMPTY_TREE_MODE` (two-arg when true, three-dot when false), as resolved by the base-context procedure. **If that file ends up empty** — no base resolved, or the working tree is not a git repository (e.g. a copied review sandbox) — fall back to the paths named in the `Changed lines:` block of your prompt: each non-blank, non-header entry has the shape `  <path>: <lines>`, so the text before the first colon is a changed file. Write one such path per line to `$CLAUDE_TEMP_DIR/housekeeper-files.txt`. The `Changed lines:` block is the pipeline's authoritative scope input; the engine needs this file list to scan workflows and gate npm solutions, so never run the engine against an empty list when the prompt names changed files.
 2. Write the `Changed lines:` block from your prompt verbatim to `$CLAUDE_TEMP_DIR/housekeeper-lines.txt`.
 3. Run the engine (live registry mode — no `--registry-fixtures`):
    ```

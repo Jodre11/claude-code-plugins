@@ -470,6 +470,204 @@ class NuGetScopeTest(unittest.TestCase):
         self.assertEqual(in_csproj, {"src/ApiTests/ApiTests.csproj"})
 
 
+NUGET_FLAT = {"versions": ["2.10.0", "3.0.0", "3.1.1", "4.0.0"]}
+
+
+def _reg_map(**versions):
+    # Helper: build a registration map; each kwarg is version="MIT" or a dict.
+    out = {}
+    for v, meta in versions.items():
+        v = v.replace("_", ".")
+        out[v] = meta if isinstance(meta, dict) else {"licence": meta, "deprecation": None, "listed": True}
+    return out
+
+
+class NuGetCollectTest(unittest.TestCase):
+    def setUp(self):
+        self.m = load_engine()
+
+    def _reg(self, flat, registration):
+        reg = self.m.Registry(fixtures_dir=None)
+        reg.fetch = lambda source, item, url: flat
+        reg.registration = lambda item: registration
+        return reg
+
+    def test_inline_version_stale_touched_targets_latest(self):
+        reg = self._reg(NUGET_FLAT, _reg_map(**{"2_10_0": "MIT", "4_0_0": "MIT"}))
+        csproj = {"Api.csproj": '    <PackageReference Include="Serilog" Version="2.10.0" />\n'}
+        findings = self.m.collect_nuget(csproj, {}, {"Api.csproj": {1}}, reg)
+        self.assertEqual(len(findings), 1)
+        f = findings[0]
+        self.assertEqual(f["source"], "nuget")
+        self.assertEqual(f["item"], "Serilog")
+        self.assertEqual(f["current"], "2.10.0")
+        self.assertEqual(f["latest_ga"], "4.0.0")
+        self.assertEqual(f["target"], "4.0.0")
+        self.assertEqual(f["file"], "Api.csproj")
+        self.assertEqual(f["line"], 1)
+        self.assertIsNone(f["health"])
+
+    def test_untouched_line_targets_nearest_in_major(self):
+        reg = self._reg(NUGET_FLAT, _reg_map(**{"3_0_0": "MIT", "3_1_1": "MIT"}))
+        csproj = {"Api.csproj": '    <PackageReference Include="Serilog" Version="3.0.0" />\n'}
+        findings = self.m.collect_nuget(csproj, {}, {"Api.csproj": set()}, reg)
+        self.assertEqual(findings[0]["target"], "3.1.1")  # nearest in major 3
+
+    def test_cpm_resolution_points_file_line_at_props(self):
+        reg = self._reg(NUGET_FLAT, _reg_map(**{"3_1_1": "MIT", "4_0_0": "MIT"}))
+        csproj = {"src/Api/Api.csproj": '    <PackageReference Include="Serilog" />\n'}
+        props = {"Directory.Packages.props":
+                 '    <PackageVersion Include="Serilog" Version="3.1.1" />\n'}
+        findings = self.m.collect_nuget(csproj, props, {"Directory.Packages.props": {1}}, reg)
+        self.assertEqual(len(findings), 1)
+        f = findings[0]
+        self.assertEqual(f["current"], "3.1.1")
+        self.assertEqual(f["file"], "Directory.Packages.props")  # literal lives in props
+        self.assertEqual(f["line"], 1)
+        self.assertEqual(f["target"], "4.0.0")
+
+    def test_version_override_wins_over_cpm(self):
+        reg = self._reg(NUGET_FLAT, _reg_map(**{"3_0_0": "MIT", "4_0_0": "MIT"}))
+        csproj = {"Api.csproj": '    <PackageReference Include="Serilog" VersionOverride="3.0.0" />\n'}
+        props = {"Directory.Packages.props":
+                 '    <PackageVersion Include="Serilog" Version="3.1.1" />\n'}
+        findings = self.m.collect_nuget(csproj, props, {"Api.csproj": {1}}, reg)
+        self.assertEqual(findings[0]["current"], "3.0.0")
+        self.assertEqual(findings[0]["file"], "Api.csproj")  # override literal in csproj
+
+    def test_property_ref_and_range_yield_no_finding(self):
+        reg = self._reg(NUGET_FLAT, None)
+        csproj = {"Api.csproj":
+                  '    <PackageReference Include="A" Version="$(AVersion)" />\n'
+                  '    <PackageReference Include="B" Version="[1.0,2.0)" />\n'}
+        self.assertEqual(self.m.collect_nuget(csproj, {}, {"Api.csproj": {1, 2}}, reg), [])
+
+    def test_versionless_with_no_cpm_match_is_skipped(self):
+        reg = self._reg(NUGET_FLAT, None)
+        csproj = {"Api.csproj": '    <PackageReference Include="Serilog" />\n'}
+        self.assertEqual(self.m.collect_nuget(csproj, {}, {"Api.csproj": set()}, reg), [])
+
+    def test_flat_container_miss_suppresses(self):
+        reg = self.m.Registry(fixtures_dir=None)
+        reg.fetch = lambda *a, **k: None
+        reg.registration = lambda item: None
+        csproj = {"Api.csproj": '    <PackageReference Include="Serilog" Version="2.10.0" />\n'}
+        self.assertEqual(self.m.collect_nuget(csproj, {}, {"Api.csproj": {1}}, reg), [])
+
+    def test_registration_miss_keeps_freshness_finding_with_null_metadata(self):
+        reg = self.m.Registry(fixtures_dir=None)
+        reg.fetch = lambda *a, **k: NUGET_FLAT
+        reg.registration = lambda item: None
+        csproj = {"Api.csproj": '    <PackageReference Include="Serilog" Version="2.10.0" />\n'}
+        findings = self.m.collect_nuget(csproj, {}, {"Api.csproj": {1}}, reg)
+        self.assertEqual(len(findings), 1)
+        self.assertIsNone(findings[0]["licence_current"])
+        self.assertIsNone(findings[0]["health"])
+
+    def test_licence_diff_against_target(self):
+        reg = self._reg(
+            NUGET_FLAT,
+            _reg_map(**{"2_10_0": {"licence": "MIT", "deprecation": None, "listed": True},
+                        "4_0_0": {"licence": "BSL-1.1", "deprecation": None, "listed": True}}))
+        csproj = {"Api.csproj": '    <PackageReference Include="Serilog" Version="2.10.0" />\n'}
+        findings = self.m.collect_nuget(csproj, {}, {"Api.csproj": {1}}, reg)
+        self.assertEqual(findings[0]["licence_current"], "MIT")
+        self.assertEqual(findings[0]["licence_latest"], "BSL-1.1")
+
+    def test_deprecated_but_current_emits_pure_health(self):
+        # Package is at the latest GA but the registry marks it deprecated.
+        flat = {"versions": ["4.0.0"]}
+        reg = self._reg(
+            flat,
+            _reg_map(**{"4_0_0": {"licence": "MIT", "listed": True,
+                                  "deprecation": {"message": "Use Foo.Bar instead",
+                                                  "reasons": ["Legacy"]}}}))
+        csproj = {"Api.csproj": '    <PackageReference Include="Foo" Version="4.0.0" />\n'}
+        findings = self.m.collect_nuget(csproj, {}, {"Api.csproj": {1}}, reg)
+        self.assertEqual(len(findings), 1)
+        f = findings[0]
+        self.assertEqual(f["current"], "4.0.0")
+        self.assertEqual(f["target"], "4.0.0")  # nothing newer; pure-health
+        self.assertEqual(f["health"], {"state": "deprecated", "detail": "Use Foo.Bar instead"})
+
+    def test_unlisted_current_emits_pure_health(self):
+        flat = {"versions": ["4.0.0"]}
+        reg = self._reg(flat, _reg_map(**{"4_0_0": {"licence": "MIT", "listed": False,
+                                                    "deprecation": None}}))
+        csproj = {"Api.csproj": '    <PackageReference Include="Foo" Version="4.0.0" />\n'}
+        findings = self.m.collect_nuget(csproj, {}, {"Api.csproj": {1}}, reg)
+        self.assertEqual(findings[0]["health"]["state"], "unlisted")
+
+    def test_duplicate_cpm_resolution_dedupes(self):
+        # Two csprojs both reference Serilog version-lessly -> one CPM literal,
+        # one finding (deduped by file/line/item).
+        reg = self._reg(NUGET_FLAT, _reg_map(**{"3_1_1": "MIT", "4_0_0": "MIT"}))
+        csproj = {
+            "src/A/A.csproj": '    <PackageReference Include="Serilog" />\n',
+            "src/B/B.csproj": '    <PackageReference Include="Serilog" />\n',
+        }
+        props = {"Directory.Packages.props":
+                 '    <PackageVersion Include="Serilog" Version="3.1.1" />\n'}
+        findings = self.m.collect_nuget(csproj, props, {"Directory.Packages.props": {1}}, reg)
+        self.assertEqual(len(findings), 1)
+
+
+class NuGetEndToEndTest(unittest.TestCase):
+    def test_cli_against_inline_fixtures_incl_health(self):
+        # A self-contained tree: CPM central versions, a global props dep, and a
+        # deprecated-current package. Recorded flat-container + registration.
+        with tempfile.TemporaryDirectory() as d:
+            root = pathlib.Path(d) / "repo"
+            (root / "src/Api").mkdir(parents=True)
+            (root / "src/Api/Api.csproj").write_text(
+                '<Project Sdk="Microsoft.NET.Sdk">\n'
+                '  <ItemGroup>\n'
+                '    <PackageReference Include="Serilog" />\n'
+                '    <PackageReference Include="Foo.Legacy" Version="4.0.0" />\n'
+                '  </ItemGroup>\n'
+                '</Project>\n')
+            (root / "Directory.Packages.props").write_text(
+                '<Project>\n'
+                '  <ItemGroup>\n'
+                '    <PackageVersion Include="Serilog" Version="2.10.0" />\n'
+                '  </ItemGroup>\n'
+                '</Project>\n')
+            fx = pathlib.Path(d) / "fx"
+            (fx / "nuget").mkdir(parents=True)
+            (fx / "nuget-registration").mkdir(parents=True)
+            (fx / "nuget" / "serilog.json").write_text(json.dumps({"versions": ["2.10.0", "3.1.1", "4.0.0"]}))
+            (fx / "nuget" / "foo.legacy.json").write_text(json.dumps({"versions": ["4.0.0"]}))
+            (fx / "nuget-registration" / "serilog.json").write_text(json.dumps({
+                "items": [{"items": [
+                    {"catalogEntry": {"version": "2.10.0", "licenseExpression": "Apache-2.0", "listed": True}},
+                    {"catalogEntry": {"version": "4.0.0", "licenseExpression": "Apache-2.0", "listed": True}},
+                ]}]}))
+            (fx / "nuget-registration" / "foo.legacy.json").write_text(json.dumps({
+                "items": [{"items": [
+                    {"catalogEntry": {"version": "4.0.0", "licenseExpression": "MIT", "listed": True,
+                                      "deprecation": {"message": "Abandoned; use Foo.Bar", "reasons": ["Legacy"]}}},
+                ]}]}))
+            files = pathlib.Path(d) / "files.txt"
+            lines = pathlib.Path(d) / "lines.txt"
+            files.write_text("src/Api/Api.csproj\n")
+            lines.write_text("Changed lines:\n  src/Api/Api.csproj: 3,4\n")
+            env = dict(os.environ, HOUSEKEEPER_REGISTRY_FIXTURES=str(fx))
+            out = subprocess.run(
+                [sys.executable, str(ENGINE), "--root", str(root),
+                 "--changed-files-from", str(files),
+                 "--changed-lines-from", str(lines)],
+                capture_output=True, text=True, check=True, env=env)
+            tuples = json.loads(out.stdout)
+            by_item = {t["item"]: t for t in tuples}
+            # Serilog: version-less csproj ref -> CPM 2.10.0 in props -> stale (4.0.0).
+            self.assertEqual(by_item["Serilog"]["current"], "2.10.0")
+            self.assertEqual(by_item["Serilog"]["latest_ga"], "4.0.0")
+            self.assertEqual(by_item["Serilog"]["file"], "Directory.Packages.props")
+            # Foo.Legacy: current AND latest, but registry-deprecated -> pure-health.
+            self.assertEqual(by_item["Foo.Legacy"]["health"]["state"], "deprecated")
+            self.assertEqual(by_item["Foo.Legacy"]["target"], "4.0.0")
+
+
 NPM_DOC = {
     "dist-tags": {"latest": "19.0.0"},
     "versions": {

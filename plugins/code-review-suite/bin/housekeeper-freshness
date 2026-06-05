@@ -651,6 +651,106 @@ def nuget_scope_roots(changed_files, all_csprojs, all_props):
     return csprojs, props
 
 
+def _nuget_health(reg_entry):
+    """Map a registration entry to a health dict, or None. Deterministic:
+    deprecation wins over unlisted; detail is rendered verbatim, never judged."""
+    if not reg_entry:
+        return None
+    dep = reg_entry.get("deprecation")
+    if dep:
+        detail = dep.get("message") or ", ".join(dep.get("reasons") or [])
+        return {"state": "deprecated", "detail": detail or ""}
+    if reg_entry.get("listed") is False:
+        return {"state": "unlisted", "detail": ""}
+    return None
+
+
+def collect_nuget(csproj_text, props_text, changed_lines, registry):
+    """csproj_text / props_text map each in-scope path -> its content. Builds a
+    deduplicated candidate set (csproj refs resolved through CPM; props global
+    refs), then emits a tuple per candidate that is stale OR health-flagged."""
+    # CPM central versions and props global refs across all in-scope props.
+    # On a multi-props collision, the deepest-dir declaration wins (tie-break
+    # lexical) so resolution is deterministic.
+    central = {}   # name -> (version, file, line)
+    candidates = {}  # (file, line, name) -> (name, concrete, touched)
+
+    def _consider_props_winner(store, name, version, path, line):
+        prev = store.get(name)
+        if prev is None or (len(_dirname(path)), path) > (len(_dirname(prev[1])), prev[1]):
+            store[name] = (version, path, line)
+
+    def _is_touched(path, line):
+        return line in changed_lines.get(path, set())
+
+    props_globals = {}
+    for path, text in sorted(props_text.items()):
+        cen, glob = parse_packages_props(text)
+        for name, (version, line) in cen.items():
+            _consider_props_winner(central, name, version, path, line)
+        for name, (version, line) in glob.items():
+            _consider_props_winner(props_globals, name, version, path, line)
+
+    def _add_candidate(name, spec, path, line, touched):
+        concrete = nuget_strip_constraint(spec)
+        if concrete is None:
+            return
+        candidates[(path, line, name)] = (name, concrete, touched)
+
+    # csproj references (inline / override win; version-less -> CPM). A
+    # CPM-resolved candidate's literal lives in props, but the T3 'touched'
+    # signal is OR'd across the referencing csproj line AND the props literal:
+    # editing the reference site is an intentional touch even when the central
+    # version stays put, so it warrants the full latest-GA bump.
+    for path, text in sorted(csproj_text.items()):
+        for name, (spec, line) in parse_csproj(text).items():
+            if spec is not None:
+                _add_candidate(name, spec, path, line, _is_touched(path, line))
+            else:
+                cpm = central.get(name)
+                if cpm is not None:
+                    touched = _is_touched(path, line) or _is_touched(cpm[1], cpm[2])
+                    _add_candidate(name, cpm[0], cpm[1], cpm[2], touched)
+    # props global PackageReference declarations are candidates in their own right.
+    for name, (version, path, line) in props_globals.items():
+        _add_candidate(name, version, path, line, _is_touched(path, line))
+
+    findings = []
+    for (path, line, name) in sorted(candidates):
+        _, current, touched = candidates[(path, line, name)]
+        slug = name.lower()
+        doc = registry.fetch(
+            "nuget", slug,
+            "https://api.nuget.org/v3-flatcontainer/%s/index.json" % slug)
+        if not doc:
+            continue  # no trustworthy latest -> suppress entirely
+        versions = list(doc.get("versions") or [])
+        latest = latest_ga(versions)
+        if not latest:
+            continue
+        reg_map = registry.registration(name)
+        health = _nuget_health((reg_map or {}).get(current))
+        stale = compare_versions(latest, current) > 0
+        if stale:
+            target = latest if touched else nearest_in_major(current, versions)
+            if compare_versions(target, current) <= 0:
+                stale = False  # in-major exhausted for an untouched line
+        if not stale and health is None:
+            continue  # widened emit rule: stale OR health-flagged
+        if not stale:
+            target = current
+        lic_cur = (reg_map or {}).get(current, {}).get("licence")
+        lic_new = (reg_map or {}).get(target, {}).get("licence")
+        findings.append({
+            "source": "nuget", "item": name,
+            "current": current, "latest_ga": latest, "target": target,
+            "file": path, "line": line,
+            "licence_current": lic_cur, "licence_latest": lic_new,
+            "health": health,
+        })
+    return findings
+
+
 def collect_findings(root, changed_files, changed_lines, registry):
     def read(path):
         try:
@@ -665,25 +765,41 @@ def collect_findings(root, changed_files, changed_lines, registry):
     }
     workflow_text = {p: t for p, t in workflow_text.items() if t is not None}
 
-    # npm solution gate: discover every package.json in the tree, then map
-    # changed files to their nearest ancestor manifest.
+    # Solution gate: discover every manifest in the tree (npm package.json and
+    # NuGet .csproj/.fsproj/.vbproj/.props), then map changed files to their
+    # governing manifests. node_modules/bin/obj are pruned in place so os.walk
+    # never recurses into (potentially enormous) build/dependency trees.
     all_pkgs = set()
+    all_csprojs = set()
+    all_props = set()
     for dirpath, dirs, names in os.walk(root):
-        # Prune node_modules in place so os.walk does not recurse into the
-        # (potentially enormous) dependency tree.
-        if "node_modules" in dirs:
-            dirs.remove("node_modules")
+        for prune in ("node_modules", "bin", "obj"):
+            if prune in dirs:
+                dirs.remove(prune)
         if "package.json" in names:
             rel = os.path.relpath(os.path.join(dirpath, "package.json"), root)
             all_pkgs.add(rel.replace(os.sep, "/"))
+        for nm in names:
+            rel = os.path.relpath(os.path.join(dirpath, nm), root).replace(os.sep, "/")
+            if nm.endswith(".csproj") or nm.endswith(".fsproj") or nm.endswith(".vbproj"):
+                all_csprojs.add(rel)
+            elif nm.endswith(".props"):
+                all_props.add(rel)
     npm_roots = npm_scope_roots(changed_files, all_pkgs)
     npm_text = {p: read(p) for p in npm_roots}
     npm_text = {p: t for p, t in npm_text.items() if t is not None}
+
+    nuget_csprojs, nuget_props = nuget_scope_roots(changed_files, all_csprojs, all_props)
+    csproj_text = {p: read(p) for p in nuget_csprojs}
+    csproj_text = {p: t for p, t in csproj_text.items() if t is not None}
+    props_text = {p: read(p) for p in nuget_props}
+    props_text = {p: t for p, t in props_text.items() if t is not None}
 
     findings = []
     findings += collect_github_actions(changed_files, workflow_text, changed_lines, registry)
     findings += collect_runners(changed_files, workflow_text, changed_lines)
     findings += collect_npm(npm_text, changed_lines, registry)
+    findings += collect_nuget(csproj_text, props_text, changed_lines, registry)
     # Deterministic ordering for hash stability.
     findings.sort(key=lambda f: (f["file"], f["line"], f["source"], f["item"]))
     return findings

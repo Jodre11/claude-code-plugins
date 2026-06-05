@@ -86,5 +86,76 @@ class VersionCoreTest(unittest.TestCase):
         self.assertIsNone(self.m.strip_constraint("github:foo/bar"))
 
 
+class GitHubActionsTest(unittest.TestCase):
+    def setUp(self):
+        self.m = load_engine()
+
+    def test_find_action_uses_extracts_tag_pins(self):
+        text = (
+            "jobs:\n"
+            "  build:\n"
+            "    steps:\n"
+            "      - uses: actions/checkout@v3\n"
+            "      - uses: actions/setup-node@v4.0.1\n"
+        )
+        uses = self.m.find_action_uses(text)
+        self.assertIn(("actions/checkout", "v3", 4), uses)
+        self.assertIn(("actions/setup-node", "v4.0.1", 5), uses)
+
+    def test_find_action_uses_reads_sha_pin_version_comment(self):
+        text = "      - uses: actions/checkout@abc123def  # v3.6.0\n"
+        uses = self.m.find_action_uses(text)
+        self.assertEqual(uses, [("actions/checkout", "v3.6.0", 1)])
+
+    def test_find_action_uses_skips_sha_pin_without_comment(self):
+        text = "      - uses: actions/checkout@abc123def456\n"
+        # No trustworthy current version -> not collected.
+        self.assertEqual(self.m.find_action_uses(text), [])
+
+    def test_find_action_uses_skips_local_and_docker(self):
+        text = (
+            "      - uses: ./.github/actions/local\n"
+            "      - uses: docker://alpine:3.18\n"
+        )
+        self.assertEqual(self.m.find_action_uses(text), [])
+
+    def test_actions_finding_flags_stale_major(self):
+        # checkout@v3, latest release tag_name v4.2.1 -> stale, target v4.
+        reg = self.m.Registry(fixtures_dir=None)
+        reg.fetch = lambda *a, **k: {"tag_name": "v4.2.1"}
+        findings = self.m.collect_github_actions(
+            [".github/workflows/ci.yml"],
+            {".github/workflows/ci.yml": "      - uses: actions/checkout@v3\n"},
+            {".github/workflows/ci.yml": {1}},
+            reg)
+        self.assertEqual(len(findings), 1)
+        f = findings[0]
+        self.assertEqual(f["source"], "github-actions")
+        self.assertEqual(f["item"], "actions/checkout")
+        self.assertEqual(f["current"], "v3")
+        self.assertEqual(f["latest_ga"], "v4.2.1")
+        self.assertEqual(f["target"], "v4")
+
+    def test_actions_finding_silent_when_current(self):
+        reg = self.m.Registry(fixtures_dir=None)
+        reg.fetch = lambda *a, **k: {"tag_name": "v3.6.0"}
+        findings = self.m.collect_github_actions(
+            [".github/workflows/ci.yml"],
+            {".github/workflows/ci.yml": "      - uses: actions/checkout@v3\n"},
+            {".github/workflows/ci.yml": {1}},
+            reg)
+        self.assertEqual(findings, [])
+
+    def test_actions_finding_silent_on_fetch_miss(self):
+        reg = self.m.Registry(fixtures_dir=None)
+        reg.fetch = lambda *a, **k: None
+        findings = self.m.collect_github_actions(
+            [".github/workflows/ci.yml"],
+            {".github/workflows/ci.yml": "      - uses: actions/checkout@v3\n"},
+            {".github/workflows/ci.yml": {1}},
+            reg)
+        self.assertEqual(findings, [])
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -162,6 +162,74 @@ def strip_constraint(spec):
 
 # --- source collectors (filled in Tasks 3-5) -------------------------------
 
+# --- source: github-actions -------------------------------------------------
+
+_USES_RE = re.compile(
+    r"^\s*-?\s*uses:\s*([A-Za-z0-9._-]+/[A-Za-z0-9._/-]+)@(\S+)(?:\s*#\s*(v?\d[\w.\-]*))?\s*$"
+)
+
+
+def find_action_uses(text):
+    """Return [(action, version, line_no)] for tag-pinned or
+    sha+comment-pinned actions. Skips local (./), docker://, and
+    bare-SHA pins without a version comment."""
+    out = []
+    for i, raw in enumerate(text.splitlines(), start=1):
+        m = _USES_RE.match(raw)
+        if not m:
+            continue
+        action, ref, comment = m.group(1), m.group(2), m.group(3)
+        if action.startswith(".") or action.startswith("docker:"):
+            continue
+        # A tag-like ref (starts with v or a digit) is the current version;
+        # otherwise it is a SHA pin and the version comes from the comment.
+        if re.match(r"^v?\d", ref):
+            current = ref
+        elif comment:
+            current = comment
+        else:
+            continue  # bare SHA, no trustworthy version -> skip
+        out.append((action, current, i))
+    return out
+
+
+def collect_github_actions(changed_files, file_text, changed_lines, registry):
+    findings = []
+    for path in changed_files:
+        if not (path.startswith(".github/workflows/")
+                and path.endswith((".yml", ".yaml"))):
+            continue
+        text = file_text.get(path)
+        if text is None:
+            continue
+        for action, current, line in find_action_uses(text):
+            data = registry.fetch(
+                "github-actions", action,
+                "https://api.github.com/repos/%s/releases/latest" % action)
+            if not data:
+                continue
+            latest = data.get("tag_name")
+            if not latest or not is_ga(latest):
+                continue
+            cur_parsed = parse_version(current)
+            latest_parsed = parse_version(latest)
+            if cur_parsed is None or latest_parsed is None:
+                continue
+            # Actions float by major: stale only when the latest GA major
+            # exceeds the pinned major. Same-major patch/minor drift is churn.
+            if latest_parsed[0] <= cur_parsed[0]:
+                continue
+            # Target is the latest major tag (vN).
+            target = "v%d" % latest_parsed[0]
+            findings.append({
+                "source": "github-actions", "item": action,
+                "current": current, "latest_ga": latest, "target": target,
+                "file": path, "line": line,
+                "licence_current": None, "licence_latest": None,
+            })
+    return findings
+
+
 def collect_findings(root, changed_files, changed_lines, registry):
     """Return a list of stale-version tuples across all source classes.
 

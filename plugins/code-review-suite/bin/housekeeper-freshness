@@ -490,6 +490,102 @@ def collect_npm(file_text, changed_lines, registry):
     return findings
 
 
+# --- source: nuget ----------------------------------------------------------
+
+# A PackageReference / PackageVersion attribute scan. We deliberately scan
+# DECLARED source only: no <Import> graph evaluation, no $(property) resolution,
+# no condition evaluation. .targets files are out of scope.
+
+_PR_INCLUDE_RE = re.compile(r'Include\s*=\s*"([^"]+)"')
+_PR_VERSION_RE = re.compile(r'\bVersion\s*=\s*"([^"]+)"')
+_PR_OVERRIDE_RE = re.compile(r'\bVersionOverride\s*=\s*"([^"]+)"')
+_CHILD_VERSION_RE = re.compile(r"<Version>\s*([^<]+?)\s*</Version>")
+
+
+def nuget_strip_constraint(spec):
+    """Return a bare concrete NuGet version, or None for any form we cannot
+    name a trustworthy 'current' for without evaluating the build:
+    property refs $(...), version ranges [1.0,2.0) / (,2.0], and floating
+    wildcards 1.* / 1.2.*. Concrete pins 1.2.3 / 1.2.3.4 (with an optional
+    -prerelease) are returned verbatim."""
+    if not spec:
+        return None
+    s = spec.strip()
+    if "$(" in s or "*" in s:
+        return None
+    if s[:1] in "[(" or "," in s:
+        return None  # version range
+    if re.fullmatch(r"\d+(?:\.\d+){0,3}(?:-[0-9A-Za-z.\-]+)?", s):
+        return s
+    return None
+
+
+def parse_csproj(text):
+    """Return {name: (spec_or_None, line)} for <PackageReference> entries.
+
+    spec is the raw version string from VersionOverride (wins), an inline
+    Version attribute, or a child <Version> element. A version-less reference
+    records (None, ref_line) -> resolved later via CPM. The recorded line is
+    the literal version's line (or the opening-tag line when version-less)."""
+    refs = {}
+    pending = None  # (name, ref_line) awaiting a child <Version> element
+    for i, raw in enumerate(text.splitlines(), start=1):
+        if pending is not None:
+            cm = _CHILD_VERSION_RE.search(raw)
+            if cm:
+                refs[pending[0]] = (cm.group(1).strip(), i)
+                pending = None
+                continue
+            if "</PackageReference>" in raw:
+                # Closed without a <Version> -> version-less (CPM-resolved).
+                refs[pending[0]] = (None, pending[1])
+                pending = None
+                # fall through: this same line may open nothing else
+        if "<PackageReference" not in raw:
+            continue
+        im = _PR_INCLUDE_RE.search(raw)
+        if not im:
+            continue
+        name = im.group(1)
+        override = _PR_OVERRIDE_RE.search(raw)
+        version = _PR_VERSION_RE.search(raw)
+        if override:
+            refs[name] = (override.group(1), i)
+        elif version:
+            refs[name] = (version.group(1), i)
+        elif "/>" in raw or "</PackageReference>" in raw:
+            refs[name] = (None, i)  # self-closed version-less -> CPM
+        else:
+            pending = (name, i)  # multi-line: await a child <Version>
+    if pending is not None:
+        refs[pending[0]] = (None, pending[1])
+    return refs
+
+
+def parse_packages_props(text):
+    """Return (central, global_refs) for a .props file.
+
+    central: {name: (version, line)} from <PackageVersion Include Version>
+             (CPM central versions).
+    global_refs: {name: (version, line)} from <PackageReference Include Version>
+             (global deps declared in props, e.g. Directory.Build.props).
+    Only concrete attribute versions are recorded here; the collector applies
+    nuget_strip_constraint before acting."""
+    central = {}
+    global_refs = {}
+    for i, raw in enumerate(text.splitlines(), start=1):
+        im = _PR_INCLUDE_RE.search(raw)
+        vm = _PR_VERSION_RE.search(raw)
+        if not im or not vm:
+            continue
+        name, version = im.group(1), vm.group(1)
+        if "<PackageVersion" in raw:
+            central[name] = (version, i)
+        elif "<PackageReference" in raw:
+            global_refs[name] = (version, i)
+    return central, global_refs
+
+
 def collect_findings(root, changed_files, changed_lines, registry):
     def read(path):
         try:

@@ -334,6 +334,72 @@ class RunnerTest(unittest.TestCase):
         self.assertEqual(findings, [])
 
 
+class NuGetParseTest(unittest.TestCase):
+    def setUp(self):
+        self.m = load_engine()
+
+    def test_strip_constraint_concrete_three_and_four_part(self):
+        self.assertEqual(self.m.nuget_strip_constraint("1.2.3"), "1.2.3")
+        self.assertEqual(self.m.nuget_strip_constraint("1.2.3.4"), "1.2.3.4")
+        self.assertEqual(self.m.nuget_strip_constraint("13.0.3"), "13.0.3")
+
+    def test_strip_constraint_rejects_untrustworthy_forms(self):
+        self.assertIsNone(self.m.nuget_strip_constraint("$(SerilogVersion)"))
+        self.assertIsNone(self.m.nuget_strip_constraint("[1.0,2.0)"))
+        self.assertIsNone(self.m.nuget_strip_constraint("(,2.0]"))
+        self.assertIsNone(self.m.nuget_strip_constraint("1.*"))
+        self.assertIsNone(self.m.nuget_strip_constraint("1.2.*"))
+        self.assertIsNone(self.m.nuget_strip_constraint(""))
+
+    def test_parse_csproj_inline_version(self):
+        text = (
+            '<Project Sdk="Microsoft.NET.Sdk">\n'
+            '  <ItemGroup>\n'
+            '    <PackageReference Include="Serilog" Version="2.10.0" />\n'
+            '  </ItemGroup>\n'
+            '</Project>\n'
+        )
+        refs = self.m.parse_csproj(text)
+        self.assertEqual(refs["Serilog"], ("2.10.0", 3))
+
+    def test_parse_csproj_version_override_wins(self):
+        text = (
+            '    <PackageReference Include="Newtonsoft.Json" VersionOverride="12.0.1" />\n'
+        )
+        refs = self.m.parse_csproj(text)
+        self.assertEqual(refs["Newtonsoft.Json"], ("12.0.1", 1))
+
+    def test_parse_csproj_versionless_records_none_for_cpm(self):
+        text = (
+            '    <PackageReference Include="Serilog" />\n'
+        )
+        refs = self.m.parse_csproj(text)
+        self.assertEqual(refs["Serilog"], (None, 1))
+
+    def test_parse_csproj_child_element_version(self):
+        text = (
+            '    <PackageReference Include="AutoMapper">\n'
+            '      <Version>11.0.1</Version>\n'
+            '    </PackageReference>\n'
+        )
+        refs = self.m.parse_csproj(text)
+        # The acted-on line is the <Version> literal, not the opening tag.
+        self.assertEqual(refs["AutoMapper"], ("11.0.1", 2))
+
+    def test_parse_packages_props_central_and_global(self):
+        text = (
+            '<Project>\n'
+            '  <ItemGroup>\n'
+            '    <PackageVersion Include="Serilog" Version="3.1.1" />\n'
+            '    <PackageReference Include="Microsoft.SourceLink.GitHub" Version="1.1.1" />\n'
+            '  </ItemGroup>\n'
+            '</Project>\n'
+        )
+        central, glob = self.m.parse_packages_props(text)
+        self.assertEqual(central["Serilog"], ("3.1.1", 3))
+        self.assertEqual(glob["Microsoft.SourceLink.GitHub"], ("1.1.1", 4))
+
+
 NPM_DOC = {
     "dist-tags": {"latest": "19.0.0"},
     "versions": {

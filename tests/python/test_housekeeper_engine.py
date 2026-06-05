@@ -241,5 +241,110 @@ class RunnerTest(unittest.TestCase):
         self.assertEqual(findings, [])
 
 
+NPM_DOC = {
+    "dist-tags": {"latest": "19.0.0"},
+    "versions": {
+        "18.0.0": {"license": "MIT"},
+        "18.2.0": {"license": "MIT"},
+        "18.3.1": {"license": "MIT"},
+        "19.0.0": {"license": "MIT"},
+    },
+}
+
+
+class NpmTest(unittest.TestCase):
+    def setUp(self):
+        self.m = load_engine()
+
+    def test_parse_package_json_deps_with_lines(self):
+        text = (
+            '{\n'
+            '  "dependencies": {\n'
+            '    "react": "^18.2.0",\n'
+            '    "left-pad": "1.3.0"\n'
+            '  }\n'
+            '}\n'
+        )
+        deps = self.m.parse_package_json(text)
+        self.assertEqual(deps["react"], ("^18.2.0", 3))
+        self.assertEqual(deps["left-pad"], ("1.3.0", 4))
+
+    def test_npm_root_finds_nearest_package_json(self):
+        files = ["web/app/src/index.ts", "api/server.py"]
+        roots = self.m.npm_scope_roots(files, {"web/app/package.json", "api/package.json"})
+        # The .ts pulls in web/app (nearest ancestor with a package.json).
+        self.assertEqual(roots, {"web/app/package.json"})
+
+    def test_npm_finding_touched_line_targets_latest_ga(self):
+        reg = self.m.Registry(fixtures_dir=None)
+        reg.fetch = lambda *a, **k: NPM_DOC
+        text = '{\n  "dependencies": {\n    "react": "^18.2.0"\n  }\n}\n'
+        findings = self.m.collect_npm(
+            {"package.json": text},
+            {"package.json": {3}},  # react's line IS changed -> full bump
+            reg)
+        self.assertEqual(len(findings), 1)
+        f = findings[0]
+        self.assertEqual(f["source"], "npm")
+        self.assertEqual(f["item"], "react")
+        self.assertEqual(f["current"], "18.2.0")
+        self.assertEqual(f["latest_ga"], "19.0.0")
+        self.assertEqual(f["target"], "19.0.0")
+        self.assertEqual(f["line"], 3)
+
+    def test_npm_finding_untouched_line_targets_nearest_in_major(self):
+        reg = self.m.Registry(fixtures_dir=None)
+        reg.fetch = lambda *a, **k: NPM_DOC
+        text = '{\n  "dependencies": {\n    "react": "^18.2.0"\n  }\n}\n'
+        findings = self.m.collect_npm(
+            {"package.json": text},
+            {"package.json": set()},  # in-scope solution but line not touched
+            reg)
+        self.assertEqual(len(findings), 1)
+        self.assertEqual(findings[0]["target"], "18.3.1")  # nearest in major 18
+
+    def test_npm_licence_change_recorded(self):
+        doc = {
+            "dist-tags": {"latest": "2.0.0"},
+            "versions": {"1.0.0": {"license": "MIT"}, "2.0.0": {"license": "BSL-1.1"}},
+        }
+        reg = self.m.Registry(fixtures_dir=None)
+        reg.fetch = lambda *a, **k: doc
+        text = '{\n  "dependencies": {\n    "foo": "1.0.0"\n  }\n}\n'
+        findings = self.m.collect_npm({"package.json": text}, {"package.json": {3}}, reg)
+        self.assertEqual(findings[0]["licence_current"], "MIT")
+        self.assertEqual(findings[0]["licence_latest"], "BSL-1.1")
+
+    def test_npm_silent_on_fetch_miss_and_non_registry_specs(self):
+        reg = self.m.Registry(fixtures_dir=None)
+        reg.fetch = lambda *a, **k: None
+        text = '{\n  "dependencies": {\n    "react": "^18.2.0",\n    "x": "github:a/b"\n  }\n}\n'
+        self.assertEqual(self.m.collect_npm({"package.json": text}, {"package.json": {3, 4}}, reg), [])
+
+
+class EndToEndTest(unittest.TestCase):
+    def test_cli_against_recorded_fixtures(self):
+        # The engine emits stable tuples when pointed at recorded fixtures.
+        repo = REPO  # the real fixture lives under tests/fixtures (Task 13)
+        fixtures = repo / "tests/fixtures/static-analysis/housekeeper"
+        if not fixtures.exists():
+            self.skipTest("Task 13 fixture not yet created")
+        with tempfile.TemporaryDirectory() as d:
+            files = pathlib.Path(d) / "files.txt"
+            lines = pathlib.Path(d) / "lines.txt"
+            files.write_text(".github/workflows/ci.yml\npackage.json\n")
+            lines.write_text("Changed lines:\n  .github/workflows/ci.yml: 12,15\n  package.json: 4\n")
+            env = dict(os.environ,
+                       HOUSEKEEPER_REGISTRY_FIXTURES=str(fixtures / "registry"))
+            out = subprocess.run(
+                [sys.executable, str(ENGINE), "--root", str(fixtures),
+                 "--changed-files-from", str(files),
+                 "--changed-lines-from", str(lines)],
+                capture_output=True, text=True, check=True, env=env)
+            tuples = json.loads(out.stdout)
+            sources = sorted(t["source"] for t in tuples)
+            self.assertEqual(sources, ["github-actions", "npm", "runner"])
+
+
 if __name__ == "__main__":
     unittest.main()

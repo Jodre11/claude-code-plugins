@@ -293,15 +293,145 @@ def collect_runners(changed_files, file_text, changed_lines):
     return findings
 
 
-def collect_findings(root, changed_files, changed_lines, registry):
-    """Return a list of stale-version tuples across all source classes.
+# --- source: npm ------------------------------------------------------------
 
-    Each collector is added in a later task. The chassis returns [].
-    """
+_DEP_LINE_RE = re.compile(r'^\s*"([^"]+)"\s*:\s*"([^"]+)"\s*,?\s*$')
+_DEP_SECTIONS = ("dependencies", "devDependencies", "optionalDependencies", "peerDependencies")
+
+
+def parse_package_json(text):
+    """Return {name: (spec, line_no)} across all dependency sections.
+
+    Line-based so we can attribute a 1-based source line to each dep (the
+    JSON parser loses line numbers). Tracks which dep-section we are inside
+    via a brace-aware scan of the section headers."""
+    deps = {}
+    in_section = False
+    for i, raw in enumerate(text.splitlines(), start=1):
+        stripped = raw.strip()
+        if any(('"%s"' % s) in stripped and stripped.endswith("{") for s in _DEP_SECTIONS):
+            in_section = True
+            continue
+        if in_section and stripped.startswith("}"):
+            in_section = False
+            continue
+        if in_section:
+            m = _DEP_LINE_RE.match(raw)
+            if m:
+                deps[m.group(1)] = (m.group(2), i)
+    return deps
+
+
+# Files that mark membership of a JS/TS (npm) solution. A changed file only
+# pulls in its containing package.json when it belongs to the npm ecosystem —
+# a sibling Python/Go/etc. file under the same dir is part of a *different*
+# buildable unit and must not drag the npm manifest into scope.
+_NPM_SCOPE_SUFFIXES = (
+    ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".mts", ".cts",
+    ".vue", ".svelte", ".json",
+)
+
+
+def _is_npm_scope_file(path):
+    base = path.rsplit("/", 1)[-1]
+    if base in ("package.json", "package-lock.json", ".npmrc", "yarn.lock", "pnpm-lock.yaml"):
+        return True
+    return path.endswith(_NPM_SCOPE_SUFFIXES)
+
+
+def npm_scope_roots(changed_files, all_package_jsons):
+    """Map each changed file to the nearest ancestor package.json, returning
+    the set of in-scope package.json paths (the T1 solution gate).
+
+    Only JS/TS-ecosystem files participate: a changed file pulls in its
+    *containing* npm solution, so a Python source file under a dir that also
+    happens to hold a package.json does not count as touching that solution."""
+    roots = set()
+    for f in changed_files:
+        if not _is_npm_scope_file(f):
+            continue
+        parts = f.split("/")
+        for n in range(len(parts), 0, -1):
+            cand = "/".join(parts[:n - 1] + ["package.json"]) if n > 1 else "package.json"
+            if cand in all_package_jsons:
+                roots.add(cand)
+                break
+    return roots
+
+
+def collect_npm(file_text, changed_lines, registry):
+    """file_text maps each in-scope package.json path -> its content."""
     findings = []
-    # findings += collect_github_actions(...)   # Task 3
-    # findings += collect_runners(...)           # Task 4
-    # findings += collect_npm(...)               # Task 5
+    for path, text in file_text.items():
+        if not path.endswith("package.json"):
+            continue
+        deps = parse_package_json(text)
+        touched = changed_lines.get(path, set())
+        for name, (spec, line) in deps.items():
+            current = strip_constraint(spec)
+            if current is None:
+                continue
+            doc = registry.fetch("npm", name, "https://registry.npmjs.org/%s" % name)
+            if not doc:
+                continue
+            versions = list((doc.get("versions") or {}).keys())
+            latest = (doc.get("dist-tags") or {}).get("latest")
+            if not latest or not is_ga(latest):
+                latest = latest_ga(versions)
+            if not latest or compare_versions(latest, current) <= 0:
+                continue
+            # T3: touched manifest line -> full bump; else nearest in-major.
+            if line in touched:
+                target = latest
+            else:
+                target = nearest_in_major(current, versions)
+                if compare_versions(target, current) <= 0:
+                    continue  # nothing newer within the current major
+            vmap = doc.get("versions") or {}
+            lic_cur = (vmap.get(current) or {}).get("license")
+            lic_new = (vmap.get(latest) or {}).get("license")
+            findings.append({
+                "source": "npm", "item": name,
+                "current": current, "latest_ga": latest, "target": target,
+                "file": path, "line": line,
+                "licence_current": lic_cur, "licence_latest": lic_new,
+            })
+    return findings
+
+
+def collect_findings(root, changed_files, changed_lines, registry):
+    def read(path):
+        try:
+            with open(os.path.join(root, path), encoding="utf-8") as fh:
+                return fh.read()
+        except OSError:
+            return None
+
+    workflow_text = {
+        p: read(p) for p in changed_files
+        if p.startswith(".github/workflows/") and p.endswith((".yml", ".yaml"))
+    }
+    workflow_text = {p: t for p, t in workflow_text.items() if t is not None}
+
+    # npm solution gate: discover every package.json in the tree, then map
+    # changed files to their nearest ancestor manifest.
+    all_pkgs = set()
+    for dirpath, _dirs, names in os.walk(root):
+        if "node_modules" in dirpath.split(os.sep):
+            continue
+        if "package.json" in names:
+            rel = os.path.relpath(os.path.join(dirpath, "package.json"), root)
+            all_pkgs.add(rel.replace(os.sep, "/"))
+    npm_roots = npm_scope_roots(changed_files, all_pkgs)
+    npm_text = {p: read(p) for p in npm_roots}
+    npm_text = {p: t for p, t in npm_text.items() if t is not None}
+
+    findings = []
+    findings += collect_github_actions(changed_files, workflow_text, changed_lines, registry)
+    findings += collect_runners(changed_files, workflow_text, changed_lines)
+    findings += collect_npm(npm_text, changed_lines, registry)
+    # Deterministic ordering for hash stability.
+    findings.sort(key=lambda f: (f["file"], f["line"], f["source"], f["item"]))
     return findings
 
 

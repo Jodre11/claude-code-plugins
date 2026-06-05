@@ -87,6 +87,79 @@ class Registry:
             return None
 
 
+# --- version core ----------------------------------------------------------
+
+_VERSION_RE = re.compile(r"^[vV]?(\d+)(?:\.(\d+))?(?:\.(\d+))?")
+
+
+def parse_version(s):
+    """Return (major, minor, patch) ints, or None if unparsable.
+
+    Drops a leading v, a -prerelease suffix, and +build metadata. Missing
+    minor/patch default to 0 (so 'v4' == (4, 0, 0))."""
+    if not s:
+        return None
+    m = _VERSION_RE.match(s.strip())
+    if not m:
+        return None
+    return (int(m.group(1)), int(m.group(2) or 0), int(m.group(3) or 0))
+
+
+def is_ga(s):
+    """True if s is a general-availability version (no -prerelease marker)."""
+    if not s:
+        return False
+    core = s.strip()
+    if core[:1] in ("v", "V"):
+        core = core[1:]
+    # A hyphen after the numeric core marks a prerelease (1.2.3-rc.1, 2.0.0-beta).
+    return parse_version(s) is not None and "-" not in core
+
+
+def compare_versions(a, b):
+    """-1 if a<b, 0 if equal, 1 if a>b (by parsed numeric tuple)."""
+    pa, pb = parse_version(a), parse_version(b)
+    if pa is None or pb is None:
+        return 0
+    return (pa > pb) - (pa < pb)
+
+
+def latest_ga(versions):
+    """Highest GA version in the list, or None if none are GA."""
+    ga = [v for v in versions if is_ga(v)]
+    if not ga:
+        return None
+    return max(ga, key=parse_version)
+
+
+def nearest_in_major(current, versions):
+    """Highest GA version sharing current's major; falls back to current."""
+    cur = parse_version(current)
+    if cur is None:
+        return current
+    same_major = [v for v in versions if is_ga(v) and parse_version(v)[0] == cur[0]]
+    if not same_major:
+        return current
+    best = max(same_major, key=parse_version)
+    return best if compare_versions(best, current) > 0 else current
+
+
+def strip_constraint(spec):
+    """Extract a concrete version from an npm version range, or None.
+
+    Handles ^x.y.z, ~x.y.z, >=x.y.z, plain x.y.z. Returns None for
+    wildcards, tags, and non-registry specs (git:, file:, workspace:)."""
+    if not spec:
+        return None
+    spec = spec.strip()
+    if any(spec.startswith(p) for p in ("github:", "git+", "git:", "file:", "workspace:", "link:", "npm:")):
+        return None
+    if spec in ("*", "latest", "next", "") or spec.startswith("http"):
+        return None
+    m = re.search(r"(\d+(?:\.\d+){0,2}(?:-[0-9A-Za-z.\-]+)?)", spec)
+    return m.group(1) if m else None
+
+
 # --- source collectors (filled in Tasks 3-5) -------------------------------
 
 def collect_findings(root, changed_files, changed_lines, registry):

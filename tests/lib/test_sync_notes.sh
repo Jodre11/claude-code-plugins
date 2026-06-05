@@ -496,7 +496,7 @@ test_dispatcher_includes_new_static_analysis_flags() {
         fi
 
         local flag
-        for flag in '$JS_DETECTED' '$PY_DETECTED' '$IAC_DETECTED'; do
+        for flag in '$JS_DETECTED' '$PY_DETECTED' '$IAC_DETECTED' '$HOUSEKEEPING_DETECTED'; do
             if grep -qF "$flag" "$path"; then
                 pass "static-analysis dispatcher flags: $file contains $flag"
             else
@@ -516,7 +516,7 @@ test_static_analysis_specialists_have_required_severity_mapping() {
     fi
 
     local agent
-    for agent in eslint-reviewer.md ruff-reviewer.md trivy-reviewer.md jbinspect-reviewer.md; do
+    for agent in eslint-reviewer.md ruff-reviewer.md trivy-reviewer.md jbinspect-reviewer.md housekeeper-reviewer.md; do
         local path="$cr/agents/$agent"
         if [[ ! -f "$path" ]]; then
             fail "static-analysis severity literals: $agent" "file not found"
@@ -598,7 +598,7 @@ test_sync_static_analysis_severity_lock() {
     # The carve-out's anchor sentence must appear verbatim. Match the load-bearing
     # phrase rather than the entire paragraph — paragraph-level matching is brittle
     # against acceptable wording polish; the anchor sentence is the policy claim.
-    local anchor='Findings tagged `[eslint]`, `[ruff]`, `[trivy]`, or `[jbinspect]` are exempt from'
+    local anchor='Findings tagged `[eslint]`, `[ruff]`, `[trivy]`, `[jbinspect]`, or `[housekeeper]` are exempt from'
     if grep -qF "$anchor" "$synthesiser"; then
         pass "static-analysis severity lock: synthesiser contains carve-out anchor sentence"
     else
@@ -609,7 +609,7 @@ test_sync_static_analysis_severity_lock() {
     # Each of the four specialist tags must be listed verbatim in the carve-out.
     # Drift here would silently re-enable reclassification for the missing specialist.
     local tag
-    for tag in '[eslint]' '[ruff]' '[trivy]' '[jbinspect]'; do
+    for tag in '[eslint]' '[ruff]' '[trivy]' '[jbinspect]' '[housekeeper]'; do
         if grep -qF "\`$tag\`" "$synthesiser"; then
             pass "static-analysis severity lock: synthesiser lists tag $tag"
         else
@@ -784,7 +784,7 @@ test_sync_static_analysis_cross_feed_documented() {
             "cross-review-mode.md HTML header must restate that static-analysis findings are visible to cross-reviewers"
     fi
 
-    # Assertion 4: each of the four static-analysis specialist names must appear in
+    # Assertion 4: each of the five static-analysis specialist names must appear in
     # both review-pipeline.md and static-analysis-context.md. We assert presence
     # individually (not order/format) so that legitimate prose variations between
     # the two canonicals do not trigger false positives. The names are the load-
@@ -793,7 +793,7 @@ test_sync_static_analysis_cross_feed_documented() {
     local name pipeline_missing sa_missing
     pipeline_missing=""
     sa_missing=""
-    for name in jbinspect eslint ruff trivy; do
+    for name in jbinspect eslint ruff trivy housekeeper; do
         if ! grep -q "$name" "$pipeline"; then
             pipeline_missing="$pipeline_missing $name"
         fi
@@ -805,7 +805,7 @@ test_sync_static_analysis_cross_feed_documented() {
         pass "static-analysis cross-feed: specialist enumeration consistent across canonicals"
     else
         fail "static-analysis cross-feed: specialist enumeration consistent across canonicals" \
-            "review-pipeline.md missing names:${pipeline_missing:-<none>}; static-analysis-context.md missing names:${sa_missing:-<none>} — both canonicals must reference all four (jbinspect, eslint, ruff, trivy) static-analysis specialists"
+            "review-pipeline.md missing names:${pipeline_missing:-<none>}; static-analysis-context.md missing names:${sa_missing:-<none>} — both canonicals must reference all five (jbinspect, eslint, ruff, trivy, housekeeper) static-analysis specialists"
     fi
 }
 

@@ -146,6 +146,27 @@ class GitHubActionsTest(unittest.TestCase):
             reg)
         self.assertEqual(findings, [])
 
+    def test_find_action_uses_keeps_tag_pin_with_freetext_comment(self):
+        text = "      - uses: actions/checkout@v3 # node setup\n"
+        uses = self.m.find_action_uses(text)
+        self.assertIn(("actions/checkout", "v3", 1), uses)
+
+    def test_actions_nested_action_uses_owner_repo_for_api(self):
+        reg = self.m.Registry(fixtures_dir=None)
+        calls = []
+        def rec(source, item, url):
+            calls.append(url)
+            return {"tag_name": "v3.0.0"}
+        reg.fetch = rec
+        findings = self.m.collect_github_actions(
+            [".github/workflows/ci.yml"],
+            {".github/workflows/ci.yml": "      - uses: github/codeql-action/analyze@v2\n"},
+            {".github/workflows/ci.yml": {1}},
+            reg)
+        self.assertEqual(calls, ["https://api.github.com/repos/github/codeql-action/releases/latest"])
+        self.assertEqual(findings[0]["item"], "github/codeql-action/analyze")
+        self.assertEqual(findings[0]["target"], "v3")
+
     def test_actions_finding_silent_on_fetch_miss(self):
         reg = self.m.Registry(fixtures_dir=None)
         reg.fetch = lambda *a, **k: None

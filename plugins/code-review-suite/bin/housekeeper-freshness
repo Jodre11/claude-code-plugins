@@ -165,7 +165,7 @@ def strip_constraint(spec):
 # --- source: github-actions -------------------------------------------------
 
 _USES_RE = re.compile(
-    r"^\s*-?\s*uses:\s*([A-Za-z0-9._-]+/[A-Za-z0-9._/-]+)@(\S+)(?:\s*#\s*(v?\d[\w.\-]*))?\s*$"
+    r"^\s*-?\s*uses:\s*([A-Za-z0-9._-]+/[A-Za-z0-9._/-]+)@(\S+)(?:\s*#\s*(v?\d[\w.\-]*))?.*$"
 )
 
 
@@ -203,9 +203,12 @@ def collect_github_actions(changed_files, file_text, changed_lines, registry):
         if text is None:
             continue
         for action, current, line in find_action_uses(text):
+            # Nested/subpath actions (owner/repo/subdir) resolve releases
+            # from the owner/repo only; the subdir is not part of the slug.
+            owner_repo = "/".join(action.split("/")[:2])
             data = registry.fetch(
                 "github-actions", action,
-                "https://api.github.com/repos/%s/releases/latest" % action)
+                "https://api.github.com/repos/%s/releases/latest" % owner_repo)
             if not data:
                 continue
             latest = data.get("tag_name")

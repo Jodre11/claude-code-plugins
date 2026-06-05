@@ -169,6 +169,15 @@ agent_capture_parse_trial() {
                     file = file_clean
                 }
             }
+            # Normalise the line value to its leading integer run. Agents
+            # sometimes annotate a notebook finding as `1 (cell 1)`; the
+            # line-space value is the leading integer (matches the documented
+            # nbqa remap). A value with no leading digit is left untouched and
+            # handled by the jq boundary guard downstream (scores as divergent
+            # rather than crashing the run). Backlog #5.
+            if (eff_line != "" && match(eff_line, /^[0-9]+/) > 0) {
+                eff_line = substr(eff_line, RSTART, RLENGTH)
+            }
             if (in_finding_block && file != "" && eff_line != "" && rule_id != "" && severity != "" && confidence != "") {
                 print file, eff_line, rule_id, severity, confidence
             }
@@ -224,10 +233,10 @@ agent_capture_parse_trial() {
             split("\n")
             | map(select(length > 0) | split("\t") | {
                 file: .[0],
-                line: (.[1] | tonumber),
+                line: (.[1] | tonumber? // .[1]),
                 rule_id: .[2],
                 severity: .[3],
-                confidence: (.[4] | tonumber)
+                confidence: (.[4] | tonumber? // .[4])
               })
           ' > "$trial_dir/findings.json"
 

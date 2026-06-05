@@ -309,6 +309,53 @@ test_ab_agent_capture_parses_three_findings() {
     rm -rf "$trial_dir"
 }
 
+test_ab_agent_capture_cell_suffix_line_does_not_crash() {
+    # Regression (backlog #5, found 2026-06-04 during the ruff --stdout
+    # validation): a finding whose File bullet carries a notebook cell
+    # annotation — `notebook.ipynb:1 (cell 1)` — yielded an eff_line of
+    # "1 (cell 1)", which `jq … | tonumber` could not parse, aborting the
+    # ENTIRE A/B run (exit 5) rather than failing the one trial. The parser
+    # must normalise the line to its leading integer and never emit invalid
+    # JSON.
+    local lib="$REPO_ROOT/tests/ab/lib/agent_capture.sh"
+    local fixture="$REPO_ROOT/tests/ab/fixtures/ruff-stdout-cell-suffix-line.log"
+
+    if [[ ! -f "$lib" || ! -f "$fixture" ]]; then
+        fail "A/B agent_capture: cell-suffix lib + fixture present" "missing"
+        return
+    fi
+
+    local trial_dir
+    trial_dir=$(mktemp -d)
+    cp "$fixture" "$trial_dir/stdout.log"
+
+    (
+        # shellcheck disable=SC1090
+        source "$lib"
+        agent_capture_parse_trial ruff "$trial_dir"
+    )
+
+    # findings.json must be valid JSON (the crash left it empty/invalid).
+    if jq -e . "$trial_dir/findings.json" >/dev/null 2>&1; then
+        pass "A/B agent_capture: cell-suffix line yields valid JSON (no crash)"
+    else
+        fail "A/B agent_capture: cell-suffix line yields valid JSON (no crash)" \
+            "findings.json missing or not valid JSON — parser aborted on '1 (cell 1)'"
+        rm -rf "$trial_dir"
+        return
+    fi
+
+    # Both findings present, and the notebook line normalised to the integer 1.
+    local count nb_line
+    count=$(jq 'length' "$trial_dir/findings.json")
+    assert_equals "2" "$count" "A/B agent_capture: cell-suffix both findings extracted"
+
+    nb_line=$(jq -r '.[] | select(.file == "notebook.ipynb") | .line' "$trial_dir/findings.json")
+    assert_equals "1" "$nb_line" "A/B agent_capture: cell-suffix line normalised to integer 1"
+
+    rm -rf "$trial_dir"
+}
+
 test_ab_agent_capture_zero_findings_is_empty_array() {
     local lib="$REPO_ROOT/tests/ab/lib/agent_capture.sh"
     local fixture="$REPO_ROOT/tests/ab/fixtures/ruff-stdout-zero-findings.log"

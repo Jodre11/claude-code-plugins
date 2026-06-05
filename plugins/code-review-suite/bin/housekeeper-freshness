@@ -89,20 +89,24 @@ class Registry:
 
 # --- version core ----------------------------------------------------------
 
-_VERSION_RE = re.compile(r"^[vV]?(\d+)(?:\.(\d+))?(?:\.(\d+))?")
+_VERSION_RE = re.compile(r"^[vV]?(\d+)(?:\.(\d+))?(?:\.(\d+))?(?:\.(\d+))?")
 
 
 def parse_version(s):
-    """Return (major, minor, patch) ints, or None if unparsable.
+    """Return (major, minor, patch, revision) ints, or None if unparsable.
 
     Drops a leading v, a -prerelease suffix, and +build metadata. Missing
-    minor/patch default to 0 (so 'v4' == (4, 0, 0))."""
+    parts default to 0, so 'v4' == (4, 0, 0, 0) and a 3-part '1.2.3'
+    compares identically to its 4-part '1.2.3.0' form — backward-compatible
+    with the slice-1 npm/Actions/runner sources by construction. NuGet's
+    4-part versions ('1.2.3.4') populate the revision slot."""
     if not s:
         return None
     m = _VERSION_RE.match(s.strip())
     if not m:
         return None
-    return (int(m.group(1)), int(m.group(2) or 0), int(m.group(3) or 0))
+    return (int(m.group(1)), int(m.group(2) or 0),
+            int(m.group(3) or 0), int(m.group(4) or 0))
 
 
 def is_ga(s):

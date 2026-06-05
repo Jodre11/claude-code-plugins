@@ -41,14 +41,28 @@ class VersionCoreTest(unittest.TestCase):
         self.m = load_engine()
 
     def test_parse_version_strips_v_prefix(self):
-        self.assertEqual(self.m.parse_version("v4.2.1"), (4, 2, 1))
-        self.assertEqual(self.m.parse_version("4.2.1"), (4, 2, 1))
-        self.assertEqual(self.m.parse_version("v4"), (4, 0, 0))
-        self.assertEqual(self.m.parse_version("4.2"), (4, 2, 0))
+        self.assertEqual(self.m.parse_version("v4.2.1"), (4, 2, 1, 0))
+        self.assertEqual(self.m.parse_version("4.2.1"), (4, 2, 1, 0))
+        self.assertEqual(self.m.parse_version("v4"), (4, 0, 0, 0))
+        self.assertEqual(self.m.parse_version("4.2"), (4, 2, 0, 0))
 
     def test_parse_version_drops_prerelease_and_build(self):
-        self.assertEqual(self.m.parse_version("1.2.3-rc.1"), (1, 2, 3))
-        self.assertEqual(self.m.parse_version("1.2.3+build.5"), (1, 2, 3))
+        self.assertEqual(self.m.parse_version("1.2.3-rc.1"), (1, 2, 3, 0))
+        self.assertEqual(self.m.parse_version("1.2.3+build.5"), (1, 2, 3, 0))
+
+    def test_parse_version_four_part_nuget(self):
+        # NuGet 4-part versions; revision defaults to 0 for shorter inputs.
+        self.assertEqual(self.m.parse_version("1.2.3.4"), (1, 2, 3, 4))
+        self.assertEqual(self.m.parse_version("13.0.3.0"), (13, 0, 3, 0))
+        # Backward-compat: 3-part inputs compare identically to slice 1.
+        self.assertEqual(self.m.parse_version("18.2.0"), (18, 2, 0, 0))
+
+    def test_four_part_comparison_orders_revision(self):
+        self.assertEqual(self.m.compare_versions("1.2.3.4", "1.2.3.5"), -1)
+        self.assertEqual(self.m.compare_versions("1.2.3.4", "1.2.3.4"), 0)
+        self.assertEqual(self.m.compare_versions("1.2.4.0", "1.2.3.9"), 1)
+        # A 3-part version equals its 4-part .0 form (revision defaults to 0).
+        self.assertEqual(self.m.compare_versions("1.2.3", "1.2.3.0"), 0)
 
     def test_parse_version_invalid_returns_none(self):
         self.assertIsNone(self.m.parse_version("latest"))

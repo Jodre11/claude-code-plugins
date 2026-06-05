@@ -213,6 +213,21 @@ class RunnerTest(unittest.TestCase):
             {".github/workflows/ci.yml": {1}})
         self.assertEqual(findings, [])
 
+    def test_runner_flags_label_with_trailing_comment_and_quotes(self):
+        text = (
+            "    runs-on: ubuntu-22.04 # pinned, see RUNNER.md\n"
+            "    runs-on: 'windows-2022'\n"
+        )
+        findings = self.m.collect_runners(
+            [".github/workflows/ci.yml"],
+            {".github/workflows/ci.yml": text},
+            {".github/workflows/ci.yml": {1, 2}})
+        items = sorted((f["item"], f["current"], f["latest_ga"]) for f in findings)
+        self.assertEqual(items, [
+            ("ubuntu", "ubuntu-22.04", "ubuntu-24.04"),
+            ("windows", "windows-2022", "windows-2025"),
+        ])
+
     def test_runner_skips_unknown_and_latest_labels(self):
         text = (
             "    runs-on: ubuntu-latest\n"

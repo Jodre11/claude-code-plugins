@@ -244,14 +244,16 @@ LATEST_RUNNERS = {
     "macos": "15",
 }
 
-_RUNS_ON_RE = re.compile(r"^\s*runs-on:\s*\[?\s*([A-Za-z0-9._-]+)\s*\]?\s*$")
+_RUNS_ON_RE = re.compile(
+    r"^\s*runs-on:\s*['\"]?\[?\s*([A-Za-z0-9._-]+)\s*\]?['\"]?\s*(?:#.*)?$")
 
 
 def find_runner_labels(text):
     """Return [(family, version, line_no)] for known-family runner labels
     like ubuntu-22.04. '-latest' and unknown families are skipped here only
     if they fail the family-version split; collect_runners does the final
-    known-family gate."""
+    known-family gate. Deliberate non-matches (no stale literal visible to
+    miss): multi-element inline arrays and ${{ matrix.os }} indirection."""
     out = []
     for i, raw in enumerate(text.splitlines(), start=1):
         m = _RUNS_ON_RE.match(raw)

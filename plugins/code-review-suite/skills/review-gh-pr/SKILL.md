@@ -796,6 +796,7 @@ The block is now ready for use in Step 2.9 when building `$AGENT_PROMPT`.
    - **Note:** JS/TS detection deliberately overlaps with UI detection on `.jsx`, `.tsx`, `.vue`, `.svelte`. Both flags fire on these files — `eslint-reviewer` and `ui-reviewer` analyse different concerns. The dispatcher does not deduplicate; specialist file filters scope each tool's pass.
    - **Python detection:** if any file ends with `.py` or `.ipynb`, set `$PY_DETECTED = true`
    - **IaC detection:** if any file ends with `.tf`, `.tfvars`, `.tf.json`, `.tfplan`, or `.dockerfile`; has basename `Dockerfile`, matches `Dockerfile.*`, or has basename `Containerfile`; has any path segment equal to `k8s`, `kubernetes`, `helm`, `manifests`, `chart`, or `charts` (e.g. `infra/k8s/deployment.yaml` matches; `mock-data.yaml` does not) and ends in `.yaml`, `.yml`, or `.tpl`; or has extension `.cfn.yaml`, `.cfn.yml`, `.template.json`, or `.template.yaml`, set `$IAC_DETECTED = true`
+   - **Housekeeping detection:** if any changed file is under `.github/workflows/` and ends `.yml`/`.yaml`, OR is a `package.json` (npm manifest), set `$HOUSEKEEPING_DETECTED = true`. (This slice covers GitHub Actions, workflow runners, and npm; follow-on plans extend the trigger to NuGet/PyPI/crates/Go/RubyGems/Docker/SDK manifests.)
 2.7. Scan for **significant deletions:** run `git diff -w` (using the diff syntax determined by `$EMPTY_TREE_MODE`, append `-- "$PATH_SCOPE"` if set) and scan its hunks for any single hunk with 10+ contiguous deleted lines. If any such hunk exists, set `$SIGNIFICANT_DELETIONS = true`. The `-w` view drops whitespace-only differences before the deletion count is taken, so re-indents and other whitespace-only edits do not register as significant deletions. **Do NOT replace `$FULL_DIFF` with the `-w` view** — `$FULL_DIFF` (already captured in 2.2 without `-w`) remains the authoritative artifact for `$CHANGED_LINES`, `$LINE_COUNT`, specialists, and archaeology anchors. Only the deletion-detection scan uses `-w`.
 2.8. Scan changed file paths and `$FULL_DIFF` content for **security-sensitive areas** (auth, crypto, input validation, SQL, API endpoints, secrets management, deserialisation, JWT, session, token, eval, exec, spawn, certificate, CORS). If found, set `$SECURITY_SENSITIVE = true`
 
@@ -1026,24 +1027,36 @@ Agent({
 })
 ```
 
+If `$HOUSEKEEPING_DETECTED`, also dispatch:
+```
+Agent({
+    description: "Dependency freshness review",
+    subagent_type: "code-review-suite:housekeeper-reviewer",
+    name: "housekeeper-reviewer",
+    mode: "auto",
+    run_in_background: true,
+    prompt: $AGENT_PROMPT
+})
+```
+
 **Batching fallback:** If the platform rejects or silently drops agent dispatches beyond a concurrency limit, split into two batches:
 - **Batch 1** (dispatch first, wait for completion): security-reviewer, correctness-reviewer, consistency-reviewer, style-reviewer
-- **Batch 2** (dispatch after batch 1 completes): archaeology-reviewer, reuse-reviewer, efficiency-reviewer, alignment-reviewer, plus any conditional specialists (jbinspect, ui, eslint, ruff, trivy — up to 5)
+- **Batch 2** (dispatch after batch 1 completes): archaeology-reviewer, reuse-reviewer, efficiency-reviewer, alignment-reviewer, plus any conditional specialists (jbinspect, ui, eslint, ruff, trivy, housekeeper — up to 6)
 
 Batch composition was tuned after a documented incident where the model dispatched only 3 of 7 specialists and fabricated justification for selective omission (commit eb0bbda, 2026-05). Do not reduce batch sizes or reorder splits without re-running that scenario — the explicit dispatch enumeration is the safety net.
 
 This is a fallback only — prefer a single parallel dispatch when possible. Never use batching as a justification to skip specialists entirely.
 
-**Polyglot fallback:** if all five conditional specialists fire on a single diff, Batch 2 carries 9 dispatches — above the typical concurrency ceiling. Split Batch 2 further: keep the 4 core specialists in Batch 2, dispatch the 5 conditionals as Batch 3 after Batch 2 completes. The verify-completeness self-check in Step 4.3 still gates whether all expected specialists ran, regardless of batch count.
+**Polyglot fallback:** if all six conditional specialists fire on a single diff, Batch 2 carries 10 dispatches — above the typical concurrency ceiling. Split Batch 2 further: keep the 4 core specialists in Batch 2, dispatch the 6 conditionals as Batch 3 after Batch 2 completes. The verify-completeness self-check in Step 4.3 still gates whether all expected specialists ran, regardless of batch count.
 
-Store `$SPECIALIST_COUNT` = number of specialists dispatched (8 core only; 9–13 with conditionals: +1 each for `$CSHARP_DETECTED`, `$UI_DETECTED`, `$JS_DETECTED`, `$PY_DETECTED`, `$IAC_DETECTED`) and note the dispatch timestamp.
+Store `$SPECIALIST_COUNT` = number of specialists dispatched (8 core only; 9–14 with conditionals: +1 each for `$CSHARP_DETECTED`, `$UI_DETECTED`, `$JS_DETECTED`, `$PY_DETECTED`, `$IAC_DETECTED`, `$HOUSEKEEPING_DETECTED`) and note the dispatch timestamp.
 
 #### 4.3 Verify dispatch completeness
 
 Immediately after dispatching, perform this self-check:
 
 1. List every specialist agent you just dispatched by name
-2. Compare against the mandatory set: `security-reviewer`, `correctness-reviewer`, `consistency-reviewer`, `style-reviewer`, `archaeology-reviewer`, `reuse-reviewer`, `efficiency-reviewer`, `alignment-reviewer` (plus `jbinspect-reviewer` if `$CSHARP_DETECTED`, plus `ui-reviewer` if `$UI_DETECTED`, plus `eslint-reviewer` if `$JS_DETECTED`, plus `ruff-reviewer` if `$PY_DETECTED`, plus `trivy-reviewer` if `$IAC_DETECTED`)
+2. Compare against the mandatory set: `security-reviewer`, `correctness-reviewer`, `consistency-reviewer`, `style-reviewer`, `archaeology-reviewer`, `reuse-reviewer`, `efficiency-reviewer`, `alignment-reviewer` (plus `jbinspect-reviewer` if `$CSHARP_DETECTED`, plus `ui-reviewer` if `$UI_DETECTED`, plus `eslint-reviewer` if `$JS_DETECTED`, plus `ruff-reviewer` if `$PY_DETECTED`, plus `trivy-reviewer` if `$IAC_DETECTED`, plus `housekeeper-reviewer` if `$HOUSEKEEPING_DETECTED`)
 3. If any mandatory specialist is missing, dispatch it now before proceeding
 4. Announce: `> Dispatch verified: $SPECIALIST_COUNT/$SPECIALIST_COUNT specialists launched`
 
@@ -1105,7 +1118,7 @@ The fallback is graceful — one parse failure does not break aggregation in Ste
 
 ### Step 5: Cross-review
 
-Dispatch fresh cross-review agents in parallel — one per domain, EXCLUDING the four static-analysis specialists (`jbinspect`, `eslint`, `ruff`, `trivy`). Static-analysis tool output does not benefit from cross-domain evaluation — see `includes/static-analysis-context.md` §8.
+Dispatch fresh cross-review agents in parallel — one per domain, EXCLUDING the five static-analysis specialists (`jbinspect`, `eslint`, `ruff`, `trivy`, `housekeeper`). Static-analysis tool output does not benefit from cross-domain evaluation — see `includes/static-analysis-context.md` §8.
 
 **Conditional dispatch:** If `$UI_DETECTED`, also dispatch `cross-review-ui`. Do not dispatch `cross-review-ui` when `$UI_DETECTED` is false — there are no ui-reviewer findings to cross-review.
 
@@ -1140,7 +1153,7 @@ Use `$CROSS_REVIEW_COUNT` (not `$SPECIALIST_COUNT`) as the total count `R` count
 **5.2 Build per-domain prompt:** For each cross-reviewer:
 1. Copy the collected findings string
 2. Remove the block whose heading matches `### <domain>-reviewer findings` (i.e. the cross-reviewer's own domain). This exclusion is intentional — it limits prompt-injection propagation by ensuring each cross-reviewer only sees findings from other domains, and it prevents self-reinforcement bias where a domain's own findings inflate its confidence.
-3. Include findings from any static-analysis specialist (`jbinspect`, `eslint`, `ruff`, `trivy`) for ALL cross-reviewers — they are excluded from receiving cross-review, not from being reviewed. Omit any `### <name>-reviewer findings` block whose corresponding detection flag is false (`$CSHARP_DETECTED`, `$JS_DETECTED`, `$PY_DETECTED`, `$IAC_DETECTED` respectively) — do not include placeholders
+3. Include findings from any static-analysis specialist (`jbinspect`, `eslint`, `ruff`, `trivy`, `housekeeper`) for ALL cross-reviewers — they are excluded from receiving cross-review, not from being reviewed. Omit any `### <name>-reviewer findings` block whose corresponding detection flag is false (`$CSHARP_DETECTED`, `$JS_DETECTED`, `$PY_DETECTED`, `$IAC_DETECTED`, `$HOUSEKEEPING_DETECTED` respectively) — do not include placeholders
 
 **5.3 Dispatch:** Announce `> Dispatching $CROSS_REVIEW_COUNT cross-review agents...`, note the dispatch timestamp, then dispatch all cross-reviewers in parallel. Each cross-reviewer uses the SAME `subagent_type` as the original specialist — the `Mode: cross-review` line in the prompt switches the agent to cross-review behaviour:
 

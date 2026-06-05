@@ -57,7 +57,10 @@ run exits 5. So the notebook-leak has two faces: faithfulness divergence (plain
 `:1`) and a run-killing parser crash (`:1 (cell 1)`). The parser's intolerance of
 a non-numeric line is a latent robustness gap independent of the port — logged
 for a future fix (it would have bitten any agent that emitted a `(cell N)`
-suffix).
+suffix). **FIXED 2026-06-05 (`4c54e70`, backlog #5):** awk normalises the line to
+its leading integer (`1 (cell 1)` → `1`) and jq guards both numeric coercions
+(`tonumber? // .`) so a non-numeric scores the trial divergent instead of
+crashing the run. RED test reproduced the exit-5 abort of the whole suite.
 
 ## The fix (`508c904`)
 
@@ -72,6 +75,30 @@ chance even unfixed — so 5/5 is *consistent with fixed* and corroborated by th
 "no notebook scan" traces, but is not a p<0.05 proof on its own. eslint's fixture
 has no out-of-scope sibling, so its anchor is defence-in-depth (untested against
 the trap, but correct for real monorepo diffs).
+
+## n=20 validation (2026-06-05, after the #5 crash-fix unblocked it)
+
+With the parser crash-proofed, ran the decisive sweep. **CURRENT/hardened arm
+only** (operator-scoped; pre-port-wording baseline relied on the 0/25 history
+rather than a fresh arm):
+
+- **Hardened ruff (HEAD `508c904`), n=20: 20/20 canonical** (`7b003236…`), 0
+  inconclusive, 0 timeouts, NO exit-5 crash (first live confirmation of the #5
+  fix — though no trial actually leaked, so the `(cell N)` path wasn't
+  re-triggered live; the TDD unit test covers it directly).
+- **Mechanism proof:** all 20 trials ran `ruff check … bad.py` only — zero
+  notebook scans. The anchor stops the out-of-scope scan at source.
+- **Fisher exact, hardened 0/20 vs pre-fix ported 4/16 (same fixed harness):
+  p = 0.031** — significant. Upgrades the earlier "suggestive, p≈0.53" to a real
+  result. Run dir `tests/ab/runs/20260605T055313Z-ruff-haiku-low/`.
+- **Honest bound:** 0/20 → one-sided 95% upper bound on the residual leak rate is
+  ~13.9%. So the claim is "the anchor SIGNIFICANTLY reduces leaks (from ~25% to
+  <~14%)", not "leak rate is provably 0". For practical purposes the mechanism
+  trace (0/20 notebook scans) is the stronger evidence: the model no longer looks
+  at the out-of-scope file at all.
+
+**#4 verdict: CLOSED.** ruff `--stdout` port + scope anchor is validated; eslint
+proven 5/5 earlier. Both ship.
 
 ## Lesson
 

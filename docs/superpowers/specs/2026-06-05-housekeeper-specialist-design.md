@@ -141,6 +141,14 @@ trustworthy latest-GA answer.**
   images, framework/SDK) — extend the cookbook.
 - The cross-ecosystem definition of "solution / buildable unit" for the scope gate.
 - Recorded-fixture maintenance strategy (how snapshots are refreshed).
+- **Dependency maintenance-health (own-or-defer — decide before plan freeze).**
+  Orthogonal to freshness: a dep can be on latest GA yet be abandoned (archived
+  repo, single maintainer, last publish years ago, registry `deprecated`/yank
+  flag). Not freshness (#7), not CVE (#6a), not pin-hygiene (#6b) — a fourth axis
+  no specialist owns. Near-zero marginal cost: the engine already fetches registry
+  JSON per item (for licence-diff), so reading `deprecated`/last-publish-timestamp/
+  yank status in the same pass stays deterministic + hash-testable. Natural sibling
+  of the accepted licence-change feature. Default lean: defer, but record the call.
 
 ## Verification
 

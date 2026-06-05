@@ -178,5 +178,53 @@ class GitHubActionsTest(unittest.TestCase):
         self.assertEqual(findings, [])
 
 
+class RunnerTest(unittest.TestCase):
+    def setUp(self):
+        self.m = load_engine()
+
+    def test_find_runner_labels(self):
+        text = (
+            "jobs:\n"
+            "  a:\n"
+            "    runs-on: ubuntu-22.04\n"
+            "  b:\n"
+            "    runs-on: windows-2022\n"
+        )
+        labels = self.m.find_runner_labels(text)
+        self.assertIn(("ubuntu", "22.04", 3), labels)
+        self.assertIn(("windows", "2022", 5), labels)
+
+    def test_runner_flags_stale_known_family(self):
+        findings = self.m.collect_runners(
+            [".github/workflows/ci.yml"],
+            {".github/workflows/ci.yml": "    runs-on: ubuntu-22.04\n"},
+            {".github/workflows/ci.yml": {1}})
+        self.assertEqual(len(findings), 1)
+        f = findings[0]
+        self.assertEqual(f["source"], "runner")
+        self.assertEqual(f["item"], "ubuntu")
+        self.assertEqual(f["current"], "ubuntu-22.04")
+        self.assertEqual(f["latest_ga"], "ubuntu-24.04")
+
+    def test_runner_silent_when_latest(self):
+        findings = self.m.collect_runners(
+            [".github/workflows/ci.yml"],
+            {".github/workflows/ci.yml": "    runs-on: ubuntu-24.04\n"},
+            {".github/workflows/ci.yml": {1}})
+        self.assertEqual(findings, [])
+
+    def test_runner_skips_unknown_and_latest_labels(self):
+        text = (
+            "    runs-on: ubuntu-latest\n"
+            "    runs-on: self-hosted\n"
+            "    runs-on: my-custom-runner\n"
+        )
+        findings = self.m.collect_runners(
+            [".github/workflows/ci.yml"],
+            {".github/workflows/ci.yml": text},
+            {".github/workflows/ci.yml": {1, 2, 3}})
+        self.assertEqual(findings, [])
+
+
 if __name__ == "__main__":
     unittest.main()

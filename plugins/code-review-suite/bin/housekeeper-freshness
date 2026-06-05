@@ -233,6 +233,64 @@ def collect_github_actions(changed_files, file_text, changed_lines, registry):
     return findings
 
 
+# --- source: runner ---------------------------------------------------------
+
+# Curated latest GitHub-hosted runner labels. MANUALLY MAINTAINED — there is
+# no live registry for runner images. Keep in sync with the cookbook table.
+# Reviewed 2026-06-05.
+LATEST_RUNNERS = {
+    "ubuntu": "24.04",
+    "windows": "2025",
+    "macos": "15",
+}
+
+_RUNS_ON_RE = re.compile(r"^\s*runs-on:\s*\[?\s*([A-Za-z0-9._-]+)\s*\]?\s*$")
+
+
+def find_runner_labels(text):
+    """Return [(family, version, line_no)] for known-family runner labels
+    like ubuntu-22.04. '-latest' and unknown families are skipped here only
+    if they fail the family-version split; collect_runners does the final
+    known-family gate."""
+    out = []
+    for i, raw in enumerate(text.splitlines(), start=1):
+        m = _RUNS_ON_RE.match(raw)
+        if not m:
+            continue
+        label = m.group(1)
+        if "-" not in label:
+            continue
+        family, _, version = label.partition("-")
+        out.append((family, version, i))
+    return out
+
+
+def collect_runners(changed_files, file_text, changed_lines):
+    findings = []
+    for path in changed_files:
+        if not (path.startswith(".github/workflows/")
+                and path.endswith((".yml", ".yaml"))):
+            continue
+        text = file_text.get(path)
+        if text is None:
+            continue
+        for family, version, line in find_runner_labels(text):
+            latest = LATEST_RUNNERS.get(family)
+            if latest is None:
+                continue  # unknown family / -latest -> no trustworthy answer
+            if compare_versions(version, latest) >= 0:
+                continue
+            findings.append({
+                "source": "runner", "item": family,
+                "current": "%s-%s" % (family, version),
+                "latest_ga": "%s-%s" % (family, latest),
+                "target": "%s-%s" % (family, latest),
+                "file": path, "line": line,
+                "licence_current": None, "licence_latest": None,
+            })
+    return findings
+
+
 def collect_findings(root, changed_files, changed_lines, registry):
     """Return a list of stale-version tuples across all source classes.
 

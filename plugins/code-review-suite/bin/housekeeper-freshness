@@ -526,7 +526,11 @@ def parse_csproj(text):
     spec is the raw version string from VersionOverride (wins), an inline
     Version attribute, or a child <Version> element. A version-less reference
     records (None, ref_line) -> resolved later via CPM. The recorded line is
-    the literal version's line (or the opening-tag line when version-less)."""
+    the literal version's line (or the opening-tag line when version-less).
+
+    Known limitation: one PackageReference per physical line is assumed (the
+    attribute scans match the first occurrence per line); MSBuild items are
+    one-per-line in practice."""
     refs = {}
     pending = None  # (name, ref_line) awaiting a child <Version> element
     for i, raw in enumerate(text.splitlines(), start=1):

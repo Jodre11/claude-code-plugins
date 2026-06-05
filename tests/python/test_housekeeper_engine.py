@@ -386,6 +386,24 @@ class NuGetParseTest(unittest.TestCase):
         # The acted-on line is the <Version> literal, not the opening tag.
         self.assertEqual(refs["AutoMapper"], ("11.0.1", 2))
 
+    def test_parse_csproj_multiline_ref_closing_without_version_is_versionless(self):
+        # A multi-line PackageReference that closes without a <Version> child
+        # is version-less (CPM-resolved); the recorded line is the opening tag.
+        text = (
+            '    <PackageReference Include="Serilog">\n'
+            '      <PrivateAssets>all</PrivateAssets>\n'
+            '    </PackageReference>\n'
+        )
+        refs = self.m.parse_csproj(text)
+        self.assertEqual(refs["Serilog"], (None, 1))
+
+    def test_parse_csproj_trailing_pending_ref_flushes_as_versionless(self):
+        # A PackageReference whose opening tag is the last line (no close, no
+        # child <Version>) is flushed at EOF as version-less.
+        text = '    <PackageReference Include="AutoMapper">\n'
+        refs = self.m.parse_csproj(text)
+        self.assertEqual(refs["AutoMapper"], (None, 1))
+
     def test_parse_packages_props_central_and_global(self):
         text = (
             '<Project>\n'

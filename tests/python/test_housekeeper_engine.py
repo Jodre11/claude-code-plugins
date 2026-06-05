@@ -611,6 +611,50 @@ class NuGetCollectTest(unittest.TestCase):
         findings = self.m.collect_nuget(csproj, props, {"Directory.Packages.props": {1}}, reg)
         self.assertEqual(len(findings), 1)
 
+    def test_cpm_touched_signal_or_accumulates_across_csprojs(self):
+        # Two csprojs version-lessly reference the same CPM central. Only the
+        # FIRST-sorting csproj's reference line is touched. The touched signal
+        # must OR-accumulate to the shared props candidate, so the finding
+        # targets latest GA across a major boundary regardless of sibling order.
+        flat = {"versions": ["2.10.0", "4.0.0"]}  # major 2 has nothing newer
+        reg = self._reg(flat, _reg_map(**{"2_10_0": "MIT", "4_0_0": "MIT"}))
+        csproj = {
+            "src/A/A.csproj": '    <PackageReference Include="Serilog" />\n',
+            "src/B/B.csproj": '    <PackageReference Include="Serilog" />\n',
+        }
+        props = {"Directory.Packages.props":
+                 '    <PackageVersion Include="Serilog" Version="2.10.0" />\n'}
+        # A's reference line (src/A/A.csproj:1) is touched; B's is not; the props
+        # literal line is NOT touched. Under last-write-wins (B overwrites A),
+        # touched would be lost and the cross-major bump suppressed.
+        changed = {"src/A/A.csproj": {1}}
+        findings = self.m.collect_nuget(csproj, props, changed, reg)
+        self.assertEqual(len(findings), 1)
+        self.assertEqual(findings[0]["current"], "2.10.0")
+        self.assertEqual(findings[0]["target"], "4.0.0")  # latest GA, not suppressed
+
+    def test_props_global_package_reference_is_a_candidate(self):
+        # A global <PackageReference Version> declared in a props file (e.g.
+        # Directory.Build.props) is an upgrade candidate in its own right.
+        reg = self._reg(NUGET_FLAT, _reg_map(**{"2_10_0": "MIT", "4_0_0": "MIT"}))
+        props = {"Directory.Build.props":
+                 '    <PackageReference Include="Serilog" Version="2.10.0" />\n'}
+        findings = self.m.collect_nuget({}, props, {"Directory.Build.props": {1}}, reg)
+        self.assertEqual(len(findings), 1)
+        self.assertEqual(findings[0]["item"], "Serilog")
+        self.assertEqual(findings[0]["file"], "Directory.Build.props")
+        self.assertEqual(findings[0]["target"], "4.0.0")
+
+    def test_untouched_in_major_exhausted_is_not_stale(self):
+        # current 2.10.0 with nothing newer in major 2; a higher major exists.
+        # Untouched line -> nearest_in_major stays at current -> not stale ->
+        # no finding (and no health here).
+        flat = {"versions": ["2.10.0", "4.0.0"]}
+        reg = self._reg(flat, _reg_map(**{"2_10_0": "MIT"}))
+        csproj = {"Api.csproj": '    <PackageReference Include="Serilog" Version="2.10.0" />\n'}
+        findings = self.m.collect_nuget(csproj, {}, {"Api.csproj": set()}, reg)
+        self.assertEqual(findings, [])
+
 
 class NuGetEndToEndTest(unittest.TestCase):
     def test_cli_against_inline_fixtures_incl_health(self):

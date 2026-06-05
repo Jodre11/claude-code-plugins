@@ -695,7 +695,11 @@ def collect_nuget(csproj_text, props_text, changed_lines, registry):
         concrete = nuget_strip_constraint(spec)
         if concrete is None:
             return
-        candidates[(path, line, name)] = (name, concrete, touched)
+        key = (path, line, name)
+        prev = candidates.get(key)
+        if prev is not None:
+            touched = touched or prev[2]
+        candidates[key] = (name, concrete, touched)
 
     # csproj references (inline / override win; version-less -> CPM). A
     # CPM-resolved candidate's literal lives in props, but the T3 'touched'

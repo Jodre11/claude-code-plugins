@@ -1017,7 +1017,7 @@ Dispatch fresh cross-review agents in parallel — one per domain, EXCLUDING the
 
 **Conditional dispatch:** If `$UI_DETECTED`, also dispatch `cross-review-ui`. Do not dispatch `cross-review-ui` when `$UI_DETECTED` is false — there are no ui-reviewer findings to cross-review.
 
-Store `$CROSS_REVIEW_COUNT` = number of cross-review agents per this table (the four static-analysis specialists are excluded — tool output, no cross-domain benefit):
+Store `$CROSS_REVIEW_COUNT` = number of cross-review agents per this table (the five static-analysis specialists are excluded — tool output, no cross-domain benefit):
 
 | Scenario                | `$CROSS_REVIEW_COUNT` |
 |-------------------------|-----------------------|

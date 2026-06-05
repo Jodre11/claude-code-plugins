@@ -18,6 +18,10 @@ set -euo pipefail
 # cleanly: the first space/tab/paren delimits token 1 = the bare TypeId, and the
 # `.` in `UnusedMember.Local` is internal (no preceding delimiter) so it never
 # splits the ID. The shared tokeniser therefore needs no jbinspect change.
+# housekeeper's `housekeeper/<source>` rule IDs (e.g. `housekeeper/github-actions`)
+# carry an internal slash with no whitespace; `/` is not one of the tokeniser's
+# delimiters [ \t(], so the full ID stays whole as token 1 — no tokeniser change
+# needed for housekeeper either.
 _agent_capture_params() {
     # Accept both the short table key (used by the parser tests) and the full
     # `<name>-reviewer` form that run.sh carries in $_AB_CONFIG_AGENT.
@@ -57,6 +61,14 @@ _agent_capture_params() {
             # miss. Both are genuine 'nothing to inspect' (not tool failures), so
             # both map to zero findings, not skip.
             _AC_ZERO='^0 findings — (no C# files in diff|could not determine solution for changed C# files)\.'
+            ;;
+        housekeeper|housekeeper-reviewer)
+            _AC_HEADING='^## Housekeeper Findings$'
+            # The engine runs via one Bash call; any 'Skipped — …' opener
+            # (python3 absent, engine-not-on-PATH, engine error) is a full
+            # skip -> INCONCLUSIVE.
+            _AC_SKIP='^Skipped — '
+            _AC_ZERO='^0 findings — no stale versioned dependencies in scope\.'
             ;;
         *)
             echo "_agent_capture_params: unknown agent: $agent" >&2

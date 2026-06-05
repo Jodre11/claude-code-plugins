@@ -614,6 +614,85 @@ test_ab_agent_capture_jbinspect_skipped_marks_inconclusive() {
     rm -rf "$trial_dir"
 }
 
+test_ab_agent_capture_housekeeper_parses_three_findings() {
+    local lib="$REPO_ROOT/tests/ab/lib/agent_capture.sh"
+    local fixture="$REPO_ROOT/tests/ab/fixtures/housekeeper-stdout-three-findings.log"
+
+    if [[ ! -f "$lib" || ! -f "$fixture" ]]; then
+        fail "A/B agent_capture housekeeper: lib + fixture present" "missing"
+        return
+    fi
+
+    local trial_dir
+    trial_dir=$(mktemp -d)
+    cp "$fixture" "$trial_dir/stdout.log"
+
+    (
+        # shellcheck disable=SC1090
+        source "$lib"
+        agent_capture_parse_trial housekeeper "$trial_dir"
+    )
+
+    local count
+    count=$(jq 'length' "$trial_dir/findings.json")
+    assert_equals "3" "$count" "A/B agent_capture housekeeper: three findings extracted"
+
+    # The slash-bearing rule_id must tokenise WHOLE — the shared tokeniser
+    # splits on [ \t(], none of which appear in housekeeper/github-actions.
+    local actions_rule
+    actions_rule=$(jq -r '.[] | select(.file == ".github/workflows/ci.yml" and .line == 12) | .rule_id' "$trial_dir/findings.json")
+    assert_equals "housekeeper/github-actions" "$actions_rule" "A/B agent_capture housekeeper: slash-bearing rule_id tokenises whole"
+
+    local npm_sev
+    npm_sev=$(jq -r '.[] | select(.file == "package.json") | .severity' "$trial_dir/findings.json")
+    assert_equals "Suggestion" "$npm_sev" "A/B agent_capture housekeeper: severity is Suggestion"
+
+    rm -rf "$trial_dir"
+}
+
+test_ab_agent_capture_housekeeper_zero_findings_is_empty_array() {
+    local lib="$REPO_ROOT/tests/ab/lib/agent_capture.sh"
+    local trial_dir
+    trial_dir=$(mktemp -d)
+    printf '## Housekeeper Findings\n\n0 findings — no stale versioned dependencies in scope.\n' > "$trial_dir/stdout.log"
+
+    (
+        # shellcheck disable=SC1090
+        source "$lib"
+        agent_capture_parse_trial housekeeper "$trial_dir"
+    )
+
+    local count
+    count=$(jq 'length' "$trial_dir/findings.json")
+    assert_equals "0" "$count" "A/B agent_capture housekeeper: zero-state yields empty array"
+    if [[ -f "$trial_dir/INCONCLUSIVE" ]]; then
+        fail "A/B agent_capture housekeeper: zero-state is not INCONCLUSIVE" "INCONCLUSIVE marker present"
+    else
+        pass "A/B agent_capture housekeeper: zero-state is not INCONCLUSIVE"
+    fi
+    rm -rf "$trial_dir"
+}
+
+test_ab_agent_capture_housekeeper_skipped_marks_inconclusive() {
+    local lib="$REPO_ROOT/tests/ab/lib/agent_capture.sh"
+    local trial_dir
+    trial_dir=$(mktemp -d)
+    printf '## Housekeeper Findings\n\nSkipped — python3 not available on PATH.\n' > "$trial_dir/stdout.log"
+
+    (
+        # shellcheck disable=SC1090
+        source "$lib"
+        agent_capture_parse_trial housekeeper "$trial_dir"
+    )
+
+    if [[ -f "$trial_dir/INCONCLUSIVE" ]]; then
+        pass "A/B agent_capture housekeeper: skip marks INCONCLUSIVE"
+    else
+        fail "A/B agent_capture housekeeper: skip marks INCONCLUSIVE" "marker absent"
+    fi
+    rm -rf "$trial_dir"
+}
+
 test_ab_agent_capture_findings_hash_is_deterministic() {
     # Two runs over the same stdout must produce identical findings_hash.
     # This is the cross-trial comparison primitive — if it is order-sensitive
@@ -956,6 +1035,51 @@ test_ab_config_per_agent_jbinspect_haiku_low_parses() {
     assert_equals "jbinspect-reviewer" "$agent" "A/B config: jbinspect-haiku-low.agent = jbinspect-reviewer"
     assert_equals "haiku" "$model" "A/B config: jbinspect-haiku-low.session.model = haiku"
     assert_equals "low" "$effort" "A/B config: jbinspect-haiku-low.session.effort = low"
+}
+
+test_ab_config_per_agent_housekeeper_haiku_low_parses() {
+    local config="$REPO_ROOT/tests/ab/lib/config.sh"
+    local probe="$REPO_ROOT/tests/ab/configs/per-agent/housekeeper-haiku-low.yaml"
+
+    if [[ ! -f "$config" ]]; then
+        fail "A/B config: per-agent housekeeper-haiku-low parses" "config.sh missing"
+        return
+    fi
+    if [[ ! -f "$probe" ]]; then
+        fail "A/B config: per-agent housekeeper-haiku-low parses" "housekeeper-haiku-low.yaml not yet authored"
+        return
+    fi
+
+    local mode agent model effort
+    mode=$(
+        # shellcheck disable=SC1090
+        source "$config"
+        config_load "$probe" >/dev/null
+        echo "${_AB_CONFIG_MODE:-}"
+    )
+    agent=$(
+        # shellcheck disable=SC1090
+        source "$config"
+        config_load "$probe" >/dev/null
+        echo "${_AB_CONFIG_AGENT:-}"
+    )
+    model=$(
+        # shellcheck disable=SC1090
+        source "$config"
+        config_load "$probe" >/dev/null
+        echo "${_AB_CONFIG_SESSION_MODEL:-}"
+    )
+    effort=$(
+        # shellcheck disable=SC1090
+        source "$config"
+        config_load "$probe" >/dev/null
+        echo "${_AB_CONFIG_SESSION_EFFORT:-}"
+    )
+
+    assert_equals "per-agent" "$mode" "A/B config: housekeeper-haiku-low.mode = per-agent"
+    assert_equals "housekeeper-reviewer" "$agent" "A/B config: housekeeper-haiku-low.agent = housekeeper-reviewer"
+    assert_equals "haiku" "$model" "A/B config: housekeeper-haiku-low.session.model = haiku"
+    assert_equals "low" "$effort" "A/B config: housekeeper-haiku-low.session.effort = low"
 }
 
 test_ab_run_sh_stream_json_flag_recognised() {

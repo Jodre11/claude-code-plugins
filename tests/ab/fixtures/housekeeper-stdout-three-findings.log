@@ -1,0 +1,29 @@
+Some preamble noise from the dispatched session.
+
+## Housekeeper Findings
+
+### Finding — actions/checkout behind latest GA
+- **File:** .github/workflows/ci.yml:12
+- **Confidence:** 100
+- **Severity:** Suggestion
+- **Rule:** housekeeper/github-actions
+- **Description:** actions/checkout is at v3; latest GA is v4.2.1.
+- **Suggested fix:** Upgrade actions/checkout to v4.
+
+### Finding — ubuntu runner behind latest GA
+- **File:** .github/workflows/ci.yml:15
+- **Confidence:** 100
+- **Severity:** Suggestion
+- **Rule:** housekeeper/runner
+- **Description:** ubuntu-22.04 is at ubuntu-22.04; latest GA is ubuntu-24.04.
+- **Suggested fix:** Upgrade ubuntu to ubuntu-24.04.
+
+### Finding — react behind latest GA
+- **File:** package.json:4
+- **Confidence:** 100
+- **Severity:** Suggestion
+- **Rule:** housekeeper/npm
+- **Description:** react is at 18.2.0; latest GA is 19.0.0.
+- **Suggested fix:** Upgrade react to 19.0.0.
+
+Trailing prose that must not be parsed as a finding.

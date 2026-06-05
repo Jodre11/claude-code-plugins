@@ -590,6 +590,67 @@ def parse_packages_props(text):
     return central, global_refs
 
 
+# Files that mark membership of a C#/.NET (NuGet) buildable unit. A changed
+# file only pulls in its nearest-ancestor .csproj when it belongs to this
+# ecosystem — a sibling JS/Python/etc. file under the same dir is a different
+# buildable unit.
+_NUGET_SCOPE_SUFFIXES = (
+    ".cs", ".fs", ".vb", ".razor", ".cshtml", ".csproj", ".fsproj", ".vbproj",
+    ".props", ".targets",
+)
+
+
+def _is_nuget_scope_file(path):
+    base = path.rsplit("/", 1)[-1]
+    if base == "packages.lock.json":
+        return True
+    return path.endswith(_NUGET_SCOPE_SUFFIXES)
+
+
+def _dirname(path):
+    return path.rsplit("/", 1)[0] if "/" in path else ""
+
+
+def _dir_is_ancestor_or_same(ancestor, descendant):
+    """True if directory `ancestor` is `descendant` itself or an ancestor of
+    it. The repo root is represented by the empty string and is an ancestor of
+    everything."""
+    if ancestor == "":
+        return True
+    return descendant == ancestor or descendant.startswith(ancestor + "/")
+
+
+def nuget_scope_roots(changed_files, all_csprojs, all_props):
+    """Return (in_scope_csprojs, in_scope_props).
+
+    in_scope_csprojs: for each changed C#-ecosystem file, its nearest-ancestor
+    .csproj (the deepest csproj whose directory is an ancestor-or-same of the
+    file's directory). in_scope_props: every .props whose directory is an
+    ancestor-or-same of an in-scope csproj's directory (governing props found by
+    walking up)."""
+    csprojs = set()
+    for f in changed_files:
+        if not _is_nuget_scope_file(f):
+            continue
+        fdir = _dirname(f)
+        best = None
+        best_dir = None
+        for c in all_csprojs:
+            cdir = _dirname(c)
+            if _dir_is_ancestor_or_same(cdir, fdir):
+                if best is None or len(cdir) > len(best_dir):
+                    best, best_dir = c, cdir
+        if best is not None:
+            csprojs.add(best)
+    props = set()
+    for c in csprojs:
+        cdir = _dirname(c)
+        for p in all_props:
+            if _dir_is_ancestor_or_same(_dirname(p), cdir):
+                props.add(p)
+    return csprojs, props
+
+
 def collect_findings(root, changed_files, changed_lines, registry):
     def read(path):
         try:

@@ -418,6 +418,49 @@ class NuGetParseTest(unittest.TestCase):
         self.assertEqual(glob["Microsoft.SourceLink.GitHub"], ("1.1.1", 4))
 
 
+class NuGetScopeTest(unittest.TestCase):
+    def setUp(self):
+        self.m = load_engine()
+
+    def test_nearest_ancestor_csproj_is_the_gate(self):
+        changed = ["src/Api/Controllers/Home.cs"]
+        csprojs = {"src/Api/Api.csproj", "src/Worker/Worker.csproj"}
+        props = set()
+        in_csproj, in_props = self.m.nuget_scope_roots(changed, csprojs, props)
+        self.assertEqual(in_csproj, {"src/Api/Api.csproj"})
+        self.assertEqual(in_props, set())
+
+    def test_non_csharp_file_does_not_pull_in_csproj(self):
+        changed = ["src/Api/notes.txt"]
+        csprojs = {"src/Api/Api.csproj"}
+        in_csproj, _ = self.m.nuget_scope_roots(changed, csprojs, set())
+        self.assertEqual(in_csproj, set())
+
+    def test_changed_csproj_is_its_own_scope(self):
+        changed = ["src/Api/Api.csproj"]
+        csprojs = {"src/Api/Api.csproj"}
+        in_csproj, _ = self.m.nuget_scope_roots(changed, csprojs, set())
+        self.assertEqual(in_csproj, {"src/Api/Api.csproj"})
+
+    def test_governing_props_walk_up(self):
+        # A root Directory.Packages.props and a src-level Directory.Build.props
+        # both govern an in-scope csproj deeper in the tree.
+        changed = ["src/Api/Controllers/Home.cs"]
+        csprojs = {"src/Api/Api.csproj"}
+        props = {"Directory.Packages.props", "src/Directory.Build.props",
+                 "other/Unrelated.props"}
+        in_csproj, in_props = self.m.nuget_scope_roots(changed, csprojs, props)
+        self.assertEqual(in_csproj, {"src/Api/Api.csproj"})
+        self.assertEqual(in_props, {"Directory.Packages.props", "src/Directory.Build.props"})
+
+    def test_sibling_subtree_props_not_in_scope(self):
+        changed = ["src/Api/Home.cs"]
+        csprojs = {"src/Api/Api.csproj"}
+        props = {"src/Worker/Worker.props"}
+        _, in_props = self.m.nuget_scope_roots(changed, csprojs, props)
+        self.assertEqual(in_props, set())
+
+
 NPM_DOC = {
     "dist-tags": {"latest": "19.0.0"},
     "versions": {

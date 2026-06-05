@@ -460,6 +460,15 @@ class NuGetScopeTest(unittest.TestCase):
         _, in_props = self.m.nuget_scope_roots(changed, csprojs, props)
         self.assertEqual(in_props, set())
 
+    def test_prefix_collision_does_not_cross_sibling_dirs(self):
+        # src/Api must NOT be treated as an ancestor of src/ApiTests (the
+        # '+ "/"' guard in _dir_is_ancestor_or_same). A changed file under
+        # src/ApiTests resolves to ApiTests.csproj, never Api.csproj.
+        changed = ["src/ApiTests/UnitTest.cs"]
+        csprojs = {"src/Api/Api.csproj", "src/ApiTests/ApiTests.csproj"}
+        in_csproj, _ = self.m.nuget_scope_roots(changed, csprojs, set())
+        self.assertEqual(in_csproj, {"src/ApiTests/ApiTests.csproj"})
+
 
 NPM_DOC = {
     "dist-tags": {"latest": "19.0.0"},

@@ -6,6 +6,7 @@ housekeeper specialist. Pure-stdlib. Source classes in this slice:
 github-actions, runner, npm. See agents/housekeeper-reviewer.md.
 """
 import argparse
+import gzip
 import json
 import os
 import re
@@ -85,6 +86,84 @@ class Registry:
                 return json.load(resp)
         except (urllib.error.URLError, ValueError, TimeoutError, OSError):
             return None
+
+    # --- NuGet registration (licence + deprecation/unlisted metadata) ------
+
+    _REG_BASE = "https://api.nuget.org/v3/registration5-gz-semver2/%s/index.json"
+
+    def _get_json(self, url):
+        """Fetch a URL and parse JSON, transparently gunzipping the body.
+
+        The registration5-gz endpoint always serves gzip; we gunzip best-effort
+        and fall back to the raw body. Returns the parsed object or None."""
+        req = urllib.request.Request(
+            url,
+            headers={
+                "User-Agent": "code-review-suite-housekeeper",
+                "Accept": "application/json",
+                "Accept-Encoding": "gzip",
+                "Cache-Control": "no-cache",
+            },
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                raw = resp.read()
+        except (urllib.error.URLError, TimeoutError, OSError):
+            return None
+        try:
+            raw = gzip.decompress(raw)
+        except (OSError, gzip.BadGzipFile):
+            pass  # body was not gzipped
+        try:
+            return json.loads(raw)
+        except ValueError:
+            return None
+
+    def registration(self, item):
+        """Return {version: {licence, deprecation, listed}} for a NuGet
+        package, or None on any miss. Walks the paginated registration index,
+        fetching external page leaves when a page omits inline 'items'.
+
+        In fixture mode reads <fixtures_dir>/nuget-registration/<slug>.json
+        (decompressed JSON; fixtures inline all pages, so no external page
+        fetch is attempted)."""
+        slug = item.lower().replace("/", "__")
+        if self.fixtures_dir:
+            path = os.path.join(self.fixtures_dir, "nuget-registration", slug + ".json")
+            try:
+                with open(path, encoding="utf-8") as fh:
+                    index = json.load(fh)
+            except (OSError, ValueError):
+                return None
+            return self._walk_registration(index, fetch_page=lambda _url: None)
+        index = self._get_json(self._REG_BASE % slug)
+        if index is None:
+            return None
+        return self._walk_registration(index, fetch_page=self._get_json)
+
+    @staticmethod
+    def _walk_registration(index, fetch_page):
+        """Flatten a registration index into a {version: {...}} map. A page
+        with inline 'items' is read directly; a page without is fetched via
+        fetch_page(page['@id']). fetch_page may return None (fixture mode)."""
+        result = {}
+        for page in (index.get("items") or []):
+            leaves = page.get("items")
+            if leaves is None:
+                page_id = page.get("@id")
+                page_doc = fetch_page(page_id) if page_id else None
+                leaves = (page_doc or {}).get("items") or []
+            for leaf in leaves:
+                ce = leaf.get("catalogEntry") or {}
+                version = ce.get("version")
+                if not version:
+                    continue
+                result[version] = {
+                    "licence": ce.get("licenseExpression") or ce.get("licenseUrl"),
+                    "deprecation": ce.get("deprecation"),
+                    "listed": ce.get("listed", True),
+                }
+        return result or None
 
 
 # --- version core ----------------------------------------------------------

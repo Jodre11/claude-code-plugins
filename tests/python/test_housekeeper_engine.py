@@ -101,6 +101,84 @@ class VersionCoreTest(unittest.TestCase):
         self.assertIsNone(self.m.strip_constraint("github:foo/bar"))
 
 
+# A registration index with an inlined page (no external @id fetch needed).
+REG_INLINE = {
+    "count": 1,
+    "items": [
+        {
+            "@id": "https://example/page1",
+            "count": 2,
+            "items": [
+                {"catalogEntry": {"version": "1.0.0", "licenseExpression": "MIT",
+                                  "listed": True}},
+                {"catalogEntry": {"version": "2.0.0", "licenseExpression": "Apache-2.0",
+                                  "listed": True,
+                                  "deprecation": {"message": "Use Foo.Bar instead",
+                                                  "reasons": ["Legacy"]}}},
+            ],
+        }
+    ],
+}
+
+# A registration index with an EXTERNAL page (no inline "items" -> needs a
+# follow-up fetch to the page @id).
+REG_EXTERNAL_INDEX = {
+    "count": 1,
+    "items": [{"@id": "https://example/pageA", "count": 1}],
+}
+REG_EXTERNAL_PAGE = {
+    "items": [
+        {"catalogEntry": {"version": "3.1.4", "licenseExpression": "MIT",
+                          "listed": False}},
+    ],
+}
+
+
+class RegistrationTest(unittest.TestCase):
+    def setUp(self):
+        self.m = load_engine()
+
+    def test_registration_inline_page_extracts_per_version_map(self):
+        reg = self.m.Registry(fixtures_dir=None)
+        reg._get_json = lambda url: REG_INLINE
+        out = reg.registration("Foo.Bar")
+        self.assertEqual(out["1.0.0"]["licence"], "MIT")
+        self.assertEqual(out["2.0.0"]["licence"], "Apache-2.0")
+        self.assertEqual(out["2.0.0"]["deprecation"]["message"], "Use Foo.Bar instead")
+        self.assertTrue(out["1.0.0"]["listed"])
+
+    def test_registration_external_page_is_fetched(self):
+        reg = self.m.Registry(fixtures_dir=None)
+        calls = []
+
+        def fake_get(url):
+            calls.append(url)
+            return REG_EXTERNAL_INDEX if url.endswith("index.json") else REG_EXTERNAL_PAGE
+
+        reg._get_json = fake_get
+        out = reg.registration("Some.Pkg")
+        # The index URL plus the external page @id were both fetched.
+        self.assertEqual(len(calls), 2)
+        self.assertIn("https://example/pageA", calls)
+        self.assertEqual(out["3.1.4"]["licence"], "MIT")
+        self.assertFalse(out["3.1.4"]["listed"])
+
+    def test_registration_miss_returns_none(self):
+        reg = self.m.Registry(fixtures_dir=None)
+        reg._get_json = lambda url: None
+        self.assertIsNone(reg.registration("Nope"))
+
+    def test_registration_fixture_override_reads_decompressed_json(self):
+        with tempfile.TemporaryDirectory() as d:
+            regdir = pathlib.Path(d) / "nuget-registration"
+            regdir.mkdir()
+            (regdir / "foo.bar.json").write_text(json.dumps(REG_INLINE))
+            reg = self.m.Registry(fixtures_dir=d)
+            out = reg.registration("Foo.Bar")  # slug lowercases the name
+            self.assertEqual(out["2.0.0"]["licence"], "Apache-2.0")
+            self.assertEqual(out["2.0.0"]["deprecation"]["reasons"], ["Legacy"])
+
+
 class GitHubActionsTest(unittest.TestCase):
     def setUp(self):
         self.m = load_engine()

@@ -909,5 +909,61 @@ class HashStabilityTest(unittest.TestCase):
         self.assertIsNone(run[0]["health"])
 
 
+class DockerParseTest(unittest.TestCase):
+    def setUp(self):
+        self.m = load_engine()
+
+    def test_pinned_semver_no_variant(self):
+        out = self.m.parse_dockerfile("FROM node:20.11.1\n")
+        self.assertEqual(out, [("node", "20.11.1", "", 1)])
+
+    def test_pinned_semver_with_variant(self):
+        out = self.m.parse_dockerfile("FROM python:3.12.1-bookworm\n")
+        self.assertEqual(out, [("python", "3.12.1", "bookworm", 1)])
+
+    def test_versioned_variant_kept_whole(self):
+        out = self.m.parse_dockerfile("FROM node:20.11.1-alpine3.19\n")
+        self.assertEqual(out, [("node", "20.11.1", "alpine3.19", 1)])
+
+    def test_explicit_host_and_repo_path(self):
+        out = self.m.parse_dockerfile(
+            "FROM mcr.microsoft.com/dotnet/aspnet:8.0.1\n")
+        self.assertEqual(
+            out, [("mcr.microsoft.com/dotnet/aspnet", "8.0.1", "", 1)])
+
+    def test_as_alias_recorded_and_stage_ref_skipped(self):
+        text = "FROM node:20.11.1 AS build\nFROM build\n"
+        out = self.m.parse_dockerfile(text)
+        self.assertEqual(out, [("node", "20.11.1", "", 1)])
+
+    def test_platform_flag_stripped(self):
+        out = self.m.parse_dockerfile(
+            "FROM --platform=linux/amd64 node:20.11.1\n")
+        self.assertEqual(out, [("node", "20.11.1", "", 1)])
+
+    def test_case_insensitive_keywords(self):
+        out = self.m.parse_dockerfile("from node:20.11.1 as Build\n")
+        self.assertEqual(out, [("node", "20.11.1", "", 1)])
+
+    def test_skips_latest_no_tag_partial_digest_scratch_var(self):
+        text = (
+            "FROM node\n"              # no tag
+            "FROM node:latest\n"       # latest
+            "FROM node:20\n"           # floating major
+            "FROM node:20.11\n"        # partial (not M.N.P)
+            "FROM node@sha256:abc123\n"  # digest
+            "FROM scratch\n"           # scratch
+            "FROM node:${TAG}\n"       # interpolated braces
+            "FROM node:$TAG\n"         # interpolated bare
+        )
+        self.assertEqual(self.m.parse_dockerfile(text), [])
+
+    def test_line_numbers_are_one_based_and_correct(self):
+        text = "# comment\nFROM node:20.11.1\nRUN true\nFROM python:3.12.1\n"
+        out = self.m.parse_dockerfile(text)
+        self.assertEqual(out, [("node", "20.11.1", "", 2),
+                               ("python", "3.12.1", "", 4)])
+
+
 if __name__ == "__main__":
     unittest.main()

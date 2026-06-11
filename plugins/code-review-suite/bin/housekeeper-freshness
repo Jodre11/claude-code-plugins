@@ -1061,8 +1061,13 @@ def collect_findings(root, changed_files, changed_lines, registry):
     props_text = {p: read(p) for p in nuget_props}
     props_text = {p: t for p, t in props_text.items() if t is not None}
 
-    docker_roots = docker_scope_roots(changed_files, all_dockerfiles,
-                                      nuget_csprojs, npm_roots)
+    # Docker scope depends on the resolved npm/nuget units (Anchor A), so this
+    # must run after npm_roots and nuget_csprojs are computed.
+    docker_roots = docker_scope_roots(
+        changed_files,
+        all_dockerfiles,
+        nuget_csprojs,
+        npm_roots)
     dockerfile_text = {p: read(p) for p in docker_roots}
     dockerfile_text = {p: t for p, t in dockerfile_text.items() if t is not None}
 

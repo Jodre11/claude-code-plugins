@@ -18,7 +18,7 @@ intent_ledger: |
   - Synthetic NuGet fixture exercising housekeeper-reviewer against a CPM
     solution (Directory.Packages.props central versions; version-less csproj
     refs resolving through CPM). Two deterministic Suggestion findings: Serilog
-    2.10.0 -> 4.0.0 (stale) and Newtonsoft.Json 13.0.3 current-but-deprecated
+    2.10.0 -> 4.0.0 (stale) and WindowsAzure.Storage 9.3.3 current-but-deprecated
     (pure-health). Slice-2 baseline for the Haiku/low cost-tuning probe.
 depends_on:
   - plugins/code-review-suite/agents/housekeeper-reviewer.md

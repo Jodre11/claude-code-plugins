@@ -27,5 +27,5 @@ fixtures:
   - id: housekeeper-nuget-stale-deps
     agent: housekeeper-reviewer
     type: synthetic
-    description: Two-finding NuGet set (Serilog 2.10.0->4.0.0 via CPM resolution; Newtonsoft.Json 13.0.3 current-but-deprecated pure-health) via recorded flat-container + registration fixtures. Slice-2 baseline.
+    description: Two-finding NuGet set (Serilog 2.10.0->4.0.0 via CPM resolution; WindowsAzure.Storage 9.3.3 current-but-deprecated pure-health) via recorded flat-container + registration fixtures. Slice-2 baseline.
     tags: [smoke, deterministic]

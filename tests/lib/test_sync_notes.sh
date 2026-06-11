@@ -1364,4 +1364,13 @@ test_housekeeping_trigger_mirrors_engine_scope() {
         fail "housekeeping trigger mirrors engine scope: all source extensions present in prose and engine" \
             "extensions missing (prose:X = absent from trigger bullet, engine:X = absent from engine scope constants):$missing"
     fi
+
+    # Docker is matched by Dockerfile basename, not extension. Assert the
+    # trigger names 'Dockerfile' AND the engine has the _is_dockerfile gate.
+    if grep -qF 'Dockerfile' <<<"$bullet" && grep -qF '_is_dockerfile' "$engine"; then
+        pass "housekeeping trigger mirrors engine scope: Dockerfile detection present in prose and engine"
+    else
+        fail "housekeeping trigger mirrors engine scope: Dockerfile detection present in prose and engine" \
+            "trigger bullet must name 'Dockerfile' and engine must define _is_dockerfile"
+    fi
 }

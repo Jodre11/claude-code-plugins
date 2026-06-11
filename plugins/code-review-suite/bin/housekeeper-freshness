@@ -385,28 +385,27 @@ _DEP_SECTIONS = ("dependencies", "devDependencies", "optionalDependencies", "pee
 
 
 def parse_package_json(text):
-    """Return {name: (spec, line_no)} across all dependency sections.
+    """Return {(section, name): (spec, line_no)} across all dependency sections.
 
-    Line-based so we can attribute a 1-based source line to each dep (the
-    JSON parser loses line numbers). Tracks which dep-section we are inside
-    via a brace-aware scan of the section headers.
-
-    Known limitation: a name appearing in multiple dep sections collapses to a
-    single entry keyed on its last occurrence."""
+    Keyed by (section, name) so a dep appearing in multiple sections (e.g. both
+    dependencies and peerDependencies) yields a distinct entry per section
+    rather than collapsing to the last occurrence."""
     deps = {}
-    in_section = False
+    section = None
     for i, raw in enumerate(text.splitlines(), start=1):
         stripped = raw.strip()
-        if any(('"%s"' % s) in stripped and stripped.endswith("{") for s in _DEP_SECTIONS):
-            in_section = True
+        hit = next((s for s in _DEP_SECTIONS
+                    if ('"%s"' % s) in stripped and stripped.endswith("{")), None)
+        if hit:
+            section = hit
             continue
-        if in_section and stripped.startswith("}"):
-            in_section = False
+        if section is not None and stripped.startswith("}"):
+            section = None
             continue
-        if in_section:
+        if section is not None:
             m = _DEP_LINE_RE.match(raw)
             if m:
-                deps[m.group(1)] = (m.group(2), i)
+                deps[(section, m.group(1))] = (m.group(2), i)
     return deps
 
 
@@ -416,13 +415,19 @@ def parse_package_json(text):
 # buildable unit and must not drag the npm manifest into scope.
 _NPM_SCOPE_SUFFIXES = (
     ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".mts", ".cts",
-    ".vue", ".svelte", ".json",
+    ".vue", ".svelte",
 )
 
 
 def _is_npm_scope_file(path):
     base = path.rsplit("/", 1)[-1]
     if base in ("package.json", "package-lock.json", ".npmrc", "yarn.lock", "pnpm-lock.yaml"):
+        return True
+    # npm-meaningful JSON only: tsconfig*.json and *.config.json. A bare
+    # data.json must NOT drag a sibling package.json into scope.
+    if base.startswith("tsconfig") and base.endswith(".json"):
+        return True
+    if base.endswith(".config.json"):
         return True
     return path.endswith(_NPM_SCOPE_SUFFIXES)
 
@@ -455,7 +460,7 @@ def collect_npm(file_text, changed_lines, registry):
             continue
         deps = parse_package_json(text)
         touched = changed_lines.get(path, set())
-        for name, (spec, line) in deps.items():
+        for (section, name), (spec, line) in deps.items():
             current = strip_constraint(spec)
             if current is None:
                 continue

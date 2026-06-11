@@ -737,13 +737,48 @@ class NpmTest(unittest.TestCase):
             '}\n'
         )
         deps = self.m.parse_package_json(text)
-        self.assertEqual(deps["react"], ("^18.2.0", 3))
-        self.assertEqual(deps["left-pad"], ("1.3.0", 4))
+        self.assertEqual(deps[("dependencies", "react")], ("^18.2.0", 3))
+        self.assertEqual(deps[("dependencies", "left-pad")], ("1.3.0", 4))
+
+    def test_parse_package_json_keeps_multi_section_deps(self):
+        text = (
+            '{\n'
+            '  "dependencies": {\n'
+            '    "react": "^18.2.0"\n'
+            '  },\n'
+            '  "peerDependencies": {\n'
+            '    "react": "^18.0.0"\n'
+            '  }\n'
+            '}\n'
+        )
+        deps = self.m.parse_package_json(text)
+        # Two distinct (section, name) entries, both for react, on their own lines.
+        self.assertEqual(
+            sorted((k[0], k[1], v[0], v[1]) for k, v in deps.items()),
+            [("dependencies", "react", "^18.2.0", 3),
+             ("peerDependencies", "react", "^18.0.0", 6)])
+
+    def test_collect_npm_emits_both_sections(self):
+        reg = self.m.Registry(fixtures_dir=None)
+        reg.fetch = lambda *a, **k: NPM_DOC
+        text = ('{\n  "dependencies": {\n    "react": "^18.2.0"\n  },\n'
+                '  "peerDependencies": {\n    "react": "^18.0.0"\n  }\n}\n')
+        findings = self.m.collect_npm({"package.json": text}, {"package.json": {3, 6}}, reg)
+        self.assertEqual(len(findings), 2)
+        self.assertEqual(sorted(f["line"] for f in findings), [3, 6])
 
     def test_npm_root_finds_nearest_package_json(self):
         files = ["web/app/src/index.ts", "api/server.py"]
         roots = self.m.npm_scope_roots(files, {"web/app/package.json", "api/package.json"})
         # The .ts pulls in web/app (nearest ancestor with a package.json).
+        self.assertEqual(roots, {"web/app/package.json"})
+
+    def test_stray_json_does_not_pull_in_package_json(self):
+        roots = self.m.npm_scope_roots(["web/app/data.json"], {"web/app/package.json"})
+        self.assertEqual(roots, set())
+
+    def test_tsconfig_still_pulls_in_package_json(self):
+        roots = self.m.npm_scope_roots(["web/app/tsconfig.json"], {"web/app/package.json"})
         self.assertEqual(roots, {"web/app/package.json"})
 
     def test_npm_finding_touched_line_targets_latest_ga(self):

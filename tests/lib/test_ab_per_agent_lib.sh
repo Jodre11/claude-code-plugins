@@ -693,6 +693,42 @@ test_ab_agent_capture_housekeeper_skipped_marks_inconclusive() {
     rm -rf "$trial_dir"
 }
 
+test_ab_agent_capture_housekeeper_nuget_parses_two_findings() {
+    local lib="$REPO_ROOT/tests/ab/lib/agent_capture.sh"
+    local fixture="$REPO_ROOT/tests/ab/fixtures/housekeeper-nuget-stdout.log"
+
+    if [[ ! -f "$lib" || ! -f "$fixture" ]]; then
+        fail "A/B agent_capture housekeeper-nuget: lib + fixture present" "missing"
+        return
+    fi
+
+    local trial_dir
+    trial_dir=$(mktemp -d)
+    cp "$fixture" "$trial_dir/stdout.log"
+
+    (
+        # shellcheck disable=SC1090
+        source "$lib"
+        agent_capture_parse_trial housekeeper "$trial_dir"
+    )
+
+    local count
+    count=$(jq 'length' "$trial_dir/findings.json")
+    assert_equals "2" "$count" "A/B agent_capture housekeeper-nuget: two findings extracted"
+
+    # The slash-bearing rule_id must tokenise WHOLE — the shared tokeniser
+    # splits on [ \t(], none of which appear in housekeeper/nuget.
+    local nuget_rule
+    nuget_rule=$(jq -r '.[] | select(.line == 3) | .rule_id' "$trial_dir/findings.json")
+    assert_equals "housekeeper/nuget" "$nuget_rule" "A/B agent_capture housekeeper-nuget: slash-bearing rule_id tokenises whole"
+
+    local sev
+    sev=$(jq -r '.[] | select(.line == 4) | .severity' "$trial_dir/findings.json")
+    assert_equals "Suggestion" "$sev" "A/B agent_capture housekeeper-nuget: pure-health severity is Suggestion"
+
+    rm -rf "$trial_dir"
+}
+
 test_ab_agent_capture_findings_hash_is_deterministic() {
     # Two runs over the same stdout must produce identical findings_hash.
     # This is the cross-trial comparison primitive — if it is order-sensitive
@@ -1080,6 +1116,51 @@ test_ab_config_per_agent_housekeeper_haiku_low_parses() {
     assert_equals "housekeeper-reviewer" "$agent" "A/B config: housekeeper-haiku-low.agent = housekeeper-reviewer"
     assert_equals "haiku" "$model" "A/B config: housekeeper-haiku-low.session.model = haiku"
     assert_equals "low" "$effort" "A/B config: housekeeper-haiku-low.session.effort = low"
+}
+
+test_ab_config_per_agent_housekeeper_nuget_haiku_low_parses() {
+    local config="$REPO_ROOT/tests/ab/lib/config.sh"
+    local probe="$REPO_ROOT/tests/ab/configs/per-agent/housekeeper-nuget-haiku-low.yaml"
+
+    if [[ ! -f "$config" ]]; then
+        fail "A/B config: per-agent housekeeper-nuget-haiku-low parses" "config.sh missing"
+        return
+    fi
+    if [[ ! -f "$probe" ]]; then
+        fail "A/B config: per-agent housekeeper-nuget-haiku-low parses" "housekeeper-nuget-haiku-low.yaml not yet authored"
+        return
+    fi
+
+    local mode agent model effort
+    mode=$(
+        # shellcheck disable=SC1090
+        source "$config"
+        config_load "$probe" >/dev/null
+        echo "${_AB_CONFIG_MODE:-}"
+    )
+    agent=$(
+        # shellcheck disable=SC1090
+        source "$config"
+        config_load "$probe" >/dev/null
+        echo "${_AB_CONFIG_AGENT:-}"
+    )
+    model=$(
+        # shellcheck disable=SC1090
+        source "$config"
+        config_load "$probe" >/dev/null
+        echo "${_AB_CONFIG_SESSION_MODEL:-}"
+    )
+    effort=$(
+        # shellcheck disable=SC1090
+        source "$config"
+        config_load "$probe" >/dev/null
+        echo "${_AB_CONFIG_SESSION_EFFORT:-}"
+    )
+
+    assert_equals "per-agent" "$mode" "A/B config: housekeeper-nuget-haiku-low.mode = per-agent"
+    assert_equals "housekeeper-reviewer" "$agent" "A/B config: housekeeper-nuget-haiku-low.agent = housekeeper-reviewer"
+    assert_equals "haiku" "$model" "A/B config: housekeeper-nuget-haiku-low.session.model = haiku"
+    assert_equals "low" "$effort" "A/B config: housekeeper-nuget-haiku-low.session.effort = low"
 }
 
 test_ab_run_sh_stream_json_flag_recognised() {

@@ -1,0 +1,7 @@
+name: housekeeper-nuget-baseline
+description: Production reference for housekeeper-reviewer on the NuGet corpus — sonnet at default effort.
+mode: per-agent
+agent: housekeeper-reviewer
+session:
+  model: sonnet
+  effort: default

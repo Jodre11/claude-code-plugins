@@ -1,0 +1,7 @@
+name: housekeeper-nuget-haiku-low
+description: Slice-2 directional probe — housekeeper-reviewer at Haiku/low on the NuGet corpus. Compared against housekeeper-nuget-baseline (sonnet/default) on per-trial findings hash.
+mode: per-agent
+agent: housekeeper-reviewer
+session:
+  model: haiku
+  effort: low

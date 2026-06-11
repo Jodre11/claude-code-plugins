@@ -24,3 +24,8 @@ fixtures:
     type: synthetic
     description: Three-finding freshness set (actions/checkout v3→v4, ubuntu-22.04→24.04, react 18.2.0→19.0.0) via recorded registry fixtures. Vertical-slice-1 baseline.
     tags: [smoke, deterministic]
+  - id: housekeeper-nuget-stale-deps
+    agent: housekeeper-reviewer
+    type: synthetic
+    description: Two-finding NuGet set (Serilog 2.10.0->4.0.0 via CPM resolution; Newtonsoft.Json 13.0.3 current-but-deprecated pure-health) via recorded flat-container + registration fixtures. Slice-2 baseline.
+    tags: [smoke, deterministic]

@@ -1,0 +1,10 @@
+{
+  "items": [
+    {
+      "items": [
+        {"catalogEntry": {"version": "13.0.3", "licenseExpression": "MIT", "listed": true,
+                          "deprecation": {"message": "Use System.Text.Json instead", "reasons": ["Legacy"]}}}
+      ]
+    }
+  ]
+}

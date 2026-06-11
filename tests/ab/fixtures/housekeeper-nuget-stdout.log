@@ -1,0 +1,21 @@
+Running the housekeeper-freshness engine over the changed NuGet manifests.
+
+## Housekeeper Findings
+
+### Finding — Serilog behind latest GA
+- **File:** Directory.Packages.props:3
+- **Confidence:** 100
+- **Severity:** Suggestion
+- **Rule:** housekeeper/nuget
+- **Description:** Serilog is at 2.10.0; latest GA is 4.0.0.
+- **Suggested fix:** Upgrade Serilog to 4.0.0.
+
+### Finding — Newtonsoft.Json marked deprecated
+- **File:** Directory.Packages.props:4
+- **Confidence:** 100
+- **Severity:** Suggestion
+- **Rule:** housekeeper/nuget
+- **Description:** Newtonsoft.Json is at 13.0.3; latest GA is 13.0.3. Marked deprecated in the registry: Use System.Text.Json instead.
+- **Suggested fix:** Review: Newtonsoft.Json is current but marked deprecated.
+
+That is all the freshness/health signal for this diff.

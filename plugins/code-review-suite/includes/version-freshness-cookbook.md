@@ -20,6 +20,23 @@ Cap at 10 concurrent fetches to avoid registry rate-limits.
 | Go modules       | `go.mod`, `go.sum`                    | `https://proxy.golang.org/<module>/@latest`                                     |
 | GitHub Actions   | `.github/workflows/*.yml`             | `https://api.github.com/repos/<owner>/<action>/releases/latest` (read `tag_name`) |
 
+### NuGet registration (licence + maintenance-health)
+
+The flat-container `index.json` (the NuGet row above) is a bare version list —
+it carries neither licence nor deprecation metadata. The housekeeper reads those
+from the **registration** resource:
+
+| Resource     | Endpoint pattern                                                                     | Fields read                                  |
+|--------------|--------------------------------------------------------------------------------------|----------------------------------------------|
+| registration | `https://api.nuget.org/v3/registration5-gz-semver2/<package-lower>/index.json` (gzip) | `catalogEntry.licenseExpression`, `deprecation`, `listed` |
+
+The registration index is gzipped and paginated (pages either inlined or external
+`@id` leaves needing a follow-up fetch); the engine handles both. A registration
+miss leaves `licence_*`/`health` null but does NOT suppress the freshness finding —
+only a flat-container miss (no trustworthy latest GA) suppresses entirely.
+Maintenance-health is deterministic: `deprecation` → `deprecated`, `listed: false`
+→ `unlisted`. Fuzzy signals (last-publish age, single-maintainer) are out of scope.
+
 ### Runner labels (no live registry)
 
 GitHub-hosted runner images have no registry endpoint. The housekeeper engine

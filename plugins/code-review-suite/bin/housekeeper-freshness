@@ -928,6 +928,44 @@ def _docker_parse_challenge(header):
     return realm, params
 
 
+# Doc/markup suffixes that masquerade as Dockerfile.<suffix> but are prose, not
+# build files (e.g. notes/Dockerfile.md). Excluded before the startswith check.
+_DOCKERFILE_DOC_SUFFIXES = (".md", ".markdown", ".txt", ".rst")
+
+
+def _is_dockerfile(path):
+    """True if path's basename is Dockerfile, Dockerfile.<suffix>, or ends
+    .dockerfile. (Containerfile is intentionally excluded this slice.) A doc
+    suffix (.md/.markdown/.txt/.rst) is rejected so Dockerfile.md — a markdown
+    doc that merely mentions Dockerfile — is not treated as a build file."""
+    base = path.rsplit("/", 1)[-1]
+    if base.endswith(_DOCKERFILE_DOC_SUFFIXES):
+        return False
+    return (base == "Dockerfile"
+            or base.startswith("Dockerfile.")
+            or base.endswith(".dockerfile"))
+
+
+def docker_scope_roots(changed_files, all_dockerfiles, nuget_csprojs, npm_roots):
+    """Return the in-scope Dockerfile set (Anchor A). A Dockerfile is in scope
+    when it is directly changed, OR its directory is an ancestor-or-same of a
+    resolved buildable unit's directory (the unit's nearest-ancestor csproj /
+    package.json, already computed by collect_findings). Docker scope is thus a
+    strict function of units we already parse — no independent directory walk."""
+    roots = set()
+    for f in changed_files:
+        if _is_dockerfile(f) and f in all_dockerfiles:
+            roots.add(f)
+    unit_dirs = {_dirname(u) for u in nuget_csprojs} | {_dirname(u) for u in npm_roots}
+    for df in all_dockerfiles:
+        ddir = _dirname(df)
+        for udir in unit_dirs:
+            if _dir_is_ancestor_or_same(ddir, udir):
+                roots.add(df)
+                break
+    return roots
+
+
 def collect_findings(root, changed_files, changed_lines, registry):
     def read(path):
         try:

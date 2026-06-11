@@ -1027,5 +1027,56 @@ class DockerTagsTest(unittest.TestCase):
                 reg.docker_tags("123.dkr.ecr.eu-west-1.amazonaws.com/svc"))
 
 
+class DockerScopeTest(unittest.TestCase):
+    def setUp(self):
+        self.m = load_engine()
+
+    def test_is_dockerfile_basename_variants(self):
+        self.assertTrue(self.m._is_dockerfile("Dockerfile"))
+        self.assertTrue(self.m._is_dockerfile("src/Api/Dockerfile"))
+        self.assertTrue(self.m._is_dockerfile("Dockerfile.prod"))
+        self.assertTrue(self.m._is_dockerfile("build/api.dockerfile"))
+        self.assertFalse(self.m._is_dockerfile("src/Api/Program.cs"))
+        self.assertFalse(self.m._is_dockerfile("notes/Dockerfile.md"))
+
+    def test_directly_changed_dockerfile_in_scope(self):
+        roots = self.m.docker_scope_roots(
+            ["src/Api/Dockerfile"], {"src/Api/Dockerfile"},
+            nuget_csprojs=set(), npm_roots=set())
+        self.assertEqual(roots, {"src/Api/Dockerfile"})
+
+    def test_source_change_pulls_in_same_dir_dockerfile(self):
+        roots = self.m.docker_scope_roots(
+            ["src/Api/Program.cs"], {"src/Api/Dockerfile"},
+            nuget_csprojs={"src/Api/Api.csproj"}, npm_roots=set())
+        self.assertEqual(roots, {"src/Api/Dockerfile"})
+
+    def test_root_dockerfile_in_scope_for_nested_unit(self):
+        roots = self.m.docker_scope_roots(
+            ["src/Api/Program.cs"], {"Dockerfile"},
+            nuget_csprojs={"src/Api/Api.csproj"}, npm_roots=set())
+        self.assertEqual(roots, {"Dockerfile"})
+
+    def test_dockerfile_deeper_than_unit_not_pulled_by_source(self):
+        # Dockerfile below the unit dir is NOT an ancestor of the unit, so a
+        # source change to the unit does not pull it in.
+        roots = self.m.docker_scope_roots(
+            ["src/Api/Program.cs"], {"src/Api/sub/Dockerfile"},
+            nuget_csprojs={"src/Api/Api.csproj"}, npm_roots=set())
+        self.assertEqual(roots, set())
+
+    def test_sibling_unit_dockerfile_not_in_scope(self):
+        roots = self.m.docker_scope_roots(
+            ["src/Api/Program.cs"], {"src/Worker/Dockerfile"},
+            nuget_csprojs={"src/Api/Api.csproj"}, npm_roots=set())
+        self.assertEqual(roots, set())
+
+    def test_npm_unit_pulls_in_dockerfile(self):
+        roots = self.m.docker_scope_roots(
+            ["web/src/index.ts"], {"web/Dockerfile"},
+            nuget_csprojs=set(), npm_roots={"web/package.json"})
+        self.assertEqual(roots, {"web/Dockerfile"})
+
+
 if __name__ == "__main__":
     unittest.main()

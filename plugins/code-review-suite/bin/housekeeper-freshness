@@ -966,6 +966,54 @@ def docker_scope_roots(changed_files, all_dockerfiles, nuget_csprojs, npm_roots)
     return roots
 
 
+def _docker_split_tag(tag):
+    """Split a registry tag into (core, variant) using the same grammar as the
+    FROM parser, or None if it is not a concrete M.N.P[.W] tag (so floating /
+    rc tags in the registry list are ignored for comparison)."""
+    cm = _DOCKER_CORE_RE.match(tag)
+    if not cm:
+        return None
+    return cm.group(1), (cm.group(2) or "")
+
+
+def collect_docker(dockerfile_text, changed_lines, registry):
+    """dockerfile_text maps each in-scope Dockerfile path -> its content. Emits
+    a tuple per stale FROM base-image, comparing only within the pinned tag's
+    variant lineage. No health axis this slice (licence/health are null)."""
+    findings = []
+    for path, text in sorted(dockerfile_text.items()):
+        touched = changed_lines.get(path, set())
+        for ref, core, variant, line in parse_dockerfile(text):
+            tags = registry.docker_tags(ref)
+            if not tags:
+                continue  # no trustworthy answer
+            # Cores of registry tags sharing this candidate's exact variant.
+            same_variant_cores = []
+            for t in tags:
+                split = _docker_split_tag(t)
+                if split is not None and split[1] == variant:
+                    same_variant_cores.append(split[0])
+            latest = latest_ga(same_variant_cores)
+            if not latest:
+                continue
+            if compare_versions(latest, core) <= 0:
+                continue  # not stale
+            if line in touched:
+                target = latest
+            else:
+                target = nearest_in_major(core, same_variant_cores)
+                if compare_versions(target, core) <= 0:
+                    continue  # in-major exhausted for an untouched line
+            findings.append({
+                "source": "docker", "item": ref,
+                "current": core, "latest_ga": latest, "target": target,
+                "file": path, "line": line,
+                "licence_current": None, "licence_latest": None,
+                "health": None,
+            })
+    return findings
+
+
 def collect_findings(root, changed_files, changed_lines, registry):
     def read(path):
         try:

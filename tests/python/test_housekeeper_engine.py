@@ -1078,5 +1078,57 @@ class DockerScopeTest(unittest.TestCase):
         self.assertEqual(roots, {"web/Dockerfile"})
 
 
+class DockerCollectTest(unittest.TestCase):
+    def setUp(self):
+        self.m = load_engine()
+
+    def _reg(self, tags):
+        reg = self.m.Registry(fixtures_dir=None)
+        reg.docker_tags = lambda ref: tags
+        return reg
+
+    def test_touched_line_targets_latest_ga_in_variant(self):
+        reg = self._reg(["20.11.1", "22.2.0", "22.3.0"])
+        text = {"Dockerfile": "FROM node:20.11.1\n"}
+        out = self.m.collect_docker(text, {"Dockerfile": {1}}, reg)
+        self.assertEqual(len(out), 1)
+        f = out[0]
+        self.assertEqual((f["source"], f["item"], f["current"],
+                          f["latest_ga"], f["target"], f["file"], f["line"]),
+                         ("docker", "node", "20.11.1", "22.3.0", "22.3.0",
+                          "Dockerfile", 1))
+        self.assertIsNone(f["health"])
+
+    def test_untouched_line_targets_nearest_in_major(self):
+        reg = self._reg(["20.11.1", "20.12.0", "22.3.0"])
+        text = {"Dockerfile": "FROM node:20.11.1\n"}
+        out = self.m.collect_docker(text, {}, reg)  # untouched
+        self.assertEqual(out[0]["target"], "20.12.0")
+        self.assertEqual(out[0]["latest_ga"], "22.3.0")
+
+    def test_variant_isolation_only_same_variant_tags_considered(self):
+        # An -alpine pin must not see plain tags, and vice versa.
+        reg = self._reg(["20.11.1", "22.3.0", "20.11.1-alpine", "22.3.0-alpine"])
+        text = {"Dockerfile": "FROM node:20.11.1-alpine\n"}
+        out = self.m.collect_docker(text, {"Dockerfile": {1}}, reg)
+        self.assertEqual(out[0]["current"], "20.11.1")
+        self.assertEqual(out[0]["target"], "22.3.0")  # the alpine 22.3.0 core
+
+    def test_not_stale_emits_nothing(self):
+        reg = self._reg(["20.11.1", "20.10.0"])
+        text = {"Dockerfile": "FROM node:20.11.1\n"}
+        self.assertEqual(self.m.collect_docker(text, {"Dockerfile": {1}}, reg), [])
+
+    def test_no_tags_in_variant_lineage_emits_nothing(self):
+        reg = self._reg(["20.11.1-bullseye", "22.0.0-bullseye"])
+        text = {"Dockerfile": "FROM node:20.11.1-alpine\n"}
+        self.assertEqual(self.m.collect_docker(text, {"Dockerfile": {1}}, reg), [])
+
+    def test_registry_miss_emits_nothing(self):
+        reg = self._reg(None)
+        text = {"Dockerfile": "FROM node:20.11.1\n"}
+        self.assertEqual(self.m.collect_docker(text, {"Dockerfile": {1}}, reg), [])
+
+
 if __name__ == "__main__":
     unittest.main()

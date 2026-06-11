@@ -51,7 +51,7 @@ For each tuple, emit one finding:
 - **File:** `<file>:<line>` from the tuple.
 - **Confidence:** `100`.
 - **Severity:** `Suggestion`.
-- **Rule:** `housekeeper/<source>` where `<source>` is the tuple's `source` (`github-actions`, `runner`, `npm`, or `nuget`).
+- **Rule:** `housekeeper/<source>` where `<source>` is the tuple's `source` (`github-actions`, `runner`, `npm`, `nuget`, or `docker`).
 - **Description:** `<item> is at <current>; latest GA is <latest_ga>.` If `licence_current` and `licence_latest` differ and both are non-null, append ` Licence changes <licence_current> → <licence_latest>.` If the tuple's `health` is non-null, append ` Marked <health.state> in the registry: <health.detail>.`
 - **Suggested fix:** `Upgrade <item> to <target>.` For `github-actions` SHA-pins, add `Preserve the SHA pin: update both the pinned commit and the # <target> comment.` Never suggest unpinning. **When the finding is pure-health** (`health` is non-null and `target` equals `current`), the Suggested fix is instead `Review: <item> is current but marked <health.state>.` (no upgrade target exists).
 
@@ -69,7 +69,7 @@ After rendering, clean up the two temp files.
 
 ### Worked example
 
-For a diff that changes `.github/workflows/ci.yml` (a `uses: actions/checkout@v3` on line 12 where latest GA is `v4.2.1`, and a `runs-on: ubuntu-22.04` on line 15), `package.json` (a `"react": "^18.2.0"` on touched line 4 where latest GA is `19.0.0`), and `Directory.Packages.props` (a `<PackageVersion Include="Serilog" Version="2.10.0" />` on touched line 6 where latest GA is `4.0.0`, plus a current-but-deprecated `Newtonsoft.Json` at `13.0.3`), the canonical §7 output is:
+For a diff that changes `.github/workflows/ci.yml` (a `uses: actions/checkout@v3` on line 12 where latest GA is `v4.2.1`, and a `runs-on: ubuntu-22.04` on line 15), `package.json` (a `"react": "^18.2.0"` on touched line 4 where latest GA is `19.0.0`), and `Directory.Packages.props` (a `<PackageVersion Include="Serilog" Version="2.10.0" />` on touched line 6 where latest GA is `4.0.0`, plus a current-but-deprecated `Newtonsoft.Json` at `13.0.3`), and `Dockerfile` (a `FROM node:18.20.0` on touched line 1 where latest GA is `22.3.0`), the canonical §7 output is:
 
 ```
 ## Housekeeper Findings
@@ -113,6 +113,14 @@ For a diff that changes `.github/workflows/ci.yml` (a `uses: actions/checkout@v3
 - **Rule:** housekeeper/nuget
 - **Description:** Newtonsoft.Json is at 13.0.3; latest GA is 13.0.3. Marked deprecated in the registry: Use System.Text.Json instead.
 - **Suggested fix:** Review: Newtonsoft.Json is current but marked deprecated.
+
+### Finding — node behind latest GA
+- **File:** Dockerfile:1
+- **Confidence:** 100
+- **Severity:** Suggestion
+- **Rule:** housekeeper/docker
+- **Description:** node is at 18.20.0; latest GA is 22.3.0.
+- **Suggested fix:** Upgrade node to 22.3.0.
 ```
 
 The heading is `### Finding — <title>` (em-dash, U+2014). The bullet field names are exactly `File`, `Confidence`, `Severity`, `Rule`, `Description`, `Suggested fix` — do not substitute synonyms, do not group findings under a `### <Severity>` sub-heading, and do not use a prose-block or `---`-separated layout; the harness parser pins to the §7 names and per-finding `### Finding` blocks. Severity is always `Suggestion`; confidence is always `100`.

@@ -1153,5 +1153,71 @@ class DockerCollectTest(unittest.TestCase):
         self.assertEqual(len(out), 3)
 
 
+class DockerEndToEndTest(unittest.TestCase):
+    """Drives the engine as a subprocess against an on-disk fixture tree with a
+    recorded docker fixture, proving collect_findings wires docker in and that
+    a SOURCE-only changeset pulls in its unit's Dockerfile (Anchor A)."""
+    def setUp(self):
+        self.m = load_engine()
+
+    def _tree(self, d):
+        root = pathlib.Path(d)
+        (root / "src/Api").mkdir(parents=True)
+        (root / "src/Api/Api.csproj").write_text(
+            '<Project Sdk="Microsoft.NET.Sdk"></Project>\n')
+        (root / "src/Api/Program.cs").write_text("class P {}\n")
+        (root / "src/Api/Dockerfile").write_text("FROM node:18.20.0\n")
+        fx = root / "registry/docker"
+        fx.mkdir(parents=True)
+        (fx / "library__node.json").write_text(
+            '{"tags": ["18.20.0", "20.11.1", "22.3.0"]}')
+        return root
+
+    def test_directly_changed_dockerfile_targets_latest(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = self._tree(d)
+            files = root / "files.txt"
+            lines = root / "lines.txt"
+            files.write_text("src/Api/Dockerfile\n")  # directly changed
+            lines.write_text("Changed lines:\n  src/Api/Dockerfile: 1\n")
+            out = subprocess.run(
+                [sys.executable, str(ENGINE),
+                 "--root", str(root),
+                 "--changed-files-from", str(files),
+                 "--changed-lines-from", str(lines),
+                 "--registry-fixtures", str(root / "registry")],
+                capture_output=True, text=True, check=True)
+            data = json.loads(out.stdout)
+            docker = [f for f in data if f["source"] == "docker"]
+            self.assertEqual(len(docker), 1)
+            self.assertEqual(docker[0]["item"], "node")
+            self.assertEqual(docker[0]["current"], "18.20.0")
+            self.assertEqual(docker[0]["latest_ga"], "22.3.0")
+            self.assertEqual(docker[0]["target"], "22.3.0")  # touched -> latest
+
+    def test_source_only_untouched_targets_nearest_in_major(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = self._tree(d)
+            # Overwrite the fixture to include a higher 18.x so an untouched
+            # in-major bump is available and the Anchor-A pull-in is observable.
+            (root / "registry/docker/library__node.json").write_text(
+                '{"tags": ["18.20.0", "18.20.4", "20.11.1", "22.3.0"]}')
+            files = root / "files.txt"
+            lines = root / "lines.txt"
+            files.write_text("src/Api/Program.cs\n")  # source only, no Dockerfile
+            lines.write_text("Changed lines:\n")
+            out = subprocess.run(
+                [sys.executable, str(ENGINE),
+                 "--root", str(root),
+                 "--changed-files-from", str(files),
+                 "--changed-lines-from", str(lines),
+                 "--registry-fixtures", str(root / "registry")],
+                capture_output=True, text=True, check=True)
+            docker = [f for f in json.loads(out.stdout) if f["source"] == "docker"]
+            self.assertEqual(len(docker), 1)
+            self.assertEqual(docker[0]["target"], "18.20.4")  # nearest in-major
+            self.assertEqual(docker[0]["latest_ga"], "22.3.0")
+
+
 if __name__ == "__main__":
     unittest.main()

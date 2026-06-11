@@ -1307,3 +1307,61 @@ test_orchestrator_comment_elision_negative_presence() {
         fi
     done
 }
+
+test_housekeeping_trigger_mirrors_engine_scope() {
+    # The Step 2.6 "Housekeeping detection" prose names source-file extensions
+    # that MUST mirror the engine's _NUGET_SCOPE_SUFFIXES / _NPM_SCOPE_SUFFIXES
+    # constants. If the trigger names an extension the engine does not scope, the
+    # housekeeper dispatches and finds nothing (dead dispatch). This test pins the
+    # prose list against the engine so the two cannot drift silently — the exact
+    # failure mode the 2026-06-11 source-file-trigger change fixed.
+    local cr
+    cr=$(_cr_dir)
+    if [[ ! -d "$cr" ]]; then
+        skip "housekeeping trigger mirrors engine scope" "code-review-suite plugin not found"
+        return
+    fi
+
+    local pipeline engine
+    pipeline="$cr/includes/review-pipeline.md"
+    engine="$cr/bin/housekeeper-freshness"
+
+    if [[ ! -f "$pipeline" || ! -f "$engine" ]]; then
+        fail "housekeeping trigger mirrors engine scope: inputs present" \
+            "missing pipeline ($pipeline) or engine ($engine)"
+        return
+    fi
+
+    # Extract the "Housekeeping detection" bullet line from the canonical.
+    local bullet
+    bullet=$(grep -F 'Housekeeping detection:' "$pipeline" | head -1)
+    if [[ -z "$bullet" ]]; then
+        fail "housekeeping trigger mirrors engine scope: bullet found" \
+            "no 'Housekeeping detection:' bullet in review-pipeline.md"
+        return
+    fi
+
+    # Every source-file extension the trigger must name (mirror of the engine
+    # scope sets, source files only — manifest extensions like .csproj are tested
+    # by the existing prose-parity test, not here).
+    local ext missing
+    missing=""
+    for ext in .cs .fs .vb .razor .cshtml .ts .tsx .js .jsx .mjs .cjs .mts .cts .vue .svelte; do
+        # Present in the trigger prose?
+        if ! grep -qF "\`$ext\`" <<<"$bullet"; then
+            missing="$missing prose:$ext"
+            continue
+        fi
+        # Present in an engine scope constant?
+        if ! grep -qF "\"$ext\"" "$engine"; then
+            missing="$missing engine:$ext"
+        fi
+    done
+
+    if [[ -z "$missing" ]]; then
+        pass "housekeeping trigger mirrors engine scope: all source extensions present in prose and engine"
+    else
+        fail "housekeeping trigger mirrors engine scope: all source extensions present in prose and engine" \
+            "extensions missing (prose:X = absent from trigger bullet, engine:X = absent from engine scope constants):$missing"
+    fi
+}

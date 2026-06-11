@@ -1129,6 +1129,29 @@ class DockerCollectTest(unittest.TestCase):
         text = {"Dockerfile": "FROM node:20.11.1\n"}
         self.assertEqual(self.m.collect_docker(text, {"Dockerfile": {1}}, reg), [])
 
+    def test_multiple_from_lines_and_multiple_dockerfiles(self):
+        reg = self.m.Registry(fixtures_dir=None)
+        reg.docker_tags = lambda ref: {
+            "node": ["18.20.0", "18.20.4", "22.3.0"],
+            "python": ["3.11.0", "3.12.1", "3.12.5"],
+        }.get(ref)
+        text = {
+            "api/Dockerfile": "FROM node:18.20.0 AS build\nFROM python:3.11.0\n",
+            "web/Dockerfile": "FROM node:18.20.0\n",
+        }
+        changed = {"api/Dockerfile": {2}, "web/Dockerfile": {1}}
+        out = self.m.collect_docker(text, changed, reg)
+        keyed = {(f["file"], f["line"]): f for f in out}
+        # api/Dockerfile node line (untouched line 1) -> nearest-in-major 18.20.4
+        self.assertEqual(keyed[("api/Dockerfile", 1)]["item"], "node")
+        self.assertEqual(keyed[("api/Dockerfile", 1)]["target"], "18.20.4")
+        # api/Dockerfile python line (touched line 2) -> latest GA 3.12.5
+        self.assertEqual(keyed[("api/Dockerfile", 2)]["item"], "python")
+        self.assertEqual(keyed[("api/Dockerfile", 2)]["target"], "3.12.5")
+        # web/Dockerfile node line (touched line 1) -> latest GA 22.3.0
+        self.assertEqual(keyed[("web/Dockerfile", 1)]["target"], "22.3.0")
+        self.assertEqual(len(out), 3)
+
 
 if __name__ == "__main__":
     unittest.main()

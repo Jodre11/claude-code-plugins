@@ -969,5 +969,63 @@ class DockerParseTest(unittest.TestCase):
         self.assertEqual(out, [("node", "20.11.1", "", 1)])
 
 
+class DockerTagsTest(unittest.TestCase):
+    def setUp(self):
+        self.m = load_engine()
+
+    def test_parse_ref_bare_name_is_docker_library(self):
+        host, repo = self.m._docker_parse_ref("node")
+        self.assertEqual((host, repo), ("registry-1.docker.io", "library/node"))
+
+    def test_parse_ref_org_image_is_docker_hub(self):
+        host, repo = self.m._docker_parse_ref("grafana/grafana")
+        self.assertEqual((host, repo),
+                         ("registry-1.docker.io", "grafana/grafana"))
+
+    def test_parse_ref_explicit_host_used_verbatim(self):
+        host, repo = self.m._docker_parse_ref("ghcr.io/org/img")
+        self.assertEqual((host, repo), ("ghcr.io", "org/img"))
+
+    def test_parse_ref_mcr_multi_segment_repo(self):
+        host, repo = self.m._docker_parse_ref("mcr.microsoft.com/dotnet/aspnet")
+        self.assertEqual((host, repo),
+                         ("mcr.microsoft.com", "dotnet/aspnet"))
+
+    def test_parse_ref_ecr_returns_none(self):
+        self.assertIsNone(
+            self.m._docker_parse_ref("123.dkr.ecr.eu-west-1.amazonaws.com/svc"))
+
+    def test_parse_challenge_extracts_realm_service_scope(self):
+        hdr = ('Bearer realm="https://auth.docker.io/token",'
+               'service="registry.docker.io",scope="repository:library/node:pull"')
+        realm, params = self.m._docker_parse_challenge(hdr)
+        self.assertEqual(realm, "https://auth.docker.io/token")
+        self.assertEqual(params["service"], "registry.docker.io")
+        self.assertEqual(params["scope"], "repository:library/node:pull")
+
+    def test_docker_tags_fixture_override_reads_tag_list(self):
+        with tempfile.TemporaryDirectory() as d:
+            fx = pathlib.Path(d) / "docker"
+            fx.mkdir()
+            (fx / "library__node.json").write_text(
+                '{"tags": ["20.11.1", "22.2.0", "22.2.0-alpine"]}')
+            reg = self.m.Registry(fixtures_dir=d)
+            self.assertEqual(reg.docker_tags("node"),
+                             ["20.11.1", "22.2.0", "22.2.0-alpine"])
+
+    def test_docker_tags_fixture_miss_returns_none(self):
+        with tempfile.TemporaryDirectory() as d:
+            (pathlib.Path(d) / "docker").mkdir()
+            reg = self.m.Registry(fixtures_dir=d)
+            self.assertIsNone(reg.docker_tags("node"))
+
+    def test_docker_tags_ecr_returns_none_even_with_fixtures(self):
+        with tempfile.TemporaryDirectory() as d:
+            (pathlib.Path(d) / "docker").mkdir()
+            reg = self.m.Registry(fixtures_dir=d)
+            self.assertIsNone(
+                reg.docker_tags("123.dkr.ecr.eu-west-1.amazonaws.com/svc"))
+
+
 if __name__ == "__main__":
     unittest.main()

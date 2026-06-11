@@ -964,6 +964,10 @@ class DockerParseTest(unittest.TestCase):
         self.assertEqual(out, [("node", "20.11.1", "", 2),
                                ("python", "3.12.1", "", 4)])
 
+    def test_tag_plus_digest_acts_on_the_tag(self):
+        out = self.m.parse_dockerfile("FROM node:20.11.1@sha256:abc123\n")
+        self.assertEqual(out, [("node", "20.11.1", "", 1)])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -782,7 +782,7 @@ _DOCKER_FROM_RE = re.compile(
     r"^\s*FROM\s+(?:--platform=\S+\s+)?"
     r"([A-Za-z0-9][A-Za-z0-9._:/-]*?)"          # image ref (greedy-min)
     r"(?::([A-Za-z0-9][A-Za-z0-9._-]*))?"        # optional :tag
-    r"(?:@[A-Za-z0-9]+:[A-Za-z0-9]+)?"           # optional @digest (skips tag)
+    r"(?:@[A-Za-z0-9]+:[A-Za-z0-9]+)?"           # optional @digest after the tag
     r"(?:\s+AS\s+(\S+))?\s*$",
     re.IGNORECASE,
 )
@@ -797,10 +797,11 @@ def parse_dockerfile(text):
     """Return [(image_ref, core, variant, line_no)] for act-on FROM lines.
 
     Act-on = a registry image pinned to a concrete M.N.P[.W] semver tag, with
-    an optional variant suffix. Everything in the trust gate (no-tag, latest,
-    floating/partial tags, @digest, scratch, $VAR interpolation, and AS-stage
-    references) is deliberately skipped — see the design spec §2.4. One FROM
-    per physical line is assumed."""
+    an optional variant suffix. A digest may trail the tag (node:1.2.3@sha256:..)
+    and we still act on the tag. Everything in the trust gate (no-tag, latest,
+    floating/partial tags, digest-only pins, scratch, $VAR interpolation, and
+    AS-stage references) is deliberately skipped — see the design spec §2.4. One
+    FROM per physical line is assumed."""
     out = []
     stages = set()
     for i, raw in enumerate(text.splitlines(), start=1):
@@ -816,7 +817,7 @@ def parse_dockerfile(text):
         if ref == "scratch":
             continue
         if tag is None:
-            continue  # no tag, or a @digest pin (tag group did not capture)
+            continue  # no tag, or a digest-only pin (tag group did not capture)
         if "$" in tag:
             continue  # ${VAR} / $VAR interpolation — value not statically known
         cm = _DOCKER_CORE_RE.match(tag)

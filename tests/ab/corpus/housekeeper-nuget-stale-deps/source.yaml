@@ -1,9 +1,9 @@
 id: housekeeper-nuget-stale-deps
 agent: housekeeper-reviewer
-captured_at: 2026-06-05T00:00:00Z
+captured_at: 2026-06-11T11:31:02Z
 baseline_revision: 1
 captured_under:
-  suite_sha: PLACEHOLDER_FILL_AT_CAPTURE
+  suite_sha: ca815a4b75d99170e47da2addcf5a9ca9b1aff36
   agent_model: sonnet
   agent_effort: default
 working_dir_strategy: copy

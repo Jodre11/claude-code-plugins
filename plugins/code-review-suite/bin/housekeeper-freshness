@@ -312,6 +312,7 @@ def collect_github_actions(changed_files, file_text, changed_lines, registry):
                 "current": current, "latest_ga": latest, "target": target,
                 "file": path, "line": line,
                 "licence_current": None, "licence_latest": None,
+                "health": None,
             })
     return findings
 
@@ -372,6 +373,7 @@ def collect_runners(changed_files, file_text, changed_lines):
                 "target": "%s-%s" % (family, latest),
                 "file": path, "line": line,
                 "licence_current": None, "licence_latest": None,
+                "health": None,
             })
     return findings
 
@@ -461,24 +463,34 @@ def collect_npm(file_text, changed_lines, registry):
             if not doc:
                 continue
             versions = list((doc.get("versions") or {}).keys())
+            vmap = doc.get("versions") or {}
             latest = (doc.get("dist-tags") or {}).get("latest")
             if not latest or not is_ga(latest):
                 latest = latest_ga(versions)
-            if not latest or compare_versions(latest, current) <= 0:
+            if not latest:
                 continue
-            # T3: touched manifest line -> full bump; else nearest in-major.
-            if line in touched:
-                target = latest
-            else:
-                target = nearest_in_major(current, versions)
-                if compare_versions(target, current) <= 0:
-                    continue  # nothing newer within the current major
+            # npm carries per-version 'deprecated' (a string message) in the
+            # registry doc; surface it as a uniform health rider.
+            dep = (vmap.get(current) or {}).get("deprecated")
+            health = {"state": "deprecated", "detail": dep} if isinstance(dep, str) and dep else None
+            stale = compare_versions(latest, current) > 0
+            if stale:
+                # T3: touched manifest line -> full bump; else nearest in-major.
+                if line in touched:
+                    target = latest
+                else:
+                    target = nearest_in_major(current, versions)
+                    if compare_versions(target, current) <= 0:
+                        stale = False  # nothing newer within the current major
+            if not stale and health is None:
+                continue  # widened emit rule: stale OR health-flagged
+            if not stale:
+                target = current
             # Licence diff is against the RECOMMENDED target, not latest GA:
             # an untouched-line finding targets the nearest in-major, which may
             # carry a different licence than latest (e.g. a BSL flip at the next
             # major we are not recommending). Reporting latest's licence here
             # would be a factually wrong claim about the suggested upgrade.
-            vmap = doc.get("versions") or {}
             lic_cur = (vmap.get(current) or {}).get("license")
             lic_new = (vmap.get(target) or {}).get("license")
             findings.append({
@@ -486,6 +498,7 @@ def collect_npm(file_text, changed_lines, registry):
                 "current": current, "latest_ga": latest, "target": target,
                 "file": path, "line": line,
                 "licence_current": lic_cur, "licence_latest": lic_new,
+                "health": health,
             })
     return findings
 

@@ -809,6 +809,26 @@ class NpmTest(unittest.TestCase):
         self.assertEqual(findings[0]["licence_current"], "MIT")
         self.assertEqual(findings[0]["licence_latest"], "MIT")  # target 18.3.1 is MIT, not the 19.0.0 BSL flip
 
+    def test_npm_deprecated_current_emits_pure_health(self):
+        doc = {
+            "dist-tags": {"latest": "4.0.0"},
+            "versions": {"4.0.0": {"license": "MIT", "deprecated": "no longer maintained"}},
+        }
+        reg = self.m.Registry(fixtures_dir=None)
+        reg.fetch = lambda *a, **k: doc
+        text = '{\n  "dependencies": {\n    "left-pad": "4.0.0"\n  }\n}\n'
+        findings = self.m.collect_npm({"package.json": text}, {"package.json": {3}}, reg)
+        self.assertEqual(len(findings), 1)
+        self.assertEqual(findings[0]["health"], {"state": "deprecated", "detail": "no longer maintained"})
+        self.assertEqual(findings[0]["target"], "4.0.0")  # current; pure-health
+
+    def test_npm_stale_finding_has_null_health(self):
+        reg = self.m.Registry(fixtures_dir=None)
+        reg.fetch = lambda *a, **k: NPM_DOC
+        text = '{\n  "dependencies": {\n    "react": "^18.2.0"\n  }\n}\n'
+        findings = self.m.collect_npm({"package.json": text}, {"package.json": {3}}, reg)
+        self.assertIsNone(findings[0]["health"])
+
 
 class EndToEndTest(unittest.TestCase):
     def test_cli_against_recorded_fixtures(self):
@@ -832,6 +852,26 @@ class EndToEndTest(unittest.TestCase):
             tuples = json.loads(out.stdout)
             sources = sorted(t["source"] for t in tuples)
             self.assertEqual(sources, ["github-actions", "npm", "runner"])
+
+
+class HashStabilityTest(unittest.TestCase):
+    def test_existing_collectors_carry_null_health(self):
+        m = load_engine()
+        # github-actions
+        ga_reg = m.Registry(fixtures_dir=None)
+        ga_reg.fetch = lambda *a, **k: {"tag_name": "v4.2.1"}
+        ga = m.collect_github_actions(
+            [".github/workflows/ci.yml"],
+            {".github/workflows/ci.yml": "      - uses: actions/checkout@v3\n"},
+            {".github/workflows/ci.yml": {1}}, ga_reg)
+        self.assertIn("health", ga[0])
+        self.assertIsNone(ga[0]["health"])
+        # runner
+        run = m.collect_runners(
+            [".github/workflows/ci.yml"],
+            {".github/workflows/ci.yml": "    runs-on: ubuntu-22.04\n"},
+            {".github/workflows/ci.yml": {1}})
+        self.assertIsNone(run[0]["health"])
 
 
 if __name__ == "__main__":

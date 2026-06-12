@@ -1219,5 +1219,58 @@ class DockerEndToEndTest(unittest.TestCase):
             self.assertEqual(docker[0]["latest_ga"], "22.3.0")
 
 
+class PyPIVersionCoreTest(unittest.TestCase):
+    def setUp(self):
+        self.m = load_engine()
+
+    def test_is_ga_rejects_pep440_prereleases(self):
+        self.assertTrue(self.m.pypi_is_ga("1.2.3"))
+        self.assertTrue(self.m.pypi_is_ga("2.0.0"))
+        self.assertFalse(self.m.pypi_is_ga("1.2.3rc1"))
+        self.assertFalse(self.m.pypi_is_ga("1.2.3a1"))
+        self.assertFalse(self.m.pypi_is_ga("1.2.3b2"))
+        self.assertFalse(self.m.pypi_is_ga("1.2.3.dev0"))
+        self.assertFalse(self.m.pypi_is_ga("1.2.3rc1.dev0"))
+
+    def test_post_release_is_ga_and_newer(self):
+        self.assertTrue(self.m.pypi_is_ga("1.2.3.post1"))
+        self.assertEqual(self.m.pypi_compare("1.2.3.post1", "1.2.3"), 1)
+        self.assertEqual(self.m.pypi_compare("1.2.3", "1.2.3.post1"), -1)
+
+    def test_prerelease_sorts_below_final(self):
+        self.assertEqual(self.m.pypi_compare("1.2.3rc1", "1.2.3"), -1)
+        self.assertEqual(self.m.pypi_compare("1.2.3a1", "1.2.3b1"), -1)
+        self.assertEqual(self.m.pypi_compare("1.2.3.dev0", "1.2.3a1"), -1)
+
+    def test_epoch_sorts_above(self):
+        self.assertEqual(self.m.pypi_compare("1!1.0", "2.0"), 1)
+
+    def test_local_version_stripped_for_ordering(self):
+        self.assertEqual(self.m.pypi_compare("1.2.3+ubuntu1", "1.2.3"), 0)
+        self.assertTrue(self.m.pypi_is_ga("1.2.3+ubuntu1"))
+
+    def test_trailing_zero_release_equal(self):
+        self.assertEqual(self.m.pypi_compare("1.0", "1.0.0"), 0)
+        self.assertEqual(self.m.pypi_compare("1.2.0", "1.2"), 0)
+
+    def test_compare_orders_numerically(self):
+        self.assertEqual(self.m.pypi_compare("1.10.0", "1.9.0"), 1)
+        self.assertEqual(self.m.pypi_compare("2.0.0", "10.0.0"), -1)
+
+    def test_unparsable_returns_none_or_zero(self):
+        self.assertIsNone(self.m.pypi_version_key("not-a-version"))
+        self.assertFalse(self.m.pypi_is_ga("garbage"))
+        self.assertEqual(self.m.pypi_compare("garbage", "1.0.0"), 0)
+
+    def test_latest_ga_skips_prereleases(self):
+        versions = ["1.0.0", "2.0.0rc1", "1.9.0", "1.10.0", "2.0.0.dev1"]
+        self.assertEqual(self.m.pypi_latest_ga(versions), "1.10.0")
+
+    def test_nearest_in_major(self):
+        versions = ["2.20.0", "2.28.1", "2.31.0", "3.0.0"]
+        self.assertEqual(self.m.pypi_nearest_in_major("2.20.0", versions), "2.31.0")
+        self.assertEqual(self.m.pypi_nearest_in_major("3.0.0", versions), "3.0.0")
+
+
 if __name__ == "__main__":
     unittest.main()

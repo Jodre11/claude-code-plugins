@@ -314,6 +314,118 @@ def strip_constraint(spec):
     return m.group(1) if m else None
 
 
+# --- PyPI version core (PEP 440) -------------------------------------------
+
+_PYPI_VERSION_RE = re.compile(
+    r"^\s*v?"
+    r"(?:(?P<epoch>\d+)!)?"
+    r"(?P<release>\d+(?:\.\d+)*)"
+    r"(?:[-_.]?(?P<pre_l>a|b|c|rc|alpha|beta|pre|preview)[-_.]?(?P<pre_n>\d+)?)?"
+    r"(?:(?:[-_.]?(?P<post_l>post|rev|r)[-_.]?(?P<post_n>\d+)?)|(?:-(?P<post_imp>\d+)))?"
+    r"(?:[-_.]?(?P<dev_l>dev)[-_.]?(?P<dev_n>\d+)?)?"
+    r"(?:\+(?P<local>[a-z0-9]+(?:[-_.][a-z0-9]+)*))?"
+    r"\s*$",
+    re.IGNORECASE,
+)
+
+_PYPI_PRE_ORDER = {"a": 0, "alpha": 0, "b": 1, "beta": 1,
+                   "c": 2, "rc": 2, "pre": 2, "preview": 2}
+
+
+def _pypi_parse(s):
+    """Parse a PEP 440 version string into its components, or None. Release has
+    trailing zeros stripped so 1.0 == 1.0.0. Local version segments are parsed
+    but ignored for ordering."""
+    if not s:
+        return None
+    m = _PYPI_VERSION_RE.match(s.strip())
+    if not m:
+        return None
+    release = tuple(int(p) for p in m.group("release").split("."))
+    while len(release) > 1 and release[-1] == 0:
+        release = release[:-1]
+    pre = None
+    if m.group("pre_l"):
+        pre = (_PYPI_PRE_ORDER[m.group("pre_l").lower()], int(m.group("pre_n") or 0))
+    post = None
+    if m.group("post_l"):
+        post = int(m.group("post_n") or 0)
+    elif m.group("post_imp"):
+        post = int(m.group("post_imp"))
+    dev = None
+    if m.group("dev_l"):
+        dev = int(m.group("dev_n") or 0)
+    return {"epoch": int(m.group("epoch") or 0), "release": release,
+            "pre": pre, "post": post, "dev": dev}
+
+
+def _pypi_stage_key(p):
+    """Phase-first ordering tuple for the post-release portion. The leading
+    phase int decides across phases (so mismatched tuple shapes are never
+    compared element-for-element); within a phase the shape is uniform.
+    Order: dev-of-final < prerelease(.dev) < final < post(.dev)."""
+    pre, post, dev = p["pre"], p["post"], p["dev"]
+    if pre is None and post is None and dev is not None:
+        return (0, dev)
+    if pre is not None:
+        if dev is not None:
+            return (1, pre[0], pre[1], 0, dev)
+        return (1, pre[0], pre[1], 1, 0)
+    if post is None and dev is None:
+        return (2,)
+    if dev is not None:
+        return (3, post, 0, dev)
+    return (3, post, 1, 0)
+
+
+def pypi_version_key(s):
+    """Return a comparable PEP 440 sort key (epoch, release, stage), or None."""
+    p = _pypi_parse(s)
+    if p is None:
+        return None
+    return (p["epoch"], p["release"], _pypi_stage_key(p))
+
+
+def pypi_is_ga(s):
+    """True if s is a PEP 440 GA release: parseable, not a pre-release, not a
+    dev-release. Post-releases ARE GA."""
+    p = _pypi_parse(s)
+    return p is not None and p["pre"] is None and p["dev"] is None
+
+
+def pypi_compare(a, b):
+    """-1/0/1 by PEP 440 ordering; 0 if either is unparsable."""
+    ka, kb = pypi_version_key(a), pypi_version_key(b)
+    if ka is None or kb is None:
+        return 0
+    return (ka > kb) - (ka < kb)
+
+
+def pypi_latest_ga(versions):
+    """Highest GA version, or None if none are GA."""
+    ga = [v for v in versions if pypi_is_ga(v)]
+    if not ga:
+        return None
+    return max(ga, key=pypi_version_key)
+
+
+def pypi_nearest_in_major(current, versions):
+    """Highest GA version sharing current's major; falls back to current."""
+    cp = _pypi_parse(current)
+    if cp is None:
+        return current
+    cur_major = cp["release"][0]
+    same = []
+    for v in versions:
+        vp = _pypi_parse(v)
+        if vp is not None and pypi_is_ga(v) and vp["release"][0] == cur_major:
+            same.append(v)
+    if not same:
+        return current
+    best = max(same, key=pypi_version_key)
+    return best if pypi_compare(best, current) > 0 else current
+
+
 # --- source collectors (filled in Tasks 3-5) -------------------------------
 
 # --- source: github-actions -------------------------------------------------

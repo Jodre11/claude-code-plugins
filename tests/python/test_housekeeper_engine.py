@@ -1360,5 +1360,56 @@ class PyPIRequirementsParseTest(unittest.TestCase):
         self.assertEqual(self.m.parse_requirements(text), [])
 
 
+class PyPIProjectParseTest(unittest.TestCase):
+    def setUp(self):
+        self.m = load_engine()
+
+    def test_pep621_dependencies_and_optional(self):
+        text = (
+            "[project]\n"
+            'name = "x"\n'
+            "dependencies = [\n"
+            '  "requests>=2.0",\n'
+            '  "flask==2.0.0",\n'
+            "]\n"
+            "[project.optional-dependencies]\n"
+            'dev = ["pytest==7.0.0"]\n'
+        )
+        out = self.m.parse_pyproject(text)
+        names = {n: s for n, s, _ in out}
+        self.assertEqual(names["requests"], ">=2.0")
+        self.assertEqual(names["flask"], "==2.0.0")
+        self.assertEqual(names["pytest"], "==7.0.0")
+
+    def test_poetry_tables_and_python_skipped(self):
+        text = (
+            "[tool.poetry.dependencies]\n"
+            'python = "^3.11"\n'
+            'requests = "^2.28.0"\n'
+            'flask = {version = "2.0.0", optional = true}\n'
+            "[tool.poetry.group.dev.dependencies]\n"
+            'pytest = "~7.0"\n'
+        )
+        out = self.m.parse_pyproject(text)
+        names = {n: s for n, s, _ in out}
+        self.assertNotIn("python", names)
+        self.assertEqual(names["requests"], "^2.28.0")
+        self.assertEqual(names["flask"], "2.0.0")
+        self.assertEqual(names["pytest"], "~7.0")
+
+    def test_line_numbers_point_at_declaration(self):
+        text = (
+            "[project]\n"
+            "dependencies = [\n"
+            '  "requests>=2.0",\n'
+            "]\n"
+        )
+        out = self.m.parse_pyproject(text)
+        self.assertEqual(out, [("requests", ">=2.0", 3)])
+
+    def test_empty_or_no_deps_returns_empty(self):
+        self.assertEqual(self.m.parse_pyproject('[project]\nname = "x"\n'), [])
+
+
 if __name__ == "__main__":
     unittest.main()

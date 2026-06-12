@@ -501,6 +501,60 @@ def parse_requirements(text):
     return out
 
 
+def parse_pyproject(text):
+    """Return [(name, spec, line)] from a pyproject.toml: PEP 621
+    [project].dependencies + [project.optional-dependencies], and Poetry
+    [tool.poetry.dependencies] + [tool.poetry.group.<g>.dependencies]. Uses
+    stdlib tomllib (lazy import; returns [] if unavailable — the agent gates on
+    python>=3.11). tomllib discards line numbers, so each dependency's line is
+    resolved by a best-effort first-occurrence scan for its name (one
+    declaration per line assumed, consistent with the csproj/npm parsers)."""
+    try:
+        import tomllib
+    except ImportError:
+        return []
+    try:
+        data = tomllib.loads(text)
+    except (ValueError, TypeError):
+        return []
+    lines = text.splitlines()
+
+    def line_of(token):
+        for i, ln in enumerate(lines, start=1):
+            if token in ln:
+                return i
+        return 1
+
+    out = []
+    proj = data.get("project") or {}
+    pep621 = list(proj.get("dependencies") or [])
+    for grp in (proj.get("optional-dependencies") or {}).values():
+        pep621.extend(grp or [])
+    for dep in pep621:
+        ns = _pypi_pep508_name_spec(dep)
+        if ns is not None:
+            out.append((ns[0], ns[1], line_of(ns[0])))
+
+    poetry = (data.get("tool") or {}).get("poetry") or {}
+
+    def poetry_table(tbl):
+        for name, val in (tbl or {}).items():
+            if name.lower() == "python":
+                continue
+            if isinstance(val, str):
+                spec = val
+            elif isinstance(val, dict):
+                spec = val.get("version", "")
+            else:
+                spec = ""
+            out.append((name, spec, line_of(name)))
+
+    poetry_table(poetry.get("dependencies"))
+    for grp in (poetry.get("group") or {}).values():
+        poetry_table(grp.get("dependencies"))
+    return out
+
+
 # --- source collectors (filled in Tasks 3-5) -------------------------------
 
 # --- source: github-actions -------------------------------------------------

@@ -1707,5 +1707,60 @@ class PyPIScopeTest(unittest.TestCase):
         self.assertEqual(rq, set())
 
 
+class PyPIWiringTest(unittest.TestCase):
+    """Drives the engine as a subprocess against an on-disk tree with a recorded
+    pypi fixture, proving collect_findings wires pypi in and that a SOURCE-only
+    change pulls in its unit's pyproject.toml."""
+    def _tree(self, d, requirements=False):
+        root = pathlib.Path(d)
+        (root / "pkg/app").mkdir(parents=True)
+        (root / "pkg/app/module.py").write_text("x = 1\n")
+        if requirements:
+            (root / "pkg/app/requirements.txt").write_text("requests==2.20.0\n")
+        else:
+            (root / "pkg/app/pyproject.toml").write_text(
+                '[project]\nname = "app"\ndependencies = [\n  "requests==2.20.0",\n]\n')
+        fx = root / "registry/pypi"
+        fx.mkdir(parents=True)
+        (fx / "requests.json").write_text(json.dumps({
+            "info": {"version": "2.31.0"},
+            "releases": {"2.20.0": [{"yanked": False}],
+                         "2.28.1": [{"yanked": False}],
+                         "2.31.0": [{"yanked": False}]}}))
+        return root
+
+    def _run(self, root, changed):
+        with tempfile.TemporaryDirectory() as t:
+            files = pathlib.Path(t) / "files.txt"
+            lines = pathlib.Path(t) / "lines.txt"
+            files.write_text("".join(c + "\n" for c in changed))
+            lines.write_text("Changed lines:\n")
+            out = subprocess.run(
+                [sys.executable, str(ENGINE), "--root", str(root),
+                 "--changed-files-from", str(files),
+                 "--changed-lines-from", str(lines),
+                 "--registry-fixtures", str(root / "registry")],
+                capture_output=True, text=True, check=True)
+            return [f for f in json.loads(out.stdout) if f["source"] == "pypi"]
+
+    def test_source_only_change_pulls_in_pyproject(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = self._tree(d)
+            pypi = self._run(root, ["pkg/app/module.py"])
+            self.assertEqual(len(pypi), 1)
+            self.assertEqual(pypi[0]["item"], "requests")
+            self.assertEqual(pypi[0]["current"], "2.20.0")
+            self.assertEqual(pypi[0]["latest_ga"], "2.31.0")
+            self.assertEqual(pypi[0]["target"], "2.31.0")  # untouched -> nearest in major 2
+
+    def test_source_only_change_pulls_in_requirements(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = self._tree(d, requirements=True)
+            pypi = self._run(root, ["pkg/app/module.py"])
+            self.assertEqual(len(pypi), 1)
+            self.assertEqual(pypi[0]["file"], "pkg/app/requirements.txt")
+            self.assertEqual(pypi[0]["item"], "requests")
+
+
 if __name__ == "__main__":
     unittest.main()

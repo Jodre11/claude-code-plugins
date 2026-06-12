@@ -2,8 +2,9 @@
 """housekeeper-freshness — deterministic dependency/version freshness engine.
 
 Emits a JSON array of stale-version tuples for the code-review-suite
-housekeeper specialist. Pure-stdlib. Source classes in this slice:
-github-actions, runner, npm. See agents/housekeeper-reviewer.md.
+housekeeper specialist. Pure-stdlib (pyproject parsing needs tomllib, 3.11+).
+Source classes: github-actions, runner, npm, nuget, docker, pypi. See
+agents/housekeeper-reviewer.md.
 """
 import argparse
 import gzip
@@ -1428,8 +1429,11 @@ def collect_findings(root, changed_files, changed_lines, registry):
     all_csprojs = set()
     all_props = set()
     all_dockerfiles = set()
+    all_pyprojects = set()
+    all_requirements = set()
     for dirpath, dirs, names in os.walk(root):
-        for prune in ("node_modules", "bin", "obj"):
+        for prune in ("node_modules", "bin", "obj",
+                      ".venv", "__pycache__", ".tox", ".eggs"):
             if prune in dirs:
                 dirs.remove(prune)
         if "package.json" in names:
@@ -1443,6 +1447,10 @@ def collect_findings(root, changed_files, changed_lines, registry):
                 all_props.add(rel)
             if _is_dockerfile(rel):
                 all_dockerfiles.add(rel)
+            if nm == "pyproject.toml":
+                all_pyprojects.add(rel)
+            elif nm.startswith("requirements") and nm.endswith(".txt"):
+                all_requirements.add(rel)
     npm_roots = npm_scope_roots(changed_files, all_pkgs)
     npm_text = {p: read(p) for p in npm_roots}
     npm_text = {p: t for p, t in npm_text.items() if t is not None}
@@ -1463,12 +1471,20 @@ def collect_findings(root, changed_files, changed_lines, registry):
     dockerfile_text = {p: read(p) for p in docker_roots}
     dockerfile_text = {p: t for p, t in dockerfile_text.items() if t is not None}
 
+    pypi_pyprojects, pypi_requirements = pypi_scope_roots(
+        changed_files, all_pyprojects, all_requirements)
+    pyproject_text = {p: read(p) for p in pypi_pyprojects}
+    pyproject_text = {p: t for p, t in pyproject_text.items() if t is not None}
+    requirements_text = {p: read(p) for p in pypi_requirements}
+    requirements_text = {p: t for p, t in requirements_text.items() if t is not None}
+
     findings = []
     findings += collect_github_actions(changed_files, workflow_text, changed_lines, registry)
     findings += collect_runners(changed_files, workflow_text, changed_lines)
     findings += collect_npm(npm_text, changed_lines, registry)
     findings += collect_nuget(csproj_text, props_text, changed_lines, registry)
     findings += collect_docker(dockerfile_text, changed_lines, registry)
+    findings += collect_pypi(pyproject_text, requirements_text, changed_lines, registry)
     # Deterministic ordering for hash stability.
     findings.sort(key=lambda f: (f["file"], f["line"], f["source"], f["item"]))
     return findings

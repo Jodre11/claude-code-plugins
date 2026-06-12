@@ -527,10 +527,14 @@ def parse_pyproject(text):
 
     out = []
     proj = data.get("project") or {}
-    pep621 = list(proj.get("dependencies") or [])
+    proj_deps = proj.get("dependencies")
+    pep621 = list(proj_deps) if isinstance(proj_deps, list) else []
     for grp in (proj.get("optional-dependencies") or {}).values():
-        pep621.extend(grp or [])
+        if isinstance(grp, list):
+            pep621.extend(grp)
     for dep in pep621:
+        if not isinstance(dep, str):
+            continue
         ns = _pypi_pep508_name_spec(dep)
         if ns is not None:
             out.append((ns[0], ns[1], line_of(ns[0])))
@@ -546,6 +550,8 @@ def parse_pyproject(text):
             elif isinstance(val, dict):
                 spec = val.get("version", "")
             else:
+                # A list-of-inline-tables (multi-platform Poetry constraint) is
+                # intentionally unhandled and degrades to no-finding.
                 spec = ""
             out.append((name, spec, line_of(name)))
 

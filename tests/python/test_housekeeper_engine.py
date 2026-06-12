@@ -1410,6 +1410,26 @@ class PyPIProjectParseTest(unittest.TestCase):
     def test_empty_or_no_deps_returns_empty(self):
         self.assertEqual(self.m.parse_pyproject('[project]\nname = "x"\n'), [])
 
+    def test_non_string_pep621_dep_is_skipped_not_raised(self):
+        text = (
+            "[project]\n"
+            "dependencies = [\n"
+            '  "requests>=2.0",\n'
+            "  123,\n"
+            "]\n"
+        )
+        out = self.m.parse_pyproject(text)
+        self.assertEqual(out, [("requests", ">=2.0", 3)])
+
+    def test_string_valued_optional_group_does_not_explode(self):
+        text = (
+            "[project]\n"
+            'name = "x"\n'
+            "[project.optional-dependencies]\n"
+            'dev = "pytest"\n'
+        )
+        self.assertEqual(self.m.parse_pyproject(text), [])
+
 
 if __name__ == "__main__":
     unittest.main()

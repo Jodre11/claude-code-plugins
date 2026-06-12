@@ -1486,5 +1486,119 @@ class PyPIRegistryTest(unittest.TestCase):
             self.assertIsNone(reg.pypi_releases("requests"))
 
 
+PYPI_REL = {
+    "2.20.0": [{"yanked": False}],
+    "2.28.1": [{"yanked": False}],
+    "2.31.0": [{"yanked": False}],
+    "3.0.0": [{"yanked": False}],
+    "2.99.0": [{"yanked": True, "yanked_reason": "broken wheel"}],
+}
+
+
+class PyPICollectTest(unittest.TestCase):
+    def setUp(self):
+        self.m = load_engine()
+
+    def _reg(self, releases):
+        reg = self.m.Registry(fixtures_dir=None)
+        reg.pypi_releases = lambda project: releases
+        return reg
+
+    def test_touched_line_targets_latest_ga(self):
+        reg = self._reg(PYPI_REL)
+        out = self.m.collect_pypi(
+            {}, {"requirements.txt": "requests==2.20.0\n"},
+            {"requirements.txt": {1}}, reg)
+        self.assertEqual(len(out), 1)
+        f = out[0]
+        self.assertEqual((f["source"], f["item"], f["current"], f["latest_ga"],
+                          f["target"], f["file"], f["line"]),
+                         ("pypi", "requests", "2.20.0", "3.0.0", "3.0.0",
+                          "requirements.txt", 1))
+        self.assertIsNone(f["health"])
+        self.assertIsNone(f["licence_current"])
+
+    def test_untouched_line_targets_nearest_in_major(self):
+        reg = self._reg(PYPI_REL)
+        out = self.m.collect_pypi(
+            {}, {"requirements.txt": "requests==2.20.0\n"},
+            {"requirements.txt": set()}, reg)
+        self.assertEqual(out[0]["target"], "2.31.0")  # nearest in major 2
+        self.assertEqual(out[0]["latest_ga"], "3.0.0")
+
+    def test_yanked_release_excluded_from_target(self):
+        # latest non-yanked GA is 3.0.0; 2.99.0 (yanked) must not be the target.
+        reg = self._reg(PYPI_REL)
+        out = self.m.collect_pypi(
+            {}, {"requirements.txt": "requests==2.20.0\n"},
+            {"requirements.txt": {1}}, reg)
+        self.assertEqual(out[0]["latest_ga"], "3.0.0")
+        self.assertEqual(out[0]["target"], "3.0.0")
+
+    def test_yanked_current_emits_health_rider(self):
+        reg = self._reg(PYPI_REL)
+        out = self.m.collect_pypi(
+            {}, {"requirements.txt": "requests==2.99.0\n"},
+            {"requirements.txt": {1}}, reg)
+        self.assertEqual(len(out), 1)
+        f = out[0]
+        self.assertEqual(f["health"], {"state": "yanked", "detail": "broken wheel"})
+        self.assertEqual(f["current"], "2.99.0")
+        self.assertEqual(f["target"], "3.0.0")  # stale AND yanked -> upgrade target
+
+    def test_current_latest_but_yanked_is_pure_health(self):
+        rel = {"3.0.0": [{"yanked": True, "yanked_reason": "security"}]}
+        reg = self._reg(rel)
+        # 3.0.0 is the only release and it is yanked -> no GA latest -> skip.
+        out = self.m.collect_pypi(
+            {}, {"requirements.txt": "requests==3.0.0\n"},
+            {"requirements.txt": {1}}, reg)
+        self.assertEqual(out, [])
+
+    def test_pure_health_when_current_is_latest_ga_but_yanked(self):
+        rel = {"2.0.0": [{"yanked": False}],
+               "3.0.0": [{"yanked": True, "yanked_reason": "bad"}]}
+        # current 3.0.0 is yanked (health) but the latest NON-yanked GA is 2.0.0,
+        # which is not newer -> not stale -> pure-health, target == current.
+        reg = self._reg(rel)
+        out = self.m.collect_pypi(
+            {}, {"requirements.txt": "requests==3.0.0\n"},
+            {"requirements.txt": {1}}, reg)
+        self.assertEqual(len(out), 1)
+        self.assertEqual(out[0]["health"]["state"], "yanked")
+        self.assertEqual(out[0]["target"], "3.0.0")
+
+    def test_not_stale_emits_nothing(self):
+        reg = self._reg(PYPI_REL)
+        out = self.m.collect_pypi(
+            {}, {"requirements.txt": "requests==3.0.0\n"},
+            {"requirements.txt": {1}}, reg)
+        self.assertEqual(out, [])
+
+    def test_registry_miss_emits_nothing(self):
+        reg = self._reg(None)
+        out = self.m.collect_pypi(
+            {}, {"requirements.txt": "requests==2.20.0\n"},
+            {"requirements.txt": {1}}, reg)
+        self.assertEqual(out, [])
+
+    def test_range_and_url_specs_skipped(self):
+        reg = self._reg(PYPI_REL)
+        text = "requests>=2.0,<3\nfoo @ git+https://x/y.git\n"
+        out = self.m.collect_pypi({}, {"requirements.txt": text},
+                                  {"requirements.txt": {1, 2}}, reg)
+        self.assertEqual(out, [])
+
+    def test_pyproject_source_routed_through_collector(self):
+        reg = self._reg(PYPI_REL)
+        text = ('[project]\ndependencies = [\n  "requests==2.20.0",\n]\n')
+        out = self.m.collect_pypi({"pyproject.toml": text}, {},
+                                  {"pyproject.toml": {3}}, reg)
+        self.assertEqual(len(out), 1)
+        self.assertEqual(out[0]["item"], "requests")
+        self.assertEqual(out[0]["file"], "pyproject.toml")
+        self.assertEqual(out[0]["line"], 3)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -1288,6 +1288,71 @@ def collect_docker(dockerfile_text, changed_lines, registry):
     return findings
 
 
+def _pypi_yanked(records):
+    """True if a release's file records exist and are ALL yanked."""
+    return bool(records) and all(r.get("yanked") for r in records)
+
+
+def _pypi_yank_reason(records):
+    """First non-empty yanked_reason among a release's records, or ''."""
+    for r in records or []:
+        if r.get("yanked") and r.get("yanked_reason"):
+            return r["yanked_reason"]
+    return ""
+
+
+def collect_pypi(pyproject_text, requirements_text, changed_lines, registry):
+    """pyproject_text / requirements_text map each in-scope manifest path -> its
+    content. Emits a tuple per dependency that is stale OR yanked-current,
+    comparing only non-yanked GA releases for the target. Licence is null this
+    slice."""
+    units = []
+    for path, text in sorted(pyproject_text.items()):
+        units.append((path, parse_pyproject(text)))
+    for path, text in sorted(requirements_text.items()):
+        units.append((path, parse_requirements(text)))
+
+    findings = []
+    for path, deps in units:
+        touched = changed_lines.get(path, set())
+        for name, spec, line in deps:
+            current = pypi_strip_constraint(spec)
+            if current is None:
+                continue
+            releases = registry.pypi_releases(name)
+            if not releases:
+                continue
+            non_yanked = [v for v in releases if not _pypi_yanked(releases[v])]
+            latest = pypi_latest_ga(non_yanked)
+            if not latest:
+                continue
+            health = None
+            cur_records = releases.get(current)
+            if cur_records is not None and _pypi_yanked(cur_records):
+                health = {"state": "yanked",
+                          "detail": _pypi_yank_reason(cur_records)}
+            stale = pypi_compare(latest, current) > 0
+            if stale:
+                if line in touched:
+                    target = latest
+                else:
+                    target = pypi_nearest_in_major(current, non_yanked)
+                    if pypi_compare(target, current) <= 0:
+                        stale = False
+            if not stale and health is None:
+                continue
+            if not stale:
+                target = current
+            findings.append({
+                "source": "pypi", "item": name,
+                "current": current, "latest_ga": latest, "target": target,
+                "file": path, "line": line,
+                "licence_current": None, "licence_latest": None,
+                "health": health,
+            })
+    return findings
+
+
 def collect_findings(root, changed_files, changed_lines, registry):
     def read(path):
         try:

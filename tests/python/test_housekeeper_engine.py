@@ -1762,5 +1762,30 @@ class PyPIWiringTest(unittest.TestCase):
             self.assertEqual(pypi[0]["item"], "requests")
 
 
+class PyPIOnDiskFixtureTest(unittest.TestCase):
+    def test_source_only_change_surfaces_pyproject_finding(self):
+        fixtures = REPO / "tests/fixtures/static-analysis/housekeeper-pypi"
+        if not fixtures.exists():
+            self.skipTest("housekeeper-pypi fixture not yet created")
+        with tempfile.TemporaryDirectory() as d:
+            files = pathlib.Path(d) / "files.txt"
+            lines = pathlib.Path(d) / "lines.txt"
+            files.write_text("pkg/app/module.py\n")  # source only, no manifest
+            lines.write_text("Changed lines:\n")
+            env = dict(os.environ,
+                       HOUSEKEEPER_REGISTRY_FIXTURES=str(fixtures / "registry"))
+            out = subprocess.run(
+                [sys.executable, str(ENGINE), "--root", str(fixtures),
+                 "--changed-files-from", str(files),
+                 "--changed-lines-from", str(lines)],
+                capture_output=True, text=True, check=True, env=env)
+            pypi = [f for f in json.loads(out.stdout) if f["source"] == "pypi"]
+            self.assertEqual(len(pypi), 1)
+            self.assertEqual(pypi[0]["item"], "requests")
+            self.assertEqual(pypi[0]["file"], "pkg/app/pyproject.toml")
+            self.assertEqual(pypi[0]["current"], "2.20.0")
+            self.assertEqual(pypi[0]["target"], "2.31.0")  # untouched -> nearest in major
+
+
 if __name__ == "__main__":
     unittest.main()

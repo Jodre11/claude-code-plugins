@@ -1599,6 +1599,37 @@ class PyPICollectTest(unittest.TestCase):
         self.assertEqual(out[0]["file"], "pyproject.toml")
         self.assertEqual(out[0]["line"], 3)
 
+    def test_empty_records_release_treated_as_non_yanked(self):
+        rel = {"2.20.0": [{"yanked": False}], "2.31.0": []}
+        reg = self._reg(rel)
+        out = self.m.collect_pypi(
+            {}, {"requirements.txt": "requests==2.20.0\n"},
+            {"requirements.txt": {1}}, reg)
+        self.assertEqual(len(out), 1)
+        self.assertEqual(out[0]["latest_ga"], "2.31.0")  # empty-records 2.31.0 still eligible
+        self.assertEqual(out[0]["target"], "2.31.0")
+
+    def test_current_absent_from_map_keeps_health_none(self):
+        # current pin not present as a release key -> no health claim, but stale.
+        reg = self._reg(PYPI_REL)
+        out = self.m.collect_pypi(
+            {}, {"requirements.txt": "requests==2.10.0\n"},
+            {"requirements.txt": {1}}, reg)
+        self.assertEqual(len(out), 1)
+        self.assertIsNone(out[0]["health"])
+        self.assertEqual(out[0]["current"], "2.10.0")
+        self.assertEqual(out[0]["target"], "3.0.0")
+
+    def test_same_dep_two_manifests_emits_two(self):
+        reg = self._reg(PYPI_REL)
+        out = self.m.collect_pypi(
+            {}, {"requirements.txt": "requests==2.20.0\n",
+                 "requirements-dev.txt": "requests==2.20.0\n"},
+            {"requirements.txt": {1}, "requirements-dev.txt": {1}}, reg)
+        self.assertEqual(len(out), 2)
+        self.assertEqual({f["file"] for f in out},
+                         {"requirements.txt", "requirements-dev.txt"})
+
 
 if __name__ == "__main__":
     unittest.main()

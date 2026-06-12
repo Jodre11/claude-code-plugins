@@ -1289,7 +1289,8 @@ def collect_docker(dockerfile_text, changed_lines, registry):
 
 
 def _pypi_yanked(records):
-    """True if a release's file records exist and are ALL yanked."""
+    """True if a release's file records exist and are ALL yanked. An empty
+    records list is treated as NOT yanked (eligible), the fail-safe direction."""
     return bool(records) and all(r.get("yanked") for r in records)
 
 

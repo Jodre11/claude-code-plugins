@@ -251,7 +251,7 @@ class Registry:
                     doc = json.load(fh)
             except (OSError, ValueError):
                 return None
-            return doc.get("releases")
+            return (doc or {}).get("releases")
         doc = self.fetch("pypi", project,
                          "https://pypi.org/pypi/%s/json" % project)
         if not doc:

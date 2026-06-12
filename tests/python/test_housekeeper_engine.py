@@ -1469,6 +1469,22 @@ class PyPIRegistryTest(unittest.TestCase):
             reg = self.m.Registry(fixtures_dir=d)
             self.assertIsNone(reg.pypi_releases("nope"))
 
+    def test_fixture_without_releases_key_returns_none(self):
+        with tempfile.TemporaryDirectory() as d:
+            fx = pathlib.Path(d) / "pypi"
+            fx.mkdir()
+            (fx / "requests.json").write_text(json.dumps({"info": {"version": "2.31.0"}}))
+            reg = self.m.Registry(fixtures_dir=d)
+            self.assertIsNone(reg.pypi_releases("requests"))
+
+    def test_malformed_fixture_returns_none(self):
+        with tempfile.TemporaryDirectory() as d:
+            fx = pathlib.Path(d) / "pypi"
+            fx.mkdir()
+            (fx / "requests.json").write_text("{not json")
+            reg = self.m.Registry(fixtures_dir=d)
+            self.assertIsNone(reg.pypi_releases("requests"))
+
 
 if __name__ == "__main__":
     unittest.main()

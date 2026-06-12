@@ -29,3 +29,8 @@ fixtures:
     type: synthetic
     description: Two-finding NuGet set (Serilog 2.10.0->4.0.0 via CPM resolution; WindowsAzure.Storage 9.3.3 current-but-deprecated pure-health) via recorded flat-container + registration fixtures. Slice-2 baseline.
     tags: [smoke, deterministic]
+  - id: housekeeper-docker-stale-base
+    agent: housekeeper-reviewer
+    type: synthetic
+    description: One-finding Docker base-image set (FROM node:18.20.0-alpine pulled in via Anchor A by a .cs-only change; nearest-in-major target 18.20.4, latest GA 22.3.0 in the alpine lineage) via recorded OCI v2 tag fixture. Slice-3 baseline.
+    tags: [smoke, deterministic]

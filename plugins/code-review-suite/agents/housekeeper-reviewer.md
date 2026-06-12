@@ -23,7 +23,7 @@ Severity is uniform `Suggestion` ("staleness is a smell, not a defect"). Every f
 
 ## Tool resolution
 
-Run `python3 --version`. If absent, emit `Skipped — python3 not available on PATH.` and stop. The engine ships in the plugin's `bin/` directory (on PATH as `housekeeper-freshness`); if `command -v housekeeper-freshness` is empty, emit `Skipped — housekeeper-freshness not available on PATH.` and stop.
+Run `python3 --version`. If absent, emit `Skipped — python3 not available on PATH.` and stop. Then confirm TOML parsing is available (PyPI manifests need it): run `python3 -c "import tomllib"`. If it exits non-zero, emit `Skipped — python3 ≥3.11 required (PyPI TOML parsing).` and stop. The engine ships in the plugin's `bin/` directory (on PATH as `housekeeper-freshness`); if `command -v housekeeper-freshness` is empty, emit `Skipped — housekeeper-freshness not available on PATH.` and stop.
 
 ## Tool invocation
 
@@ -51,7 +51,7 @@ For each tuple, emit one finding:
 - **File:** `<file>:<line>` from the tuple.
 - **Confidence:** `100`.
 - **Severity:** `Suggestion`.
-- **Rule:** `housekeeper/<source>` where `<source>` is the tuple's `source` (`github-actions`, `runner`, `npm`, `nuget`, or `docker`).
+- **Rule:** `housekeeper/<source>` where `<source>` is the tuple's `source` (`github-actions`, `runner`, `npm`, `nuget`, `docker`, or `pypi`).
 - **Description:** `<item> is at <current>; latest GA is <latest_ga>.` If `licence_current` and `licence_latest` differ and both are non-null, append ` Licence changes <licence_current> → <licence_latest>.` If the tuple's `health` is non-null, append ` Marked <health.state> in the registry: <health.detail>.`
 - **Suggested fix:** `Upgrade <item> to <target>.` For `github-actions` SHA-pins, add `Preserve the SHA pin: update both the pinned commit and the # <target> comment.` Never suggest unpinning. **When the finding is pure-health** (`health` is non-null and `target` equals `current`), the Suggested fix is instead `Review: <item> is current but marked <health.state>.` (no upgrade target exists).
 
@@ -69,7 +69,7 @@ After rendering, clean up the two temp files.
 
 ### Worked example
 
-For a diff that changes `.github/workflows/ci.yml` (a `uses: actions/checkout@v3` on line 12 where latest GA is `v4.2.1`, and a `runs-on: ubuntu-22.04` on line 15), `package.json` (a `"react": "^18.2.0"` on touched line 4 where latest GA is `19.0.0`), and `Directory.Packages.props` (a `<PackageVersion Include="Serilog" Version="2.10.0" />` on touched line 6 where latest GA is `4.0.0`, plus a current-but-deprecated `Newtonsoft.Json` at `13.0.3`), and `Dockerfile` (a `FROM node:18.20.0` on touched line 1 where latest GA is `22.3.0`), the canonical §7 output is:
+For a diff that changes `.github/workflows/ci.yml` (a `uses: actions/checkout@v3` on line 12 where latest GA is `v4.2.1`, and a `runs-on: ubuntu-22.04` on line 15), `package.json` (a `"react": "^18.2.0"` on touched line 4 where latest GA is `19.0.0`), and `Directory.Packages.props` (a `<PackageVersion Include="Serilog" Version="2.10.0" />` on touched line 6 where latest GA is `4.0.0`, plus a current-but-deprecated `Newtonsoft.Json` at `13.0.3`), and `Dockerfile` (a `FROM node:18.20.0` on touched line 1 where latest GA is `22.3.0`), and `pyproject.toml` (a `requests==2.20.0` on untouched line 4 where latest GA is `2.31.0`, plus a yanked-current `urllib3==2.0.6`), the canonical §7 output is:
 
 ```
 ## Housekeeper Findings
@@ -121,6 +121,22 @@ For a diff that changes `.github/workflows/ci.yml` (a `uses: actions/checkout@v3
 - **Rule:** housekeeper/docker
 - **Description:** node is at 18.20.0; latest GA is 22.3.0.
 - **Suggested fix:** Upgrade node to 22.3.0.
+
+### Finding — requests behind latest GA
+- **File:** pyproject.toml:4
+- **Confidence:** 100
+- **Severity:** Suggestion
+- **Rule:** housekeeper/pypi
+- **Description:** requests is at 2.20.0; latest GA is 2.31.0.
+- **Suggested fix:** Upgrade requests to 2.28.1.
+
+### Finding — urllib3 marked yanked
+- **File:** pyproject.toml:5
+- **Confidence:** 100
+- **Severity:** Suggestion
+- **Rule:** housekeeper/pypi
+- **Description:** urllib3 is at 2.0.6; latest GA is 2.0.6. Marked yanked in the registry: CVE-2023-45803.
+- **Suggested fix:** Review: urllib3 is current but marked yanked.
 ```
 
 The heading is `### Finding — <title>` (em-dash, U+2014). The bullet field names are exactly `File`, `Confidence`, `Severity`, `Rule`, `Description`, `Suggested fix` — do not substitute synonyms, do not group findings under a `### <Severity>` sub-heading, and do not use a prose-block or `---`-separated layout; the harness parser pins to the §7 names and per-finding `### Finding` blocks. Severity is always `Suggestion`; confidence is always `100`.

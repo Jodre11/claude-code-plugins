@@ -1346,7 +1346,7 @@ test_housekeeping_trigger_mirrors_engine_scope() {
     # by the existing prose-parity test, not here).
     local ext missing
     missing=""
-    for ext in .cs .fs .vb .razor .cshtml .ts .tsx .js .jsx .mjs .cjs .mts .cts .vue .svelte; do
+    for ext in .cs .fs .vb .razor .cshtml .ts .tsx .js .jsx .mjs .cjs .mts .cts .vue .svelte .py .pyi; do
         # Present in the trigger prose?
         if ! grep -qF "\`$ext\`" <<<"$bullet"; then
             missing="$missing prose:$ext"

@@ -486,7 +486,9 @@ def parse_requirements(text):
         line = raw.strip()
         if not line or line.startswith("#") or line.startswith("-"):
             continue
-        # Strip an inline comment (' #...'); keep '#' that is not preceded by ws.
+        # Strip an inline comment (' #...'); only a space-preceded '#' is treated
+        # as a comment (a tab-preceded '#' is left in place — such a line then
+        # fails the floor regex and drops, which is fail-safe).
         if " #" in line:
             line = line.split(" #", 1)[0].strip()
         # Skip bare URL/VCS/path entries; the splitter only drops 'name @ url'.

@@ -236,6 +236,28 @@ class Registry:
             return None
         return (doc or {}).get("token") or (doc or {}).get("access_token")
 
+    # --- pypi (JSON API: releases map) -------------------------------------
+
+    def pypi_releases(self, project):
+        """Return the {version: [file-records]} releases map for a PyPI project,
+        or None on any miss. Fixture mode reads <fixtures_dir>/pypi/<slug>.json
+        (full JSON shape, slug = PEP 503 normalised name); live mode GETs
+        https://pypi.org/pypi/<project>/json."""
+        if self.fixtures_dir:
+            slug = _pypi_normalize(project)
+            path = os.path.join(self.fixtures_dir, "pypi", slug + ".json")
+            try:
+                with open(path, encoding="utf-8") as fh:
+                    doc = json.load(fh)
+            except (OSError, ValueError):
+                return None
+            return doc.get("releases")
+        doc = self.fetch("pypi", project,
+                         "https://pypi.org/pypi/%s/json" % project)
+        if not doc:
+            return None
+        return doc.get("releases")
+
 
 # --- version core ----------------------------------------------------------
 
@@ -433,6 +455,11 @@ _PYPI_FLOOR_RE = re.compile(
     r"(?:\+[a-z0-9]+(?:[-_.][a-z0-9]+)*)?)\s*$",
     re.IGNORECASE,
 )
+
+
+def _pypi_normalize(name):
+    """PEP 503 project-name normalisation: lowercase, runs of [-_.] -> '-'."""
+    return re.sub(r"[-_.]+", "-", name).lower()
 
 
 def pypi_strip_constraint(spec):

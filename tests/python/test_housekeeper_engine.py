@@ -1431,5 +1431,44 @@ class PyPIProjectParseTest(unittest.TestCase):
         self.assertEqual(self.m.parse_pyproject(text), [])
 
 
+class PyPIRegistryTest(unittest.TestCase):
+    def setUp(self):
+        self.m = load_engine()
+
+    def test_normalize_pep503(self):
+        self.assertEqual(self.m._pypi_normalize("Flask-SQLAlchemy"), "flask-sqlalchemy")
+        self.assertEqual(self.m._pypi_normalize("zope.interface"), "zope-interface")
+        self.assertEqual(self.m._pypi_normalize("ruamel_yaml"), "ruamel-yaml")
+
+    def test_fixture_override_reads_releases(self):
+        with tempfile.TemporaryDirectory() as d:
+            fx = pathlib.Path(d) / "pypi"
+            fx.mkdir()
+            (fx / "requests.json").write_text(json.dumps({
+                "info": {"version": "2.31.0"},
+                "releases": {"2.28.1": [{"yanked": False}],
+                             "2.31.0": [{"yanked": False}]},
+            }))
+            reg = self.m.Registry(fixtures_dir=d)
+            rel = reg.pypi_releases("requests")
+            self.assertIn("2.31.0", rel)
+            self.assertEqual(rel["2.28.1"], [{"yanked": False}])
+
+    def test_fixture_override_normalizes_slug(self):
+        with tempfile.TemporaryDirectory() as d:
+            fx = pathlib.Path(d) / "pypi"
+            fx.mkdir()
+            (fx / "flask-sqlalchemy.json").write_text(json.dumps({
+                "releases": {"3.0.0": [{"yanked": False}]}}))
+            reg = self.m.Registry(fixtures_dir=d)
+            self.assertIn("3.0.0", reg.pypi_releases("Flask-SQLAlchemy"))
+
+    def test_fixture_miss_returns_none(self):
+        with tempfile.TemporaryDirectory() as d:
+            (pathlib.Path(d) / "pypi").mkdir()
+            reg = self.m.Registry(fixtures_dir=d)
+            self.assertIsNone(reg.pypi_releases("nope"))
+
+
 if __name__ == "__main__":
     unittest.main()

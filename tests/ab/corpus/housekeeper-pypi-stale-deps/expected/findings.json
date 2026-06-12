@@ -1,0 +1,1 @@
+[{"file":"pkg/app/pyproject.toml","line":5,"rule_id":"housekeeper/pypi","severity":"Suggestion","confidence":100},{"file":"pkg/app/pyproject.toml","line":6,"rule_id":"housekeeper/pypi","severity":"Suggestion","confidence":100}]

@@ -34,3 +34,8 @@ fixtures:
     type: synthetic
     description: One-finding Docker base-image set (FROM node:18.20.0-alpine pulled in via Anchor A by a .cs-only change; nearest-in-major target 18.20.4, latest GA 22.3.0 in the alpine lineage) via recorded OCI v2 tag fixture. Slice-3 baseline.
     tags: [smoke, deterministic]
+  - id: housekeeper-pypi-stale-deps
+    agent: housekeeper-reviewer
+    type: synthetic
+    description: Two-finding PyPI set (requests 2.20.0->2.31.0 stale via Anchor pull-in by a .py-only change; urllib3 2.0.6 stale-and-yanked health rider) via recorded PyPI JSON fixtures. Slice-4 baseline.
+    tags: [smoke, deterministic]

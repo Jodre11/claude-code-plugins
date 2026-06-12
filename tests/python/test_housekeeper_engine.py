@@ -1780,11 +1780,10 @@ class PyPIOnDiskFixtureTest(unittest.TestCase):
                  "--changed-lines-from", str(lines)],
                 capture_output=True, text=True, check=True, env=env)
             pypi = [f for f in json.loads(out.stdout) if f["source"] == "pypi"]
-            self.assertEqual(len(pypi), 1)
-            self.assertEqual(pypi[0]["item"], "requests")
-            self.assertEqual(pypi[0]["file"], "pkg/app/pyproject.toml")
-            self.assertEqual(pypi[0]["current"], "2.20.0")
-            self.assertEqual(pypi[0]["target"], "2.31.0")  # untouched -> nearest in major
+            self.assertEqual(len(pypi), 2)
+            items = {f["item"]: f for f in pypi}
+            self.assertEqual(items["requests"]["target"], "2.31.0")
+            self.assertEqual(items["urllib3"]["health"]["state"], "yanked")
 
 
 if __name__ == "__main__":

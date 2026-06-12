@@ -1631,5 +1631,59 @@ class PyPICollectTest(unittest.TestCase):
                          {"requirements.txt", "requirements-dev.txt"})
 
 
+class PyPIScopeTest(unittest.TestCase):
+    def setUp(self):
+        self.m = load_engine()
+
+    def test_py_pulls_in_nearest_pyproject(self):
+        pj, rq = self.m.pypi_scope_roots(
+            ["pkg/app/module.py"],
+            {"pyproject.toml", "pkg/app/pyproject.toml"}, set())
+        self.assertEqual(pj, {"pkg/app/pyproject.toml"})
+        self.assertEqual(rq, set())
+
+    def test_pyi_stub_pulls_in_pyproject(self):
+        pj, _ = self.m.pypi_scope_roots(
+            ["pkg/types.pyi"], {"pkg/pyproject.toml"}, set())
+        self.assertEqual(pj, {"pkg/pyproject.toml"})
+
+    def test_directly_changed_pyproject_in_scope(self):
+        pj, _ = self.m.pypi_scope_roots(
+            ["pyproject.toml"], {"pyproject.toml"}, set())
+        self.assertEqual(pj, {"pyproject.toml"})
+
+    def test_directly_changed_requirements_in_scope(self):
+        _, rq = self.m.pypi_scope_roots(
+            ["requirements.txt"], set(), {"requirements.txt"})
+        self.assertEqual(rq, {"requirements.txt"})
+        _, rq2 = self.m.pypi_scope_roots(
+            ["requirements-dev.txt"], set(), {"requirements-dev.txt"})
+        self.assertEqual(rq2, {"requirements-dev.txt"})
+
+    def test_source_with_no_pyproject_falls_back_to_requirements(self):
+        pj, rq = self.m.pypi_scope_roots(
+            ["svc/handler.py"], set(), {"svc/requirements.txt"})
+        self.assertEqual(pj, set())
+        self.assertEqual(rq, {"svc/requirements.txt"})
+
+    def test_pyproject_wins_over_requirements_when_both_present(self):
+        pj, rq = self.m.pypi_scope_roots(
+            ["svc/handler.py"],
+            {"svc/pyproject.toml"}, {"svc/requirements.txt"})
+        self.assertEqual(pj, {"svc/pyproject.toml"})
+        self.assertEqual(rq, set())
+
+    def test_non_python_file_pulls_nothing(self):
+        pj, rq = self.m.pypi_scope_roots(
+            ["svc/README.md"], {"svc/pyproject.toml"}, {"svc/requirements.txt"})
+        self.assertEqual((pj, rq), (set(), set()))
+
+    def test_prefix_collision_does_not_cross_sibling_dirs(self):
+        pj, _ = self.m.pypi_scope_roots(
+            ["src/AppTests/test_x.py"],
+            {"src/App/pyproject.toml", "src/AppTests/pyproject.toml"}, set())
+        self.assertEqual(pj, {"src/AppTests/pyproject.toml"})
+
+
 if __name__ == "__main__":
     unittest.main()

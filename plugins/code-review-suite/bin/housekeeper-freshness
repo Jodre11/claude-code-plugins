@@ -1240,6 +1240,58 @@ def docker_scope_roots(changed_files, all_dockerfiles, nuget_csprojs, npm_roots)
     return roots
 
 
+# Source extensions that pull in their nearest-ancestor pyproject.toml (the T1
+# Python solution gate). Mirror in the Step 2.6 trigger prose + sync test.
+_PYPI_SCOPE_SUFFIXES = (".py", ".pyi")
+
+
+def _is_requirements_file(base):
+    """True if a basename is a requirements*.txt pin file."""
+    return base.startswith("requirements") and base.endswith(".txt")
+
+
+def _nearest_ancestor(fdir, manifests):
+    """Deepest manifest whose directory is an ancestor-or-same of fdir, or None."""
+    best = None
+    best_dir = None
+    for man in manifests:
+        mdir = _dirname(man)
+        if _dir_is_ancestor_or_same(mdir, fdir):
+            if best is None or len(mdir) > len(best_dir):
+                best, best_dir = man, mdir
+    return best
+
+
+def pypi_scope_roots(changed_files, all_pyprojects, all_requirements):
+    """Return (in_scope_pyprojects, in_scope_requirements).
+
+    A directly-changed pyproject.toml / requirements*.txt is always in scope. A
+    changed .py/.pyi walks up to its nearest-ancestor pyproject.toml; if none
+    exists, it falls back to its nearest-ancestor requirements*.txt (so a
+    requirements-only project gets the same source-pull-in symmetry)."""
+    pyprojects = set()
+    requirements = set()
+    for f in changed_files:
+        base = f.rsplit("/", 1)[-1]
+        if base == "pyproject.toml" and f in all_pyprojects:
+            pyprojects.add(f)
+            continue
+        if _is_requirements_file(base) and f in all_requirements:
+            requirements.add(f)
+            continue
+        if not f.endswith(_PYPI_SCOPE_SUFFIXES):
+            continue
+        fdir = _dirname(f)
+        pj = _nearest_ancestor(fdir, all_pyprojects)
+        if pj is not None:
+            pyprojects.add(pj)
+            continue
+        rq = _nearest_ancestor(fdir, all_requirements)
+        if rq is not None:
+            requirements.add(rq)
+    return pyprojects, requirements
+
+
 def _docker_split_tag(tag):
     """Split a registry tag into (core, variant) using the same grammar as the
     FROM parser, or None if it is not a concrete M.N.P[.W] tag (so floating /

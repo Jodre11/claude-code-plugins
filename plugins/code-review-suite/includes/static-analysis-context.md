@@ -57,13 +57,11 @@ Skipped — <tool> not available on PATH.
 
 …and stop. Specialists may extend this rule (e.g. ESLint also tries project-local
 `node_modules/.bin/{eslint,biome}` before global) — those extensions stay in the specialist
-file. Do not fall back to bare `/tmp/` or any path outside `$CLAUDE_TEMP_DIR`.
+file. Do not fall back to bare `/tmp/` or any path outside the resolved temp-dir path from the `Use <path> for temporary files.` line.
 
 ## 4. Temp-dir contract
 
-Require `$CLAUDE_TEMP_DIR` from the prompt (the path from `Use <path> for temporary files`). If
-absent, report the omission and stop — never fall back to bare `/tmp/`. All intermediate files
-written by the specialist's tool invocation live under `$CLAUDE_TEMP_DIR`.
+The dispatcher injects a resolved absolute path via the `Use <path> for temporary files.` line in the specialist's prompt. Read the concrete path from that line (e.g. `/tmp/claude-5bf0f026-…/`) and use it directly — it is NOT an environment variable and does not require shell expansion. If the line is absent, report the omission and stop — never fall back to bare `/tmp/`. All intermediate files written by the specialist's tool invocation live under the resolved path.
 
 ## 5. `$CHANGED_LINES` filter
 
@@ -118,7 +116,7 @@ those domains.
 
 ## 9. Cleanup
 
-Remove the tool's intermediate output files from `$CLAUDE_TEMP_DIR` after parsing. Skip cleanup
+Remove the tool's intermediate output files from the resolved temp-dir path after parsing. Skip cleanup
 if the run was aborted (PATH miss, temp-dir absent) — there is nothing to clean.
 
 ## 10. Severity-locked + capped-confidence policy

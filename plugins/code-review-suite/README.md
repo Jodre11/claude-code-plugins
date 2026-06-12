@@ -108,6 +108,7 @@ The review pipeline (`includes/review-pipeline.md`) handles all routing:
 - `ruff` (`brew install ruff`) — optional, only needed for Python projects. For Jupyter notebook support on Ruff < 0.6.0, also install `nbqa` (`pip install nbqa`).
 - `trivy` (`brew install trivy`) — optional, only needed for IaC security analysis. First run on a clean machine fetches the policy DB (~10s slower); subsequent runs are fast.
 - `python3` (≥3.11 for PyPI `pyproject.toml` parsing via `tomllib`) — required for the `housekeeper-reviewer` dependency-freshness engine (`bin/housekeeper-freshness`). Stdlib only; no pip packages. Live runs need outbound HTTPS to npm, PyPI, container registries, and the GitHub API.
+- **Background subagent dispatch:** When the housekeeper runs as a dispatched background subagent (the normal mode in `review-gh-pr`), the host machine must pre-authorise the `housekeeper-freshness` command in `hooks/allow-permissions.sh` and `permissions.allow` (pattern: `Bash(housekeeper-freshness:*)`). Without this, the subagent auto-denies the engine call. The same pattern applies to `ruff`, `trivy`, `eslint`, and `jb` — all static-analysis engine binaries require host-side permission for background dispatch.
 - `playwright-cli` skill — optional, enables visual verification of UI reviewer findings
 
 ## Installation

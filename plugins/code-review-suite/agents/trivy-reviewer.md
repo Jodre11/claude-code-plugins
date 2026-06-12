@@ -34,9 +34,9 @@ Run `trivy --version`. If absent, emit `Skipped — trivy not available on PATH.
 
 ## Tool invocation
 
-The temp-dir contract (`includes/static-analysis-context.md` §4) is satisfied by the literal `Use $CLAUDE_TEMP_DIR for temporary files.` instruction line in your prompt. That line carries the token `$CLAUDE_TEMP_DIR` **unexpanded** — the dispatcher does not substitute the resolved path into the prompt text; Bash expands it from your environment when a command actually runs. Seeing the literal `$CLAUDE_TEMP_DIR` in your prompt is expected and **does** satisfy the contract — do not treat the unexpanded token as a missing temp dir and abort. The contract is violated only if the instruction line is entirely absent.
+The temp-dir contract (`includes/static-analysis-context.md` §4) is satisfied by the `Use <path> for temporary files.` line in your prompt. The dispatcher resolves the absolute path before dispatching — you receive a concrete literal path (e.g. `/tmp/claude-5bf0f026-…/`), not an environment variable. Read the path from that line and use it directly in all Bash commands. If the line is entirely absent from your prompt, report the omission and stop.
 
-Trivy writes its report to stdout, so a temp file is optional: you may stream the JSON directly and parse it inline, or redirect to `$CLAUDE_TEMP_DIR/trivy-config.json` (Bash resolves the path at redirect time). Never invent or fall back to a bare `/tmp/` path.
+Trivy writes its report to stdout, so a temp file is optional: you may stream the JSON directly and parse it inline, or redirect to `<resolved-temp-dir>/trivy-config.json` — substituting the literal path you read from the `Use <path> for temporary files.` line (not a `$`-prefixed variable; the shell will not expand one). Never invent or fall back to a bare `/tmp/` path.
 
 Single invocation across all matched files:
 
@@ -77,7 +77,7 @@ After parsing, intersect each finding's `(file, line)` against `$CHANGED_LINES[<
 
 Every finding emits the literal `Confidence: 100` per §6.
 
-If you redirected trivy's output to `$CLAUDE_TEMP_DIR/trivy-config.json`, clean it up after parsing. If you streamed and parsed inline, there is nothing to clean.
+If you redirected trivy's output to `<resolved-temp-dir>/trivy-config.json`, clean it up after parsing. If you streamed and parsed inline, there is nothing to clean.
 
 ### Worked example
 

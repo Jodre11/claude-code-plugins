@@ -41,7 +41,7 @@ The repo may contain multiple `.sln` files. Determine which solutions are affect
 
 ## Tool invocation
 
-The temp-dir contract (`includes/static-analysis-context.md` §4) is satisfied by the literal `Use $CLAUDE_TEMP_DIR for temporary files.` instruction line in your prompt. That line carries the token `$CLAUDE_TEMP_DIR` **unexpanded** — the dispatcher does not substitute the resolved path into the prompt text; Bash expands it from your environment when a command actually runs. Seeing the literal `$CLAUDE_TEMP_DIR` in your prompt is expected and **does** satisfy the contract — do not treat the unexpanded token as a missing temp dir and abort. The contract is violated only if the instruction line is entirely absent.
+The temp-dir contract (`includes/static-analysis-context.md` §4) is satisfied by the `Use <path> for temporary files.` line in your prompt. The dispatcher resolves the absolute path before dispatching — you receive a concrete literal path (e.g. `/tmp/claude-5bf0f026-…/`), not an environment variable. Read the path from that line and use it directly in all Bash commands. If the line is entirely absent from your prompt, report the omission and stop.
 
 InspectCode writes its report to stdout when invoked with `--stdout`, so **no temp file is needed** — stream the XML directly and parse it inline. For each affected solution:
 

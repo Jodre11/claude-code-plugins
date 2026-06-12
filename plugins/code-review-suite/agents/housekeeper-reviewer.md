@@ -27,21 +27,47 @@ Run `python3 --version`. If absent, emit `Skipped — python3 not available on P
 
 ## Tool invocation
 
-The temp-dir contract (`includes/static-analysis-context.md` §4) is satisfied by the literal `Use $CLAUDE_TEMP_DIR for temporary files.` line in your prompt. That line carries `$CLAUDE_TEMP_DIR` **unexpanded** — Bash expands it from your environment when a command runs. Seeing the literal token is expected and DOES satisfy the contract; do not treat it as a missing temp dir and abort.
+The temp-dir contract (`includes/static-analysis-context.md` §4) is satisfied by the `Use <path> for temporary files.` line in your prompt. The dispatcher resolves the absolute path before dispatching — you receive a concrete literal path (e.g. `/tmp/claude-5bf0f026-…/`), not an environment variable. Read the path from that line and use it directly in all Bash commands. If the line is entirely absent from your prompt, report the omission and stop.
 
-1. Write the changed file list to `$CLAUDE_TEMP_DIR/housekeeper-files.txt`. The authoritative source is the diff:
+Let `<TEMP_DIR>` denote the resolved temp-dir path read from your prompt. **Substitute that literal absolute path wherever `<TEMP_DIR>` appears below — never type the characters `<TEMP_DIR>` (or any `$`-prefixed variable) into a Bash command, and never rely on the shell to expand a variable: shell state does not persist between your separate Bash calls.** Execute each step as a **separate, single-command Bash call** — no `&&`, no `;`, no heredocs, no multi-line command bodies, no loops, no variable assignments.
+
+1. Write the changed file list to `<TEMP_DIR>/housekeeper-files.txt`:
    ```
-   git diff --name-only <diff-args> > $CLAUDE_TEMP_DIR/housekeeper-files.txt
+   git diff --name-only <diff-args> > <TEMP_DIR>/housekeeper-files.txt
    ```
-   Use the diff syntax determined by `$EMPTY_TREE_MODE` (two-arg when true, three-dot when false), as resolved by the base-context procedure. **If that file ends up empty** — no base resolved, or the working tree is not a git repository (e.g. a copied review sandbox) — fall back to the paths named in the `Changed lines:` block of your prompt: each non-blank, non-header entry has the shape `  <path>: <lines>`, so the text before the first colon is a changed file. Write one such path per line to `$CLAUDE_TEMP_DIR/housekeeper-files.txt`. The `Changed lines:` block is the pipeline's authoritative scope input; the engine needs this file list to scan workflows and gate npm solutions, so never run the engine against an empty list when the prompt names changed files.
-2. Write the `Changed lines:` block from your prompt verbatim to `$CLAUDE_TEMP_DIR/housekeeper-lines.txt`.
+   Use the diff syntax determined by `$EMPTY_TREE_MODE` (two-arg when true, three-dot when false), as resolved by the base-context procedure. **If that file ends up empty** — no base resolved, or the working tree is not a git repository — fall back to the paths named in the `Changed lines:` block of your prompt: each non-blank, non-header entry has the shape `  <path>: <lines>`, so the text before the first colon is a changed file. Write one path per line using separate `printf` calls:
+   ```
+   printf '%s\n' 'path/to/file1' > <TEMP_DIR>/housekeeper-files.txt
+   ```
+   ```
+   printf '%s\n' 'path/to/file2' >> <TEMP_DIR>/housekeeper-files.txt
+   ```
+   The `Changed lines:` block is the pipeline's authoritative scope input; the engine needs this file list to scan workflows and gate npm solutions, so never run the engine against an empty list when the prompt names changed files.
+
+2. Write the `Changed lines:` block from your prompt to `<TEMP_DIR>/housekeeper-lines.txt`. Use separate `printf` calls — one per line of the block. Each call is a single `printf '%s\n' '…'` statement writing one entry — never combine multiple entries into one call, never use a loop, never embed real newlines in the command.
+   ```
+   printf '%s\n' '.github/workflows/ci.yml: 12, 15' > <TEMP_DIR>/housekeeper-lines.txt
+   ```
+   ```
+   printf '%s\n' 'package.json: 4' >> <TEMP_DIR>/housekeeper-lines.txt
+   ```
+
 3. Run the engine (live registry mode — no `--registry-fixtures`):
    ```
-   housekeeper-freshness --root . --changed-files-from $CLAUDE_TEMP_DIR/housekeeper-files.txt --changed-lines-from $CLAUDE_TEMP_DIR/housekeeper-lines.txt
+   housekeeper-freshness --root . --changed-files-from <TEMP_DIR>/housekeeper-files.txt --changed-lines-from <TEMP_DIR>/housekeeper-lines.txt
    ```
    It prints a JSON array of stale-version tuples to stdout. Parse it inline.
 
 The engine is the sole source of truth for "what is stale" — it fetches live registry data and never emits a tuple without a trustworthy latest-GA answer. Do NOT add, drop, or re-judge tuples from trained knowledge.
+
+## Failure handling
+
+If any Bash call in the invocation sequence is **denied** (permission denied, hook rejection) or the engine exits non-zero:
+
+- Emit a **distinct** terminal status: `FAILED — housekeeper-freshness could not be invoked (<reason>).` where `<reason>` is the specific error (e.g. `Bash permission denied`, `hook rejection: compound command`, `engine exit code 1`).
+- Do NOT emit `Skipped — …` for a denied/failed invocation. The `Skipped` prefix is reserved exclusively for legitimate tool-absence scenarios: `python3 not available on PATH`, `python3 ≥3.11 required`, or `housekeeper-freshness not available on PATH`.
+- Do NOT substitute a manual dependency analysis from trained knowledge under any circumstance. If the engine cannot run, the only permitted output is the FAILED status line. Fabricating dependency information violates the "engine is the sole source of truth" contract and produces misleading findings that cannot be verified.
+- Stop immediately after emitting the FAILED line. Do not attempt retries, alternative approaches, or partial results.
 
 ## Output
 
@@ -63,9 +89,16 @@ If the engine emits `[]`, emit the canonical zero-state and stop:
 0 findings — no stale versioned dependencies in scope.
 ```
 
-If the engine crashes (non-zero exit), emit `Skipped — housekeeper-freshness engine error.` and stop.
+If the engine crashes (non-zero exit), follow the **Failure handling** section above: emit `FAILED — housekeeper-freshness could not be invoked (engine exit code <N>).` and stop. Do NOT emit `Skipped` for an engine crash.
 
-After rendering, clean up the two temp files.
+After rendering, clean up the two temp files with two separate single-command Bash calls (substituting the literal path for `<TEMP_DIR>`):
+
+```
+rm <TEMP_DIR>/housekeeper-files.txt
+```
+```
+rm <TEMP_DIR>/housekeeper-lines.txt
+```
 
 ### Worked example
 

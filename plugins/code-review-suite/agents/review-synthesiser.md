@@ -379,3 +379,9 @@ X file(s) changed | 0 findings — LGTM
   and durations). If you cannot determine your own count, leave both rows as the
   orchestrator wrote them — the orchestrator will append the real record to
   `tokens.jsonl` after dispatch.
+- **Specialist FAILED state:** If any specialist's report is a `FAILED — …` status line (as
+  opposed to a legitimate `Skipped — …` or normal findings), surface it in the Synthesiser
+  Assessment section as a one-line note: `**Note:** <specialist-name> reported FAILED —
+  <reason>. Findings from this domain are absent.` Do NOT silently omit a failed specialist
+  from the report — the reader must know that a domain was not covered. A `Skipped — …` status
+  (tool legitimately absent) need not be surfaced as a failure.

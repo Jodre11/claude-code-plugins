@@ -1421,10 +1421,11 @@ def collect_findings(root, changed_files, changed_lines, registry):
     }
     workflow_text = {p: t for p, t in workflow_text.items() if t is not None}
 
-    # Solution gate: discover every manifest in the tree (npm package.json and
-    # NuGet .csproj/.fsproj/.vbproj/.props), then map changed files to their
-    # governing manifests. node_modules/bin/obj are pruned in place so os.walk
-    # never recurses into (potentially enormous) build/dependency trees.
+    # Solution gate: discover every manifest in the tree (npm package.json;
+    # NuGet .csproj/.fsproj/.vbproj/.props; Dockerfiles; PyPI pyproject.toml and
+    # requirements*.txt), then map changed files to their governing manifests.
+    # node_modules/bin/obj plus .venv/__pycache__/.tox/.eggs are pruned in place
+    # so os.walk never recurses into (potentially enormous) build/dependency trees.
     all_pkgs = set()
     all_csprojs = set()
     all_props = set()
@@ -1449,7 +1450,7 @@ def collect_findings(root, changed_files, changed_lines, registry):
                 all_dockerfiles.add(rel)
             if nm == "pyproject.toml":
                 all_pyprojects.add(rel)
-            elif nm.startswith("requirements") and nm.endswith(".txt"):
+            elif _is_requirements_file(nm):
                 all_requirements.add(rel)
     npm_roots = npm_scope_roots(changed_files, all_pkgs)
     npm_text = {p: read(p) for p in npm_roots}

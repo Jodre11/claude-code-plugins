@@ -33,16 +33,17 @@ conditional specialists by file type: `jbinspect-reviewer` (C#), `ui-reviewer` (
 components), `eslint-reviewer` (JS/TS), `ruff-reviewer` (Python incl. notebooks),
 `trivy-reviewer` (IaC: Terraform, Dockerfile, Kubernetes, Helm, CFN), and
 `housekeeper-reviewer` (dependency/version freshness + maintenance-health: GitHub Actions,
-workflow runners, npm, NuGet). The five static-analysis specialists (`jbinspect`, `eslint`, `ruff`, `trivy`,
+workflow runners, npm, NuGet, Docker base images, PyPI). The five static-analysis specialists (`jbinspect`, `eslint`, `ruff`, `trivy`,
 `housekeeper`) share the cross-cutting contract in `includes/static-analysis-context.md`
 and are excluded from cross-review (their tool output does not benefit from cross-domain
 evaluation).
 
 ### Version-freshness rule
 
-The `housekeeper-reviewer` verifies against the live registry that dependencies (npm +
-NuGet), GitHub Actions, and runners are at their latest GA release, and flags packages the
-registry marks deprecated or unlisted (maintenance-health). Its deterministic engine
+The `housekeeper-reviewer` verifies against the live registry that dependencies (npm,
+NuGet, PyPI), GitHub Actions, runners, and Docker base images are at their latest GA
+release, and flags packages the registry marks deprecated, unlisted, or yanked
+(maintenance-health). Its deterministic engine
 (`bin/housekeeper-freshness`) parses in-scope sources, fetches latest-GA from the
 registries, and emits stale-version findings — uniform `Suggestion` severity ("staleness is
 a smell, not a defect"). When a stale version also has a known advisory, the
@@ -75,7 +76,7 @@ The review pipeline (`includes/review-pipeline.md`) handles all routing:
 | `eslint-reviewer` | ESLint or Biome static analysis for JS/TS (conditional — `.js`/`.jsx`/`.mjs`/`.cjs`/`.ts`/`.tsx`/`.mts`/`.cts`/`.vue`/`.svelte` files only) |
 | `ruff-reviewer` | Ruff static analysis for Python (conditional — `.py`/`.ipynb` files only; notebooks via Ruff ≥ 0.6.0 or `nbqa` fallback) |
 | `trivy-reviewer` | `trivy config` IaC security analysis (conditional — Terraform / Dockerfile / Kubernetes / Helm / CFN files only) |
-| `housekeeper-reviewer` | Dependency/version freshness + maintenance-health — flags GitHub Actions, workflow runners, npm, and NuGet packages behind latest GA or marked deprecated/unlisted (conditional — workflows + `package.json` + `*.csproj`/`*.props`; registry-backed deterministic engine) |
+| `housekeeper-reviewer` | Dependency/version freshness + maintenance-health — flags GitHub Actions, workflow runners, npm, NuGet, Docker base images, and PyPI packages behind latest GA or marked deprecated/unlisted/yanked (conditional — workflows + `package.json` + `*.csproj`/`*.props` + `pyproject.toml`/`requirements*.txt` + Dockerfiles; registry-backed deterministic engine) |
 | `ui-reviewer` | UI/UX quality, accessibility, usability (conditional — visual component files only) |
 | `cross-reviewer` | Domain-focused cross-review — evaluates peer findings through a single domain lens |
 | `review-synthesiser` | Frontier-model synthesis — independent deep analysis, tiered report with cross-review integration |
@@ -106,7 +107,7 @@ The review pipeline (`includes/review-pipeline.md`) handles all routing:
 - `eslint` or `biome` — optional, only needed for JS/TS projects. The reviewer prefers project-local binaries (`<project>/node_modules/.bin/`) over global; install via the project's own `npm install` rather than globally.
 - `ruff` (`brew install ruff`) — optional, only needed for Python projects. For Jupyter notebook support on Ruff < 0.6.0, also install `nbqa` (`pip install nbqa`).
 - `trivy` (`brew install trivy`) — optional, only needed for IaC security analysis. First run on a clean machine fetches the policy DB (~10s slower); subsequent runs are fast.
-- `python3` — required for the `housekeeper-reviewer` dependency-freshness engine (`bin/housekeeper-freshness`). Stdlib only; no pip packages. Live runs need outbound HTTPS to npm and the GitHub API.
+- `python3` (≥3.11 for PyPI `pyproject.toml` parsing via `tomllib`) — required for the `housekeeper-reviewer` dependency-freshness engine (`bin/housekeeper-freshness`). Stdlib only; no pip packages. Live runs need outbound HTTPS to npm, PyPI, container registries, and the GitHub API.
 - `playwright-cli` skill — optional, enables visual verification of UI reviewer findings
 
 ## Installation

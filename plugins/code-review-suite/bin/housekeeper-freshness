@@ -426,6 +426,56 @@ def pypi_nearest_in_major(current, versions):
     return best if pypi_compare(best, current) > 0 else current
 
 
+_PYPI_FLOOR_RE = re.compile(
+    r"^(?:===|==|~=|>=|\^|~)?\s*v?"
+    r"(\d+(?:\.\d+)*"
+    r"(?:[-_.]?(?:a|b|c|rc|alpha|beta|pre|preview|post|rev|r|dev)[-_.]?\d*)*"
+    r"(?:\+[a-z0-9]+(?:[-_.][a-z0-9]+)*)?)\s*$",
+    re.IGNORECASE,
+)
+
+
+def pypi_strip_constraint(spec):
+    """Return the concrete floor version of a single-anchor PyPI constraint, or
+    None for any form we cannot name a trustworthy 'current' for: wildcards,
+    comma-compound/upper-bounded ranges, != exclusions, bare </> /<=, and
+    URL/VCS/path references. Acts on ==, ===, ~=, >=, Poetry ^/~, and bare."""
+    if not spec:
+        return None
+    s = spec.strip()
+    if not s:
+        return None
+    if "://" in s or s.startswith(("git+", "file:", ".", "/")):
+        return None
+    if "," in s or "!=" in s or "*" in s:
+        return None
+    if s.startswith(("<", ">")) and not s.startswith(">="):
+        return None
+    m = _PYPI_FLOOR_RE.match(s)
+    if not m:
+        return None
+    ver = m.group(1)
+    return ver if _pypi_parse(ver) is not None else None
+
+
+def _pypi_pep508_name_spec(req):
+    """Split a PEP 508 requirement string into (name, version_spec), or None.
+    Strips a trailing environment marker (; ...) and an [extras] group. Returns
+    None for blank/comment lines and direct URL references (name @ url)."""
+    if not req:
+        return None
+    s = req.strip()
+    if not s or s.startswith("#"):
+        return None
+    s = s.split(";", 1)[0].strip()
+    if "@" in s:
+        return None  # direct URL reference — no registry version
+    m = re.match(r"^([A-Za-z0-9][A-Za-z0-9._-]*)\s*(?:\[[^\]]*\])?\s*(.*)$", s)
+    if not m:
+        return None
+    return m.group(1), m.group(2).strip()
+
+
 # --- source collectors (filled in Tasks 3-5) -------------------------------
 
 # --- source: github-actions -------------------------------------------------

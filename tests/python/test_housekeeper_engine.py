@@ -1272,5 +1272,52 @@ class PyPIVersionCoreTest(unittest.TestCase):
         self.assertEqual(self.m.pypi_nearest_in_major("3.0.0", versions), "3.0.0")
 
 
+class PyPIConstraintTest(unittest.TestCase):
+    def setUp(self):
+        self.m = load_engine()
+
+    def test_strip_acts_on_single_anchor_floors(self):
+        self.assertEqual(self.m.pypi_strip_constraint("==1.2.3"), "1.2.3")
+        self.assertEqual(self.m.pypi_strip_constraint("===1.2.3"), "1.2.3")
+        self.assertEqual(self.m.pypi_strip_constraint("~=1.2.3"), "1.2.3")
+        self.assertEqual(self.m.pypi_strip_constraint(">=1.2.3"), "1.2.3")
+        self.assertEqual(self.m.pypi_strip_constraint("^1.2.3"), "1.2.3")
+        self.assertEqual(self.m.pypi_strip_constraint("~1.2.3"), "1.2.3")
+        self.assertEqual(self.m.pypi_strip_constraint("1.2.3"), "1.2.3")
+        self.assertEqual(self.m.pypi_strip_constraint("==2.0.0rc1"), "2.0.0rc1")
+
+    def test_strip_skips_untrustworthy_forms(self):
+        self.assertIsNone(self.m.pypi_strip_constraint("==1.2.*"))
+        self.assertIsNone(self.m.pypi_strip_constraint("1.*"))
+        self.assertIsNone(self.m.pypi_strip_constraint(">=1.2,<2"))
+        self.assertIsNone(self.m.pypi_strip_constraint("!=1.2.3"))
+        self.assertIsNone(self.m.pypi_strip_constraint("<2.0"))
+        self.assertIsNone(self.m.pypi_strip_constraint(">1.2"))
+        self.assertIsNone(self.m.pypi_strip_constraint("<=1.0"))
+        self.assertIsNone(self.m.pypi_strip_constraint(""))
+        self.assertIsNone(self.m.pypi_strip_constraint("git+https://x/y.git"))
+
+    def test_pep508_splits_name_and_spec(self):
+        self.assertEqual(self.m._pypi_pep508_name_spec("requests>=2.0"),
+                         ("requests", ">=2.0"))
+        self.assertEqual(self.m._pypi_pep508_name_spec("requests==2.28.1"),
+                         ("requests", "==2.28.1"))
+
+    def test_pep508_strips_extras_and_markers(self):
+        self.assertEqual(
+            self.m._pypi_pep508_name_spec('requests[security]>=2.0 ; python_version < "3.11"'),
+            ("requests", ">=2.0"))
+        self.assertEqual(self.m._pypi_pep508_name_spec("flask[async]==2.0.0"),
+                         ("flask", "==2.0.0"))
+
+    def test_pep508_url_reference_returns_none(self):
+        self.assertIsNone(self.m._pypi_pep508_name_spec("foo @ git+https://x/y.git"))
+        self.assertIsNone(self.m._pypi_pep508_name_spec(""))
+        self.assertIsNone(self.m._pypi_pep508_name_spec("# a comment"))
+
+    def test_pep508_bare_name_no_spec(self):
+        self.assertEqual(self.m._pypi_pep508_name_spec("requests"), ("requests", ""))
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -1684,6 +1684,28 @@ class PyPIScopeTest(unittest.TestCase):
             {"src/App/pyproject.toml", "src/AppTests/pyproject.toml"}, set())
         self.assertEqual(pj, {"src/AppTests/pyproject.toml"})
 
+    def test_root_level_py_pulls_in_root_pyproject(self):
+        # The empty-string-root branch of _nearest_ancestor / ancestor check.
+        pj, rq = self.m.pypi_scope_roots(
+            ["module.py"], {"pyproject.toml"}, set())
+        self.assertEqual(pj, {"pyproject.toml"})
+        self.assertEqual(rq, set())
+
+    def test_two_py_files_pull_distinct_pyprojects(self):
+        pj, _ = self.m.pypi_scope_roots(
+            ["a/x.py", "b/y.py"],
+            {"a/pyproject.toml", "b/pyproject.toml"}, set())
+        self.assertEqual(pj, {"a/pyproject.toml", "b/pyproject.toml"})
+
+    def test_pyproject_wins_by_precedence_not_depth(self):
+        # pyproject is SHALLOWER than the requirements file; precedence (not
+        # depth) must still pick the pyproject for the .py pull-in.
+        pj, rq = self.m.pypi_scope_roots(
+            ["a/b/handler.py"],
+            {"a/pyproject.toml"}, {"a/b/requirements.txt"})
+        self.assertEqual(pj, {"a/pyproject.toml"})
+        self.assertEqual(rq, set())
+
 
 if __name__ == "__main__":
     unittest.main()

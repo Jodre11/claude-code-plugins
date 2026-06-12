@@ -476,6 +476,29 @@ def _pypi_pep508_name_spec(req):
     return m.group(1), m.group(2).strip()
 
 
+def parse_requirements(text):
+    """Return [(name, spec, line)] from a requirements*.txt body. Skips blank
+    lines, comments, option lines (-r/-c/-e/--flag), and URL/VCS/path entries.
+    Inline '# comment' is stripped; extras and markers are dropped by the PEP
+    508 splitter. One requirement per physical line."""
+    out = []
+    for i, raw in enumerate(text.splitlines(), start=1):
+        line = raw.strip()
+        if not line or line.startswith("#") or line.startswith("-"):
+            continue
+        # Strip an inline comment (' #...'); keep '#' that is not preceded by ws.
+        if " #" in line:
+            line = line.split(" #", 1)[0].strip()
+        # Skip bare URL/VCS/path entries; the splitter only drops 'name @ url'.
+        if "://" in line or line.startswith(("git+", "file:", ".", "/")):
+            continue
+        ns = _pypi_pep508_name_spec(line)
+        if ns is None:
+            continue
+        out.append((ns[0], ns[1], i))
+    return out
+
+
 # --- source collectors (filled in Tasks 3-5) -------------------------------
 
 # --- source: github-actions -------------------------------------------------

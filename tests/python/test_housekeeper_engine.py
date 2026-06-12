@@ -1319,5 +1319,46 @@ class PyPIConstraintTest(unittest.TestCase):
         self.assertEqual(self.m._pypi_pep508_name_spec("requests"), ("requests", ""))
 
 
+class PyPIRequirementsParseTest(unittest.TestCase):
+    def setUp(self):
+        self.m = load_engine()
+
+    def test_parses_pinned_and_floored_lines(self):
+        text = (
+            "requests==2.28.1\n"
+            "flask>=2.0\n"
+            "django~=4.1.0\n"
+        )
+        out = self.m.parse_requirements(text)
+        self.assertIn(("requests", "==2.28.1", 1), out)
+        self.assertIn(("flask", ">=2.0", 2), out)
+        self.assertIn(("django", "~=4.1.0", 3), out)
+
+    def test_skips_comments_blanks_options_and_includes(self):
+        text = (
+            "# a comment\n"
+            "\n"
+            "-r base.txt\n"
+            "-c constraints.txt\n"
+            "-e .\n"
+            "--index-url https://example/simple\n"
+            "requests==2.28.1\n"
+        )
+        out = self.m.parse_requirements(text)
+        self.assertEqual(out, [("requests", "==2.28.1", 7)])
+
+    def test_strips_inline_comment_and_extras_and_marker(self):
+        text = 'requests[security]==2.28.1  # pinned ; keep\n'
+        out = self.m.parse_requirements(text)
+        self.assertEqual(out, [("requests", "==2.28.1", 1)])
+
+    def test_skips_url_and_vcs_entries(self):
+        text = (
+            "foo @ git+https://x/y.git\n"
+            "https://example/pkg.whl\n"
+        )
+        self.assertEqual(self.m.parse_requirements(text), [])
+
+
 if __name__ == "__main__":
     unittest.main()

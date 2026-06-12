@@ -1,1 +1,1 @@
-{"info": {"version": "2.2.1"}, "releases": {"2.0.6": [{"yanked": true, "yanked_reason": "CVE-2023-45803"}], "2.0.7": [{"yanked": false}], "2.2.1": [{"yanked": false}]}}
+{"info": {"version": "2.2.1"}, "releases": {"2.0.0": [{"yanked": true, "yanked_reason": "Truncated response bodies when streaming a large compressed body"}], "2.0.7": [{"yanked": false}], "2.2.1": [{"yanked": false}]}}

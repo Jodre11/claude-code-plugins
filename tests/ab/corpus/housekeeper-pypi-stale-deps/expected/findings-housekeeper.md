@@ -13,5 +13,5 @@
 - **Confidence:** 100
 - **Severity:** Suggestion
 - **Rule:** housekeeper/pypi
-- **Description:** urllib3 is at 2.0.6; latest GA is 2.2.1. Marked yanked in the registry: CVE-2023-45803.
+- **Description:** urllib3 is at 2.0.0; latest GA is 2.2.1. Marked yanked in the registry: Truncated response bodies when streaming a large compressed body.
 - **Suggested fix:** Upgrade urllib3 to 2.2.1.

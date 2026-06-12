@@ -3,5 +3,5 @@ name = "app"
 version = "0.1.0"
 dependencies = [
   "requests==2.20.0",
-  "urllib3==2.0.6",
+  "urllib3==2.0.0",
 ]

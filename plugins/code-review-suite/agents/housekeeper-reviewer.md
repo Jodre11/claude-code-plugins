@@ -69,7 +69,7 @@ After rendering, clean up the two temp files.
 
 ### Worked example
 
-For a diff that changes `.github/workflows/ci.yml` (a `uses: actions/checkout@v3` on line 12 where latest GA is `v4.2.1`, and a `runs-on: ubuntu-22.04` on line 15), `package.json` (a `"react": "^18.2.0"` on touched line 4 where latest GA is `19.0.0`), and `Directory.Packages.props` (a `<PackageVersion Include="Serilog" Version="2.10.0" />` on touched line 6 where latest GA is `4.0.0`, plus a current-but-deprecated `Newtonsoft.Json` at `13.0.3`), and `Dockerfile` (a `FROM node:18.20.0` on touched line 1 where latest GA is `22.3.0`), and `pyproject.toml` (a `requests==2.20.0` on untouched line 4 where latest GA is `2.31.0`, plus a yanked-current `urllib3==2.0.6`), the canonical §7 output is:
+For a diff that changes `.github/workflows/ci.yml` (a `uses: actions/checkout@v3` on line 12 where latest GA is `v4.2.1`, and a `runs-on: ubuntu-22.04` on line 15), `package.json` (a `"react": "^18.2.0"` on touched line 4 where latest GA is `19.0.0`), and `Directory.Packages.props` (a `<PackageVersion Include="Serilog" Version="2.10.0" />` on touched line 6 where latest GA is `4.0.0`, plus a current-but-deprecated `Newtonsoft.Json` at `13.0.3`), and `Dockerfile` (a `FROM node:18.20.0` on touched line 1 where latest GA is `22.3.0`), and `pyproject.toml` (a `requests==2.20.0` on untouched line 4 where latest GA is `2.31.0`, plus a yanked-current `urllib3==2.0.0`), the canonical §7 output is:
 
 ```
 ## Housekeeper Findings
@@ -135,8 +135,8 @@ For a diff that changes `.github/workflows/ci.yml` (a `uses: actions/checkout@v3
 - **Confidence:** 100
 - **Severity:** Suggestion
 - **Rule:** housekeeper/pypi
-- **Description:** urllib3 is at 2.0.6; latest GA is 2.0.6. Marked yanked in the registry: CVE-2023-45803.
-- **Suggested fix:** Review: urllib3 is current but marked yanked.
+- **Description:** urllib3 is at 2.0.0; latest GA is 2.2.1. Marked yanked in the registry: Truncated response bodies when streaming a large compressed body.
+- **Suggested fix:** Upgrade urllib3 to 2.2.1.
 ```
 
 The heading is `### Finding — <title>` (em-dash, U+2014). The bullet field names are exactly `File`, `Confidence`, `Severity`, `Rule`, `Description`, `Suggested fix` — do not substitute synonyms, do not group findings under a `### <Severity>` sub-heading, and do not use a prose-block or `---`-separated layout; the harness parser pins to the §7 names and per-finding `### Finding` blocks. Severity is always `Suggestion`; confidence is always `100`.

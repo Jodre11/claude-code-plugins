@@ -322,6 +322,32 @@ leave both rows as the orchestrator wrote them; the orchestrator will append the
 real synthesiser row to `$CLAUDE_TEMP_DIR/tokens.jsonl` after you return.
 ```
 
+## Envelope output (review-core consumer)
+
+When dispatched by the `review-core` Workflow (which supplies the `agent()`
+schema param keyed to `includes/finding-schema.json#/$defs/synthEnvelope`),
+populate the structured envelope in addition to producing your prose report:
+
+- `verdict` — your computed `APPROVE` / `REQUEST_CHANGES` (PR mode). COMMENT is
+  never your output. (Omit / set per local-mode rules when no verdict applies;
+  the Workflow maps no-verdict to the bundle's `NONE`.)
+- `rubricRowApplied` — the rubric row that fired (1–4). Omit in local mode.
+- `rubricReason` — your one-line `Reason:` text.
+- `tiers.consensus / .synthesiser / .contested / .dismissed` — each finding you
+  placed in that tier, as `finding` objects. `confidence` is your final
+  post-dissent value (the §10 clamp result), `severity` your post-reclassification
+  value. Static-analysis findings keep their locked severity and capped confidence.
+- `bodyText` — your complete prose report (the same markdown you render today,
+  including Summary, Synthesiser Assessment, all tier sections, Cost, Dismissed,
+  and the `[#N]` finding tokens). The schema wraps this field verbatim — write
+  it exactly as the Output Format above specifies. Do NOT abbreviate or restructure
+  the prose to fit the schema; the envelope carries the full text.
+
+The structured envelope and the prose `bodyText` describe the same findings. The
+Workflow applies the Class D confidence filter and renders GitHub comment bodies
+from `tiers.consensus` IN CODE — you do not pre-filter. Your job is unchanged:
+analyse, reclassify, tier, compute the verdict, and write the full report.
+
 If a tier has no findings, omit that tier's section entirely (except Synthesiser Assessment, which is always present).
 
 If no findings at all across all specialists AND you found nothing:

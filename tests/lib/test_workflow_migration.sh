@@ -48,3 +48,25 @@ test_static_agents_reference_finding_schema() {
         fi
     done
 }
+
+test_synthesiser_documents_structured_envelope() {
+    local cr
+    cr=$(_wm_cr_dir)
+    local synth="$cr/agents/review-synthesiser.md"
+    if [[ ! -f "$synth" ]]; then
+        fail "synthesiser envelope section" "review-synthesiser.md not found"
+        return
+    fi
+    if grep -qF 'synthEnvelope' "$synth"; then
+        pass "synthesiser envelope: references finding-schema synthEnvelope def"
+    else
+        fail "synthesiser envelope: references finding-schema synthEnvelope def" \
+            "synthesiser body must document the synthEnvelope structured output for the review-core consumer"
+    fi
+    if grep -qF 'bodyText' "$synth"; then
+        pass "synthesiser envelope: documents bodyText carries full prose"
+    else
+        fail "synthesiser envelope: documents bodyText carries full prose" \
+            "the envelope's bodyText field (full prose report) must be documented so the schema is not read as flattening the judgement"
+    fi
+}

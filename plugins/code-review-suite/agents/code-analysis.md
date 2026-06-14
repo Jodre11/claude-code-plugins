@@ -62,6 +62,11 @@ Edit the include first, then propagate to all listed specialists. -->
 
 ### Format output
 
+> **Schema alignment:** your finding fields (File, line, Severity, Confidence,
+> Description, Suggested fix) map to `includes/finding-schema.json#/$defs/finding`.
+> Emit your markdown report as specified; the review-core Workflow coerces these
+> same fields via the `agent()` schema param.
+
 Return findings grouped by severity (see `includes/severity-definitions.md`). Use this format:
 
 ```

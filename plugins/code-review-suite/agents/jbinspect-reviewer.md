@@ -90,6 +90,25 @@ Every finding emits the literal `Confidence: 100` per §6.
 
 Streaming `--stdout` writes no temp file, so there is nothing to clean up.
 
+## Structured fields
+
+The §7 markdown fields map 1:1 to `includes/finding-schema.json#/$defs/finding`:
+
+| §7 markdown bullet | Schema field |
+|---|---|
+| `- **File:** path:line` | `file` + `line` (split on the last colon) |
+| `- **Rule:** TypeId (Category)` | `rule_id` (the CamelCase TypeId, first whitespace token) |
+| `- **Severity:** …` | `severity` (enum: Critical / Important / Suggestion) |
+| `- **Confidence:** 100` | `confidence` (integer) |
+| `- **Description:** …` | `description` |
+| `- **Suggested fix:** …` | `suggested_fix` |
+| `- **Reference:** …` (optional) | `reference` |
+
+Continue emitting the §7 markdown shape exactly as specified above — this mapping
+documents the field correspondence; it does not add a JSON output block. The
+review-core Workflow obtains structured findings via the `agent()` schema param,
+which coerces this same field set; the A/B harness parses the markdown directly.
+
 ### Worked example
 
 For the C# project whose changed lines 2, 11, 14 trip three InspectCode rules (a redundant `using System.Text;` on line 2, a possible null-reference on `value.Length` at line 11, and an unused private method `UnusedHelper` at line 14), the canonical §7 output is:

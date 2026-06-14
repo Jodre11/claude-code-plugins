@@ -79,6 +79,25 @@ Every finding emits the literal `Confidence: 100` per §6.
 
 If you redirected trivy's output to `<resolved-temp-dir>/trivy-config.json`, clean it up after parsing. If you streamed and parsed inline, there is nothing to clean.
 
+## Structured fields
+
+The §7 markdown fields map 1:1 to `includes/finding-schema.json#/$defs/finding`:
+
+| §7 markdown bullet | Schema field |
+|---|---|
+| `- **File:** path:line` | `file` + `line` (split on the last colon) |
+| `- **Rule:** DS-NNNN (Dockerfile) / AVD-XX-NNNN (provider)` | `rule_id` (the bare rule ID, first whitespace token) |
+| `- **Severity:** …` | `severity` (enum: Critical / Important / Suggestion) |
+| `- **Confidence:** 100` | `confidence` (integer) |
+| `- **Description:** …` | `description` |
+| `- **Suggested fix:** …` | `suggested_fix` |
+| `- **Reference:** …` (optional) | `reference` |
+
+Continue emitting the §7 markdown shape exactly as specified above — this mapping
+documents the field correspondence; it does not add a JSON output block. The
+review-core Workflow obtains structured findings via the `agent()` schema param,
+which coerces this same field set; the A/B harness parses the markdown directly.
+
 ### Worked example
 
 For a `Dockerfile` whose changed lines 1, 7, 9 trip three trivy rules (a `:latest` base tag on line 1, an `EXPOSE 22` on line 7, and a secret injected via `ENV` on line 9), the canonical §7 output is:

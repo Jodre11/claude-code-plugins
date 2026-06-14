@@ -100,6 +100,24 @@ rm <TEMP_DIR>/housekeeper-files.txt
 rm <TEMP_DIR>/housekeeper-lines.txt
 ```
 
+## Structured fields
+
+The §7 markdown fields map 1:1 to `includes/finding-schema.json#/$defs/finding`:
+
+| §7 markdown bullet | Schema field |
+|---|---|
+| `- **File:** path:line` | `file` + `line` (split on the last colon) |
+| `- **Rule:** housekeeper/<source>` | `rule_id` (the full `housekeeper/<source>` string) |
+| `- **Severity:** Suggestion` | `severity` (always `Suggestion` for this specialist) |
+| `- **Confidence:** 100` | `confidence` (integer, always 100) |
+| `- **Description:** …` | `description` |
+| `- **Suggested fix:** …` | `suggested_fix` |
+
+Continue emitting the §7 markdown shape exactly as specified above — this mapping
+documents the field correspondence; it does not add a JSON output block. The
+review-core Workflow obtains structured findings via the `agent()` schema param,
+which coerces this same field set; the A/B harness parses the markdown directly.
+
 ### Worked example
 
 For a diff that changes `.github/workflows/ci.yml` (a `uses: actions/checkout@v3` on line 12 where latest GA is `v4.2.1`, and a `runs-on: ubuntu-22.04` on line 15), `package.json` (a `"react": "^18.2.0"` on touched line 4 where latest GA is `19.0.0`), and `Directory.Packages.props` (a `<PackageVersion Include="Serilog" Version="2.10.0" />` on touched line 6 where latest GA is `4.0.0`, plus a current-but-deprecated `Newtonsoft.Json` at `13.0.3`), and `Dockerfile` (a `FROM node:18.20.0` on touched line 1 where latest GA is `22.3.0`), and `pyproject.toml` (a `requests==2.20.0` on untouched line 4 where latest GA is `2.31.0`, plus a yanked-current `urllib3==2.0.0`), the canonical §7 output is:

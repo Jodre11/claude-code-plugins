@@ -78,6 +78,11 @@ Review every change for:
 
 ## Output Format
 
+> **Schema alignment:** your finding fields (File, line, Severity, Confidence,
+> Description, Suggested fix) map to `includes/finding-schema.json#/$defs/finding`.
+> Emit your markdown report as specified; the review-core Workflow coerces these
+> same fields via the `agent()` schema param.
+
 Return findings in this exact format:
 
 ```

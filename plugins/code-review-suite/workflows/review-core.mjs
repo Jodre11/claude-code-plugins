@@ -224,9 +224,12 @@ const specialistResults = await parallel(allSpecialists.map(domain => () =>
     }).then(out => ({ domain, out }))
 ))
 
-// Graceful degradation: a null result (subagent died) becomes a failed status.
+// Graceful degradation: a null result (subagent died) OR a null `out` (subagent
+// resolved with empty output — the documented Category C gap) becomes a failed status.
 const specialists = specialistResults.map((r, i) =>
-    r ? r : { domain: allSpecialists[i], out: { status: 'failed', statusReason: 'subagent returned null', findings: [] } }
+    (r && r.out)
+        ? r
+        : { domain: (r && r.domain) || allSpecialists[i], out: { status: 'failed', statusReason: 'subagent returned null', findings: [] } }
 )
 log(`dispatch: ${specialists.filter(s => s.out.status === 'ok').length}/${allSpecialists.length} specialists ok`)
 
@@ -262,14 +265,16 @@ const crossResults = await parallel(crossDomains.map(domain => () => {
 const crossRan = crossResults.filter(Boolean)
 
 // Opinions: domain + its verbatim prose, for the synthesiser to read as inline today.
+// r.out may be null when a cross-reviewer resolves with empty output (Category C) — the
+// .catch above only nulls a REJECTED task, not a resolved-null one. Optional-chain both reads.
 const crossOpinions = crossRan.map(r => ({
     domain: r.domain,
-    opinionsMarkdown: r.out.opinionsMarkdown ?? '',
+    opinionsMarkdown: r.out?.opinionsMarkdown ?? '',
 }))
 
 // Escalations: flatten to {domain, finding}, carrying provenance to the synthesiser.
 const crossEscalations = crossRan.flatMap(r =>
-    (r.out.escalations ?? []).map(f => ({ domain: r.domain, finding: f }))
+    (r.out?.escalations ?? []).map(f => ({ domain: r.domain, finding: f }))
 )
 log(`cross: ${crossRan.length}/${crossDomains.length} reviewers, ${crossEscalations.length} escalations`)
 
@@ -299,6 +304,14 @@ const envelope = await agent(synthPrompt, {
     model: 'opus',
     schema: SYNTH_SCHEMA,
 })
+
+// Category C guard: a null envelope, or one missing tiers (schema marks tiers required,
+// but sandbox enforcement is best-effort), would crash both modes below. Degrade to an
+// empty bundle instead of taking down the whole review.
+if (!envelope || !envelope.tiers) {
+    log('synth: synthesiser returned null or missing tiers — returning empty bundle')
+    return { verdict: 'NONE', bodyText: '(synthesiser produced no usable output)', comments: [] }
+}
 
 // Local mode: no verdict, no GitHub filter — return the prose only.
 if (reviewMode === 'local') {

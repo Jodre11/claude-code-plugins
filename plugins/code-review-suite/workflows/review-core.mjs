@@ -363,6 +363,7 @@ function stripDroppedReferences(bodyText, postSet, consensus) {
             droppedNumbers.push(i + 1)
         }
     })
+    const droppedNumberSet = new Set(droppedNumbers)
 
     const lines = bodyText.split('\n')
     const out = []
@@ -378,7 +379,7 @@ function stripDroppedReferences(bodyText, postSet, consensus) {
             }
         }
         // (b) Start skipping at a dropped finding's `#### Finding #N — …` section heading.
-        if (line.startsWith('#### Finding #') && isDroppedFindingHeading(line, droppedNumbers)) {
+        if (line.startsWith('#### Finding #') && isDroppedFindingHeading(line, droppedNumberSet)) {
             skippingSection = true
             continue
         }
@@ -394,10 +395,10 @@ function stripDroppedReferences(bodyText, postSet, consensus) {
 // True when a `#### Finding #N — …` heading line names one of the dropped numbers.
 // Matches the integer immediately after `#### Finding #` against the dropped set,
 // avoiding prefix collisions (e.g. #1 vs #10).
-function isDroppedFindingHeading(line, droppedNumbers) {
+function isDroppedFindingHeading(line, droppedNumberSet) {
     const m = line.match(/^#### Finding #(\d+)\b/)
     if (!m) return false
-    return droppedNumbers.includes(Number(m[1]))
+    return droppedNumberSet.has(Number(m[1]))
 }
 
 // Lightweight-path bundle (pipeline Step 3: "Present its report and stop").

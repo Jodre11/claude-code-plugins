@@ -769,6 +769,39 @@ Announce: `> X files, Y lines changed [with significant deletions] [touching sec
 
 Continue to Step 4.
 
+### Step 3.5: Orchestration routing (Workflow opt-in)
+
+Determine `$USE_WORKFLOW`:
+- `true` if `$ARGUMENTS` contains the bare token `--workflow` (whitespace-delimited word, not substring), OR
+- `true` if `.claude/code-review.toml` exists and sets `orchestration.use_workflow = true` (skip silently if the file is missing or malformed — optional config), OR
+- `false` otherwise.
+
+**If `$USE_WORKFLOW` is true**, route Steps 4–6 through the deterministic core
+instead of the inline dispatch below. Resolve the `review-core` args object from
+the values Phases 0–3 already computed, then call the Workflow once:
+
+```
+workflow('review-core', {
+    agentPrompt: $AGENT_PROMPT,
+    flags: { csharp: $CSHARP_DETECTED, ui: $UI_DETECTED, js: $JS_DETECTED,
+             py: $PY_DETECTED, iac: $IAC_DETECTED, housekeeping: $HOUSEKEEPING_DETECTED,
+             securitySensitive: $SECURITY_SENSITIVE },
+    route: ($FILE_COUNT <= 5 && $LINE_COUNT <= 150 && !$SIGNIFICANT_DELETIONS && !$SECURITY_SENSITIVE) ? 'lightweight' : 'full',
+    selfReReview: $SELF_RE_REVIEW,
+    reviewMode: $REVIEW_MODE,
+    base: $BASE, headSha: $HEAD_SHA, emptyTreeMode: $EMPTY_TREE_MODE,
+    pathScope: $PATH_SCOPE, tempDir: $RESOLVED_TEMP_DIR
+})
+```
+
+The Workflow returns the sealed bundle `{ verdict, bodyText, comments:[{path,line,side,body}] }`.
+Skip the inline Steps 4–6 entirely and proceed to Step 7 (PR mode) / report rendering
+(local mode) using ONLY the bundle. Do NOT re-derive, re-filter, or re-render the
+bundle — the core already applied the Class D filter and rendered comment bodies.
+You may only POST it (PR mode) or PRINT it (local mode).
+
+**If `$USE_WORKFLOW` is false**, continue to Step 4 below (today's inline dispatch).
+
 ### Step 4: Dispatch specialists
 
 > **MANDATORY DISPATCH CONSTRAINT — READ BEFORE PROCEEDING**

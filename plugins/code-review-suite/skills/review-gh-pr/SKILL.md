@@ -875,6 +875,39 @@ Announce: `> X files, Y lines changed [with significant deletions] [touching sec
 
 Continue to Step 4.
 
+### Step 3.5: Orchestration routing (Workflow opt-in)
+
+Determine `$USE_WORKFLOW`:
+- `true` if `$ARGUMENTS` contains the bare token `--workflow` (whitespace-delimited word, not substring), OR
+- `true` if `.claude/code-review.toml` exists and sets `orchestration.use_workflow = true` (skip silently if the file is missing or malformed — optional config), OR
+- `false` otherwise.
+
+**If `$USE_WORKFLOW` is true**, route Steps 4–6 through the deterministic core
+instead of the inline dispatch below. Resolve the `review-core` args object from
+the values Phases 0–3 already computed, then call the Workflow once:
+
+```
+workflow('review-core', {
+    agentPrompt: $AGENT_PROMPT,
+    flags: { csharp: $CSHARP_DETECTED, ui: $UI_DETECTED, js: $JS_DETECTED,
+             py: $PY_DETECTED, iac: $IAC_DETECTED, housekeeping: $HOUSEKEEPING_DETECTED,
+             securitySensitive: $SECURITY_SENSITIVE },
+    route: ($FILE_COUNT <= 5 && $LINE_COUNT <= 150 && !$SIGNIFICANT_DELETIONS && !$SECURITY_SENSITIVE) ? 'lightweight' : 'full',
+    selfReReview: $SELF_RE_REVIEW,
+    reviewMode: $REVIEW_MODE,
+    base: $BASE, headSha: $HEAD_SHA, emptyTreeMode: $EMPTY_TREE_MODE,
+    pathScope: $PATH_SCOPE, tempDir: $RESOLVED_TEMP_DIR
+})
+```
+
+The Workflow returns the sealed bundle `{ verdict, bodyText, comments:[{path,line,side,body}] }`.
+Skip the inline Steps 4–6 entirely and proceed to Step 7 (PR mode) / report rendering
+(local mode) using ONLY the bundle. Do NOT re-derive, re-filter, or re-render the
+bundle — the core already applied the Class D filter and rendered comment bodies.
+You may only POST it (PR mode) or PRINT it (local mode).
+
+**If `$USE_WORKFLOW` is false**, continue to Step 4 below (today's inline dispatch).
+
 ### Step 4: Dispatch specialists
 
 > **MANDATORY DISPATCH CONSTRAINT — READ BEFORE PROCEEDING**
@@ -1550,6 +1583,33 @@ The user is sovereign over the final action submitted. At the confirmation promp
 the user can override the proposed action; the user's `[c]` keypress under the
 `REQUEST_CHANGES` prompt is the only path to a `COMMENT` submission. This is the
 documented caveat to synthesiser-as-sole-authority.
+
+### Step 6.0 — Workflow-bundle short-circuit (when $USE_WORKFLOW)
+
+If `$USE_WORKFLOW` is true (set in Step 3.5), the `review-core` Workflow already
+returned a sealed bundle `{ verdict, bodyText, comments }`. The bundle is the sole
+input to this step — the inline Steps 4–6 did not run, so there is no synthesiser
+markdown to parse. In this branch:
+
+- `$SYNTH_VERDICT = bundle.verdict` — read the verdict directly from the bundle.
+  SKIP the Class A.1 markdown `## Verdict` parse entirely; there is no synthesiser
+  report to scan on this path.
+- The Class A user-confirmation prompt (A.2/A.3) STILL RUNS exactly as today — the
+  human gate is preserved (design D6). Set `$PROPOSED_ACTION = bundle.verdict`; the
+  `[s]` / `[r]` / `[n]` (and `[c]` under a `REQUEST_CHANGES` prompt) override
+  semantics are unchanged.
+- SKIP Class D entirely (D.1–D.4). The bundle's `comments[]` is already the
+  filtered, rendered post-set, and `bundle.bodyText` is already the constructed
+  GitHub body (Cost/Dismissed stripped, footer applied). Do NOT re-filter or
+  re-render either.
+- Class C posting consumes the bundle directly: post each `bundle.comments[i]` as an
+  inline comment — `path`, `line`, `side`, `body` map 1:1 to the `gh api`
+  inline-comment fields — then submit `bundle.bodyText` as the `gh pr review
+  --input -` body, using the review flag chosen from `$FINAL_VERDICT` (after the
+  Class A prompt resolves any override).
+
+If `$USE_WORKFLOW` is false, proceed with the existing Class A–D flow below
+UNCHANGED — that flow is the `$USE_WORKFLOW == false` path.
 
 <!-- VERDICT RUBRIC — inlined from includes/verdict-rubric.md (canonical source).
 Edit the include first, then propagate to all listed consumers. -->

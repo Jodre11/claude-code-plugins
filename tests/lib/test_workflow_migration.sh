@@ -158,8 +158,8 @@ test_inlined_schema_matches_canonical() {
         const cut = wf.indexOf("const {");
         if (cut < 0) { console.log("ERR: args destructure not found"); process.exit(1); }
         const prefix = wf.slice(0, cut).replace(/^export\s+const\s+meta/m, "const meta");
-        const extract = new Function(prefix + "\nreturn { SPECIALIST_SCHEMA, SYNTH_SCHEMA };");
-        const { SPECIALIST_SCHEMA, SYNTH_SCHEMA } = extract();
+        const extract = new Function(prefix + "\nreturn { SPECIALIST_SCHEMA, SYNTH_SCHEMA, CROSS_SCHEMA };");
+        const { SPECIALIST_SCHEMA, SYNTH_SCHEMA, CROSS_SCHEMA } = extract();
         const canon = JSON.parse(fs.readFileSync(schemaPath, "utf8"));
         const finding = canon["$defs"].finding;
         const flatten = (node) => {
@@ -187,8 +187,9 @@ test_inlined_schema_matches_canonical() {
         const eq = (a, b) => JSON.stringify(canonical(a)) === JSON.stringify(canonical(b));
         const sOk = eq(SPECIALIST_SCHEMA, flatten(canon["$defs"].specialistOutput));
         const yOk = eq(SYNTH_SCHEMA, flatten(canon["$defs"].synthEnvelope));
-        if (sOk && yOk) { console.log("OK"); }
-        else { console.log("MISMATCH specialist=" + sOk + " synth=" + yOk); }
+        const cOk = eq(CROSS_SCHEMA, flatten(canon["$defs"].crossOpinionEnvelope));
+        if (sOk && yOk && cOk) { console.log("OK"); }
+        else { console.log("MISMATCH specialist=" + sOk + " synth=" + yOk + " cross=" + cOk); }
     ' "$wf" "$schema" 2>&1)
     if [[ "$result" == "OK" ]]; then
         pass "inlined schema parity: SPECIALIST_SCHEMA + SYNTH_SCHEMA match finding-schema.json"

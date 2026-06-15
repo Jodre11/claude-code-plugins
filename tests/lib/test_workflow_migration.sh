@@ -251,3 +251,30 @@ test_review_core_survives_null_agent_results() {
             "a dispatch site crashed or returned no bundle on null agent output: $result"
     fi
 }
+
+# The intent ledger must be threaded from args into the synth prompt (gate follow-up #1).
+# Without it, verdict-rubric row 1 can never fire on the --workflow path.
+test_review_core_threads_intent_ledger_to_synth() {
+    local cr
+    cr=$(_wm_cr_dir)
+    local wf="$cr/workflows/review-core.mjs"
+    if [[ ! -f "$wf" ]]; then
+        fail "review-core intent-ledger threading" "missing: $wf"
+        return
+    fi
+    # Assert intentLedger appears in the args destructure (the `const { ... } = args` block).
+    if grep -qE 'intentLedger,' "$wf" || grep -qE 'intentLedger\s*\}' "$wf"; then
+        pass "review-core destructures intentLedger from args"
+    else
+        fail "review-core destructures intentLedger from args" \
+            "the args destructure must include intentLedger so the synth prompt can reference it"
+    fi
+    # Direct check: the synthPrompt string-concatenation references intentLedger via a
+    # defensive ternary (intentLedger ? ... : ...).
+    if grep -qE 'intentLedger\s*\?' "$wf"; then
+        pass "review-core interpolates intentLedger into synth prompt (defensive ternary)"
+    else
+        fail "review-core interpolates intentLedger into synth prompt (defensive ternary)" \
+            "the synth prompt assembly must include a conditional (intentLedger ? ...) for the ledger block"
+    fi
+}

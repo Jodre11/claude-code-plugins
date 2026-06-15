@@ -172,7 +172,19 @@ test_inlined_schema_matches_canonical() {
             }
             return node;
         };
-        const eq = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+        // Order-insensitive deep-equal: sort object keys recursively before
+        // stringifying, so an innocent key reorder in either source does not
+        // false-fail while a real value/structure drift still does.
+        const canonical = (node) => {
+            if (Array.isArray(node)) return node.map(canonical);
+            if (node && typeof node === "object") {
+                const out = {};
+                for (const k of Object.keys(node).sort()) out[k] = canonical(node[k]);
+                return out;
+            }
+            return node;
+        };
+        const eq = (a, b) => JSON.stringify(canonical(a)) === JSON.stringify(canonical(b));
         const sOk = eq(SPECIALIST_SCHEMA, flatten(canon["$defs"].specialistOutput));
         const yOk = eq(SYNTH_SCHEMA, flatten(canon["$defs"].synthEnvelope));
         if (sOk && yOk) { console.log("OK"); }

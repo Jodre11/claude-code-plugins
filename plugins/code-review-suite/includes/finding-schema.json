@@ -72,6 +72,17 @@
           }
         }
       }
+    },
+    "crossOpinionEnvelope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "opinionsMarkdown", "escalations"],
+      "properties": {
+        "status": { "enum": ["ok", "skipped", "failed"], "description": "skipped = nothing to review; failed = error; ok = ran." },
+        "statusReason": { "type": "string", "description": "One-line reason when status is skipped or failed." },
+        "opinionsMarkdown": { "type": "string", "description": "The cross-reviewer's verbatim ## Cross-Review Opinions block (Agree/Disagree/Escalate verdicts + reasoning). Free-text — the synthesiser reads it exactly as it reads inline cross-review prose. Empty string when no opinions." },
+        "escalations": { "type": "array", "items": { "$ref": "#/$defs/finding" }, "description": "New cross-domain findings this reviewer raised. Each is a full finding; provenance (triggering domain) is attached by review-core, not the agent." }
+      }
     }
   }
 }

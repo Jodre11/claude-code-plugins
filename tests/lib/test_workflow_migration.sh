@@ -19,9 +19,9 @@ test_finding_schema_is_valid_json() {
     else
         fail "finding-schema.json is well-formed JSON" "jq could not parse $schema"
     fi
-    # The four $defs the migration depends on must all be present.
+    # Every $def the migration depends on must be present.
     local def
-    for def in finding specialistOutput synthEnvelope sealedBundle; do
+    for def in finding specialistOutput synthEnvelope sealedBundle crossOpinionEnvelope; do
         if jq -e --arg d "$def" '.["$defs"][$d]' "$schema" >/dev/null 2>&1; then
             pass "finding-schema.json defines \$defs.$def"
         else

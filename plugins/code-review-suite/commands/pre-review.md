@@ -795,7 +795,8 @@ workflow('review-core', {
     selfReReview: $SELF_RE_REVIEW,
     reviewMode: $REVIEW_MODE,
     base: $BASE, headSha: $HEAD_SHA, emptyTreeMode: $EMPTY_TREE_MODE,
-    pathScope: $PATH_SCOPE, tempDir: $RESOLVED_TEMP_DIR
+    pathScope: $PATH_SCOPE, tempDir: $RESOLVED_TEMP_DIR,
+    intentLedger: $INTENT_LEDGER
 })
 ```
 

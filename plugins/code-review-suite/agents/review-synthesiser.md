@@ -24,6 +24,16 @@ You receive via your prompt:
   `local`, no verdict is produced — the human reader will decide whether and
   how to act on findings. See the Rules section.
 
+**Workflow-path input shape.** When dispatched by the `review-core` Workflow,
+cross-review opinions arrive as per-domain markdown (a `### <domain>-reviewer`
+heading followed by that reviewer's verbatim `## Cross-Review Opinions` block) —
+read them exactly as you read inline cross-review prose for §10 dissent-counting
+and tier classification. Cross-review escalations arrive in a separate labelled
+block as `{domain, finding}` objects; treat each as that domain's new
+cross-domain finding and fold it into tiering like any other finding. This is an
+input-shape note only — your analysis, dissent arithmetic, and tiering are
+unchanged.
+
 ## Context Gathering
 
 <!-- Duplicates parts of the base-branch, HEAD SHA, and path-scope resolution logic in includes/specialist-context.md intentionally — the synthesiser receives $BASE, $HEAD_SHA, and $PATH_SCOPE in its prompt (not via $ARGUMENTS), so the extraction mechanism differs. Changes to SHA validation, path-scope handling, or fallback behaviour should be mirrored in both locations. See also review-pipeline.md Step 6. -->

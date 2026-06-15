@@ -875,6 +875,43 @@ Announce: `> X files, Y lines changed [with significant deletions] [touching sec
 
 Continue to Step 4.
 
+### Step 3.5: Orchestration routing (Workflow opt-in)
+
+Determine `$USE_WORKFLOW`:
+- `true` if `$ARGUMENTS` contains the bare token `--workflow` (whitespace-delimited word, not substring), OR
+- `true` if `.claude/code-review.toml` exists and sets `orchestration.use_workflow = true` (skip silently if the file is missing or malformed — optional config), OR
+- `false` otherwise.
+
+Also resolve `$SELF_RE_REVIEW` for the args object below: `true` when the caller
+is in self-re-review mode (a validated `$LAST_REVIEW_SHA` is set — see
+`skills/review-gh-pr/SKILL.md` Step 1), `false` otherwise.
+
+**If `$USE_WORKFLOW` is true**, route Steps 4–6 through the deterministic core
+instead of the inline dispatch below. Resolve the `review-core` args object from
+the values Phases 0–3 already computed, then call the Workflow once:
+
+```
+workflow('review-core', {
+    agentPrompt: $AGENT_PROMPT,
+    flags: { csharp: $CSHARP_DETECTED, ui: $UI_DETECTED, js: $JS_DETECTED,
+             py: $PY_DETECTED, iac: $IAC_DETECTED, housekeeping: $HOUSEKEEPING_DETECTED,
+             securitySensitive: $SECURITY_SENSITIVE },
+    route: ($FILE_COUNT <= 5 && $LINE_COUNT <= 150 && !$SIGNIFICANT_DELETIONS && !$SECURITY_SENSITIVE) ? 'lightweight' : 'full',
+    selfReReview: $SELF_RE_REVIEW,
+    reviewMode: $REVIEW_MODE,
+    base: $BASE, headSha: $HEAD_SHA, emptyTreeMode: $EMPTY_TREE_MODE,
+    pathScope: $PATH_SCOPE, tempDir: $RESOLVED_TEMP_DIR
+})
+```
+
+The Workflow returns the sealed bundle `{ verdict, bodyText, comments:[{path,line,side,body}] }`.
+Skip the inline Steps 4–6 entirely and proceed to Step 7 (PR mode) / report rendering
+(local mode) using ONLY the bundle. Do NOT re-derive, re-filter, or re-render the
+bundle — the core already applied the Class D filter and rendered comment bodies.
+You may only POST it (PR mode) or PRINT it (local mode).
+
+**If `$USE_WORKFLOW` is false**, continue to Step 4 below (today's inline dispatch).
+
 ### Step 4: Dispatch specialists
 
 > **MANDATORY DISPATCH CONSTRAINT — READ BEFORE PROCEEDING**
@@ -1550,6 +1587,45 @@ The user is sovereign over the final action submitted. At the confirmation promp
 the user can override the proposed action; the user's `[c]` keypress under the
 `REQUEST_CHANGES` prompt is the only path to a `COMMENT` submission. This is the
 documented caveat to synthesiser-as-sole-authority.
+
+### Step 6.0 — Workflow-bundle short-circuit (when $USE_WORKFLOW)
+
+If `$USE_WORKFLOW` is true (set in Step 3.5), the `review-core` Workflow already
+returned a sealed bundle `{ verdict, bodyText, comments }`. The bundle is the sole
+input to this step — the inline Steps 4–6 did not run, so there is no synthesiser
+markdown to parse. In this branch:
+
+- `$SYNTH_VERDICT = bundle.verdict` — read the verdict directly from the bundle.
+  SKIP the Class A.1 markdown `## Verdict` parse entirely; there is no synthesiser
+  report to scan on this path.
+- **`bundle.verdict == 'NONE'` (lightweight PR path).** `review-core`'s
+  `buildLightweightBundle` returns `verdict: 'NONE'` when Step 3.5 resolved
+  `route` to `lightweight`. In that case: present `bundle.bodyText` to the user
+  and STOP — do NOT run the Class A prompt, do NOT post inline comments, do NOT
+  submit a `gh pr review` verdict. This faithfully reproduces today's inline
+  lightweight behaviour ("present its report and stop" — Step 3), so `--workflow`
+  introduces no posting on the lightweight path. (The trivial/lightweight/full
+  paths producing divergent posted output is a known pre-existing issue, tracked
+  separately — it is out of scope for this migration.)
+- The Class A user-confirmation prompt (A.2/A.3) STILL RUNS for an `APPROVE` /
+  `REQUEST_CHANGES` verdict — the human gate is preserved (design D6). Set
+  `$PROPOSED_ACTION = bundle.verdict`; the `[s]` / `[r]` / `[n]` (and `[c]` under a
+  `REQUEST_CHANGES` prompt) override semantics are unchanged. Note that the bundle
+  does NOT carry the rubric row, so `$SYNTH_RUBRIC_ROW` is unset on this path and
+  the prompt's `Rubric row …` line renders blank — the verdict and its reason
+  still display normally.
+- SKIP Class D entirely (D.1–D.4). The bundle's `comments[]` is already the
+  filtered, rendered post-set, and `bundle.bodyText` is already the constructed
+  GitHub body (Cost/Dismissed stripped, footer applied). Do NOT re-filter or
+  re-render either.
+- Class C posting consumes the bundle directly: post each `bundle.comments[i]` as an
+  inline comment — `path`, `line`, `side`, `body` map 1:1 to the `gh api`
+  inline-comment fields — then submit `bundle.bodyText` as the `gh pr review
+  --input -` body, using the review flag chosen from `$FINAL_VERDICT` (after the
+  Class A prompt resolves any override).
+
+If `$USE_WORKFLOW` is false, proceed with the existing Class A–D flow below
+UNCHANGED — that flow is the `$USE_WORKFLOW == false` path.
 
 <!-- VERDICT RUBRIC — inlined from includes/verdict-rubric.md (canonical source).
 Edit the include first, then propagate to all listed consumers. -->

@@ -21,6 +21,23 @@ and emit a structured report. The cross-cutting procedure is captured here once;
 file contributes only its tool-specific sections (file extensions, config-root walk, binary path,
 invocation flags, severity mapping).
 
+## 0. Read-only mandate
+
+This re-states the READ-ONLY MANDATE from `includes/specialist-context.md` because
+static-analysis specialists skip most of that file (see §1 — only the "Determine base
+branch" section is inherited). Keep the two copies in sync.
+
+> **READ-ONLY MANDATE — NON-NEGOTIABLE**
+>
+> You are a reviewer. Your ONLY output is a findings report. You MUST NOT modify the
+> repository in any way: no editing/creating/deleting files, and no `git add`,
+> `git commit`, `git push`, `git reset`, `git checkout --`, `git stash`, or any other
+> state-mutating command. Your Bash grant exists ONLY to run the analysis tool in its
+> read-only mode plus read-only git queries (`git diff`, `git log`, `git show`). Never
+> run a linter/formatter in `--fix`/`--write` mode. If you identify a fix, DESCRIBE it in
+> the finding's `Suggested fix:` field — never apply it. Mutating the tree corrupts the
+> commit the other reviewers are pinned to; it is a contract violation, not a convenience.
+
 ## 1. Inherit base context
 
 Follow the "Determine base branch" section of `includes/specialist-context.md` to resolve `$BASE`,

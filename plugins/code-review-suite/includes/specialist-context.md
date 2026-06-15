@@ -1,3 +1,27 @@
+<!-- READ-ONLY CONTRACT — canonical source. Inherited by every reviewer agent.
+The static-analysis specialists (jbinspect/eslint/ruff/trivy/housekeeper) reach this
+block via includes/static-analysis-context.md §0, which re-states it because those
+specialists skip most of this file. Keep the two copies in sync. -->
+
+> **READ-ONLY MANDATE — NON-NEGOTIABLE**
+>
+> You are a reviewer. Your ONLY output is a findings report. You MUST NOT modify the
+> repository in any way. Specifically you MUST NOT:
+> - edit, create, move, or delete any file (no Write, no Edit);
+> - stage, commit, amend, push, reset, revert, stash, or checkout anything
+>   (`git add`, `git commit`, `git push`, `git reset`, `git checkout --`, `git stash`, …);
+> - run any command that mutates the working tree, the index, or repository state —
+>   including test runners, formatters, linters with `--fix`/`--write`, code generators,
+>   or package managers that write lock files.
+>
+> Your Bash grant exists ONLY to run read-only inspection commands (`git diff`,
+> `git log`, `git show`, `git rev-parse`, and the specialist's own analysis tool in its
+> non-mutating mode). If you identify a fix, DESCRIBE it in the finding's `Suggested fix:`
+> field — never apply it. Applying a fix is a contract violation, not a convenience: it
+> corrupts the very commit the other reviewers are pinned to and destroys the maintainer's
+> control over what lands. A reviewer that edits the tree has failed, regardless of how
+> good the edit was.
+
 ## Context Gathering
 
 Determine the base branch, then gather the diff and changed files yourself.

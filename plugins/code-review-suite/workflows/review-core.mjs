@@ -272,7 +272,7 @@ const comments = postSet.map(f => ({
 let bodyText = stripCostAndDismissed(envelope.bodyText)
 if (droppedCount > 0) {
     bodyText = stripDroppedReferences(bodyText, postSet, consensus)
-    bodyText += `\n\n---\n\n*${droppedCount} additional finding(s) below the 75% ` +
+    bodyText += `\n\n---\n\n*${droppedCount} additional finding(s) below the ${POST_THRESHOLD}% ` +
         `confidence threshold were not posted. Run pre-review locally to see the full report.*`
 }
 
@@ -337,6 +337,10 @@ function isStrippableHeading(line) {
 // (b) remove its `#### Finding #N — …` consensus section (heading through the next
 // `#### `, `### `, or `## ` heading or EOF). String ops only.
 function stripDroppedReferences(bodyText, postSet, consensus) {
+    // Identity invariant: postSet is consensus itself or consensus.filter(...), so its
+    // elements are the SAME object references as consensus's. The Set membership test
+    // below is therefore reference-equality — do not clone/normalise findings between
+    // building postSet and calling this, or every finding reads as dropped.
     const postSetSet = new Set(postSet)
     const droppedTokens = []
     const droppedNumbers = []
@@ -389,12 +393,12 @@ function isDroppedFindingHeading(line, droppedNumbers) {
 // or return prose-only in local mode. Always verdict NONE — pre-review has no verdict.
 function buildLightweightBundle(la, reviewMode) {
     const findings = (la && la.findings) ? la.findings : []
+    const body = findings.length
+        ? findings.map((f, i) =>
+            `### Finding ${i + 1} — ${f.file}:${f.line}\n\n${renderCommentBody(f)}`
+        ).join('\n\n')
+        : 'No findings.'
     if (reviewMode === 'local') {
-        const body = findings.length
-            ? findings.map((f, i) =>
-                `### Finding ${i + 1} — ${f.file}:${f.line}\n\n${renderCommentBody(f)}`
-            ).join('\n\n')
-            : 'No findings.'
         return { verdict: 'NONE', bodyText: body, comments: [] }
     }
     const comments = findings.map(f => ({
@@ -403,10 +407,5 @@ function buildLightweightBundle(la, reviewMode) {
         side: sideFor(f.line),
         body: renderCommentBody(f),
     }))
-    const body = findings.length
-        ? findings.map((f, i) =>
-            `### Finding ${i + 1} — ${f.file}:${f.line}\n\n${renderCommentBody(f)}`
-        ).join('\n\n')
-        : 'No findings.'
     return { verdict: 'NONE', bodyText: body, comments }
 }

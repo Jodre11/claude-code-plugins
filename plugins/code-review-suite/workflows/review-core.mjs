@@ -109,7 +109,7 @@ const CROSS_SCHEMA = {
         escalations: {
             type: 'array',
             items: FINDING_SHAPE,
-            description: 'New cross-domain findings this reviewer raised. Each is a full finding; provenance (triggering domain) is attached by review-core, not the agent.',
+            description: 'New cross-domain findings this reviewer raised. Each is a full finding; provenance (the cross-reviewer\'s own domain) is attached by review-core, not the agent.',
         },
     },
 }

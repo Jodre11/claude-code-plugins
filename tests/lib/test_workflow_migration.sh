@@ -192,9 +192,9 @@ test_inlined_schema_matches_canonical() {
         else { console.log("MISMATCH specialist=" + sOk + " synth=" + yOk + " cross=" + cOk); }
     ' "$wf" "$schema" 2>&1)
     if [[ "$result" == "OK" ]]; then
-        pass "inlined schema parity: SPECIALIST_SCHEMA + SYNTH_SCHEMA match finding-schema.json"
+        pass "inlined schema parity: SPECIALIST_SCHEMA + SYNTH_SCHEMA + CROSS_SCHEMA match finding-schema.json"
     else
-        fail "inlined schema parity: SPECIALIST_SCHEMA + SYNTH_SCHEMA match finding-schema.json" \
+        fail "inlined schema parity: SPECIALIST_SCHEMA + SYNTH_SCHEMA + CROSS_SCHEMA match finding-schema.json" \
             "the inlined schema literals drifted from the canonical \$ref-flattened defs: $result"
     fi
 }

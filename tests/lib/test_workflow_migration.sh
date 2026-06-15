@@ -192,9 +192,62 @@ test_inlined_schema_matches_canonical() {
         else { console.log("MISMATCH specialist=" + sOk + " synth=" + yOk + " cross=" + cOk); }
     ' "$wf" "$schema" 2>&1)
     if [[ "$result" == "OK" ]]; then
-        pass "inlined schema parity: SPECIALIST_SCHEMA + SYNTH_SCHEMA match finding-schema.json"
+        pass "inlined schema parity: SPECIALIST_SCHEMA + SYNTH_SCHEMA + CROSS_SCHEMA match finding-schema.json"
     else
-        fail "inlined schema parity: SPECIALIST_SCHEMA + SYNTH_SCHEMA match finding-schema.json" \
+        fail "inlined schema parity: SPECIALIST_SCHEMA + SYNTH_SCHEMA + CROSS_SCHEMA match finding-schema.json" \
             "the inlined schema literals drifted from the canonical \$ref-flattened defs: $result"
+    fi
+}
+
+# Category C resilience: an agent() that resolves successfully with null (the documented
+# ~30% empty-stdout failure mode) must not crash any of the three dispatch sites. We eval
+# the full script body with mock globals — mock agent() always returns null — and assert
+# the workflow returns a bundle (verdict NONE in local mode) rather than throwing. This
+# guards review-core.mjs:228-231 (specialist), 265-272 (cross), and 295-309 (synth).
+test_review_core_survives_null_agent_results() {
+    local cr
+    cr=$(_wm_cr_dir)
+    local wf="$cr/workflows/review-core.mjs"
+    if [[ ! -f "$wf" ]]; then
+        fail "review-core null-agent resilience" "missing: $wf"
+        return
+    fi
+    local result
+    result=$(node -e '
+        const fs = require("fs");
+        const src = fs.readFileSync(process.argv[1], "utf8")
+            .replace(/^export\s+const\s+meta/m, "const meta");
+        const mkArgs = (mode) => ({
+            agentPrompt: "x", flags: {}, route: "full", selfReReview: false,
+            reviewMode: mode, base: "main", headSha: "a".repeat(40),
+            emptyTreeMode: false, pathScope: "", tempDir: "/tmp/x",
+        });
+        const agent = async () => null;                       // Category C: resolves, null value
+        const parallel = (thunks) => Promise.all(thunks.map(t => t()));
+        const phase = () => {};
+        const log = () => {};
+        const pipeline = async () => [];
+        const workflow = async () => null;
+        const run = (mode) => {
+            const fn = new Function("agent","parallel","pipeline","phase","log","args","workflow",
+                "return (async()=>{" + src + "\n})()");
+            return fn(agent, parallel, pipeline, phase, log, mkArgs(mode), workflow);
+        };
+        (async () => {
+            for (const mode of ["local", "pr"]) {
+                let bundle;
+                try { bundle = await run(mode); }
+                catch (e) { console.log("THREW(" + mode + "): " + e.message); return; }
+                if (!bundle || typeof bundle !== "object") { console.log("NOBUNDLE(" + mode + ")"); return; }
+                if (!("verdict" in bundle) || !("comments" in bundle)) { console.log("BADSHAPE(" + mode + ")"); return; }
+            }
+            console.log("OK");
+        })();
+    ' "$wf" 2>&1)
+    if [[ "$result" == "OK" ]]; then
+        pass "review-core survives null agent() results at all dispatch sites"
+    else
+        fail "review-core survives null agent() results at all dispatch sites" \
+            "a dispatch site crashed or returned no bundle on null agent output: $result"
     fi
 }

@@ -334,8 +334,8 @@ function isStrippableHeading(line) {
 // order and tags them [#1], [#2], … in the prose. So a consensus finding at 0-based
 // index i has token [#${i+1}]. A finding is "dropped" iff it is NOT in postSet.
 // For each dropped finding we (a) remove any line containing its [#N] token, and
-// (b) remove its `### Finding #N — …` section (heading through the next `### ` or
-// `## ` heading or EOF). String ops only.
+// (b) remove its `#### Finding #N — …` consensus section (heading through the next
+// `#### `, `### `, or `## ` heading or EOF). String ops only.
 function stripDroppedReferences(bodyText, postSet, consensus) {
     const postSetSet = new Set(postSet)
     const droppedTokens = []
@@ -352,16 +352,16 @@ function stripDroppedReferences(bodyText, postSet, consensus) {
     let skippingSection = false
     for (const line of lines) {
         if (skippingSection) {
-            // Section ends at the next `### ` or `## ` heading.
-            if (line.startsWith('### ') || line.startsWith('## ')) {
+            // Section ends at the next `#### `, `### `, or `## ` heading.
+            if (line.startsWith('#### ') || line.startsWith('### ') || line.startsWith('## ')) {
                 skippingSection = false
                 // Fall through to evaluate this heading line normally.
             } else {
                 continue
             }
         }
-        // (b) Start skipping at a dropped finding's `### Finding #N — …` section heading.
-        if (line.startsWith('### Finding #') && isDroppedFindingHeading(line, droppedNumbers)) {
+        // (b) Start skipping at a dropped finding's `#### Finding #N — …` section heading.
+        if (line.startsWith('#### Finding #') && isDroppedFindingHeading(line, droppedNumbers)) {
             skippingSection = true
             continue
         }
@@ -374,11 +374,11 @@ function stripDroppedReferences(bodyText, postSet, consensus) {
     return out.join('\n')
 }
 
-// True when a `### Finding #N — …` heading line names one of the dropped numbers.
-// Matches the integer immediately after `### Finding #` against the dropped set,
+// True when a `#### Finding #N — …` heading line names one of the dropped numbers.
+// Matches the integer immediately after `#### Finding #` against the dropped set,
 // avoiding prefix collisions (e.g. #1 vs #10).
 function isDroppedFindingHeading(line, droppedNumbers) {
-    const m = line.match(/^### Finding #(\d+)\b/)
+    const m = line.match(/^#### Finding #(\d+)\b/)
     if (!m) return false
     return droppedNumbers.includes(Number(m[1]))
 }

@@ -776,6 +776,10 @@ Determine `$USE_WORKFLOW`:
 - `true` if `.claude/code-review.toml` exists and sets `orchestration.use_workflow = true` (skip silently if the file is missing or malformed — optional config), OR
 - `false` otherwise.
 
+Also resolve `$SELF_RE_REVIEW` for the args object below: `true` when the caller
+is in self-re-review mode (a validated `$LAST_REVIEW_SHA` is set — see
+`skills/review-gh-pr/SKILL.md` Step 1), `false` otherwise.
+
 **If `$USE_WORKFLOW` is true**, route Steps 4–6 through the deterministic core
 instead of the inline dispatch below. Resolve the `review-core` args object from
 the values Phases 0–3 already computed, then call the Workflow once:

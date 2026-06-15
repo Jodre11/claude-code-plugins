@@ -882,6 +882,10 @@ Determine `$USE_WORKFLOW`:
 - `true` if `.claude/code-review.toml` exists and sets `orchestration.use_workflow = true` (skip silently if the file is missing or malformed — optional config), OR
 - `false` otherwise.
 
+Also resolve `$SELF_RE_REVIEW` for the args object below: `true` when the caller
+is in self-re-review mode (a validated `$LAST_REVIEW_SHA` is set — see
+`skills/review-gh-pr/SKILL.md` Step 1), `false` otherwise.
+
 **If `$USE_WORKFLOW` is true**, route Steps 4–6 through the deterministic core
 instead of the inline dispatch below. Resolve the `review-core` args object from
 the values Phases 0–3 already computed, then call the Workflow once:
@@ -1594,10 +1598,22 @@ markdown to parse. In this branch:
 - `$SYNTH_VERDICT = bundle.verdict` — read the verdict directly from the bundle.
   SKIP the Class A.1 markdown `## Verdict` parse entirely; there is no synthesiser
   report to scan on this path.
-- The Class A user-confirmation prompt (A.2/A.3) STILL RUNS exactly as today — the
-  human gate is preserved (design D6). Set `$PROPOSED_ACTION = bundle.verdict`; the
-  `[s]` / `[r]` / `[n]` (and `[c]` under a `REQUEST_CHANGES` prompt) override
-  semantics are unchanged.
+- **`bundle.verdict == 'NONE'` (lightweight PR path).** `review-core`'s
+  `buildLightweightBundle` returns `verdict: 'NONE'` when Step 3.5 resolved
+  `route` to `lightweight`. In that case: present `bundle.bodyText` to the user
+  and STOP — do NOT run the Class A prompt, do NOT post inline comments, do NOT
+  submit a `gh pr review` verdict. This faithfully reproduces today's inline
+  lightweight behaviour ("present its report and stop" — Step 3), so `--workflow`
+  introduces no posting on the lightweight path. (The trivial/lightweight/full
+  paths producing divergent posted output is a known pre-existing issue, tracked
+  separately — it is out of scope for this migration.)
+- The Class A user-confirmation prompt (A.2/A.3) STILL RUNS for an `APPROVE` /
+  `REQUEST_CHANGES` verdict — the human gate is preserved (design D6). Set
+  `$PROPOSED_ACTION = bundle.verdict`; the `[s]` / `[r]` / `[n]` (and `[c]` under a
+  `REQUEST_CHANGES` prompt) override semantics are unchanged. Note that the bundle
+  does NOT carry the rubric row, so `$SYNTH_RUBRIC_ROW` is unset on this path and
+  the prompt's `Rubric row …` line renders blank — the verdict and its reason
+  still display normally.
 - SKIP Class D entirely (D.1–D.4). The bundle's `comments[]` is already the
   filtered, rendered post-set, and `bundle.bodyText` is already the constructed
   GitHub body (Cost/Dismissed stripped, footer applied). Do NOT re-filter or

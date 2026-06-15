@@ -21,6 +21,28 @@ export const meta = {
 // SPECIALIST_SCHEMA — the canonical `specialistOutput` def with the `finding` def
 // inlined into findings.items (flattened from finding-schema.json $defs; no $ref/$defs
 // because the sandbox does not resolve references — agent() needs a self-contained schema).
+
+// FINDING_SHAPE — the canonical `finding` def, inlined once and shared by every schema
+// that embeds a finding (SPECIALIST findings, SYNTH tiers, CROSS escalations). A file-local
+// const is permitted in the sandbox (only import()/$ref are not); the parity test flattens
+// the canonical `#/$defs/finding` $ref the same way, so sharing one object keeps parity green
+// while removing ~250 lines of hand-synced duplication.
+const FINDING_SHAPE = {
+    type: 'object',
+    additionalProperties: false,
+    required: ['file', 'line', 'severity', 'confidence', 'description', 'suggested_fix'],
+    properties: {
+        file: { type: 'string', description: 'Repo-relative path, no a/ or b/ prefix.' },
+        line: { type: 'integer', minimum: 0, description: "Line in the new file's coordinate space. 0 only for deletion anchors handled out-of-band." },
+        rule_id: { type: 'string', description: 'Static-analysis rule ID (e.g. F401, DS-002). Omit for LLM-specialist findings.' },
+        severity: { enum: ['Critical', 'Important', 'Suggestion'] },
+        confidence: { type: 'integer', minimum: 0, maximum: 100 },
+        description: { type: 'string' },
+        suggested_fix: { type: 'string' },
+        reference: { type: 'string', description: 'Stable rule/advisory URL when the tool emits one.' },
+    },
+}
+
 const SPECIALIST_SCHEMA = {
     type: 'object',
     additionalProperties: false,
@@ -30,21 +52,7 @@ const SPECIALIST_SCHEMA = {
         statusReason: { type: 'string', description: 'One-line reason when status is skipped or failed.' },
         findings: {
             type: 'array',
-            items: {
-                type: 'object',
-                additionalProperties: false,
-                required: ['file', 'line', 'severity', 'confidence', 'description', 'suggested_fix'],
-                properties: {
-                    file: { type: 'string', description: 'Repo-relative path, no a/ or b/ prefix.' },
-                    line: { type: 'integer', minimum: 0, description: "Line in the new file's coordinate space. 0 only for deletion anchors handled out-of-band." },
-                    rule_id: { type: 'string', description: 'Static-analysis rule ID (e.g. F401, DS-002). Omit for LLM-specialist findings.' },
-                    severity: { enum: ['Critical', 'Important', 'Suggestion'] },
-                    confidence: { type: 'integer', minimum: 0, maximum: 100 },
-                    description: { type: 'string' },
-                    suggested_fix: { type: 'string' },
-                    reference: { type: 'string', description: 'Stable rule/advisory URL when the tool emits one.' },
-                },
-            },
+            items: FINDING_SHAPE,
         },
     },
 }
@@ -66,75 +74,19 @@ const SYNTH_SCHEMA = {
             properties: {
                 consensus: {
                     type: 'array',
-                    items: {
-                        type: 'object',
-                        additionalProperties: false,
-                        required: ['file', 'line', 'severity', 'confidence', 'description', 'suggested_fix'],
-                        properties: {
-                            file: { type: 'string', description: 'Repo-relative path, no a/ or b/ prefix.' },
-                            line: { type: 'integer', minimum: 0, description: "Line in the new file's coordinate space. 0 only for deletion anchors handled out-of-band." },
-                            rule_id: { type: 'string', description: 'Static-analysis rule ID (e.g. F401, DS-002). Omit for LLM-specialist findings.' },
-                            severity: { enum: ['Critical', 'Important', 'Suggestion'] },
-                            confidence: { type: 'integer', minimum: 0, maximum: 100 },
-                            description: { type: 'string' },
-                            suggested_fix: { type: 'string' },
-                            reference: { type: 'string', description: 'Stable rule/advisory URL when the tool emits one.' },
-                        },
-                    },
+                    items: FINDING_SHAPE,
                 },
                 synthesiser: {
                     type: 'array',
-                    items: {
-                        type: 'object',
-                        additionalProperties: false,
-                        required: ['file', 'line', 'severity', 'confidence', 'description', 'suggested_fix'],
-                        properties: {
-                            file: { type: 'string', description: 'Repo-relative path, no a/ or b/ prefix.' },
-                            line: { type: 'integer', minimum: 0, description: "Line in the new file's coordinate space. 0 only for deletion anchors handled out-of-band." },
-                            rule_id: { type: 'string', description: 'Static-analysis rule ID (e.g. F401, DS-002). Omit for LLM-specialist findings.' },
-                            severity: { enum: ['Critical', 'Important', 'Suggestion'] },
-                            confidence: { type: 'integer', minimum: 0, maximum: 100 },
-                            description: { type: 'string' },
-                            suggested_fix: { type: 'string' },
-                            reference: { type: 'string', description: 'Stable rule/advisory URL when the tool emits one.' },
-                        },
-                    },
+                    items: FINDING_SHAPE,
                 },
                 contested: {
                     type: 'array',
-                    items: {
-                        type: 'object',
-                        additionalProperties: false,
-                        required: ['file', 'line', 'severity', 'confidence', 'description', 'suggested_fix'],
-                        properties: {
-                            file: { type: 'string', description: 'Repo-relative path, no a/ or b/ prefix.' },
-                            line: { type: 'integer', minimum: 0, description: "Line in the new file's coordinate space. 0 only for deletion anchors handled out-of-band." },
-                            rule_id: { type: 'string', description: 'Static-analysis rule ID (e.g. F401, DS-002). Omit for LLM-specialist findings.' },
-                            severity: { enum: ['Critical', 'Important', 'Suggestion'] },
-                            confidence: { type: 'integer', minimum: 0, maximum: 100 },
-                            description: { type: 'string' },
-                            suggested_fix: { type: 'string' },
-                            reference: { type: 'string', description: 'Stable rule/advisory URL when the tool emits one.' },
-                        },
-                    },
+                    items: FINDING_SHAPE,
                 },
                 dismissed: {
                     type: 'array',
-                    items: {
-                        type: 'object',
-                        additionalProperties: false,
-                        required: ['file', 'line', 'severity', 'confidence', 'description', 'suggested_fix'],
-                        properties: {
-                            file: { type: 'string', description: 'Repo-relative path, no a/ or b/ prefix.' },
-                            line: { type: 'integer', minimum: 0, description: "Line in the new file's coordinate space. 0 only for deletion anchors handled out-of-band." },
-                            rule_id: { type: 'string', description: 'Static-analysis rule ID (e.g. F401, DS-002). Omit for LLM-specialist findings.' },
-                            severity: { enum: ['Critical', 'Important', 'Suggestion'] },
-                            confidence: { type: 'integer', minimum: 0, maximum: 100 },
-                            description: { type: 'string' },
-                            suggested_fix: { type: 'string' },
-                            reference: { type: 'string', description: 'Stable rule/advisory URL when the tool emits one.' },
-                        },
-                    },
+                    items: FINDING_SHAPE,
                 },
             },
         },
@@ -156,21 +108,7 @@ const CROSS_SCHEMA = {
         opinionsMarkdown: { type: 'string', description: "The cross-reviewer's verbatim ## Cross-Review Opinions block (Agree/Disagree/Escalate verdicts + reasoning). Free-text — the synthesiser reads it exactly as it reads inline cross-review prose. Empty string when no opinions." },
         escalations: {
             type: 'array',
-            items: {
-                type: 'object',
-                additionalProperties: false,
-                required: ['file', 'line', 'severity', 'confidence', 'description', 'suggested_fix'],
-                properties: {
-                    file: { type: 'string', description: 'Repo-relative path, no a/ or b/ prefix.' },
-                    line: { type: 'integer', minimum: 0, description: "Line in the new file's coordinate space. 0 only for deletion anchors handled out-of-band." },
-                    rule_id: { type: 'string', description: 'Static-analysis rule ID (e.g. F401, DS-002). Omit for LLM-specialist findings.' },
-                    severity: { enum: ['Critical', 'Important', 'Suggestion'] },
-                    confidence: { type: 'integer', minimum: 0, maximum: 100 },
-                    description: { type: 'string' },
-                    suggested_fix: { type: 'string' },
-                    reference: { type: 'string', description: 'Stable rule/advisory URL when the tool emits one.' },
-                },
-            },
+            items: FINDING_SHAPE,
             description: 'New cross-domain findings this reviewer raised. Each is a full finding; provenance (triggering domain) is attached by review-core, not the agent.',
         },
     },

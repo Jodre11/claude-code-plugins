@@ -88,7 +88,7 @@ Record your own findings independently before cross-referencing with specialists
 
 ## Severity Reclassification
 
-Before classifying findings into tiers, apply the severity definitions from `includes/severity-definitions.md` to every specialist finding. Specialists may over-classify — a finding rated Important by a specialist that does not meet the "observable incorrect behaviour in a reachable code path" bar must be downgraded to Suggestion. Likewise, a Suggestion that does meet the Important bar should be upgraded.
+Before classifying findings into tiers, apply the severity definitions from `includes/severity-definitions.md` to every specialist finding. Important has TWO bars: the runtime-defect bar ("observable incorrect behaviour in a reachable code path") AND the **agent-hazard basis** (a change that predictably induces a future maintainer to introduce a defect — a lying comment or misleading name, a false-green test, a silently-deleted workaround — with no runtime defect today). Specialists may over-classify — a finding rated Important that meets NEITHER bar must be downgraded to Suggestion. Likewise, a Suggestion that meets EITHER bar should be upgraded; this explicitly includes an agent-hazard finding (e.g. a lying comment or a false-green test) that carries no runtime defect today. Apply the agent-hazard guardrails from the severity definitions: require a concrete misleading mechanism, never raise agent-hazard above Important, and remember the rubric's ≥ 70 confidence gate still governs whether it blocks.
 
 When you reclassify, note it: `**Reclassified:** Important → Suggestion — [one-line reason]`
 

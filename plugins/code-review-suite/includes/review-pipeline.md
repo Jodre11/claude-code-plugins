@@ -769,12 +769,17 @@ Announce: `> X files, Y lines changed [with significant deletions] [touching sec
 
 Continue to Step 4.
 
-### Step 3.5: Orchestration routing (Workflow opt-in)
+### Step 3.5: Orchestration routing (Workflow default)
 
-Determine `$USE_WORKFLOW`:
-- `true` if `$ARGUMENTS` contains the bare token `--workflow` (whitespace-delimited word, not substring), OR
-- `true` if `.claude/code-review.toml` exists and sets `orchestration.use_workflow = true` (skip silently if the file is missing or malformed — optional config), OR
-- `false` otherwise.
+Determine `$USE_WORKFLOW`. The deterministic Workflow core is the DEFAULT path; the
+inline Steps 4–6 remain only as an explicit opt-out (the R1 rollback while the
+`agent()` schema API is proven on the running CLI build):
+- `false` if `$ARGUMENTS` contains the bare token `--no-workflow` (whitespace-delimited word, not substring), OR
+- `false` if `.claude/code-review.toml` exists and sets `orchestration.use_workflow = false` (skip silently if the file is missing or malformed — optional config), OR
+- `true` otherwise (default).
+
+The bare token `--workflow` and `orchestration.use_workflow = true` are still accepted
+as explicit affirmations of the default — they are redundant no-ops, not errors.
 
 Also resolve `$SELF_RE_REVIEW` for the args object below: `true` when the caller
 is in self-re-review mode (a validated `$LAST_REVIEW_SHA` is set — see

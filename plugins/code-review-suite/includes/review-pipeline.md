@@ -814,6 +814,10 @@ Skip the inline Steps 4–6 entirely and proceed to Step 7 (PR mode) / report re
 bundle — the core already applied the Class D filter and rendered comment bodies.
 You may only POST it (PR mode) or PRINT it (local mode).
 
+`review-core` tolerates both `args` shapes: the `workflow()` primitive delivers an
+object, while the Workflow tool (which the main agent loop uses, having no primitive)
+delivers a JSON string — the script normalises a string arg before destructuring.
+
 **If `$USE_WORKFLOW` is false**, continue to Step 4 below (today's inline dispatch).
 
 ### Step 4: Dispatch specialists

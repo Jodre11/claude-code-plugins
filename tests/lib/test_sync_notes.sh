@@ -1378,3 +1378,56 @@ test_housekeeping_trigger_mirrors_engine_scope() {
             "trigger bullet must name 'Dockerfile' and engine must define _is_dockerfile"
     fi
 }
+
+test_sync_agent_hazard_severity_basis() {
+    local cr
+    cr=$(_cr_dir)
+    if [[ ! -d "$cr" ]]; then
+        skip "agent-hazard severity basis" "code-review-suite plugin not found"
+        return
+    fi
+
+    local sev="$cr/includes/severity-definitions.md"
+    local synth="$cr/agents/review-synthesiser.md"
+    local corr="$cr/agents/correctness-reviewer.md"
+
+    local f
+    for f in "$sev" "$synth" "$corr"; do
+        if [[ ! -f "$f" ]]; then
+            fail "agent-hazard severity basis: inputs present" "missing: $f"
+            return
+        fi
+    done
+
+    # Canonical: the basis heading, the load-bearing predicate, and the
+    # Critical-untouched guardrail must all be present in severity-definitions.md.
+    local lit
+    for lit in \
+        '**Agent-hazard basis**' \
+        'predictably cause a future maintainer' \
+        'Important only, never Critical'; do
+        if grep -qF "$lit" "$sev"; then
+            pass "agent-hazard severity basis: severity-definitions.md contains '$lit'"
+        else
+            fail "agent-hazard severity basis: severity-definitions.md contains '$lit'" \
+                "literal not found in $sev"
+        fi
+    done
+
+    # Ripple lock: the synthesiser's reclassification step must reference the
+    # shared anchor, or it will silently downgrade agent-hazard findings.
+    if grep -qF 'agent-hazard basis' "$synth"; then
+        pass "agent-hazard severity basis: synthesiser references the agent-hazard basis"
+    else
+        fail "agent-hazard severity basis: synthesiser references the agent-hazard basis" \
+            "anchor 'agent-hazard basis' not found in $synth"
+    fi
+
+    # Additive re-point lock: comment-truth must cite the basis.
+    if grep -qF 'agent-hazard basis' "$corr"; then
+        pass "agent-hazard severity basis: comment-truth cites the agent-hazard basis"
+    else
+        fail "agent-hazard severity basis: comment-truth cites the agent-hazard basis" \
+            "anchor 'agent-hazard basis' not found in $corr"
+    fi
+}

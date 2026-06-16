@@ -199,13 +199,35 @@ claim validation"). Two reasons n=1 here is NOT the trial's answer:
   ("no runtime defect today") and removes the rubric-row-1 confound that the plan's original
   broken-code hit suffered. NOT a re-opening of a decided fork — a content correction the
   design's own wording requires.
-- **Strategy keys for Task 3 fixtures:** `working_dir_strategy: worktree`, `base_sha` =
-  parent commit, `head_sha` = the commit that adds the planted file; the planted `file:line`
-  MUST be inside `git diff base...head`. `live` is not a valid strategy value. The fixtures
-  must commit the planted `lib/cache.py` into the marketplace repo history (or a referenced
-  fixture-local committed blob) so the worktree at `head_sha` reproduces it. **This is a
-  build-time deviation Task 3/6 must resolve** (how the planted commits are created and
-  referenced) — flag to maintainer.
+- **Strategy keys for Task 3 fixtures — FINAL, proven mechanism: `copy` + `setup.command`
+  git-init (NOT `worktree`).** A `worktree` strategy does `git worktree add` of the
+  *marketplace* repo, whose checkout at `head_sha` would carry the **basis-present**
+  `includes/severity-definitions.md` into arm A's cwd — contaminating the ablation if the
+  synthesiser reads the include at runtime. Instead, each fixture ships its planted tree
+  under `source_path: tests/fixtures/agent-hazard/<hit|nearmiss>/` (a `README.md` + the
+  planted `lib/cache.py`), uses `working_dir_strategy: copy`, and a `setup.command` git-inits
+  the copied dir into a deterministic two-commit history (base scaffold → head adds
+  `lib/cache.py`) — a MINIMAL repo with no severity include, exactly reproducing the probe3
+  environment. Determinism is achieved by pinning `GIT_AUTHOR_*`/`GIT_COMMITTER_*` name,
+  email, and date in the setup command; verified byte-identical across repeated runs. The
+  `base_sha`/`head_sha` in `source.yaml` are the resulting fixed SHAs (the synthesiser reads
+  them from its prompt; the planted `lib/cache.py:42` is inside `git diff base...head`):
+  - **hit:** `base_sha: ce0f66704dbcad0ba0474e5b381cd4e52228542e`,
+    `head_sha: 33c2c733376af2bbf4eac86a9449f53b740f0747`
+  - **near-miss:** `base_sha: ce0f66704dbcad0ba0474e5b381cd4e52228542e`,
+    `head_sha: 65a83e51f77bedaed21fd8531406b49db24de3fe`
+
+  `live` is not a valid strategy value. The planted `lib/cache.py` is identical between the
+  two fixtures EXCEPT the comment above the load-bearing `put` `move_to_end` (line 42): the
+  hit's comment lies ("safe to drop if this method is ever simplified"); the near-miss's is
+  vague-but-honest ("Update recency bookkeeping … keeps the cache behaving as documented").
+  The code is LRU-correct in BOTH — no runtime defect, goal achieved, so rubric row 1 never
+  fires. **Task 6's `run-ablation.sh` must therefore NOT use the `0c89cf6` whole-repo
+  pre-PR-blob swap of three files** (that swaps the marketplace severity include, irrelevant
+  here, and leaves the synthesiser body); the only lever that matters is the **synthesiser
+  agent body** read from `$REPO_ROOT` via `--append-system-prompt-file`. Swapping just
+  `agents/review-synthesiser.md` to its `0c89cf6` blob (arm A) vs working-tree (arm B) IS the
+  ablation. Keep the three-file swap if harmless, but the body swap is the load-bearing one.
 - **Honest caveat carried into Task 7:** the two sonnet probes both kept the hit at
   Important in BOTH arms. If the opus run at 5/cell also shows arm A ≈ arm B, the verdict is
   **FAILED firing / AMBIGUOUS**, not VALIDATED — and that is a legitimate, decision-rule-

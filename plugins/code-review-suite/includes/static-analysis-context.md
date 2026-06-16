@@ -169,10 +169,11 @@ mechanism — confidence cannot exceed 100.
 must not breach this floor — even if it judges every source maximally dissenting,
 the rendered confidence stays at 50.
 
-**Dismissed tier is forbidden.** Static-analysis findings only land in Consensus or
-Contested. A floor-50 finding with substantial cross-review pushback lands in
-Contested with the synthesiser's reasoning. Findings cannot be silently suppressed
-into Dismissed.
+**Dismissed tier is forbidden.** Static-analysis findings from `[eslint]`, `[ruff]`,
+`[trivy]`, and `[jbinspect]` only land in Consensus or Contested. A floor-50 finding
+with substantial cross-review pushback lands in Contested with the synthesiser's
+reasoning. Findings cannot be silently suppressed into Dismissed. (`[housekeeper]`
+findings follow a distinct delivery model — see the housekeeper paragraph below.)
 
 **Critical-allow-list mechanism.** Each specialist's per-tool severity mapping caps
 its highest tier at `Important` by default (Trivy `CRITICAL` → Important,
@@ -184,6 +185,20 @@ that should be Critical but is not on the list maps to its default cap; the LLM
 `security-reviewer` can still flag it separately under the LLM-specialist contract.
 
 The `housekeeper` specialist emits a uniform `Suggestion` severity (staleness is a smell, not a defect) and has no Critical-allow-list — its findings are severity-locked at `Suggestion`.
+
+**Housekeeper delivery model (distinct from the other static analysers).** Because
+housekeeper findings routinely target manifest lines outside the diff hunk (it audits
+the whole touched project, not just changed lines), they are NOT delivered through the
+tier mechanism by default. The synthesiser renders all default housekeeper findings into
+a single `## Dependency Freshness` table — informational, never verdict-affecting, never
+producing an inline comment. The one exception is the **escalation break-out**: when the
+synthesiser's analysis or a cross-review escalation establishes a specific upgrade is
+genuinely Important (a known CVE in the current version, a security-critical fix, or an
+upgrade another finding depends on), that single item is promoted into Consensus as an
+Important finding — verdict-eligible and postable — and the locked `Suggestion` severity
+is raised for that item only. This is the sole sanctioned severity raise for housekeeper,
+and it is driven by an established cause, not by reclassification. See the "Housekeeper
+carve-out" section of `agents/review-synthesiser.md`.
 
 **Rendered output.** When the synthesiser adjusts confidence (`C < 100`), render the
 adjusted value with this literal:

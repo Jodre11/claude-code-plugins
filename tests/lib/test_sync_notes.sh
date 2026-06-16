@@ -598,7 +598,11 @@ test_sync_static_analysis_severity_lock() {
     # The carve-out's anchor sentence must appear verbatim. Match the load-bearing
     # phrase rather than the entire paragraph — paragraph-level matching is brittle
     # against acceptable wording polish; the anchor sentence is the policy claim.
-    local anchor='Findings tagged `[eslint]`, `[ruff]`, `[trivy]`, `[jbinspect]`, or `[housekeeper]` are exempt from'
+    # NB: housekeeper is exempt from reclassification too, but has a DISTINCT delivery
+    # model (the Dependency Freshness table — see the Housekeeper carve-out), so it is
+    # no longer listed in this four-tag tier-reclassification anchor. Its tag presence
+    # is still asserted by the tag loop below.
+    local anchor='Findings tagged `[eslint]`, `[ruff]`, `[trivy]`, or `[jbinspect]` are exempt from'
     if grep -qF "$anchor" "$synthesiser"; then
         pass "static-analysis severity lock: synthesiser contains carve-out anchor sentence"
     else

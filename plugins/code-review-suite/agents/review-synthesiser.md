@@ -96,7 +96,7 @@ This is your primary quality gate. The severity definitions are authoritative, n
 
 ### Static-analysis carve-out
 
-Findings tagged `[eslint]`, `[ruff]`, `[trivy]`, `[jbinspect]`, or `[housekeeper]` are exempt from
+Findings tagged `[eslint]`, `[ruff]`, `[trivy]`, or `[jbinspect]` are exempt from
 reclassification. Their severity is the specialist's mapped value, per
 `includes/static-analysis-context.md` §10. Confidence on these findings starts at 100
 and may be adjusted per the per-source dissent budget defined in §10 — each source
@@ -117,6 +117,37 @@ When you adjust confidence (`C < 100`), render the adjusted value with this lite
 `C` is the final confidence (50–100); `D` is the number of dissenting sources
 (`0`–`S`). When `C == 100` (no adjustment), omit the parenthetical entirely.
 
+### Housekeeper carve-out (dependency-freshness drift)
+
+`[housekeeper]` findings are exempt from reclassification, exactly like the other
+static analysers — but they have a **distinct delivery model** because they routinely
+target manifest lines (e.g. a `.csproj` dependency) that are NOT in the diff hunk, and
+GitHub rejects inline comments on lines outside the diff. So housekeeper findings do
+NOT use the tier mechanism by default:
+
+- **Default — the drift table (informational, never verdict-affecting).** Do NOT place
+  default housekeeper findings into any tier (Consensus, Contested, Synthesiser, or
+  Dismissed), and do NOT assign them a `[#N]` token. Render them ALL into a single
+  `## Dependency Freshness` table (see Output Format). The table is purely a Suggestion:
+  it informs the author of available upgrades but never, on its own, drives the verdict
+  or produces a posted comment. This is what keeps an out-of-diff manifest upgrade from
+  becoming an unpostable inline comment.
+
+- **Escalation break-out (the one exception).** If your own analysis OR a cross-review
+  escalation establishes that a SPECIFIC upgrade is genuinely **Important** — a known CVE
+  in the current version, a security-critical fix, or an upgrade a correctness/security
+  finding depends on — promote THAT ONE item out of the table into `tiers.consensus` as a
+  normal finding: severity `Important`, a `[#N]` token, `file` = the manifest path and
+  `line` = the dependency's line in that manifest, full description + suggested fix. It is
+  then verdict-eligible (rubric row 3: Important + confidence ≥ 70 → `REQUEST_CHANGES`) and
+  postable like any consensus finding. The remaining (non-escalated) rows stay in the
+  table. Note this is the sole case where housekeeper's locked severity is raised — and it
+  is raised because a reviewer established cause, not by reclassification.
+
+The §10 per-source dissent budget and `Confidence` rendering above apply to a promoted
+(escalated) housekeeper finding exactly as to any other static-analysis finding. Table
+rows carry their own confidence inline and are not subject to the tier dissent arithmetic.
+
 ## Tier Classification
 
 Classify every finding into one of these tiers:
@@ -132,7 +163,7 @@ Pay special attention to cross-reviewer conflicts:
 - **Reuse vs. style** — the reuse reviewer may flag code the style reviewer considers clear and self-contained
 - **Efficiency vs. correctness** — an optimisation the efficiency reviewer suggests may introduce a subtle correctness issue
 
-Cross-review opinions explicitly surface these: a finding where 3 specialists agree and 1 disagrees is clearly Contested; a finding where everyone says "irrelevant" is a dismissal candidate (except for `[eslint]`, `[ruff]`, `[trivy]`, `[jbinspect]`, or `[housekeeper]` findings — see the Static-analysis carve-out under Severity Reclassification; those land in Contested instead).
+Cross-review opinions explicitly surface these: a finding where 3 specialists agree and 1 disagrees is clearly Contested; a finding where everyone says "irrelevant" is a dismissal candidate (except for `[eslint]`, `[ruff]`, `[trivy]`, or `[jbinspect]` findings — see the Static-analysis carve-out under Severity Reclassification; those land in Contested instead). `[housekeeper]` findings follow the Housekeeper carve-out instead: by default they render in the `## Dependency Freshness` table (not a tier), and only an escalated upgrade enters Consensus.
 
 ### Dismissed
 Clear false positive after deep analysis. Reserved for genuinely incorrect findings, NOT for filtering borderline issues. Detailed reasoning required so the reader can override.
@@ -299,6 +330,23 @@ The orchestrator parses this block via fixed-string `Verdict:` and `Rubric row a
   and what the real risk is. This is your expert opinion, not a neutral summary.
   The reader still decides, but your reasoning should be thorough enough to inform that decision.
 
+## Dependency Freshness
+
+*(Render this section ONLY when one or more `[housekeeper]` findings were reported AND
+at least one remains in the table after any escalation break-out. Omit the heading
+entirely when there are no non-escalated housekeeper findings. This section is purely
+informational — a Suggestion-level summary — and never drives the verdict. Escalated
+upgrades do NOT appear here; they are promoted into Consensus as Important findings.)*
+
+> Available dependency / GitHub Action upgrades found by the housekeeper. Informational
+> only — not blocking. Lines may sit outside the diff (the housekeeper audits the whole
+> touched project), so these are reported here rather than as inline comments.
+
+| Package / Action | Current | Latest GA | Drift | Notes |
+|---|---|---|---|---|
+| Example.Package | 1.2.0 | 3.4.1 | 2 major | … |
+| actions/checkout | v3 | v4 | 1 major | … |
+
 ## Dismissed Findings
 > Flagged by a specialist but believed to be false positives. Listed for transparency.
 
@@ -347,11 +395,18 @@ populate the structured envelope in addition to producing your prose report:
   placed in that tier, as `finding` objects. `confidence` is your final
   post-dissent value (the §10 clamp result), `severity` your post-reclassification
   value. Static-analysis findings keep their locked severity and capped confidence.
+  Default `[housekeeper]` findings are NOT tiered (see the Housekeeper carve-out) —
+  they live only in the `## Dependency Freshness` table inside `bodyText`. The sole
+  exception is an escalated upgrade, which you place in `tiers.consensus` as Important
+  like any other finding.
 - `bodyText` — your complete prose report (the same markdown you render today,
-  including Summary, Synthesiser Assessment, all tier sections, Cost, Dismissed,
-  and the `[#N]` finding tokens). The schema wraps this field verbatim — write
-  it exactly as the Output Format above specifies. Do NOT abbreviate or restructure
-  the prose to fit the schema; the envelope carries the full text.
+  including Summary, Synthesiser Assessment, all tier sections, the `## Dependency
+  Freshness` table when housekeeper findings exist, Cost, Dismissed, and the `[#N]`
+  finding tokens). The schema wraps this field verbatim — write it exactly as the
+  Output Format above specifies. Do NOT abbreviate or restructure the prose to fit
+  the schema; the envelope carries the full text. The `## Dependency Freshness` table
+  rides through to the posted body untouched (review-core strips only `## Cost` and
+  `## Dismissed`); its rows carry no `[#N]` token so the Class D filter leaves them inert.
 
 The structured envelope and the prose `bodyText` describe the same findings. The
 Workflow applies the Class D confidence filter and renders GitHub comment bodies
@@ -373,6 +428,8 @@ X file(s) changed | 0 findings — LGTM
 ## Rules
 
 - Every specialist finding appears in the output. Do not silently drop or merge findings.
+  Default `[housekeeper]` findings appear in the `## Dependency Freshness` table rather
+  than a tier (Housekeeper carve-out) — that table IS their appearance; do not also tier them.
 - Every finding MUST have a **Synthesiser:** assessment. This is the primary value you add.
 - Be precise. Preserve file paths and line numbers from specialist reports.
 - Number findings sequentially so the reader can reference "finding #3".
@@ -380,7 +437,7 @@ X file(s) changed | 0 findings — LGTM
 - The Synthesiser Assessment section should reflect genuine analytical depth, not a summary of what specialists found. Conduct your own deep analysis before cross-referencing against the specialist findings in your prompt.
 - When you disagree with a specialist, explain your reasoning thoroughly. When you agree, add value by expanding on impact or context the specialist may not have covered.
 - You are NOT the final arbiter on contested items. Present your position alongside the specialists' positions and let the reader decide. Your assessment carries weight but doesn't override.
-- The Summary header counts MUST match the body. Count findings after assembling the full report — do not estimate. `Y finding(s)` = total numbered findings across Consensus + Synthesiser + Contested (not Dismissed). `Z contested` = findings in the Contested section only.
+- The Summary header counts MUST match the body. Count findings after assembling the full report — do not estimate. `Y finding(s)` = total numbered findings across Consensus + Synthesiser + Contested (not Dismissed). `Z contested` = findings in the Contested section only. Default `[housekeeper]` table rows are NOT numbered findings and do NOT count toward `Y` (an escalated housekeeper finding promoted into Consensus DOES count, like any consensus finding).
 - Do not quote raw secrets, credentials, or API keys verbatim in the report — describe the location and nature of the exposure instead.
 - **Verdict guidance is `pr`-mode only.** When `$REVIEW_MODE` is `local` (pre-review),
   do NOT produce a `## Verdict` section, a `Verdict:` line, or any `APPROVE` /
@@ -403,6 +460,14 @@ X file(s) changed | 0 findings — LGTM
 - When the intent ledger states a `goal` and one or more findings indicate the goal is not
   achieved, escalate the most central such finding to Important severity at minimum, even
   if the originating specialist filed it lower.
+- **Housekeeper escalation (break-out).** By default every `[housekeeper]` finding renders
+  in the `## Dependency Freshness` table and never touches a tier or the verdict. The ONE
+  exception: when your analysis or a cross-review escalation establishes a SPECIFIC upgrade
+  is genuinely Important (known CVE in the current version, a security-critical fix, or an
+  upgrade a correctness/security finding depends on), promote that single item into
+  `tiers.consensus` as an Important finding (`[#N]` token, `file` = manifest path, `line` =
+  the dependency's line), and remove it from the table. It then drives the verdict via
+  rubric row 3 like any consensus Important finding. Do not escalate merely-stale upgrades.
 - The `## Cost` section is rendered only when `$TOKEN_USAGE_BLOCK_BODY` is present.
   Render the block verbatim — do not re-format numbers, re-order rows, or remove the
   `orchestrator:` caveat row. The block is the orchestrator's authoritative aggregation;

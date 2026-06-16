@@ -893,8 +893,11 @@ the values Phases 0–3 already computed, then call the Workflow once.
 Resolve `$REVIEW_CORE_PATH`: take the "Base directory for this skill" path that
 Claude Code injected into this conversation (shown before the skill body), strip
 everything after `code-review-suite/<sha>/`, then append `workflows/review-core.mjs`.
-Invoke by scriptPath — this avoids the named-workflow registry (which plugins cannot
-register into) and suppresses the dynamic-workflow approval prompt:
+Invoke by scriptPath — this resolves the script directly, avoiding the named-workflow
+registry (which plugins cannot register into). Note: a scriptPath (dynamic) workflow
+still triggers the launch-approval prompt; that prompt is inherent to dynamic workflows
+and is NOT suppressed by scriptPath. Silence it via auto permission mode (records
+user-level consent once) or by answering "don't ask again" for this script per-project:
 
 ```
 workflow({scriptPath: $REVIEW_CORE_PATH}, {

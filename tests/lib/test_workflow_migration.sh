@@ -137,9 +137,12 @@ test_host_wires_workflow_flag() {
 # R2-B: the script inlines the schema (import() is unavailable in the sandbox), so a
 # structural test asserts the inlined literals stay a faithful $ref-flattened equivalent
 # of includes/finding-schema.json. We slice the script prefix (the schema consts precede
-# the `const {...} = args` destructure), eval it to recover SPECIALIST_SCHEMA / SYNTH_SCHEMA,
-# flatten the canonical's `#/$defs/finding` $refs the same way, and deep-compare. The eval
-# input is the repo's own committed source — same trust level as the syntax gate above.
+# the `const resolvedArgs = ...` args normaliser and the `const {...} = resolvedArgs`
+# destructure), eval it to recover SPECIALIST_SCHEMA / SYNTH_SCHEMA, flatten the canonical's
+# `#/$defs/finding` $refs the same way, and deep-compare. The cut anchors on `const
+# resolvedArgs` (not the destructure) because the normaliser reads the unbound `args` global,
+# which would throw in the schema-only extract harness. The eval input is the repo's own
+# committed source — same trust level as the syntax gate above.
 test_inlined_schema_matches_canonical() {
     local cr
     cr=$(_wm_cr_dir)
@@ -155,8 +158,8 @@ test_inlined_schema_matches_canonical() {
         const wfPath = process.argv[1];
         const schemaPath = process.argv[2];
         const wf = fs.readFileSync(wfPath, "utf8");
-        const cut = wf.indexOf("const {");
-        if (cut < 0) { console.log("ERR: args destructure not found"); process.exit(1); }
+        const cut = wf.indexOf("const resolvedArgs");
+        if (cut < 0) { console.log("ERR: resolvedArgs normaliser not found"); process.exit(1); }
         const prefix = wf.slice(0, cut).replace(/^export\s+const\s+meta/m, "const meta");
         const extract = new Function(prefix + "\nreturn { SPECIALIST_SCHEMA, SYNTH_SCHEMA, CROSS_SCHEMA };");
         const { SPECIALIST_SCHEMA, SYNTH_SCHEMA, CROSS_SCHEMA } = extract();
@@ -249,6 +252,57 @@ test_review_core_survives_null_agent_results() {
     else
         fail "review-core survives null agent() results at all dispatch sites" \
             "a dispatch site crashed or returned no bundle on null agent output: $result"
+    fi
+}
+
+# Production bug regression (2026-06-16): the host skill runs in the main agent loop, which
+# has no workflow() primitive, so its documented workflow({scriptPath}, {...}) call is
+# executed as a Workflow-TOOL invocation — and the Workflow tool delivers args as a JSON
+# STRING, not an object. Destructuring a string yields flags===undefined, and the first
+# flags.csharp read throws. The resolvedArgs normaliser must JSON.parse a string arg so the
+# script runs unchanged. We feed the FULL script a stringified args object (flags.csharp set)
+# with a null-returning agent and assert it reaches a bundle rather than throwing flags.csharp.
+test_review_core_accepts_string_args() {
+    local cr
+    cr=$(_wm_cr_dir)
+    local wf="$cr/workflows/review-core.mjs"
+    if [[ ! -f "$wf" ]]; then
+        fail "review-core string-args resilience" "missing: $wf"
+        return
+    fi
+    local result
+    result=$(node -e '
+        const fs = require("fs");
+        const src = fs.readFileSync(process.argv[1], "utf8")
+            .replace(/^export\s+const\s+meta/m, "const meta");
+        const argsStr = JSON.stringify({
+            agentPrompt: "x", flags: { csharp: true }, route: "full", selfReReview: false,
+            reviewMode: "local", base: "main", headSha: "a".repeat(40),
+            emptyTreeMode: false, pathScope: "", tempDir: "/tmp/x",
+        });
+        const agent = async () => null;
+        const parallel = (thunks) => Promise.all(thunks.map(t => t()));
+        const phase = () => {};
+        const log = () => {};
+        const pipeline = async () => [];
+        const workflow = async () => null;
+        (async () => {
+            let bundle;
+            try {
+                const fn = new Function("agent","parallel","pipeline","phase","log","args","workflow",
+                    "return (async()=>{" + src + "\n})()");
+                bundle = await fn(agent, parallel, pipeline, phase, log, argsStr, workflow);
+            } catch (e) { console.log("THREW: " + e.message); return; }
+            if (!bundle || typeof bundle !== "object") { console.log("NOBUNDLE"); return; }
+            if (!("verdict" in bundle) || !("comments" in bundle)) { console.log("BADSHAPE"); return; }
+            console.log("OK");
+        })();
+    ' "$wf" 2>&1)
+    if [[ "$result" == "OK" ]]; then
+        pass "review-core accepts a JSON-string args (Workflow-tool shape) without throwing"
+    else
+        fail "review-core accepts a JSON-string args (Workflow-tool shape) without throwing" \
+            "the resolvedArgs normaliser must JSON.parse a string arg; got: $result"
     fi
 }
 

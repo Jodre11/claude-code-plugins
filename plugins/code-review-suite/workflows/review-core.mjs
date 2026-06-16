@@ -114,10 +114,15 @@ const CROSS_SCHEMA = {
     },
 }
 
+// The Workflow TOOL delivers args as a JSON string; the workflow() PRIMITIVE passes an
+// object. The host skill runs in the main agent loop (no workflow() primitive) so its
+// documented workflow({scriptPath}, {...}) call is executed as a Workflow-tool invocation
+// and arrives as a string. Normalise both shapes before destructuring.
+const resolvedArgs = typeof args === 'string' ? JSON.parse(args) : args
 const {
     agentPrompt, flags, route, selfReReview, reviewMode,
     base, headSha, emptyTreeMode, pathScope, tempDir, intentLedger,
-} = args
+} = resolvedArgs
 
 // Lightweight path (pipeline Step 3): single code-analysis pass, no cross/synth.
 if (route === 'lightweight') {

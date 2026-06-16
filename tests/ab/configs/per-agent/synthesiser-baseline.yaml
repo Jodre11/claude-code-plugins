@@ -1,0 +1,7 @@
+name: synthesiser-baseline
+description: Synthesiser per-agent arm for the agent-hazard ablation. Model/effort fixed; the ablation varies only the basis text via run-ablation.sh file swap.
+mode: per-agent
+agent: review-synthesiser
+session:
+  model: opus
+  effort: default

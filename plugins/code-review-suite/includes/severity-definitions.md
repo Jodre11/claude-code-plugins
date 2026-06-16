@@ -18,7 +18,14 @@ Litmus test: if this ships, will someone file a bug?
 
 Examples: wrong boolean condition that inverts a filter, unclosed resource in a long-lived process, missing error propagation that swallows failures the caller needs, race condition on shared state in a concurrent code path, N+1 query pattern in a production request handler, exact duplicate of an actively-maintained utility that will predictably diverge.
 
-**Not Important** (downgrade to Suggestion): documentation wording, naming improvements, defensive hardening against unreachable conditions, stylistic consistency, cross-reference maintenance, missing comments, redundant-but-harmless code.
+**Agent-hazard basis** (no runtime defect required). A change ALSO meets the Important bar when it will *predictably cause a future maintainer — human or agent — to introduce a defect*, even though it produces no incorrect behaviour today: a lying comment or misleading name, a false-green or tautological test, a silently-deleted workaround, an unmaintainable indirection. Rationale: an agent starts each session with no persistent memory of the codebase, so a misleading artefact is more dangerous than it is for a human who might recall the real story — it actively induces a wrong edit rather than merely costing a read.
+
+Agent-hazard guardrails (these prevent severity inflation — apply them strictly):
+- The finding MUST name a *concrete misleading mechanism* and the *specific future defect it induces*. A vague "could confuse someone" does NOT clear the bar.
+- This basis reaches **Important only, never Critical**. The Critical bar above is untouched — it stays outage / breach / data-loss.
+- The verdict rubric's confidence ≥ 70 gate still applies (`includes/verdict-rubric.md` row 3): a low-confidence agent-hazard finding does not block.
+
+**Not Important** (downgrade to Suggestion): documentation wording, naming improvements *that do not mislead*, defensive hardening against unreachable conditions, stylistic consistency, cross-reference maintenance, missing comments, redundant-but-harmless code. A naming or comment issue clears the Important bar ONLY via the agent-hazard basis above — that is, only when it *actively misleads*, never when it is merely absent, vague, or imperfect.
 
 ### Suggestion
 

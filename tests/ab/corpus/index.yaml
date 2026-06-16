@@ -39,3 +39,13 @@ fixtures:
     type: synthetic
     description: Two-finding PyPI set (requests 2.20.0->2.31.0 stale via Anchor pull-in by a .py-only change; urllib3 2.0.6 stale-and-yanked health rider) via recorded PyPI JSON fixtures. Slice-4 baseline.
     tags: [smoke, deterministic]
+  - id: synth-hazard-hit
+    agent: review-synthesiser
+    type: synthetic
+    description: Lying-comment fixture — comment falsely calls a load-bearing move_to_end "safe to drop" on LRU-correct code. Agent-hazard hit; arm B expected to keep Important, arm A to downgrade.
+    tags: [agent-hazard, synthesiser]
+  - id: synth-hazard-nearmiss
+    agent: review-synthesiser
+    type: synthetic
+    description: Vague-but-honest comment fixture — accurate but unspecific, no contradiction. Inflation guard; both arms expected Suggestion.
+    tags: [agent-hazard, synthesiser]

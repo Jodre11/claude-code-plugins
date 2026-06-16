@@ -125,11 +125,11 @@ test_host_wires_workflow_flag() {
             fail "host wires workflow flag: $file" "file not found"
             continue
         fi
-        if grep -qF "workflow('review-core'" "$path"; then
-            pass "host wires workflow flag: $file calls workflow('review-core')"
+        if grep -qF "workflow({scriptPath: \$REVIEW_CORE_PATH}" "$path"; then
+            pass "host wires workflow flag: $file calls workflow({scriptPath})"
         else
-            fail "host wires workflow flag: $file calls workflow('review-core')" \
-                "the Step 3.5 routing gate must call workflow('review-core', ...) in every pipeline copy"
+            fail "host wires workflow flag: $file calls workflow({scriptPath})" \
+                "the Step 3.5 routing gate must call workflow({scriptPath: \$REVIEW_CORE_PATH}, ...) in every pipeline copy"
         fi
     done
 }

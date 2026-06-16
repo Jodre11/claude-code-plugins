@@ -783,10 +783,16 @@ is in self-re-review mode (a validated `$LAST_REVIEW_SHA` is set — see
 
 **If `$USE_WORKFLOW` is true**, route Steps 4–6 through the deterministic core
 instead of the inline dispatch below. Resolve the `review-core` args object from
-the values Phases 0–3 already computed, then call the Workflow once:
+the values Phases 0–3 already computed, then call the Workflow once.
+
+Resolve `$REVIEW_CORE_PATH`: take the "Base directory for this skill" path that
+Claude Code injected into this conversation (shown before the skill body), strip
+everything after `code-review-suite/<sha>/`, then append `workflows/review-core.mjs`.
+Invoke by scriptPath — this avoids the named-workflow registry (which plugins cannot
+register into) and suppresses the dynamic-workflow approval prompt:
 
 ```
-workflow('review-core', {
+workflow({scriptPath: $REVIEW_CORE_PATH}, {
     agentPrompt: $AGENT_PROMPT,
     flags: { csharp: $CSHARP_DETECTED, ui: $UI_DETECTED, js: $JS_DETECTED,
              py: $PY_DETECTED, iac: $IAC_DETECTED, housekeeping: $HOUSEKEEPING_DETECTED,

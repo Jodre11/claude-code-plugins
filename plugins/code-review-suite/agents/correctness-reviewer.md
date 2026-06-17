@@ -89,7 +89,10 @@ Review every change for:
   summary against the code it describes. Flag claims that don't match the actual behaviour
   (e.g. a docstring says "returns null on missing key" but the implementation throws).
   This is a Critical or Important finding only when the inaccurate documentation would
-  mislead a caller into writing wrong code; otherwise Suggestion.
+  mislead a caller into writing wrong code; otherwise Suggestion. A misleading comment is
+  an instance of the **agent-hazard basis** in `includes/severity-definitions.md` — it
+  predictably induces a future maintainer to write wrong code — which is why it reaches
+  Important even though the comment itself causes no runtime defect today.
 
 ## Output Format
 

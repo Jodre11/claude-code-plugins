@@ -308,7 +308,16 @@ _ab_run_per_agent() {
             "$stream_json" \
             || rc=$?
 
-        agent_capture_parse_trial "$_AB_CONFIG_AGENT" "$trial_dir"
+        if [[ "$_AB_CONFIG_AGENT" == "review-synthesiser" ]]; then
+            # The synthesiser emits a tiered report, not a `## <tool> Findings`
+            # block, so the static-specialist findings parser does not apply —
+            # it is scored post-hoc by tests/ab/lib/synth_score.sh against
+            # stdout.log. Write the minimal artefacts the summary row consumes.
+            printf '[]\n' > "$trial_dir/findings.json"
+            printf 'synthesiser\n' > "$trial_dir/findings_hash.txt"
+        else
+            agent_capture_parse_trial "$_AB_CONFIG_AGENT" "$trial_dir"
+        fi
         _ab_append_per_agent_summary_row "$trial_dir" "$i" "$rc"
 
         if [[ "$i" -lt "$trials" ]]; then

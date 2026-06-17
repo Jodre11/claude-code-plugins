@@ -27,7 +27,7 @@ empty_tree_mode: false
 review_mode: pr
 planted:
   file: lib/dispatch_client.py
-  line: 31
+  line: 21
   expect_arm_b: Important  # arm B (post-edit) must flag the fallback-without-signal path
   expect_arm_a: ABSENT     # arm A (pre-edit) lacks the "fallback returning default without signalling" clause
 intent_ledger: |

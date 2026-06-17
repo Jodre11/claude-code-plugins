@@ -1084,14 +1084,16 @@ The fallback is graceful — one parse failure does not break aggregation in Ste
 
 Dispatch fresh cross-review agents in parallel — one per domain, EXCLUDING the five static-analysis specialists (`jbinspect`, `eslint`, `ruff`, `trivy`, `housekeeper`). Static-analysis tool output does not benefit from cross-domain evaluation — see `includes/static-analysis-context.md` §8.
 
-**Conditional dispatch:** If `$UI_DETECTED`, also dispatch `cross-review-ui`. Do not dispatch `cross-review-ui` when `$UI_DETECTED` is false — there are no ui-reviewer findings to cross-review.
+**Conditional dispatch:** If `$UI_DETECTED`, also dispatch `cross-review-ui`. Do not dispatch `cross-review-ui` when `$UI_DETECTED` is false — there are no ui-reviewer findings to cross-review. If `$TESTS_DETECTED`, also dispatch `cross-review-test-quality`. Do not dispatch `cross-review-test-quality` when `$TESTS_DETECTED` is false — there are no test-quality-reviewer findings to cross-review.
 
 Store `$CROSS_REVIEW_COUNT` = number of cross-review agents per this table (the five static-analysis specialists are excluded — tool output, no cross-domain benefit):
 
-| Scenario                | `$CROSS_REVIEW_COUNT` |
-|-------------------------|-----------------------|
-| `$UI_DETECTED` is false | 8                     |
-| `$UI_DETECTED` is true  | 9                     |
+| `$UI_DETECTED` | `$TESTS_DETECTED` | `$CROSS_REVIEW_COUNT` |
+|-----------------|--------------------|-----------------------|
+| false           | false              | 8                     |
+| true            | false              | 9                     |
+| false           | true               | 9                     |
+| true            | true               | 10                    |
 
 Static-analysis specialists never contribute to `$CROSS_REVIEW_COUNT` regardless of how many fire. `$SPECIALIST_COUNT` is unaffected by this table — it still includes static-analysis specialists.
 
@@ -1117,7 +1119,7 @@ Use `$CROSS_REVIEW_COUNT` (not `$SPECIALIST_COUNT`) as the total count `R` count
 **5.2 Build per-domain prompt:** For each cross-reviewer:
 1. Copy the collected findings string
 2. Remove the block whose heading matches `### <domain>-reviewer findings` (i.e. the cross-reviewer's own domain). This exclusion is intentional — it limits prompt-injection propagation by ensuring each cross-reviewer only sees findings from other domains, and it prevents self-reinforcement bias where a domain's own findings inflate its confidence.
-3. Include findings from any static-analysis specialist (`jbinspect`, `eslint`, `ruff`, `trivy`, `housekeeper`) for ALL cross-reviewers — they are excluded from receiving cross-review, not from being reviewed. Omit any `### <name>-reviewer findings` block whose corresponding detection flag is false (`$CSHARP_DETECTED`, `$JS_DETECTED`, `$PY_DETECTED`, `$IAC_DETECTED`, `$HOUSEKEEPING_DETECTED`, `$TESTS_DETECTED` respectively) — do not include placeholders
+3. Include findings from any static-analysis specialist (`jbinspect`, `eslint`, `ruff`, `trivy`, `housekeeper`) for ALL cross-reviewers — they are excluded from receiving cross-review, not from being reviewed. Omit any `### <name>-reviewer findings` block whose corresponding detection flag is false (`$CSHARP_DETECTED`, `$JS_DETECTED`, `$PY_DETECTED`, `$IAC_DETECTED`, `$HOUSEKEEPING_DETECTED` respectively) — do not include placeholders. Additionally, omit `### test-quality-reviewer findings` when `$TESTS_DETECTED` is false and `### ui-reviewer findings` when `$UI_DETECTED` is false — these conditional judgement specialists produce no findings to cross-review when their detection flag is off.
 
 **5.3 Dispatch:** Announce `> Dispatching $CROSS_REVIEW_COUNT cross-review agents...`, note the dispatch timestamp, then dispatch all cross-reviewers in parallel. Each cross-reviewer uses the SAME `subagent_type` as the original specialist — the `Mode: cross-review` line in the prompt switches the agent to cross-review behaviour:
 

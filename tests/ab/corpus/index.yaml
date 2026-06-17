@@ -59,6 +59,11 @@ fixtures:
     type: synthetic
     description: Signalled-failure fixture — fetch_user_profile logs the exception before returning None. Inflation guard; arm B expected ABSENT.
     tags: [silent-failure, correctness]
+  - id: silentfail-unique-hit
+    agent: correctness-reviewer
+    type: synthetic
+    description: Retry-exhausted-without-trace fixture — await_dispatch polls MAX_ATTEMPTS times then returns None with no log, metric, or raise (no exception construct, so the pre-edit "swallowed exceptions" bullet has no purchase). Arm B expected Important via the new silent-failure-path clause; arm A expected ABSENT. Unique-fire contrast the original silentfail-hit could not isolate.
+    tags: [silent-failure, correctness, unique-fire]
   - id: reuse-hit
     agent: reuse-reviewer
     type: synthetic

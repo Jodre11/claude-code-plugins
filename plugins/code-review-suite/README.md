@@ -34,7 +34,9 @@ components), `eslint-reviewer` (JS/TS), `ruff-reviewer` (Python incl. notebooks)
 `trivy-reviewer` (IaC: Terraform, Dockerfile, Kubernetes, Helm, CFN),
 `housekeeper-reviewer` (dependency/version freshness + maintenance-health: GitHub Actions,
 workflow runners, npm, NuGet, Docker base images, PyPI), and `test-quality-reviewer`
-(false-green test detection — test files only). The five static-analysis specialists (`jbinspect`, `eslint`, `ruff`, `trivy`,
+(false-green test detection — test files only).
+
+The five static-analysis specialists (`jbinspect`, `eslint`, `ruff`, `trivy`,
 `housekeeper`) share the cross-cutting contract in `includes/static-analysis-context.md`
 and are excluded from cross-review (their tool output does not benefit from cross-domain
 evaluation).

@@ -13,7 +13,7 @@ You are an active analytical participant, not a passive aggregator. For every fi
 ## Input
 
 You receive via your prompt:
-- **Specialist findings** — structured reports from 8–14 specialist reviewers (8 core + up to 6 conditional: jbinspect, ui, eslint, ruff, trivy, housekeeper)
+- **Specialist findings** — structured reports from 8–15 specialist reviewers (8 core + up to 7 conditional: jbinspect, ui, eslint, ruff, trivy, housekeeper, test-quality)
 - **Cross-review opinions** — cross-reviewers' agree/disagree/supplement responses to specialist findings
 - **Changed file list** — files in the diff
 - **Base branch** — for self-serve context gathering

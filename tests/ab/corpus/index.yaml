@@ -59,6 +59,11 @@ fixtures:
     type: synthetic
     description: Signalled-failure fixture — fetch_user_profile logs the exception before returning None. Inflation guard; arm B expected ABSENT.
     tags: [silent-failure, correctness]
+  - id: silentfail-unique-hit
+    agent: correctness-reviewer
+    type: synthetic
+    description: Fallback-returns-default fixture — resolve_tenant_rate_limit silently serves DEFAULT_RATE_LIMIT when the API omits rate_limit (legitimate control flow, no exception). Arm B expected Important via the new "fallback without signalling" clause; arm A expected ABSENT (no error path for the pre-edit bullets to grab). Unique-fire contrast.
+    tags: [silent-failure, correctness, unique-fire]
   - id: reuse-hit
     agent: reuse-reviewer
     type: synthetic

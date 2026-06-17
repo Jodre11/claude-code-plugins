@@ -69,3 +69,13 @@ fixtures:
     type: synthetic
     description: Trivial one-liner duplication fixture — generate_report_filename duplicates a one-line slugify from utils/strings.py. Arm B expected ABSENT (retarget drops trivial dup); arm A expected Suggestion. Behavioural proof of triviality bifurcation.
     tags: [reuse, triviality]
+  - id: style-hit
+    agent: style-reviewer
+    type: synthetic
+    description: Misleading-name fixture — get_user_settings performs a DB write on first call despite a name that implies a pure read. Arm B expected Important (up-weighted by reasoning-economy retarget); arm A expected Suggestion.
+    tags: [style, reasoning-economy]
+  - id: style-nearmiss
+    agent: style-reviewer
+    type: synthetic
+    description: Long-but-linear fixture — build_audit_report is ~65 lines of sequential field rendering with no branching. Arm B expected ABSENT (inverted length heuristic); arm A expected Suggestion. Proves the inversion.
+    tags: [style, reasoning-economy]

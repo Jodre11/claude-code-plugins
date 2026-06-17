@@ -1,0 +1,50 @@
+id: test-quality-nearmiss
+agent: test-quality-reviewer
+type: synthetic
+captured_at: 2026-06-17T12:00:00Z
+baseline_revision: 1
+captured_under:
+  suite_sha: 10820832304f4606bd7d9d90cfc97d3ccfa76ede
+  agent_model: opus
+  agent_effort: default
+working_dir_strategy: copy
+source_path: tests/fixtures/test-quality/nearmiss/
+setup:
+  command: |
+    export GIT_AUTHOR_NAME=ab-trial GIT_AUTHOR_EMAIL=ab-trial@example.invalid GIT_COMMITTER_NAME=ab-trial GIT_COMMITTER_EMAIL=ab-trial@example.invalid GIT_AUTHOR_DATE="2026-01-01T00:00:00 +0000" GIT_COMMITTER_DATE="2026-01-01T00:00:00 +0000"
+    mv tests/test_user_service.py .test_user_service.py.planted
+    mv user_service.py .user_service.py.planted
+    git init -q -b main
+    git add README.md
+    git commit -q -m "base: user service scaffold"
+    mv .user_service.py.planted user_service.py
+    git add user_service.py
+    git commit -q -m "feat: add user service creation flow"
+    mkdir -p tests
+    mv .test_user_service.py.planted tests/test_user_service.py
+    git add tests/test_user_service.py
+    git commit -q -m "test: add user service tests"
+base_sha: ""
+head_sha: ""
+path_scope: ""
+empty_tree_mode: false
+review_mode: pr
+# user_service.py is in this fixture's changed-lines as STRUCTURAL SUPPORT — the test
+# imports create_user from it; without the production module present the test becomes
+# tautological and the reviewer flags it (a documented false-positive, see commit b4dbb46).
+# Its presence also implicitly exercises the scope-guard ("NEVER review production code"),
+# but that guard is NOT independently falsifiable here: expect_arm_b only gates Important
+# findings, so a stray Suggestion on user_service.py would not flip the verdict. A dedicated
+# scope-guard fixture is a deferred follow-up (spec §7).
+planted:
+  file: tests/test_user_service.py
+  line: 0
+  expect_arm_b: ABSENT  # tests assert real DB state — no false-green smell present
+  expect_arm_a: ABSENT  # correctly silent — well-written tests don't trigger generic reviewer either
+intent_ledger: |
+  ## Intent ledger
+  - goal: add tests for the user creation flow to verify database persistence
+depends_on:
+  - plugins/code-review-suite/agents/test-quality-reviewer.md
+  - tests/fixtures/test-quality/nearmiss/tests/test_user_service.py
+  - tests/fixtures/test-quality/nearmiss/user_service.py

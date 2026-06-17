@@ -154,6 +154,7 @@ const CONDITIONAL = [
     ['ruff', flags.py],
     ['trivy', flags.iac],
     ['housekeeper', flags.housekeeping],
+    ['test-quality', flags.tests],
 ]
 const condList = CONDITIONAL.filter(([, on]) => on).map(([d]) => d)
 const allSpecialists = [...coreList, ...condList]

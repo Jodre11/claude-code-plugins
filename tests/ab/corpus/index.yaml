@@ -79,3 +79,13 @@ fixtures:
     type: synthetic
     description: Long-but-linear fixture — build_audit_report is ~65 lines of sequential field rendering with no branching. Arm B expected ABSENT (inverted length heuristic); arm A expected Suggestion. Proves the inversion.
     tags: [style, reasoning-economy]
+  - id: test-quality-hit
+    agent: test-quality-reviewer
+    type: synthetic
+    description: Asserts-on-the-mock fixture — test_rejects_invalid_email mocks validate() then asserts the mock's configured return. Arm B expected Important (false-green = agent-hazard); arm A expected ABSENT.
+    tags: [test-quality, agent-hazard]
+  - id: test-quality-nearmiss
+    agent: test-quality-reviewer
+    type: synthetic
+    description: Clean-test fixture — test_create_user_stores_record uses real assertions on a real DB. Inflation guard; both arms expected ABSENT.
+    tags: [test-quality, inflation-guard]

@@ -26,14 +26,17 @@ another takes over). The synthesiser constrains the verdict to `REQUEST_CHANGES`
 
 ### Specialists
 
-The full review path dispatches 8 core specialists (up to 14 with all conditionals):
+The full review path dispatches 8 core specialists (up to 15 with all conditionals):
 `security-reviewer`, `correctness-reviewer`, `consistency-reviewer`, `style-reviewer`,
 `archaeology-reviewer`, `reuse-reviewer`, `efficiency-reviewer`, `alignment-reviewer`, plus
 conditional specialists by file type: `jbinspect-reviewer` (C#), `ui-reviewer` (visual
 components), `eslint-reviewer` (JS/TS), `ruff-reviewer` (Python incl. notebooks),
-`trivy-reviewer` (IaC: Terraform, Dockerfile, Kubernetes, Helm, CFN), and
+`trivy-reviewer` (IaC: Terraform, Dockerfile, Kubernetes, Helm, CFN),
 `housekeeper-reviewer` (dependency/version freshness + maintenance-health: GitHub Actions,
-workflow runners, npm, NuGet, Docker base images, PyPI). The five static-analysis specialists (`jbinspect`, `eslint`, `ruff`, `trivy`,
+workflow runners, npm, NuGet, Docker base images, PyPI), and `test-quality-reviewer`
+(false-green test detection — test files only).
+
+The five static-analysis specialists (`jbinspect`, `eslint`, `ruff`, `trivy`,
 `housekeeper`) share the cross-cutting contract in `includes/static-analysis-context.md`
 and are excluded from cross-review (their tool output does not benefit from cross-domain
 evaluation).
@@ -57,7 +60,7 @@ The review pipeline (`includes/review-pipeline.md`) handles all routing:
 1. **Inline prep** — Phase 0 intent ledger, Phase 0.6 CI status gate, base branch determination, diff measurement, C#/UI/deletion/security detection
 2. **Trivial-mode (Phase 0.7)** — orchestrator-only mini-review for docs/config-only diffs (≤3 files, ≤30 lines, allow-listed extensions, excluding load-bearing prompt paths under `plugins/*/agents|skills|commands|includes/`). Hard cap of 3 inline comments and a user-confirm gate before posting. Override with the `--force` argument or `intent.skip_trivial_check = true` in `.claude/code-review.toml`. Falls through to the lightweight or full path when the bar is not met.
 3. **Lightweight path** — small diffs (≤5 files, ≤150 lines, no significant deletions, no security-sensitive areas) route to the `code-analysis` agent
-4. **Full review pipeline** — larger diffs dispatch 8 core specialists plus up to 6 conditional specialists (C#, UI, JS/TS, Python, IaC, dependency freshness) in parallel, then fresh cross-review agents evaluate peer findings (excluding the five static-analysis specialists — see `includes/static-analysis-context.md`), then a synthesiser produces a tiered report
+4. **Full review pipeline** — larger diffs dispatch 8 core specialists plus up to 7 conditional specialists (C#, UI, JS/TS, Python, IaC, dependency freshness, test quality) in parallel, then fresh cross-review agents evaluate peer findings (excluding the five static-analysis specialists — see `includes/static-analysis-context.md`), then a synthesiser produces a tiered report
 
 ## Agents
 
@@ -77,6 +80,7 @@ The review pipeline (`includes/review-pipeline.md`) handles all routing:
 | `ruff-reviewer` | Ruff static analysis for Python (conditional — `.py`/`.ipynb` files only; notebooks via Ruff ≥ 0.6.0 or `nbqa` fallback) |
 | `trivy-reviewer` | `trivy config` IaC security analysis (conditional — Terraform / Dockerfile / Kubernetes / Helm / CFN files only) |
 | `housekeeper-reviewer` | Dependency/version freshness + maintenance-health — flags GitHub Actions, workflow runners, npm, NuGet, Docker base images, and PyPI packages behind latest GA or marked deprecated/unlisted/yanked (conditional — workflows + `package.json` + `*.csproj`/`*.props` + `pyproject.toml`/`requirements*.txt` + Dockerfiles; registry-backed deterministic engine) |
+| `test-quality-reviewer` | False-green test detection — no-assert, tautological, asserts-on-the-mock, over-mocking (conditional — test files only) |
 | `ui-reviewer` | UI/UX quality, accessibility, usability (conditional — visual component files only) |
 | `cross-reviewer` | Domain-focused cross-review — evaluates peer findings through a single domain lens |
 | `review-synthesiser` | Frontier-model synthesis — independent deep analysis, tiered report with cross-review integration |

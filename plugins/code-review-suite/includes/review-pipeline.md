@@ -804,7 +804,7 @@ workflow({scriptPath: $REVIEW_CORE_PATH}, {
     agentPrompt: $AGENT_PROMPT,
     flags: { csharp: $CSHARP_DETECTED, ui: $UI_DETECTED, js: $JS_DETECTED,
              py: $PY_DETECTED, iac: $IAC_DETECTED, housekeeping: $HOUSEKEEPING_DETECTED,
-             securitySensitive: $SECURITY_SENSITIVE },
+             tests: $TESTS_DETECTED, securitySensitive: $SECURITY_SENSITIVE },
     route: ($FILE_COUNT <= 5 && $LINE_COUNT <= 150 && !$SIGNIFICANT_DELETIONS && !$SECURITY_SENSITIVE) ? 'lightweight' : 'full',
     selfReReview: $SELF_RE_REVIEW,
     reviewMode: $REVIEW_MODE,

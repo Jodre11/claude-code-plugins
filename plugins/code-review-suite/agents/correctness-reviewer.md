@@ -74,7 +74,7 @@ Review every change for:
 - **Null/undefined dereferences** — accessing properties on potentially null/undefined values
 - **Race conditions** — shared mutable state, missing synchronisation, TOCTOU
 - **Resource leaks** — unclosed file handles, database connections, streams, memory
-- **Error handling gaps** — swallowed exceptions, missing error paths, incomplete catch blocks
+- **Error handling gaps** — swallowed exceptions, missing error paths, incomplete catch blocks, and **silent failure paths**: a new error/retry/fallback/external-call path that emits nothing observable — an exception caught but not logged, a retry with no trace, a fallback that returns a default without signalling. The unique residue after efficiency (hot-loop logging) and consistency (wrong framework) take their slices is that a future debugger is left blind to a path that failed. Flag the missing signal, not the logging style.
 - **Boundary conditions** — empty collections, zero values, max/min values, overflow
 - **Type mismatches** — implicit conversions, wrong generic parameters, narrowing casts
 - **Incorrect API usage** — wrong method signatures, deprecated APIs, misunderstood contracts

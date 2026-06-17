@@ -29,6 +29,13 @@ head_sha: ""
 path_scope: ""
 empty_tree_mode: false
 review_mode: pr
+# user_service.py is in this fixture's changed-lines as STRUCTURAL SUPPORT — the test
+# imports create_user from it; without the production module present the test becomes
+# tautological and the reviewer flags it (a documented false-positive, see commit b4dbb46).
+# Its presence also implicitly exercises the scope-guard ("NEVER review production code"),
+# but that guard is NOT independently falsifiable here: expect_arm_b only gates Important
+# findings, so a stray Suggestion on user_service.py would not flip the verdict. A dedicated
+# scope-guard fixture is a deferred follow-up (spec §7).
 planted:
   file: tests/test_user_service.py
   line: 0

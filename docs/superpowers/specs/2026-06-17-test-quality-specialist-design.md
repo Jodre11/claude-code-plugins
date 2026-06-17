@@ -190,9 +190,18 @@ model, matching the reuse/style/correctness baselines).
 - **B — behavioural gate (single-arm capture):** run test-quality on each fixture; hit
   must fire Important, near-miss must stay ABSENT. Bar: Fisher p < 0.05 hit-vs-nearmiss,
   near-miss inflation ~0. This is the bar #52/#53 cleared mechanically.
-- **A — unique-fire proof:** one contrast on the hit showing the *rest of the suite*
-  (correctness/style/reuse/alignment) stays silent on the same fixture while test-quality
-  fires — proving the coverage is unique (the whole justification for a new specialist).
+- **A — unique-fire proof (partial — see caveat):** the per-agent harness's Arm A swaps
+  only `test-quality-reviewer.md` to its pre-edit git blob. Because the file is NEW on this
+  branch, that blob is empty, so the corpus `expect_arm_a: ABSENT` field exercises a
+  *definition-less / generic-baseline* reviewer, NOT the named sibling specialists
+  (correctness/style/reuse/alignment). It is therefore a proxy for "a generic reviewer stays
+  silent", not a proof that the full sibling suite does. The actual sibling contrast was run
+  manually once (correctness-reviewer FIRED via its "test masks a real bug" exception — a
+  known *overlap*, not a clean gap, consistent with §1; style emitted a Suggestion only;
+  reuse stayed ABSENT). A dedicated multi-specialist unique-fire fixture is a deferred §7
+  follow-up; it is not built here because the behavioural gate (B) is the load-bearing proof
+  and a per-trial multi-specialist arm multiplies opus cost. Do not read `expect_arm_a:
+  ABSENT` as a sibling-suite silence guarantee.
 
 **Three fixture-design lessons carried in from #53 (all bit on the earlier threads):**
 

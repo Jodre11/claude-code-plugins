@@ -27,7 +27,7 @@ empty_tree_mode: false
 review_mode: pr
 planted:
   file: lib/user_settings.py
-  line: 38
+  line: 32
   expect_arm_b: Important  # retarget up-weights misleading names; get_user_settings writes, arm B must flag Important
   expect_arm_a: Suggestion # pre-edit style reviewer flags naming but at Suggestion, not up-weighted
 intent_ledger: |

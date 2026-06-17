@@ -27,7 +27,7 @@ empty_tree_mode: false
 review_mode: pr
 planted:
   file: lib/invoice.py
-  line: 21
+  line: 18
   expect_arm_b: Suggestion  # retarget keeps flagging non-trivial canonical reimplementation
   expect_arm_a: Suggestion  # pre-edit reviewer also flags it — hit confirms no regression
 intent_ledger: |

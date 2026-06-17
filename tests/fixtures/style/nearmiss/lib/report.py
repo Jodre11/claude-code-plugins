@@ -33,16 +33,33 @@ class AuditRecord:
 def build_audit_report(records: Sequence[AuditRecord], title: str = "AUDIT REPORT") -> str:
     """Render a plain-text audit report for the given records.
 
-    Each record produces a fixed-width block with all twenty fields
-    labelled and padded to a consistent column width for operator
-    review.  The function is intentionally written as one sequential
-    pass over the records so the output order matches the input order
-    exactly.  No branching on field content — every field is always
-    included so the layout is predictable for downstream parsers.
+    Returns a fixed-width formatted string suitable for operator review
+    or downstream parsing.
     """
     col = 20
     separator = "-" * 80
     lines: list[str] = []
+
+    event_id_label        = "Event ID".ljust(col)
+    actor_label           = "Actor".ljust(col)
+    actor_email_label     = "Actor email".ljust(col)
+    actor_dept_label      = "Actor department".ljust(col)
+    action_label          = "Action".ljust(col)
+    action_cat_label      = "Action category".ljust(col)
+    res_type_label        = "Resource type".ljust(col)
+    res_id_label          = "Resource ID".ljust(col)
+    res_name_label        = "Resource name".ljust(col)
+    outcome_label         = "Outcome".ljust(col)
+    outcome_code_label    = "Outcome code".ljust(col)
+    timestamp_label       = "Timestamp".ljust(col)
+    duration_label        = "Duration ms".ljust(col)
+    source_ip_label       = "Source IP".ljust(col)
+    user_agent_label      = "User agent".ljust(col)
+    session_id_label      = "Session ID".ljust(col)
+    tenant_id_label       = "Tenant ID".ljust(col)
+    tenant_name_label     = "Tenant name".ljust(col)
+    region_label          = "Region".ljust(col)
+    datacenter_label      = "Datacenter".ljust(col)
 
     lines.append(title)
     lines.append(separator)
@@ -50,26 +67,6 @@ def build_audit_report(records: Sequence[AuditRecord], title: str = "AUDIT REPOR
     lines.append(separator)
 
     for record in records:
-        event_id_label        = "Event ID".ljust(col)
-        actor_label           = "Actor".ljust(col)
-        actor_email_label     = "Actor email".ljust(col)
-        actor_dept_label      = "Actor department".ljust(col)
-        action_label          = "Action".ljust(col)
-        action_cat_label      = "Action category".ljust(col)
-        res_type_label        = "Resource type".ljust(col)
-        res_id_label          = "Resource ID".ljust(col)
-        res_name_label        = "Resource name".ljust(col)
-        outcome_label         = "Outcome".ljust(col)
-        outcome_code_label    = "Outcome code".ljust(col)
-        timestamp_label       = "Timestamp".ljust(col)
-        duration_label        = "Duration ms".ljust(col)
-        source_ip_label       = "Source IP".ljust(col)
-        user_agent_label      = "User agent".ljust(col)
-        session_id_label      = "Session ID".ljust(col)
-        tenant_id_label       = "Tenant ID".ljust(col)
-        tenant_name_label     = "Tenant name".ljust(col)
-        region_label          = "Region".ljust(col)
-        datacenter_label      = "Datacenter".ljust(col)
 
         lines.append(f"{event_id_label}: {record.event_id}")
         lines.append(f"{actor_label}: {record.actor}")

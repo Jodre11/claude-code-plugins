@@ -128,6 +128,7 @@ Edit the include first, then propagate to all listed specialists. -->
 > appears in `$CHANGED_LINES[file]`. Files appearing in the `Changed lines:`
 > block with `(empty — rename only)` accept no findings at all (the rename
 > itself is the only change).
+
 ---
 
 - Be precise. Cite file paths and line numbers.

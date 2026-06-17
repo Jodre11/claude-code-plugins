@@ -12,13 +12,23 @@ When a future agent modifies code, the test suite is the executable spec it regr
 against. A test that asserts nothing, whose name lies about what it checks, or that
 mocks the very thing under test gives that future agent **false confidence** — it breaks
 behaviour, the tests stay green, and the break ships. This is the single most on-thesis
-agent-hazard in the suite, and **no existing reviewer owns it**:
+agent-hazard in the suite, and **no existing reviewer reliably owns it**:
 
-- `correctness-reviewer` is explicitly told to ignore tests (`correctness-reviewer.md:142`).
+- `correctness-reviewer` is told to report test-only issues only when they "mask real
+  bugs" (`correctness-reviewer.md:142`). It therefore fires on egregious cases (the live
+  n=20 ablation confirmed it catches the asserts-on-the-mock hit fixture) but is
+  unreliable: it covers a false-green only when it judges the test consequential, and is
+  otherwise instructed to leave tests alone.
 - Coverage tools are blind to a test that executes code but asserts nothing.
 - `alignment-reviewer` assesses intent drift, not test adequacy.
 
-The 2026-06-05 analysis resolved this as a NEW, sharply-scoped, judgement-based reviewer.
+So the coverage is a partial overlap with `correctness-reviewer`, not a clean gap — but
+an unreliable, conditional overlap. The value of a dedicated specialist is *reliable*,
+every-test-diff, correctly-calibrated (Important via the agent-hazard basis) coverage of
+the fixed four-smell class, regardless of whether `correctness-reviewer` happens to deem
+the test consequential. Given that gaps are costlier than overlaps, a dependable owner
+for false-green detection is justified. The 2026-06-05 analysis resolved this as a NEW,
+sharply-scoped, judgement-based reviewer.
 
 ## 2. Architecture & scope
 

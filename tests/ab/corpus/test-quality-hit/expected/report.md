@@ -1,7 +1,7 @@
 ## Test Quality Review Findings
 
 ### Finding — `test_rejects_invalid_email` asserts on the mock's own configured return
-- **File:** tests/test_email_validation.py:11
+- **File:** tests/test_email_validation.py:13
 - **Smell:** asserts-on-the-mock
 - **Confidence:** 95
 - **Severity:** Important

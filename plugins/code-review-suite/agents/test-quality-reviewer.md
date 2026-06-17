@@ -102,10 +102,9 @@ Return findings in this exact format:
 
 ### Finding — [short title]
 - **File:** path/to/test_file:42
-- **Smell:** no-assert | tautological | asserts-on-the-mock | over-mocking
 - **Confidence:** 0-100
 - **Severity:** Critical | Important | Suggestion (see `includes/severity-definitions.md`)
-- **Description:** What is wrong — name what the test claims to verify vs what it actually asserts
+- **Description:** Smell: <class> — what is wrong; name what the test claims to verify vs what it actually asserts
 - **Suggested fix:** Concrete change to make the test assert real behaviour
 ```
 

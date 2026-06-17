@@ -1,0 +1,7 @@
+name: test-quality-baseline
+description: Test-quality per-agent arm for the false-green ablation. opus/default; the ablation swaps only test-quality-reviewer.md via run-specialist-ablation.sh.
+mode: per-agent
+agent: test-quality-reviewer
+session:
+  model: opus
+  effort: default

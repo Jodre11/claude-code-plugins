@@ -1,0 +1,38 @@
+id: test-quality-hit
+agent: test-quality-reviewer
+type: synthetic
+captured_at: 2026-06-17T12:00:00Z
+baseline_revision: 1
+captured_under:
+  suite_sha: 1082083
+  agent_model: opus
+  agent_effort: default
+working_dir_strategy: copy
+source_path: tests/fixtures/test-quality/hit/
+setup:
+  command: |
+    export GIT_AUTHOR_NAME=ab-trial GIT_AUTHOR_EMAIL=ab-trial@example.invalid GIT_COMMITTER_NAME=ab-trial GIT_COMMITTER_EMAIL=ab-trial@example.invalid GIT_AUTHOR_DATE="2026-01-01T00:00:00 +0000" GIT_COMMITTER_DATE="2026-01-01T00:00:00 +0000"
+    mv tests/test_email_validation.py .test_email_validation.py.planted
+    git init -q -b main
+    git add README.md
+    git commit -q -m "base: email validation scaffold"
+    mkdir -p tests
+    mv .test_email_validation.py.planted tests/test_email_validation.py
+    git add tests/test_email_validation.py
+    git commit -q -m "test: add email validation tests"
+base_sha: ""
+head_sha: ""
+path_scope: ""
+empty_tree_mode: false
+review_mode: pr
+planted:
+  file: tests/test_email_validation.py
+  line: 11
+  expect_arm_b: Important
+  expect_arm_a: ABSENT
+intent_ledger: |
+  ## Intent ledger
+  - goal: add tests for the email validation service to verify rejection of invalid addresses
+depends_on:
+  - plugins/code-review-suite/agents/test-quality-reviewer.md
+  - tests/fixtures/test-quality/hit/tests/test_email_validation.py

@@ -27,7 +27,7 @@ empty_tree_mode: false
 review_mode: pr
 planted:
   file: tests/test_email_validation.py
-  line: 11
+  line: 13
   expect_arm_b: Important
   expect_arm_a: ABSENT
 intent_ledger: |

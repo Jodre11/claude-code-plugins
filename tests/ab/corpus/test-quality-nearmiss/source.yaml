@@ -13,9 +13,13 @@ setup:
   command: |
     export GIT_AUTHOR_NAME=ab-trial GIT_AUTHOR_EMAIL=ab-trial@example.invalid GIT_COMMITTER_NAME=ab-trial GIT_COMMITTER_EMAIL=ab-trial@example.invalid GIT_AUTHOR_DATE="2026-01-01T00:00:00 +0000" GIT_COMMITTER_DATE="2026-01-01T00:00:00 +0000"
     mv tests/test_user_service.py .test_user_service.py.planted
+    mv user_service.py .user_service.py.planted
     git init -q -b main
     git add README.md
     git commit -q -m "base: user service scaffold"
+    mv .user_service.py.planted user_service.py
+    git add user_service.py
+    git commit -q -m "feat: add user service creation flow"
     mkdir -p tests
     mv .test_user_service.py.planted tests/test_user_service.py
     git add tests/test_user_service.py
@@ -36,3 +40,4 @@ intent_ledger: |
 depends_on:
   - plugins/code-review-suite/agents/test-quality-reviewer.md
   - tests/fixtures/test-quality/nearmiss/tests/test_user_service.py
+  - tests/fixtures/test-quality/nearmiss/user_service.py

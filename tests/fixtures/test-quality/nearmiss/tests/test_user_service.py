@@ -1,6 +1,12 @@
 """Tests for user service creation flow."""
 
 import sqlite3
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from user_service import create_user
 
 
 def _create_test_db():
@@ -20,10 +26,7 @@ def _create_test_db():
 def test_create_user_stores_record():
     """Verify that creating a user persists the record in the database."""
     conn = _create_test_db()
-    conn.execute(
-        "INSERT INTO users (email, name) VALUES (?, ?)",
-        ("alice@example.com", "Alice"),
-    )
+    create_user(conn, email="alice@example.com", name="Alice")
     row = conn.execute(
         "SELECT email, name FROM users WHERE email = ?", ("alice@example.com",)
     ).fetchone()

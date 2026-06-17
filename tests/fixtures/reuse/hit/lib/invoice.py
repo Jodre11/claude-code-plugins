@@ -14,11 +14,7 @@ class Invoice:
 
 
 def render_invoice_summary(invoice: Invoice) -> str:
-    """Return a single-line summary string for *invoice*.
-
-    Formats the amount for display. NOTE: this reimplements the canonical
-    format_currency logic from utils/formatting.py instead of importing it.
-    """
+    """Format the invoice line items for display, including currency symbol lookup and sign handling."""
     symbols = {"USD": "$", "GBP": "£", "EUR": "€"}
     if invoice.currency not in symbols:
         raise ValueError(f"Unsupported currency: {invoice.currency!r}")

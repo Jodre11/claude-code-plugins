@@ -24,7 +24,7 @@ def enqueue_job(payload: dict) -> str:
 
 
 def await_dispatch(job_id: str) -> dict | None:
-    """Poll the dispatch queue for *job_id* until it reports a terminal state.
+    """Poll the dispatch queue for *job_id* until the job is marked complete.
 
     Returns the completed job record, or None if the job has not settled.
     """
@@ -32,7 +32,7 @@ def await_dispatch(job_id: str) -> dict | None:
     for _ in range(MAX_ATTEMPTS):
         with urllib.request.urlopen(url, timeout=5) as resp:
             record = json.loads(resp.read())
-        if record["state"] == "done":
+        if record["complete"]:
             return record
         time.sleep(POLL_INTERVAL_SECONDS)
     return None

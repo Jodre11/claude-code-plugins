@@ -1,0 +1,39 @@
+id: reuse-hit
+agent: reuse-reviewer
+type: synthetic
+captured_at: 2026-06-17T00:00:00Z
+baseline_revision: 1
+captured_under:
+  suite_sha: ""  # filled at first capture
+  agent_model: opus
+  agent_effort: default
+working_dir_strategy: copy
+source_path: tests/fixtures/reuse/hit/
+setup:
+  command: |
+    export GIT_AUTHOR_NAME=ab-trial GIT_AUTHOR_EMAIL=ab-trial@example.invalid GIT_COMMITTER_NAME=ab-trial GIT_COMMITTER_EMAIL=ab-trial@example.invalid GIT_AUTHOR_DATE="2026-01-01T00:00:00 +0000" GIT_COMMITTER_DATE="2026-01-01T00:00:00 +0000"
+    mv lib/invoice.py .invoice.py.planted
+    git init -q -b main
+    git add README.md utils/formatting.py
+    git commit -q -m "base: formatting utils and project scaffold"
+    mkdir -p lib
+    mv .invoice.py.planted lib/invoice.py
+    git add lib/invoice.py
+    git commit -q -m "feat: add invoice rendering helper"
+base_sha: ""
+head_sha: ""
+path_scope: ""
+empty_tree_mode: false
+review_mode: pr
+planted:
+  file: lib/invoice.py
+  line: 21
+  expect_arm_b: Suggestion  # retarget keeps flagging non-trivial canonical reimplementation
+  expect_arm_a: Suggestion  # pre-edit reviewer also flags it — hit confirms no regression
+intent_ledger: |
+  ## Intent ledger
+  - goal: add an invoice rendering helper that displays a formatted currency amount
+depends_on:
+  - plugins/code-review-suite/agents/reuse-reviewer.md
+  - tests/fixtures/reuse/hit/lib/invoice.py
+  - tests/fixtures/reuse/hit/utils/formatting.py

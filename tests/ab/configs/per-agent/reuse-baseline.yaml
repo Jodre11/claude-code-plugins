@@ -1,0 +1,7 @@
+name: reuse-baseline
+description: Reuse per-agent arm for the triviality-bifurcation ablation. opus/default; the ablation swaps only reuse-reviewer.md via run-specialist-ablation.sh.
+mode: per-agent
+agent: reuse-reviewer
+session:
+  model: opus
+  effort: default

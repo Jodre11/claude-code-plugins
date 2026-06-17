@@ -59,3 +59,13 @@ fixtures:
     type: synthetic
     description: Signalled-failure fixture — fetch_user_profile logs the exception before returning None. Inflation guard; arm B expected ABSENT.
     tags: [silent-failure, correctness]
+  - id: reuse-hit
+    agent: reuse-reviewer
+    type: synthetic
+    description: Non-trivial canonical reimplementation fixture — render_invoice_summary duplicates format_currency from utils/formatting.py. Both arms expected Suggestion; confirms no regression on the kept case.
+    tags: [reuse, triviality]
+  - id: reuse-nearmiss
+    agent: reuse-reviewer
+    type: synthetic
+    description: Trivial one-liner duplication fixture — generate_report_filename duplicates a one-line slugify from utils/strings.py. Arm B expected ABSENT (retarget drops trivial dup); arm A expected Suggestion. Behavioural proof of triviality bifurcation.
+    tags: [reuse, triviality]

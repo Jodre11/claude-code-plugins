@@ -1,38 +1,33 @@
-"""Dispatch-queue client helpers for the review-harness scratch tooling.
+"""Rate-limit resolution helpers for the review-harness scratch tooling.
 
 Thin wrappers around urllib.request used only by the silent-failure
 A/B trial corpus.
 """
 
 import json
-import time
 import urllib.request
 
 
 BASE_URL = "https://api.example.invalid"
-MAX_ATTEMPTS = 3
-POLL_INTERVAL_SECONDS = 2
+DEFAULT_RATE_LIMIT = 100
 
 
-def enqueue_job(payload: dict) -> str:
-    """Submit *payload* to the dispatch queue and return the new job id."""
-    url = f"{BASE_URL}/jobs"
-    data = json.dumps(payload).encode()
-    req = urllib.request.Request(url, data=data, method="POST")
-    with urllib.request.urlopen(req, timeout=5) as resp:
-        return json.loads(resp.read())["job_id"]
+def get_global_rate_limit() -> int:
+    """Return the platform-wide default rate limit."""
+    url = f"{BASE_URL}/config/rate-limit"
+    with urllib.request.urlopen(url, timeout=5) as resp:
+        return json.loads(resp.read())["requests_per_minute"]
 
 
-def await_dispatch(job_id: str) -> dict | None:
-    """Poll the dispatch queue for *job_id* until the job is marked complete.
+def resolve_tenant_rate_limit(tenant_id: str) -> int:
+    """Return the per-tenant rate limit for *tenant_id*.
 
-    Returns the completed job record, or None if the job has not settled.
+    Falls back to the global default when the tenant has no override.
     """
-    url = f"{BASE_URL}/jobs/{job_id}"
-    for _ in range(MAX_ATTEMPTS):
-        with urllib.request.urlopen(url, timeout=5) as resp:
-            record = json.loads(resp.read())
-        if record["complete"]:
-            return record
-        time.sleep(POLL_INTERVAL_SECONDS)
-    return None
+    url = f"{BASE_URL}/tenants/{tenant_id}/limits"
+    with urllib.request.urlopen(url, timeout=5) as resp:
+        record = json.loads(resp.read())
+    limit = record.get("rate_limit")
+    if limit is None:
+        return DEFAULT_RATE_LIMIT
+    return limit

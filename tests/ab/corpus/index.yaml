@@ -62,7 +62,7 @@ fixtures:
   - id: silentfail-unique-hit
     agent: correctness-reviewer
     type: synthetic
-    description: Retry-exhausted-without-trace fixture — await_dispatch polls MAX_ATTEMPTS times then returns None with no log, metric, or raise (no exception construct, so the pre-edit "swallowed exceptions" bullet has no purchase). Arm B expected Important via the new silent-failure-path clause; arm A expected ABSENT. Unique-fire contrast the original silentfail-hit could not isolate.
+    description: Fallback-returns-default fixture — resolve_tenant_rate_limit silently serves DEFAULT_RATE_LIMIT when the API omits rate_limit (legitimate control flow, no exception). Arm B expected Important via the new "fallback without signalling" clause; arm A expected ABSENT (no error path for the pre-edit bullets to grab). Unique-fire contrast.
     tags: [silent-failure, correctness, unique-fire]
   - id: reuse-hit
     agent: reuse-reviewer

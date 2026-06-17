@@ -1,1 +1,1 @@
-Dispatch-queue client scaffold for the A/B trial fixture (unique-hit case).
+Rate-limit resolution scaffold for the A/B trial fixture (unique-hit case).

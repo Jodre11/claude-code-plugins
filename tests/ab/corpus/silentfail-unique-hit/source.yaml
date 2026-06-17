@@ -15,11 +15,11 @@ setup:
     mv lib/dispatch_client.py .dispatch_client.py.planted
     git init -q -b main
     git add README.md
-    git commit -q -m "base: dispatch queue client scaffold"
+    git commit -q -m "base: rate-limit resolution scaffold"
     mkdir -p lib
     mv .dispatch_client.py.planted lib/dispatch_client.py
     git add lib/dispatch_client.py
-    git commit -q -m "feat: add await_dispatch poll helper"
+    git commit -q -m "feat: add per-tenant rate-limit resolver"
 base_sha: ""
 head_sha: ""
 path_scope: ""
@@ -27,12 +27,13 @@ empty_tree_mode: false
 review_mode: pr
 planted:
   file: lib/dispatch_client.py
-  line: 38
-  expect_arm_b: Important  # arm B (post-edit) must flag the retry-exhausted-without-trace path
-  expect_arm_a: ABSENT     # arm A (pre-edit) has no exception to grab — bullet wording does not cover return-driven retry exhaustion
+  line: 31
+  expect_arm_b: Important  # arm B (post-edit) must flag the fallback-without-signal path
+  expect_arm_a: ABSENT     # arm A (pre-edit) lacks the "fallback returning default without signalling" clause
 intent_ledger: |
   ## Intent ledger
-  - goal: add a dispatch-queue client helper that polls for a job until it reports a terminal state
+  - goal: add a per-tenant rate-limit resolver that returns the tenant-specific limit from the config API
 depends_on:
   - plugins/code-review-suite/agents/correctness-reviewer.md
   - tests/fixtures/silent-failure/unique-hit/lib/dispatch_client.py
+  - tests/fixtures/silent-failure/unique-hit/README.md

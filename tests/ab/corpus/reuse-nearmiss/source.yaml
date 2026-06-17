@@ -1,0 +1,39 @@
+id: reuse-nearmiss
+agent: reuse-reviewer
+type: synthetic
+captured_at: 2026-06-17T08:05:00Z
+baseline_revision: 1
+captured_under:
+  suite_sha: df61ce1ff50e57fffde267151e534f89905c273a
+  agent_model: opus
+  agent_effort: default
+working_dir_strategy: copy
+source_path: tests/fixtures/reuse/nearmiss/
+setup:
+  command: |
+    export GIT_AUTHOR_NAME=ab-trial GIT_AUTHOR_EMAIL=ab-trial@example.invalid GIT_COMMITTER_NAME=ab-trial GIT_COMMITTER_EMAIL=ab-trial@example.invalid GIT_AUTHOR_DATE="2026-01-01T00:00:00 +0000" GIT_COMMITTER_DATE="2026-01-01T00:00:00 +0000"
+    mv lib/reports.py .reports.py.planted
+    git init -q -b main
+    git add README.md utils/strings.py
+    git commit -q -m "base: string utils and project scaffold"
+    mkdir -p lib
+    mv .reports.py.planted lib/reports.py
+    git add lib/reports.py
+    git commit -q -m "feat: add report filename generator"
+base_sha: ""
+head_sha: ""
+path_scope: ""
+empty_tree_mode: false
+review_mode: pr
+planted:
+  file: lib/reports.py
+  line: 6
+  expect_arm_b: ABSENT     # retarget drops trivial one-liner dup (≤3 lines, no branching)
+  expect_arm_a: Suggestion  # pre-edit reviewer flags the duplicated one-liner
+intent_ledger: |
+  ## Intent ledger
+  - goal: add a helper that generates a filesystem-safe filename for a report
+depends_on:
+  - plugins/code-review-suite/agents/reuse-reviewer.md
+  - tests/fixtures/reuse/nearmiss/lib/reports.py
+  - tests/fixtures/reuse/nearmiss/utils/strings.py

@@ -49,3 +49,33 @@ fixtures:
     type: synthetic
     description: Vague-but-honest comment fixture — accurate but unspecific, no contradiction. Inflation guard; both arms expected Suggestion.
     tags: [agent-hazard, synthesiser]
+  - id: silentfail-hit
+    agent: correctness-reviewer
+    type: synthetic
+    description: Silent-catch-and-swallow fixture — fetch_user_profile wraps external call in bare except with no log. Arm B expected Important; arm A ABSENT.
+    tags: [silent-failure, correctness]
+  - id: silentfail-nearmiss
+    agent: correctness-reviewer
+    type: synthetic
+    description: Signalled-failure fixture — fetch_user_profile logs the exception before returning None. Inflation guard; arm B expected ABSENT.
+    tags: [silent-failure, correctness]
+  - id: reuse-hit
+    agent: reuse-reviewer
+    type: synthetic
+    description: Non-trivial canonical reimplementation fixture — render_invoice_summary duplicates format_currency from utils/formatting.py. Both arms expected Suggestion; confirms no regression on the kept case.
+    tags: [reuse, triviality]
+  - id: reuse-nearmiss
+    agent: reuse-reviewer
+    type: synthetic
+    description: Trivial one-liner duplication fixture — generate_report_filename duplicates a one-line slugify from utils/strings.py. Arm B expected ABSENT (retarget drops trivial dup); arm A expected Suggestion. Behavioural proof of triviality bifurcation.
+    tags: [reuse, triviality]
+  - id: style-hit
+    agent: style-reviewer
+    type: synthetic
+    description: Misleading-name fixture — get_user_settings performs a DB write on first call despite a name that implies a pure read. Arm B expected Important (up-weighted by reasoning-economy retarget); arm A expected Suggestion.
+    tags: [style, reasoning-economy]
+  - id: style-nearmiss
+    agent: style-reviewer
+    type: synthetic
+    description: Long-but-linear fixture — build_audit_report is ~65 lines of sequential field rendering with no branching. Arm B expected ABSENT (inverted length heuristic); arm A expected Suggestion. Proves the inversion.
+    tags: [style, reasoning-economy]

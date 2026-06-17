@@ -27,7 +27,7 @@ empty_tree_mode: false
 review_mode: pr
 planted:
   file: lib/report.py
-  line: 65
+  line: 43
   expect_arm_b: ABSENT     # retarget inverts length heuristic — long but linear function must NOT be flagged
   expect_arm_a: Suggestion # pre-edit "function length" rule flags it at Suggestion
 intent_ledger: |

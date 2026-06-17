@@ -28,8 +28,8 @@ review_mode: pr
 planted:
   file: lib/reports.py
   line: 6
-  expect_arm_b: ABSENT     # retarget drops trivial one-liner dup (≤3 lines, no branching)
-  expect_arm_a: Suggestion  # pre-edit reviewer flags the duplicated one-liner
+  expect_arm_b: Suggestion  # retarget de-escalates trivial dup of a NAMED/EXPORTED helper Important→Suggestion (not ABSENT): a dedicated slugify export is an intent signal worth a non-blocking note (serves agent cold-start amnesia). Observed 5/5 Suggestion in the #53 ablation (p=0.00794 vs arm A's Important).
+  expect_arm_a: Important   # pre-edit reviewer flags the duplicated one-liner at Important
 intent_ledger: |
   ## Intent ledger
   - goal: add a helper that generates a filesystem-safe filename for a report

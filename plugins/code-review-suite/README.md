@@ -26,7 +26,7 @@ another takes over). The synthesiser constrains the verdict to `REQUEST_CHANGES`
 
 ### Specialists
 
-The full review path dispatches 8 core specialists (up to 14 with all conditionals):
+The full review path dispatches 8 core specialists (up to 15 with all conditionals):
 `security-reviewer`, `correctness-reviewer`, `consistency-reviewer`, `style-reviewer`,
 `archaeology-reviewer`, `reuse-reviewer`, `efficiency-reviewer`, `alignment-reviewer`, plus
 conditional specialists by file type: `jbinspect-reviewer` (C#), `ui-reviewer` (visual
@@ -77,6 +77,7 @@ The review pipeline (`includes/review-pipeline.md`) handles all routing:
 | `ruff-reviewer` | Ruff static analysis for Python (conditional — `.py`/`.ipynb` files only; notebooks via Ruff ≥ 0.6.0 or `nbqa` fallback) |
 | `trivy-reviewer` | `trivy config` IaC security analysis (conditional — Terraform / Dockerfile / Kubernetes / Helm / CFN files only) |
 | `housekeeper-reviewer` | Dependency/version freshness + maintenance-health — flags GitHub Actions, workflow runners, npm, NuGet, Docker base images, and PyPI packages behind latest GA or marked deprecated/unlisted/yanked (conditional — workflows + `package.json` + `*.csproj`/`*.props` + `pyproject.toml`/`requirements*.txt` + Dockerfiles; registry-backed deterministic engine) |
+| `test-quality-reviewer` | False-green test detection — no-assert, tautological, asserts-on-the-mock, over-mocking (conditional — test files only) |
 | `ui-reviewer` | UI/UX quality, accessibility, usability (conditional — visual component files only) |
 | `cross-reviewer` | Domain-focused cross-review — evaluates peer findings through a single domain lens |
 | `review-synthesiser` | Frontier-model synthesis — independent deep analysis, tiered report with cross-review integration |

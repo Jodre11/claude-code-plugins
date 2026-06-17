@@ -72,7 +72,7 @@ fixtures:
   - id: reuse-nearmiss
     agent: reuse-reviewer
     type: synthetic
-    description: Trivial one-liner duplication fixture — generate_report_filename duplicates a one-line slugify from utils/strings.py. Arm B expected ABSENT (retarget drops trivial dup); arm A expected Suggestion. Behavioural proof of triviality bifurcation.
+    description: Trivial one-liner duplication fixture — generate_report_filename duplicates a one-line slugify from utils/strings.py. Arm B expected Suggestion (retarget de-escalates trivial dup of a named/exported helper Important→Suggestion, not ABSENT); arm A expected Important. Behavioural proof of triviality bifurcation (observed 5/5, p=0.00794).
     tags: [reuse, triviality]
   - id: style-hit
     agent: style-reviewer

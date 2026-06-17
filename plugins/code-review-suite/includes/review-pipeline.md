@@ -991,24 +991,36 @@ Agent({
 })
 ```
 
+If `$TESTS_DETECTED`, also dispatch:
+```
+Agent({
+    description: "Test quality review",
+    subagent_type: "code-review-suite:test-quality-reviewer",
+    name: "test-quality-reviewer",
+    mode: "auto",
+    run_in_background: true,
+    prompt: $AGENT_PROMPT
+})
+```
+
 **Batching fallback:** If the platform rejects or silently drops agent dispatches beyond a concurrency limit, split into two batches:
 - **Batch 1** (dispatch first, wait for completion): security-reviewer, correctness-reviewer, consistency-reviewer, style-reviewer
-- **Batch 2** (dispatch after batch 1 completes): archaeology-reviewer, reuse-reviewer, efficiency-reviewer, alignment-reviewer, plus any conditional specialists (jbinspect, ui, eslint, ruff, trivy, housekeeper — up to 6)
+- **Batch 2** (dispatch after batch 1 completes): archaeology-reviewer, reuse-reviewer, efficiency-reviewer, alignment-reviewer, plus any conditional specialists (jbinspect, ui, eslint, ruff, trivy, housekeeper, test-quality — up to 7)
 
 Batch composition was tuned after a documented incident where the model dispatched only 3 of 7 specialists and fabricated justification for selective omission (commit eb0bbda, 2026-05). Do not reduce batch sizes or reorder splits without re-running that scenario — the explicit dispatch enumeration is the safety net.
 
 This is a fallback only — prefer a single parallel dispatch when possible. Never use batching as a justification to skip specialists entirely.
 
-**Polyglot fallback:** if all six conditional specialists fire on a single diff, Batch 2 carries 10 dispatches — above the typical concurrency ceiling. Split Batch 2 further: keep the 4 core specialists in Batch 2, dispatch the 6 conditionals as Batch 3 after Batch 2 completes. The verify-completeness self-check in Step 4.3 still gates whether all expected specialists ran, regardless of batch count.
+**Polyglot fallback:** if all seven conditional specialists fire on a single diff, Batch 2 carries 11 dispatches — above the typical concurrency ceiling. Split Batch 2 further: keep the 4 core specialists in Batch 2, dispatch the 7 conditionals as Batch 3 after Batch 2 completes. The verify-completeness self-check in Step 4.3 still gates whether all expected specialists ran, regardless of batch count.
 
-Store `$SPECIALIST_COUNT` = number of specialists dispatched (8 core only; 9–14 with conditionals: +1 each for `$CSHARP_DETECTED`, `$UI_DETECTED`, `$JS_DETECTED`, `$PY_DETECTED`, `$IAC_DETECTED`, `$HOUSEKEEPING_DETECTED`) and note the dispatch timestamp.
+Store `$SPECIALIST_COUNT` = number of specialists dispatched (8 core only; 9–15 with conditionals: +1 each for `$CSHARP_DETECTED`, `$UI_DETECTED`, `$JS_DETECTED`, `$PY_DETECTED`, `$IAC_DETECTED`, `$HOUSEKEEPING_DETECTED`, `$TESTS_DETECTED`) and note the dispatch timestamp.
 
 #### 4.3 Verify dispatch completeness
 
 Immediately after dispatching, perform this self-check:
 
 1. List every specialist agent you just dispatched by name
-2. Compare against the mandatory set: `security-reviewer`, `correctness-reviewer`, `consistency-reviewer`, `style-reviewer`, `archaeology-reviewer`, `reuse-reviewer`, `efficiency-reviewer`, `alignment-reviewer` (plus `jbinspect-reviewer` if `$CSHARP_DETECTED`, plus `ui-reviewer` if `$UI_DETECTED`, plus `eslint-reviewer` if `$JS_DETECTED`, plus `ruff-reviewer` if `$PY_DETECTED`, plus `trivy-reviewer` if `$IAC_DETECTED`, plus `housekeeper-reviewer` if `$HOUSEKEEPING_DETECTED`)
+2. Compare against the mandatory set: `security-reviewer`, `correctness-reviewer`, `consistency-reviewer`, `style-reviewer`, `archaeology-reviewer`, `reuse-reviewer`, `efficiency-reviewer`, `alignment-reviewer` (plus `jbinspect-reviewer` if `$CSHARP_DETECTED`, plus `ui-reviewer` if `$UI_DETECTED`, plus `eslint-reviewer` if `$JS_DETECTED`, plus `ruff-reviewer` if `$PY_DETECTED`, plus `trivy-reviewer` if `$IAC_DETECTED`, plus `housekeeper-reviewer` if `$HOUSEKEEPING_DETECTED`, plus `test-quality-reviewer` if `$TESTS_DETECTED`)
 3. If any mandatory specialist is missing, dispatch it now before proceeding
 4. Announce: `> Dispatch verified: $SPECIALIST_COUNT/$SPECIALIST_COUNT specialists launched`
 

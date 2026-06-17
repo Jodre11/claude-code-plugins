@@ -4,7 +4,7 @@ type: synthetic
 captured_at: 2026-06-16T00:00:00Z
 baseline_revision: 1
 captured_under:
-  suite_sha: ""        # filled at first capture (Task 7)
+  suite_sha: 0b12af52cb61143ae9f6123ebd6f026305b6495c  # filled at first capture (Task 7)
   agent_model: opus
   agent_effort: default
 working_dir_strategy: copy

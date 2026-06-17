@@ -4,7 +4,7 @@ type: synthetic
 captured_at: 2026-06-17T12:00:00Z
 baseline_revision: 1
 captured_under:
-  suite_sha: 1082083
+  suite_sha: 10820832304f4606bd7d9d90cfc97d3ccfa76ede
   agent_model: opus
   agent_effort: default
 working_dir_strategy: copy
@@ -32,8 +32,8 @@ review_mode: pr
 planted:
   file: tests/test_user_service.py
   line: 0
-  expect_arm_b: ABSENT
-  expect_arm_a: ABSENT
+  expect_arm_b: ABSENT  # tests assert real DB state — no false-green smell present
+  expect_arm_a: ABSENT  # correctly silent — well-written tests don't trigger generic reviewer either
 intent_ledger: |
   ## Intent ledger
   - goal: add tests for the user creation flow to verify database persistence

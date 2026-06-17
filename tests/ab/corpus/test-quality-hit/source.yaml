@@ -4,7 +4,7 @@ type: synthetic
 captured_at: 2026-06-17T12:00:00Z
 baseline_revision: 1
 captured_under:
-  suite_sha: 1082083
+  suite_sha: 10820832304f4606bd7d9d90cfc97d3ccfa76ede
   agent_model: opus
   agent_effort: default
 working_dir_strategy: copy
@@ -28,8 +28,8 @@ review_mode: pr
 planted:
   file: tests/test_email_validation.py
   line: 13
-  expect_arm_b: Important
-  expect_arm_a: ABSENT
+  expect_arm_b: Important  # asserts-on-the-mock smell — false-green via agent-hazard basis
+  expect_arm_a: ABSENT  # generic reviewer lacks test-quality smell taxonomy
 intent_ledger: |
   ## Intent ledger
   - goal: add tests for the email validation service to verify rejection of invalid addresses

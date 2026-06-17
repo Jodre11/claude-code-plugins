@@ -132,7 +132,7 @@ Edit the include first, then propagate to all listed specialists. -->
 
 - Be precise. Cite file paths and line numbers.
 - Note certainty level and reasoning for each finding.
-- Don't flag intentional test patterns (e.g. smoke tests that deliberately only check "doesn't crash", integration tests where the assertion is in a helper).
+- Don't flag tests explicitly named or commented as smoke/canary (`test_smoke_*`, `test_canary_*`, `# smoke test`), or integration tests whose assertion is delegated to a named helper visible in the same diff.
 - NEVER estimate coverage. No line-counting, no %, no "untested code" flags. Coverage is a CI gate, not your job.
 - NEVER review production code. Your scope is test files in the diff ONLY.
 - Don't inflate cosmetic test issues (naming, import order, minor readability) to Important. They are Suggestion at most.

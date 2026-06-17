@@ -1,0 +1,38 @@
+id: silentfail-nearmiss
+agent: correctness-reviewer
+type: synthetic
+captured_at: 2026-06-17T00:00:00Z
+baseline_revision: 1
+captured_under:
+  suite_sha: d991b4858e516dfcd1d03de52796cd87fe5eab0a  # filled at first capture
+  agent_model: opus
+  agent_effort: default
+working_dir_strategy: copy
+source_path: tests/fixtures/silent-failure/nearmiss/
+setup:
+  command: |
+    export GIT_AUTHOR_NAME=ab-trial GIT_AUTHOR_EMAIL=ab-trial@example.invalid GIT_COMMITTER_NAME=ab-trial GIT_COMMITTER_EMAIL=ab-trial@example.invalid GIT_AUTHOR_DATE="2026-01-01T00:00:00 +0000" GIT_COMMITTER_DATE="2026-01-01T00:00:00 +0000"
+    mv lib/http_client.py .http_client.py.planted
+    git init -q -b main
+    git add README.md
+    git commit -q -m "base: http client scaffold"
+    mkdir -p lib
+    mv .http_client.py.planted lib/http_client.py
+    git add lib/http_client.py
+    git commit -q -m "feat: add fetch_user_profile helper"
+base_sha: ""
+head_sha: ""
+path_scope: ""
+empty_tree_mode: false
+review_mode: pr
+planted:
+  file: lib/http_client.py
+  line: 32
+  expect_arm_b: ABSENT  # inflation guard: the path logs its failure, arm B must NOT flag it
+  expect_arm_a: ABSENT
+intent_ledger: |
+  ## Intent ledger
+  - goal: add an HTTP client helper for fetching user profiles from the profile endpoint
+depends_on:
+  - plugins/code-review-suite/agents/correctness-reviewer.md
+  - tests/fixtures/silent-failure/nearmiss/lib/http_client.py

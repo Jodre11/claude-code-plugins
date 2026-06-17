@@ -49,3 +49,13 @@ fixtures:
     type: synthetic
     description: Vague-but-honest comment fixture — accurate but unspecific, no contradiction. Inflation guard; both arms expected Suggestion.
     tags: [agent-hazard, synthesiser]
+  - id: silentfail-hit
+    agent: correctness-reviewer
+    type: synthetic
+    description: Silent-catch-and-swallow fixture — fetch_user_profile wraps external call in bare except with no log. Arm B expected Important; arm A ABSENT.
+    tags: [silent-failure, correctness]
+  - id: silentfail-nearmiss
+    agent: correctness-reviewer
+    type: synthetic
+    description: Signalled-failure fixture — fetch_user_profile logs the exception before returning None. Inflation guard; arm B expected ABSENT.
+    tags: [silent-failure, correctness]

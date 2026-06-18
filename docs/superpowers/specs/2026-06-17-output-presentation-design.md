@@ -250,7 +250,69 @@ real-world table widths.
 
 ## Full Log — Format & Location
 
-Persists in `$CLAUDE_TEMP_DIR` (session-scoped). Two files:
+### Opt-in toggle (default OFF)
+
+The full log is a **fine-tuning instrument with a finite useful life**, not a
+permanent feature. It is **off by default** to avoid filling the disk with data
+nobody reads.
+
+- Gated by `orchestration.full_log` in `.claude/code-review.toml` (boolean,
+  default `false`). Read the same way the suite already reads
+  `intent.doc_paths` / `intent.skip_trivial_check` — skip silently if the file
+  is missing or malformed (→ treated as `false`).
+- When `false` (the default): the host **skips the durable write entirely**.
+  Zero disk growth, zero behaviour change for normal users. The core still
+  returns the log payload in the bundle — the host simply does not persist it.
+- When `true`: enable for the fine-tuning window, collect across many reviews,
+  run the thread-#2 analysis, then flip off and prune the directory.
+
+### Provenance (enables comparison AND pruning)
+
+Every log carries a provenance header so records can be compared like-with-like
+across suite builds AND pruned confidently when stale. The plugin has no
+version field (version = marketplace git SHA), so provenance is **the
+marketplace short-SHA + a timestamp**:
+
+- `.jsonl` — first record: `{"type":"meta","plugin_sha":"<short-sha>","ts":"<iso8601>"}`.
+- `.md` — a header line: `<!-- plugin_sha: <short-sha> | ts: <iso8601> -->`.
+
+Host-written (the core stays pure — it does not reliably know the marketplace
+SHA). The host resolves the SHA with
+`git -C <plugin-marketplace-dir> rev-parse --short HEAD`. The timestamp is
+passed in from the host (the Workflow sandbox forbids `new Date()`); the host
+stamps it. This makes "delete everything older than the last prompt change" or
+"drop all records before SHA X" a trivial, safe sweep.
+
+### Location
+
+Persists in a **durable, user-level** directory that survives reboots and
+accumulates across all repos and reviews (feeds phase-efficacy thread #2):
+
+```
+~/.claude/code-review-suite/logs/<repo-slug>/<pr-or-branch>-<head-sha>.md
+~/.claude/code-review-suite/logs/<repo-slug>/<pr-or-branch>-<head-sha>.jsonl
+```
+
+- `<repo-slug>` — the `owner/name` of the reviewed repo, slugified
+  (`/` → `-`), e.g. `HavenEngineering-lambda-haven-workday-integrations`.
+- `<pr-or-branch>` — the PR number in `pr` mode (e.g. `pr-80`), or the
+  branch name slugified in `local` mode.
+- `<head-sha>` — the short (12-char) HEAD SHA the review analysed, so
+  re-reviews of the same PR at different commits do not overwrite each other.
+
+NOT `$CLAUDE_TEMP_DIR` — that is `/tmp/claude-<session>/`, wiped on reboot;
+useless for cross-review analysis. NOT the working tree — the log is analysis
+exhaust, must never be committed, and may contain finding text from arbitrary
+(including private) repos.
+
+**Write responsibility.** `review-core.mjs` runs in the Workflow sandbox with
+no filesystem access, so it cannot write these files. The core *returns* the
+log payload (the synthesiser envelope — all four tiers + full prose) as an
+extra bundle field; the **markdown host** (which has Bash) writes both files.
+The host appends the per-phase cost rows it already holds from
+`$CLAUDE_TEMP_DIR/tokens.jsonl` (phase instrumentation is already host-side).
+
+Two files:
 
 ### `review-full.md`
 
@@ -263,6 +325,7 @@ analytical record.
 One JSON record per finding, plus per-phase cost rows:
 
 ```jsonl
+{"type":"meta","plugin_sha":"623f326","ts":"2026-06-18T09:14:00Z"}
 {"type":"finding","tier":"consensus","domain":"correctness","severity":"Important","confidence":88,"file":"...","line":240,"description":"...","verdict_relevant":true}
 {"type":"finding","tier":"synthesiser","domain":"synthesiser","severity":"Suggestion","confidence":65,"file":"...","line":42,"description":"...","verdict_relevant":false}
 {"type":"finding","tier":"contested","domain":"security","severity":"Critical","confidence":82,"file":"...","line":240,"description":"...","verdict_relevant":false}

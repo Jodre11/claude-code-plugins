@@ -167,3 +167,17 @@ test_freshness_states() {
     out=$(_op_run_core "$args" "$base_env")
     assert_not_matches "Dependency Freshness" "$(echo "$out" | jq -r '.bodyText')" "no freshness section when synth emitted none"
 }
+
+test_host_documents_file_level_comments() {
+    local cr file
+    cr=$(_op_cr_dir)
+    for file in skills/review-gh-pr/SKILL.md; do
+        local path="$cr/$file"
+        if grep -qF 'subject_type' "$path" && grep -qF 'subjectType' "$path"; then
+            pass "host documents file-level comment posting: $file"
+        else
+            fail "host documents file-level comment posting: $file" \
+                "Class C must handle bundle comments with subjectType=file via a gh api subject_type=file call"
+        fi
+    done
+}

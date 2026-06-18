@@ -1529,6 +1529,24 @@ EOF_COMMENT_BODY
 
 Determine `{side}` from the diff hunk: use `'LEFT'` when the finding targets a deleted line (prefixed with `-` in the diff), `'RIGHT'` for added or unchanged context lines.
 
+**For file-level comments** (bundle entries with `subjectType: "file"` — findings that
+name a file but no usable line, per the Anchor Ladder), omit `line` and `side` and pass
+`subject_type=file`:
+
+```bash
+gh api repos/{owner}/{repo}/pulls/{pr}/comments \
+  --method POST \
+  -f commit_id='{head_sha}' \
+  -f path='{file_path}' \
+  -f subject_type='file' \
+  --input -  <<'EOF_COMMENT_BODY'
+{comment_body}
+EOF_COMMENT_BODY
+```
+
+A bundle comment carries EITHER `line` + `side` (line-level) OR `subjectType: "file"`
+(file-level), never both. Dispatch on the presence of `subjectType`.
+
 **For replies to existing comments**, use `in_reply_to` with the original comment's line positioning:
 
 ```bash
@@ -1653,10 +1671,10 @@ markdown to parse. In this branch:
   GitHub body (Cost/Dismissed stripped, footer applied). Do NOT re-filter or
   re-render either.
 - Class C posting consumes the bundle directly: post each `bundle.comments[i]` as an
-  inline comment — `path`, `line`, `side`, `body` map 1:1 to the `gh api`
-  inline-comment fields — then submit `bundle.bodyText` as the `gh pr review
-  --input -` body, using the review flag chosen from `$FINAL_VERDICT` (after the
-  Class A prompt resolves any override).
+  inline comment — a line-level comment when the entry has `line`/`side`, or a
+  **file-level** comment (`subject_type=file`, no line/side) when the entry has
+  `subjectType: "file"`. Then submit `bundle.bodyText` as the `gh pr review --input -`
+  body, using the review flag chosen from `$FINAL_VERDICT`.
 
 If `$USE_WORKFLOW` is false, proceed with the existing Class A–D flow below
 UNCHANGED — that flow is the `$USE_WORKFLOW == false` path.

@@ -1255,6 +1255,56 @@ Present the synthesiser's formatted report to the user.
 
 **Optional Playwright verification:** If the ui-reviewer produced a "Findings Requiring Visual Verification" section AND the `playwright-cli` skill is available, verify those specific findings in the browser. Append verification results to the report.
 
+#### Step 7a: Durable full log (opt-in, default OFF)
+
+The full unfiltered analytical record is a fine-tuning instrument with a finite
+useful life. It is **off by default**. Write it ONLY when
+`orchestration.full_log = true` in `.claude/code-review.toml` (read the file the same
+way as `intent.doc_paths`; treat a missing/malformed file as `false`). When off, skip
+this entire step — write nothing.
+
+When on, and when the bundle carries a `log` payload (`bundle.log`):
+
+1. Resolve the marketplace short-SHA (provenance). The plugin has no version field, so
+   the build identity is the marketplace commit:
+
+   ```bash
+   git -C "{plugin-marketplace-dir}" rev-parse --short HEAD
+   ```
+
+   Store as `$PLUGIN_SHA`. If the command fails, use `unknown`.
+
+2. Resolve the durable directory and filenames. `<repo-slug>` is the reviewed repo's
+   `owner/name` with `/` → `-`; `<pr-or-branch>` is the slugified branch name (run
+   `git rev-parse --abbrev-ref HEAD`); `<sha>` is the 12-char `$HEAD_SHA`:
+
+   ```bash
+   mkdir -p "$HOME/.claude/code-review-suite/logs/{repo-slug}"
+   ```
+
+3. Write the markdown record (verbatim full prose + provenance header) to
+   `$HOME/.claude/code-review-suite/logs/{repo-slug}/{pr-or-branch}-{sha}.md`. The first
+   line is the provenance comment, then `bundle.log.bodyText` verbatim:
+
+   ```
+   <!-- plugin_sha: $PLUGIN_SHA | ts: $LOG_TS -->
+   ```
+
+   `$LOG_TS` is the current UTC time in ISO-8601 (the host stamps it; e.g.
+   `date -u +%Y-%m-%dT%H:%M:%SZ`).
+
+4. Write the JSONL record to the sibling `.jsonl` file. The FIRST line is the meta
+   record, then one line per `bundle.log.findings[]` entry, then the per-phase rows the
+   orchestrator already holds from `$CLAUDE_TEMP_DIR/tokens.jsonl`:
+
+   ```jsonl
+   {"type":"meta","plugin_sha":"$PLUGIN_SHA","ts":"$LOG_TS"}
+   ```
+
+The durable log is NEVER posted to GitHub and NEVER committed — it is analysis exhaust
+that may contain finding text from private repos. Local mode posts nothing; the durable
+log is the only persisted artefact.
+
 **Workflow-bundle short-circuit (when $USE_WORKFLOW):** If `$USE_WORKFLOW` is true
 (set in Step 3.5), the `review-core` Workflow returned the sealed bundle
 `{ verdict, bodyText, comments }`. In local (pre-review) mode the bundle's `verdict`

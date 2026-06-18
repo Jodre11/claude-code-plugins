@@ -181,3 +181,26 @@ test_host_documents_file_level_comments() {
         fi
     done
 }
+
+test_host_documents_durable_log() {
+    local cr file ok=1
+    cr=$(_op_cr_dir)
+    for file in skills/review-gh-pr/SKILL.md commands/pre-review.md; do
+        local path="$cr/$file"
+        if grep -qF 'orchestration.full_log' "$path" \
+           && grep -qF '.claude/code-review-suite/logs' "$path" \
+           && grep -qF 'plugin_sha' "$path"; then
+            pass "host documents durable opt-in log: $file"
+        else
+            fail "host documents durable opt-in log: $file" \
+                "Step 7 must gate on orchestration.full_log (default off), write to ~/.claude/code-review-suite/logs, and stamp plugin_sha"
+            ok=0
+        fi
+    done
+    # Default-off guarantee must be stated.
+    if grep -qiE 'default.*(false|off)|off by default' "$cr/skills/review-gh-pr/SKILL.md"; then
+        pass "durable log documented as default-off"
+    else
+        fail "durable log documented as default-off" "the toggle's default-false must be explicit"
+    fi
+}

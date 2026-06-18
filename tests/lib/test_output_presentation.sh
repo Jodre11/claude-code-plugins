@@ -222,3 +222,22 @@ test_no_teasing_footer() {
     body=$(echo "$out" | jq -r '.bodyText')
     assert_not_matches "additional finding" "$body" "APPROVE body has no teasing footer for the dropped conf-55 finding"
 }
+
+test_end_to_end_pr80_shape() {
+    local args env out body
+    args=$(_op_args)
+    env='{"verdict":"REQUEST_CHANGES","rubricRowApplied":3,"rubricReason":"consensus Important [#1] confidence 88","tiers":{"consensus":[{"file":"RightToWorkClient.cs","line":240,"severity":"Important","confidence":88,"description":"SUPERSEDED filter case-sensitive.","suggested_fix":"OrdinalIgnoreCase"},{"file":"PollRtwHandlerLog.cs","line":104,"severity":"Suggestion","confidence":70,"description":"EventId ordering.","suggested_fix":"reorder"}],"synthesiser":[{"file":"RightToWorkStatusWire.cs","line":11,"severity":"Suggestion","confidence":55,"description":"missing XML docs.","suggested_fix":"add summary"}],"contested":[{"file":"RightToWorkClient.cs","line":240,"severity":"Critical","confidence":82,"description":"compliance bypass.","suggested_fix":"x"}],"dismissed":[{"file":"x.cs","line":1,"severity":"Suggestion","confidence":40,"description":"var doc false positive.","suggested_fix":"x"}]},"bodyText":"## Summary\n16 files\n## Synthesiser Assessment\n> Intent vs implementation analysis.\n## Consensus Findings\n#### Finding #1 — SUPERSEDED\n## Dependency Freshness\n> deps\n| Package | Current | Latest GA | Drift | Notes |\n|---|---|---|---|---|\n| AWSSDK | 4.0.4 | 4.0.5 | patch | x |\n## Dismissed Findings\nvar doc\n## Cost\ntokens 999\n"}'
+    out=$(_op_run_core "$args" "$env")
+    body=$(echo "$out" | jq -r '.bodyText')
+    assert_equals "3" "$(echo "$out" | jq '.comments | length')" "3 posted findings become comments (2 consensus + 1 synth)"
+    assert_matches "REQUEST_CHANGES" "$(echo "$body" | head -1)" "headline verdict"
+    assert_not_matches "compliance bypass" "$body" "contested dispute not in body"
+    assert_not_matches "var doc" "$body" "dismissed not in body"
+    assert_not_matches "tokens 999" "$body" "cost not in body"
+    if echo "$body" | grep -qF "Latest GA"; then
+        pass "dependency table retained in body"
+    else
+        fail "dependency table retained in body" "freshness table missing"
+    fi
+    assert_equals "5" "$(echo "$out" | jq '.log.findings | length')" "log retains all 5 findings across tiers"
+}

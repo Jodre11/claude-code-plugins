@@ -34,6 +34,18 @@ cross-domain finding and fold it into tiering like any other finding. This is an
 input-shape note only — your analysis, dissent arithmetic, and tiering are
 unchanged.
 
+**Resample agreement signal (round 2 only).** When the boundary gate fires, the
+`review-core` Workflow re-dispatches the stochastic specialists for a 2nd independent
+draw, unions the two draws (clustering by file + line within ±3), and annotates each
+finding with an `agreement` integer: `2` = both draws found this cluster, `1` = a single
+draw. When present, treat `agreement` as **advisory corroboration** alongside your own
+analysis: a `2/2` finding has been independently reproduced and should weigh more heavily
+in your tiering and confidence than a `1/2` single-draw finding; a `1/2` finding is not
+thereby suspect — it may simply be a genuine issue one draw surfaced. Do **not** mechanically
+clamp or floor confidence by agreement count; it informs your judgement, it does not replace
+it. The field is absent on round-1-only reviews and on the lightweight path — its absence
+carries no signal.
+
 ## Context Gathering
 
 <!-- Duplicates parts of the base-branch, HEAD SHA, and path-scope resolution logic in includes/specialist-context.md intentionally — the synthesiser receives $BASE, $HEAD_SHA, and $PATH_SCOPE in its prompt (not via $ARGUMENTS), so the extraction mechanism differs. Changes to SHA validation, path-scope handling, or fallback behaviour should be mirrored in both locations. See also review-pipeline.md Step 6. -->
@@ -222,6 +234,13 @@ The 75 threshold is intentionally above the rubric's 70 cutoff for Important
 findings. Below 70: don't block. Above 75: surface under APPROVE. The 70-75
 band is judged not-confident-enough to distract an author who is already
 getting an APPROVE.
+
+Under `APPROVE`, when one or more consensus or synthesiser findings are suppressed by
+the confidence filter, the Workflow path's posted body carries a single disclosure line
+— `N finding(s) below the posting threshold — see synthesiser report.` — so an APPROVE
+never looks cleaner than the run actually was. This is disclosure only: the sub-threshold
+findings are still NOT posted as inline comments (the 75-bar's noise suppression is
+preserved).
 
 ### Body construction (orchestrator)
 

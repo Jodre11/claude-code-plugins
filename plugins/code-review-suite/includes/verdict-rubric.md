@@ -60,6 +60,13 @@ findings. Below 70: don't block. Above 75: surface under APPROVE. The 70-75
 band is judged not-confident-enough to distract an author who is already
 getting an APPROVE.
 
+Under `APPROVE`, when one or more consensus or synthesiser findings are suppressed by
+the confidence filter, the Workflow path's posted body carries a single disclosure line
+— `N finding(s) below the posting threshold — see synthesiser report.` — so an APPROVE
+never looks cleaner than the run actually was. This is disclosure only: the sub-threshold
+findings are still NOT posted as inline comments (the 75-bar's noise suppression is
+preserved).
+
 ### Body construction (orchestrator)
 
 Two paths build the body. The **Workflow path** (default; `review-core.mjs`

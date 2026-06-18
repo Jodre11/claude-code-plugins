@@ -108,3 +108,34 @@ test_anchor_ladder_routes_comments() {
         fail "fileless finding detail lands in body" "fileless description not found in bodyText"
     fi
 }
+
+test_body_is_headline_and_index() {
+    local args env out body
+    args=$(_op_args)
+    env='{"verdict":"REQUEST_CHANGES","rubricRowApplied":3,"rubricReason":"consensus Important [#1] confidence 88","tiers":{"consensus":[{"file":"a.cs","line":42,"severity":"Important","confidence":88,"description":"the defect","suggested_fix":"fix it"}],"synthesiser":[],"contested":[{"file":"a.cs","line":42,"severity":"Critical","confidence":82,"description":"CONTESTED SEVERITY","suggested_fix":"x"}],"dismissed":[{"file":"z.cs","line":1,"severity":"Suggestion","confidence":40,"description":"DISMISSED NOISE","suggested_fix":"x"}]},"bodyText":"## Summary\n1 file | 1 finding\n## Synthesiser Assessment\n> This is the centrepiece.\n> Second line.\n## Consensus Findings\n#### Finding #1 — the defect\nblah\n## Contested Findings\nCONTESTED SEVERITY\n## Dismissed Findings\nDISMISSED NOISE\n## Cost\ntokens: 999\n"}'
+    out=$(_op_run_core "$args" "$env")
+    body=$(echo "$out" | jq -r '.bodyText')
+    # Headline verdict at the very top, bold.
+    if echo "$body" | head -1 | grep -qF "**REQUEST_CHANGES**"; then
+        pass "body opens with bold verdict headline"
+    else
+        fail "body opens with bold verdict headline" "first line: $(echo "$body" | head -1)"
+    fi
+    # Assessment promoted: the centrepiece text present WITHOUT a leading '>'.
+    if echo "$body" | grep -qF "This is the centrepiece." && ! echo "$body" | grep -qE "^> This is the centrepiece"; then
+        pass "Synthesiser Assessment promoted out of block-quote"
+    else
+        fail "Synthesiser Assessment promoted out of block-quote" "assessment still quoted or missing"
+    fi
+    # Finding index: one summary line pointing inline; NOT the full prose block.
+    if echo "$body" | grep -qE "the defect.*a.cs:42"; then
+        pass "finding index summary line present"
+    else
+        fail "finding index summary line present" "expected compact index line for finding"
+    fi
+    # Dropped sections absent from the body.
+    assert_not_matches "DISMISSED NOISE" "$body" "Dismissed section dropped from body"
+    assert_not_matches "CONTESTED SEVERITY" "$body" "Contested section dropped from body"
+    assert_not_matches "tokens: 999" "$body" "Cost section dropped from body"
+    assert_not_matches "## Summary" "$body" "Summary counts dropped from body"
+}

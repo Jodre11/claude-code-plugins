@@ -355,13 +355,70 @@ function renderComments(postedFindings) {
     return comments
 }
 
-function buildBody(envelope, postedSet) {
-    // TEMP STUB (replaced in Task 4): include fileless detail so Task 3's test passes.
-    let body = stripCostAndDismissed(envelope.bodyText)
-    for (const f of postedSet) {
-        if (isFileless(f)) body += `\n\n${f.description}\n\n**Suggested fix:** ${f.suggested_fix}`
+// Extract the body of a `## <heading>` section (text up to the next `## `
+// heading or EOF). Returns '' when the heading is absent. Pure string op.
+function extractSection(bodyText, heading) {
+    const lines = bodyText.split('\n')
+    const out = []
+    let capturing = false
+    for (const line of lines) {
+        if (capturing) {
+            if (line.startsWith('## ')) break
+            out.push(line)
+            continue
+        }
+        if (line.trim() === `## ${heading}`) capturing = true
     }
-    return body
+    return out.join('\n').trim()
+}
+
+// Strip a leading '> ' (or '>') block-quote prefix from every line. Promotes
+// the Synthesiser Assessment from greyed quote to first-class prose.
+function unquote(text) {
+    return text.split('\n').map(l => l.replace(/^>\s?/, '')).join('\n')
+}
+
+// One compact index line per posted, anchorable finding. Fileless findings are
+// rendered with full detail (no inline home to point to).
+function renderFindingIndex(postedSet) {
+    const lines = []
+    for (const f of postedSet) {
+        if (isFileless(f)) {
+            lines.push(`- **[${f.severity}]** ${f.description}\n\n  **Suggested fix:** ${f.suggested_fix}`)
+        } else {
+            const pointer = f.line > 0 ? '↳ inline' : '↳ file comment'
+            const loc = f.line > 0 ? `${f.file}:${f.line}` : f.file
+            lines.push(`- **[${f.severity}]** ${shortTitle(f.description)} — \`${loc}\` ${pointer}`)
+        }
+    }
+    return lines.join('\n')
+}
+
+// First sentence / first 80 chars of the description, for the index summary.
+function shortTitle(desc) {
+    const firstSentence = desc.split(/(?<=[.!?])\s/)[0]
+    const t = (firstSentence || desc).trim()
+    return t.length > 80 ? t.slice(0, 77) + '…' : t
+}
+
+function buildBody(envelope, postedSet) {
+    const verdict = envelope.verdict
+    const reason = envelope.rubricReason || ''
+    const headline = `**${verdict}**${reason ? ` — ${reason}` : ''}`
+
+    const assessment = unquote(extractSection(envelope.bodyText, 'Synthesiser Assessment'))
+    const index = renderFindingIndex(postedSet)
+    const freshness = buildFreshnessSection(envelope.bodyText)
+
+    const parts = [headline]
+    if (assessment) parts.push(assessment)
+    if (index) parts.push(`### Findings\n\n${index}`)
+    if (freshness) parts.push(freshness)
+    return parts.join('\n\n')
+}
+
+function buildFreshnessSection(bodyText) {
+    return ''  // TEMP STUB (replaced in Task 5)
 }
 function buildLogPayload(envelope) {
     // TEMP STUB (replaced in Task 5).

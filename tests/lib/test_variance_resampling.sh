@@ -11,9 +11,16 @@ _vr_cr_dir() {
 
 # $1 args json, $2 env1 json, $3 env2 json, $4 stoch-r1 map json, $5 stoch-r2 map json
 _vr_run_core() {
-    local wf
+    local wf stochR1 stochR2
     wf="$(_vr_cr_dir)/workflows/review-core.mjs"
-    WF="$wf" VR_ARGS="$1" VR_ENV1="$2" VR_ENV2="$3" VR_STOCH_R1="${4:-{}}" VR_STOCH_R2="${5:-{}}" node -e '
+    # Default the stochastic maps to an empty object. NB: a `${4:-{}}` default is
+    # mis-parsed by bash as `${4:-{}` plus a literal `}`, which appends a stray brace
+    # to a supplied arg and yields malformed JSON — assign the defaults explicitly.
+    stochR1='{}'
+    stochR2='{}'
+    [ "$#" -ge 4 ] && stochR1="$4"
+    [ "$#" -ge 5 ] && stochR2="$5"
+    WF="$wf" VR_ARGS="$1" VR_ENV1="$2" VR_ENV2="$3" VR_STOCH_R1="$stochR1" VR_STOCH_R2="$stochR2" node -e '
         const fs = require("fs");
         const src = fs.readFileSync(process.env.WF, "utf8")
             .replace(/^export\s+const\s+meta/m, "const meta");

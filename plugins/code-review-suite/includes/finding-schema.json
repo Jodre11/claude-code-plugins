@@ -56,7 +56,7 @@
       "required": ["verdict", "bodyText", "comments"],
       "properties": {
         "verdict": { "enum": ["APPROVE", "REQUEST_CHANGES", "COMMENT", "NONE"], "description": "NONE in local mode (pre-review produces no verdict)." },
-        "bodyText": { "type": "string", "description": "Rendered GitHub body, Class D transformations already applied in code." },
+        "bodyText": { "type": "string", "description": "Rendered GitHub body. Workflow path: built by review-core buildBody() (headline + assessment + index). Non-Workflow path: Class D transforms applied by the host orchestrator." },
         "comments": {
           "type": "array",
           "items": {

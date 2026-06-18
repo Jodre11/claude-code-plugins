@@ -269,13 +269,17 @@ if (!envelope || !envelope.tiers) {
     return { verdict: 'NONE', bodyText: '(synthesiser produced no usable output)', comments: [] }
 }
 
-// Local mode: no verdict, no GitHub filter — return the prose only.
+// Local mode: no verdict, no GitHub filter — return the prose plus the durable
+// log payload. The host writes the log to disk only when orchestration.full_log
+// is on (default off); pre-review documents the log as its sole persisted artefact,
+// so it MUST be carried on this path too — not just the PR path below.
 if (reviewMode === 'local') {
-    return { verdict: 'NONE', bodyText: envelope.bodyText, comments: [] }
+    const logPayload = buildLogPayload(envelope)
+    return { verdict: 'NONE', bodyText: envelope.bodyText, comments: [], log: logPayload }
 }
 
 // Shared by isPosted and the PR-mode filter. The 75 bar is deliberate (above
-// the rubric's 70) — see spec "Posted Set".
+// the rubric's 70) — see "Posting policy" in verdict-rubric.md.
 const POST_THRESHOLD = 75
 
 const verdict = envelope.verdict  // APPROVE | REQUEST_CHANGES (synth never emits COMMENT)
@@ -308,13 +312,16 @@ function isPosted(finding, verdict) {
 // acted on to produce the verdict. APPROVE drives nothing. Under
 // REQUEST_CHANGES: consensus Critical (any confidence) or Important >= 70, plus
 // any finding whose positional [#N] token appears in rubricReason (covers the
-// goal-block row 1). indexToken is the finding's 1-based [#N] within its tier.
-function isVerdictRelevant(finding, tier, verdict, rubricReason, indexToken) {
+// goal-block row 1). consensusIndexToken is meaningful ONLY for the consensus
+// tier — only consensus findings can be verdict-relevant under the current
+// rubric, and [#N] tokens in rubricReason reference consensus findings by
+// synthesiser contract. It is the finding's 1-based [#N] within tiers.consensus.
+function isVerdictRelevant(finding, tier, verdict, rubricReason, consensusIndexToken) {
     if (verdict !== 'REQUEST_CHANGES') return false
     if (tier === 'consensus') {
         if (finding.severity === 'Critical') return true
         if (finding.severity === 'Important' && (finding.confidence ?? 0) >= 70) return true
-        if (indexToken && rubricReason && rubricReason.includes(`[#${indexToken}]`)) return true
+        if (consensusIndexToken && rubricReason && rubricReason.includes(`[#${consensusIndexToken}]`)) return true
     }
     return false
 }
@@ -402,9 +409,8 @@ function shortTitle(desc) {
 }
 
 function buildBody(envelope, postedSet) {
-    const verdict = envelope.verdict
     const reason = envelope.rubricReason || ''
-    const headline = `**${verdict}**${reason ? ` — ${reason}` : ''}`
+    const headline = `**${envelope.verdict}**${reason ? ` — ${reason}` : ''}`
 
     const assessment = unquote(extractSection(envelope.bodyText, 'Synthesiser Assessment'))
     const index = renderFindingIndex(postedSet)
@@ -427,19 +433,24 @@ function buildBody(envelope, postedSet) {
 function buildFreshnessSection(bodyText) {
     const section = extractSection(bodyText, 'Dependency Freshness')
     if (!section) return ''                                    // no dep-bearing files → omit
-    const hasTableRow = section.split('\n').some(l => /^\|.*\|.*\|/.test(l) && !/^\|\s*-+/.test(l) && !/Package|Current|Latest/i.test(l))
+    const sectionLines = section.split('\n')
+    // A table is present iff any pipe-row exists that is not the |---|---| separator.
+    // The header row counts as a present-table signal — do NOT exclude by column name
+    // (an unanchored /Package|Current|Latest/ match would suppress a real drift DATA
+    // row whose package name contains one of those words).
+    const hasTableRow = sectionLines.some(l => /^\|.*\|.*\|/.test(l) && !/^\|\s*-+/.test(l))
     if (!hasTableRow) {
         return `### Dependency Freshness\n\n✓ Dependencies checked — all current`
     }
     // Keep the table, drop the leading blockquote preamble lines.
-    const kept = section.split('\n').filter(l => !l.trim().startsWith('>')).join('\n').trim()
+    const kept = sectionLines.filter(l => !l.trim().startsWith('>')).join('\n').trim()
     return `### Dependency Freshness\n\n${kept}`
 }
+
 // Flatten all four tiers into one record-per-finding array for the JSONL log.
 // verdict_relevant is computed per the rubric (Task 2). domain is attached by
 // review-core elsewhere for escalations; default to the tier name when absent.
 function buildLogPayload(envelope) {
-    const verdict = envelope.verdict
     const reason = envelope.rubricReason || ''
     const tiers = envelope.tiers || {}
     const findings = []
@@ -455,104 +466,11 @@ function buildLogPayload(envelope) {
                 line: f.line ?? 0,
                 description: f.description,
                 suggested_fix: f.suggested_fix || '',
-                verdict_relevant: isVerdictRelevant(f, tier, verdict, reason, i + 1),
+                verdict_relevant: isVerdictRelevant(f, tier, envelope.verdict, reason, i + 1),
             })
         })
     }
     return { bodyText: envelope.bodyText, findings }
-}
-
-// Class D transformations 2 + 3: strip the `## Cost` and `## Dismissed` sections.
-// Each runs from its heading line through the next `## ` heading or end of file.
-// Operates line-by-line; no prose interpretation.
-function stripCostAndDismissed(bodyText) {
-    const lines = bodyText.split('\n')
-    const out = []
-    let skipping = false
-    for (const line of lines) {
-        if (skipping) {
-            // A new `## ` heading (that is not the one we are stripping) ends the skip.
-            if (line.startsWith('## ') && !isStrippableHeading(line)) {
-                skipping = false
-                out.push(line)
-            }
-            // else: still inside the stripped section — drop the line.
-            continue
-        }
-        if (isStrippableHeading(line)) {
-            skipping = true
-            continue
-        }
-        out.push(line)
-    }
-    return out.join('\n')
-}
-
-// True for the `## Cost`, `## Dismissed Findings`, or `## Dismissed` heading lines.
-function isStrippableHeading(line) {
-    const h = line.trim()
-    return h === '## Cost' || h === '## Dismissed Findings' || h === '## Dismissed'
-}
-
-// Class D transformation 1: strip references to dropped findings.
-//
-// Positional-token invariant: the schema's finding objects carry no explicit [#N]
-// field. The synthesiser numbers consensus findings 1-based in `tiers.consensus`
-// order and tags them [#1], [#2], … in the prose. So a consensus finding at 0-based
-// index i has token [#${i+1}]. A finding is "dropped" iff it is NOT in postSet.
-// For each dropped finding we (a) remove any line containing its [#N] token, and
-// (b) remove its `#### Finding #N — …` consensus section (heading through the next
-// `#### `, `### `, or `## ` heading or EOF). String ops only.
-function stripDroppedReferences(bodyText, postSet, consensus) {
-    // Identity invariant: postSet is consensus itself or consensus.filter(...), so its
-    // elements are the SAME object references as consensus's. The Set membership test
-    // below is therefore reference-equality — do not clone/normalise findings between
-    // building postSet and calling this, or every finding reads as dropped.
-    const postSetSet = new Set(postSet)
-    const droppedTokens = []
-    const droppedNumbers = []
-    consensus.forEach((f, i) => {
-        if (!postSetSet.has(f)) {
-            droppedTokens.push(`[#${i + 1}]`)
-            droppedNumbers.push(i + 1)
-        }
-    })
-    const droppedNumberSet = new Set(droppedNumbers)
-
-    const lines = bodyText.split('\n')
-    const out = []
-    let skippingSection = false
-    for (const line of lines) {
-        if (skippingSection) {
-            // Section ends at the next `#### `, `### `, or `## ` heading.
-            if (line.startsWith('#### ') || line.startsWith('### ') || line.startsWith('## ')) {
-                skippingSection = false
-                // Fall through to evaluate this heading line normally.
-            } else {
-                continue
-            }
-        }
-        // (b) Start skipping at a dropped finding's `#### Finding #N — …` section heading.
-        if (line.startsWith('#### Finding #') && isDroppedFindingHeading(line, droppedNumberSet)) {
-            skippingSection = true
-            continue
-        }
-        // (a) Drop any line carrying a dropped finding's [#N] token.
-        if (droppedTokens.some(tok => line.includes(tok))) {
-            continue
-        }
-        out.push(line)
-    }
-    return out.join('\n')
-}
-
-// True when a `#### Finding #N — …` heading line names one of the dropped numbers.
-// Matches the integer immediately after `#### Finding #` against the dropped set,
-// avoiding prefix collisions (e.g. #1 vs #10).
-function isDroppedFindingHeading(line, droppedNumberSet) {
-    const m = line.match(/^#### Finding #(\d+)\b/)
-    if (!m) return false
-    return droppedNumberSet.has(Number(m[1]))
 }
 
 // Lightweight-path bundle (pipeline Step 3: "Present its report and stop").

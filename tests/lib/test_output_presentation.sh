@@ -73,7 +73,14 @@ _op_run_core() {
 
 _op_args() {
     local sha40="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-    echo "{\"agentPrompt\":\"x\",\"flags\":{},\"route\":\"full\",\"selfReReview\":false,\"reviewMode\":\"pr\",\"base\":\"main\",\"headSha\":\"${sha40}\",\"emptyTreeMode\":false,\"pathScope\":\"\",\"tempDir\":\"/tmp/claude-test/x\",\"logTimestamp\":\"2026-06-18T00:00:00Z\"}"
+    echo "{\"agentPrompt\":\"x\",\"flags\":{},\"route\":\"full\",\"selfReReview\":false,\"reviewMode\":\"pr\",\"base\":\"main\",\"headSha\":\"${sha40}\",\"emptyTreeMode\":false,\"pathScope\":\"\",\"tempDir\":\"/tmp/claude-test/x\"}"
+}
+
+# Like _op_args but for the local (pre-review) path. reviewMode=local → the bundle
+# carries no verdict/comments but MUST still carry the durable log payload.
+_op_args_local() {
+    local sha40="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    echo "{\"agentPrompt\":\"x\",\"flags\":{},\"route\":\"full\",\"selfReReview\":false,\"reviewMode\":\"local\",\"base\":\"main\",\"headSha\":\"${sha40}\",\"emptyTreeMode\":false,\"pathScope\":\"\",\"tempDir\":\"/tmp/claude-test/x\"}"
 }
 
 test_posted_set_respects_verdict() {
@@ -166,6 +173,39 @@ test_freshness_states() {
     base_env='{"verdict":"APPROVE","rubricRowApplied":4,"rubricReason":"clean","tiers":{"consensus":[],"synthesiser":[],"contested":[],"dismissed":[]},"bodyText":"## Synthesiser Assessment\n> all good\n"}'
     out=$(_op_run_core "$args" "$base_env")
     assert_not_matches "Dependency Freshness" "$(echo "$out" | jq -r '.bodyText')" "no freshness section when synth emitted none"
+}
+
+test_freshness_drift_with_keyword_pkg() {
+    local args env out body
+    args=$(_op_args)
+    # A genuine drift DATA row whose package name contains "Current" must survive —
+    # the old column-name exclusion (/Package|Current|Latest/) wrongly suppressed it,
+    # collapsing the section to "all current" and hiding a real upgrade.
+    env='{"verdict":"APPROVE","rubricRowApplied":4,"rubricReason":"clean","tiers":{"consensus":[],"synthesiser":[],"contested":[],"dismissed":[]},"bodyText":"## Synthesiser Assessment\n> ok\n## Dependency Freshness\n> deps\n| Package / Action | Current | Latest GA | Drift | Notes |\n|---|---|---|---|---|\n| Current.User.Sdk | 1.0.0 | 2.0.0 | major | upgrade available |\n"}'
+    out=$(_op_run_core "$args" "$env")
+    body=$(echo "$out" | jq -r '.bodyText')
+    if echo "$body" | grep -qF "Current.User.Sdk"; then
+        pass "drift row with keyword package name survives into body"
+    else
+        fail "drift row with keyword package name survives into body" "row collapsed to all-current (regex over-matched)"
+    fi
+    assert_not_matches "all current" "$body" "real drift not collapsed to 'all current'"
+}
+
+test_local_mode_emits_log() {
+    local args env out
+    args=$(_op_args_local)
+    env='{"verdict":"APPROVE","rubricRowApplied":4,"rubricReason":"clean","tiers":{"consensus":[{"file":"a.cs","line":42,"severity":"Important","confidence":88,"description":"d","suggested_fix":"f"}],"synthesiser":[{"line":0,"severity":"Suggestion","confidence":60,"description":"s","suggested_fix":"f"}],"contested":[],"dismissed":[{"file":"z.cs","line":1,"severity":"Suggestion","confidence":40,"description":"x","suggested_fix":"f"}]},"bodyText":"## Synthesiser Assessment\n> prose\n"}'
+    out=$(_op_run_core "$args" "$env")
+    # Local mode: no verdict, no comments — but the durable log MUST be present.
+    assert_equals "NONE" "$(echo "$out" | jq -r '.verdict')" "local mode verdict is NONE"
+    assert_equals "0" "$(echo "$out" | jq '.comments | length')" "local mode posts no comments"
+    assert_equals "3" "$(echo "$out" | jq '.log.findings | length')" "local mode bundle carries the durable log payload (all tiers)"
+    if echo "$out" | jq -r '.log.bodyText' | grep -qF "## Synthesiser Assessment"; then
+        pass "local mode log.bodyText retains verbatim prose"
+    else
+        fail "local mode log.bodyText retains verbatim prose" "prose missing from local-mode log payload"
+    fi
 }
 
 test_host_documents_file_level_comments() {

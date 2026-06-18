@@ -62,8 +62,12 @@ getting an APPROVE.
 
 ### Body construction (orchestrator)
 
-The GitHub top-level review body posts the synthesiser's body verbatim except
-for three deterministic transformations:
+Two paths build the body. The **Workflow path** (default; `review-core.mjs`
+`buildBody`) builds the body from parts — headline + promoted Synthesiser
+Assessment + compact finding index + reformatted Dependency Freshness — and does
+NOT run the verbatim+strips transforms described below. The **non-Workflow
+(inline) path** posts the synthesiser's body verbatim except for three
+deterministic transformations:
 
 - References to filtered-out findings (those dropped by the Posting policy
   above) are elided. The synthesiser tags every consensus finding with a stable
@@ -73,6 +77,14 @@ for three deterministic transformations:
   stdout for the implementer.
 - `## Dismissed` section stripped — false-positives, noise for the author.
   Stays in stdout for the implementer.
+
+Two invariants govern the non-Workflow path's strip logic (preserved here now
+that the inline strip functions no longer live in `review-core.mjs`): (a) the
+posted-set membership test is **reference-equality** — the orchestrator must not
+clone or normalise findings between building the posted-set and filtering the
+body, or every finding reads as dropped; (b) dropped consensus sections are
+headed at **H4** (`#### Finding #N`), and the strip runs from that heading
+through the next `####`/`###`/`##` heading or EOF.
 
 ### Synthesiser contract
 

@@ -276,7 +276,6 @@ if (reviewMode === 'local') {
 
 const verdict = envelope.verdict  // APPROVE | REQUEST_CHANGES (synth never emits COMMENT)
 const consensus = envelope.tiers.consensus ?? []
-const POST_THRESHOLD = 75
 const postSet = verdict === 'REQUEST_CHANGES'
     ? consensus
     : consensus.filter(f => f.confidence >= POST_THRESHOLD)
@@ -301,6 +300,33 @@ return { verdict, bodyText, comments }
 // ---------------------------------------------------------------------------
 // Pure string-operation helpers (no prose judgement parsing).
 // ---------------------------------------------------------------------------
+
+// Shared by isPosted and the PR-mode filter. The 75 bar is deliberate (above
+// the rubric's 70) — see spec "Posted Set".
+const POST_THRESHOLD = 75
+
+// Posted-set membership — the existing verdict-driven filter, extracted as a
+// named predicate so body + comments share one rule. REQUEST_CHANGES posts
+// everything; APPROVE posts confidence >= POST_THRESHOLD (75).
+function isPosted(finding, verdict) {
+    if (verdict === 'REQUEST_CHANGES') return true
+    return (finding.confidence ?? 0) >= POST_THRESHOLD
+}
+
+// verdict_relevant — a log annotation: true iff this finding is what the rubric
+// acted on to produce the verdict. APPROVE drives nothing. Under
+// REQUEST_CHANGES: consensus Critical (any confidence) or Important >= 70, plus
+// any finding whose positional [#N] token appears in rubricReason (covers the
+// goal-block row 1). indexToken is the finding's 1-based [#N] within its tier.
+function isVerdictRelevant(finding, tier, verdict, rubricReason, indexToken) {
+    if (verdict !== 'REQUEST_CHANGES') return false
+    if (tier === 'consensus') {
+        if (finding.severity === 'Critical') return true
+        if (finding.severity === 'Important' && (finding.confidence ?? 0) >= 70) return true
+    }
+    if (indexToken && rubricReason && rubricReason.includes(`[#${indexToken}]`)) return true
+    return false
+}
 
 // Render one finding into a GitHub inline-comment body.
 function renderCommentBody(f) {

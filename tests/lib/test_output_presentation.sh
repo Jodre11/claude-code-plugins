@@ -287,6 +287,39 @@ test_no_teasing_footer() {
     assert_not_matches "additional finding" "$body" "APPROVE body has no teasing footer for the dropped conf-55 finding"
 }
 
+test_disclosure_line_on_suppressed_approve() {
+    local args env out body
+    args=$(_op_args)
+    # APPROVE with a conf-55 consensus Suggestion (suppressed; <75). No Important,
+    # no contested → the boundary gate does NOT fire, so this stays a clean round-1
+    # APPROVE, and the disclosure line must appear.
+    env='{"verdict":"APPROVE","rubricRowApplied":4,"rubricReason":"clean","tiers":{"consensus":[{"file":"a.cs","line":5,"severity":"Suggestion","confidence":55,"description":"low conf","suggested_fix":"f"}],"synthesiser":[],"contested":[],"dismissed":[]},"bodyText":"## Synthesiser Assessment\n> ok\n"}'
+    out=$(_op_run_core "$args" "$env")
+    body=$(echo "$out" | jq -r '.bodyText')
+    if echo "$body" | grep -qF "below the posting threshold"; then
+        pass "disclosure line present when APPROVE suppresses a sub-75 finding"
+    else
+        fail "disclosure line present when APPROVE suppresses a sub-75 finding" "no disclosure line in body"
+    fi
+    # The count must be 1 (one suppressed finding).
+    if echo "$body" | grep -qE "1 finding\(s\) below the posting threshold"; then
+        pass "disclosure line reports the suppressed count"
+    else
+        fail "disclosure line reports the suppressed count" "expected '1 finding(s) below the posting threshold'"
+    fi
+}
+
+test_no_disclosure_when_nothing_suppressed() {
+    local args env out body
+    args=$(_op_args)
+    # APPROVE with a single conf-80 consensus finding (posted; >=75) → nothing
+    # suppressed → no disclosure line.
+    env='{"verdict":"APPROVE","rubricRowApplied":4,"rubricReason":"clean","tiers":{"consensus":[{"file":"a.cs","line":5,"severity":"Suggestion","confidence":80,"description":"posted","suggested_fix":"f"}],"synthesiser":[],"contested":[],"dismissed":[]},"bodyText":"## Synthesiser Assessment\n> ok\n"}'
+    out=$(_op_run_core "$args" "$env")
+    body=$(echo "$out" | jq -r '.bodyText')
+    assert_not_matches "below the posting threshold" "$body" "no disclosure line when nothing is suppressed"
+}
+
 test_end_to_end_pr80_shape() {
     local args env out body
     args=$(_op_args)

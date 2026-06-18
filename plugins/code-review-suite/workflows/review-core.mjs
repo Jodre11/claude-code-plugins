@@ -225,11 +225,13 @@ const consensus = envelope.tiers.consensus ?? []
 const synthFindings = envelope.tiers.synthesiser ?? []
 
 // Posted set = consensus + synthesiser, filtered by the verdict-driven rule.
-const postedSet = [...consensus, ...synthFindings].filter(f => isPosted(f, verdict))
+const candidates = [...consensus, ...synthFindings]
+const postedSet = candidates.filter(f => isPosted(f, verdict))
+const suppressedCount = candidates.length - postedSet.length
 
 const comments = renderComments(postedSet)
 
-const bodyText = buildBody(envelope, postedSet)
+const bodyText = buildBody(envelope, postedSet, suppressedCount)
 const logPayload = buildLogPayload(envelope)
 
 return { verdict, bodyText, comments, log: logPayload }
@@ -526,7 +528,7 @@ function shortTitle(desc) {
     return t.length > 80 ? t.slice(0, 77) + '…' : t
 }
 
-function buildBody(envelope, postedSet) {
+function buildBody(envelope, postedSet, suppressedCount) {
     const reason = envelope.rubricReason || ''
     const headline = `**${envelope.verdict}**${reason ? ` — ${reason}` : ''}`
 
@@ -537,6 +539,11 @@ function buildBody(envelope, postedSet) {
     const parts = [headline]
     if (assessment) parts.push(assessment)
     if (index) parts.push(`### Findings\n\n${index}`)
+    // Sub-75 disclosure (spec §4): an APPROVE that suppressed findings must not look
+    // cleaner than the run was. Disclosure only — the findings are still not posted inline.
+    if (envelope.verdict === 'APPROVE' && suppressedCount > 0) {
+        parts.push(`${suppressedCount} finding(s) below the posting threshold — see synthesiser report.`)
+    }
     if (freshness) parts.push(freshness)
     return parts.join('\n\n')
 }

@@ -314,8 +314,8 @@ function isVerdictRelevant(finding, tier, verdict, rubricReason, indexToken) {
     if (tier === 'consensus') {
         if (finding.severity === 'Critical') return true
         if (finding.severity === 'Important' && (finding.confidence ?? 0) >= 70) return true
+        if (indexToken && rubricReason && rubricReason.includes(`[#${indexToken}]`)) return true
     }
-    if (indexToken && rubricReason && rubricReason.includes(`[#${indexToken}]`)) return true
     return false
 }
 
@@ -417,12 +417,49 @@ function buildBody(envelope, postedSet) {
     return parts.join('\n\n')
 }
 
+// Reformat the synthesiser's Dependency Freshness section for legibility.
+// Three states (spec): omitted entirely when the synth produced no section;
+// an all-current line when the section exists but has no drift table rows;
+// otherwise the section verbatim (numeric columns are already first in the
+// synthesiser's table — see review-synthesiser.md Output Format). The reformat
+// keeps the section heading and its table; it strips only the synth's prose
+// preamble blockquote to keep the body tight.
 function buildFreshnessSection(bodyText) {
-    return ''  // TEMP STUB (replaced in Task 5)
+    const section = extractSection(bodyText, 'Dependency Freshness')
+    if (!section) return ''                                    // no dep-bearing files → omit
+    const hasTableRow = section.split('\n').some(l => /^\|.*\|.*\|/.test(l) && !/^\|\s*-+/.test(l) && !/Package|Current|Latest/i.test(l))
+    if (!hasTableRow) {
+        return `### Dependency Freshness\n\n✓ Dependencies checked — all current`
+    }
+    // Keep the table, drop the leading blockquote preamble lines.
+    const kept = section.split('\n').filter(l => !l.trim().startsWith('>')).join('\n').trim()
+    return `### Dependency Freshness\n\n${kept}`
 }
+// Flatten all four tiers into one record-per-finding array for the JSONL log.
+// verdict_relevant is computed per the rubric (Task 2). domain is attached by
+// review-core elsewhere for escalations; default to the tier name when absent.
 function buildLogPayload(envelope) {
-    // TEMP STUB (replaced in Task 5).
-    return { bodyText: envelope.bodyText, findings: [] }
+    const verdict = envelope.verdict
+    const reason = envelope.rubricReason || ''
+    const tiers = envelope.tiers || {}
+    const findings = []
+    for (const tier of ['consensus', 'synthesiser', 'contested', 'dismissed']) {
+        const arr = tiers[tier] ?? []
+        arr.forEach((f, i) => {
+            findings.push({
+                tier,
+                domain: f.domain || tier,
+                severity: f.severity,
+                confidence: f.confidence ?? 0,
+                file: f.file || '',
+                line: f.line ?? 0,
+                description: f.description,
+                suggested_fix: f.suggested_fix || '',
+                verdict_relevant: isVerdictRelevant(f, tier, verdict, reason, i + 1),
+            })
+        })
+    }
+    return { bodyText: envelope.bodyText, findings }
 }
 
 // Class D transformations 2 + 3: strip the `## Cost` and `## Dismissed` sections.

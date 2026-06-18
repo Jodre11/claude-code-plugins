@@ -139,3 +139,31 @@ test_body_is_headline_and_index() {
     assert_not_matches "tokens: 999" "$body" "Cost section dropped from body"
     assert_not_matches "## Summary" "$body" "Summary counts dropped from body"
 }
+
+test_log_payload_flattens_all_tiers() {
+    local args env out
+    args=$(_op_args)
+    env='{"verdict":"REQUEST_CHANGES","rubricRowApplied":3,"rubricReason":"consensus Important [#1] confidence 88","tiers":{"consensus":[{"file":"a.cs","line":42,"severity":"Important","confidence":88,"description":"d","suggested_fix":"f"}],"synthesiser":[{"line":0,"severity":"Suggestion","confidence":60,"description":"s","suggested_fix":"f"}],"contested":[{"file":"a.cs","line":42,"severity":"Critical","confidence":82,"description":"c","suggested_fix":"f"}],"dismissed":[{"file":"z.cs","line":1,"severity":"Suggestion","confidence":40,"description":"x","suggested_fix":"f"}]},"bodyText":"## Synthesiser Assessment\n> prose\n"}'
+    out=$(_op_run_core "$args" "$env")
+    local nlog rel
+    nlog=$(echo "$out" | jq '.log.findings | length')
+    assert_equals "4" "$nlog" "log payload flattens all four tiers (4 findings)"
+    # The conf-88 consensus Important is verdict_relevant under RC row 3.
+    rel=$(echo "$out" | jq '[.log.findings[] | select(.verdict_relevant == true)] | length')
+    assert_equals "1" "$rel" "exactly the rubric-driving finding marked verdict_relevant"
+    # Full verbatim prose retained in the log.
+    if echo "$out" | jq -r '.log.bodyText' | grep -qF "## Synthesiser Assessment"; then
+        pass "log.bodyText retains verbatim synthesiser prose"
+    else
+        fail "log.bodyText retains verbatim synthesiser prose" "prose missing from log payload"
+    fi
+}
+
+test_freshness_states() {
+    local args base_env out
+    args=$(_op_args)
+    # No Dependency Freshness section at all → omitted from body.
+    base_env='{"verdict":"APPROVE","rubricRowApplied":4,"rubricReason":"clean","tiers":{"consensus":[],"synthesiser":[],"contested":[],"dismissed":[]},"bodyText":"## Synthesiser Assessment\n> all good\n"}'
+    out=$(_op_run_core "$args" "$base_env")
+    assert_not_matches "Dependency Freshness" "$(echo "$out" | jq -r '.bodyText')" "no freshness section when synth emitted none"
+}

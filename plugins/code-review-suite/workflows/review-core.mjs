@@ -280,26 +280,17 @@ const POST_THRESHOLD = 75
 
 const verdict = envelope.verdict  // APPROVE | REQUEST_CHANGES (synth never emits COMMENT)
 const consensus = envelope.tiers.consensus ?? []
-const postSet = verdict === 'REQUEST_CHANGES'
-    ? consensus
-    : consensus.filter(f => f.confidence >= POST_THRESHOLD)
-const droppedCount = consensus.length - postSet.length
+const synthFindings = envelope.tiers.synthesiser ?? []
 
-const comments = postSet.map(f => ({
-    path: f.file,
-    line: f.line > 0 ? f.line : 1,
-    side: sideFor(f.line),
-    body: renderCommentBody(f),
-}))
+// Posted set = consensus + synthesiser, filtered by the verdict-driven rule.
+const postedSet = [...consensus, ...synthFindings].filter(f => isPosted(f, verdict))
 
-let bodyText = stripCostAndDismissed(envelope.bodyText)
-if (droppedCount > 0) {
-    bodyText = stripDroppedReferences(bodyText, postSet, consensus)
-    bodyText += `\n\n---\n\n*${droppedCount} additional finding(s) below the ${POST_THRESHOLD}% ` +
-        `confidence threshold were not posted. Run pre-review locally to see the full report.*`
-}
+const comments = renderComments(postedSet)
 
-return { verdict, bodyText, comments }
+const bodyText = buildBody(envelope, postedSet)
+const logPayload = buildLogPayload(envelope)
+
+return { verdict, bodyText, comments, log: logPayload }
 
 // ---------------------------------------------------------------------------
 // Pure string-operation helpers (no prose judgement parsing).
@@ -339,6 +330,42 @@ function renderCommentBody(f) {
 // Deletion anchors (line <= 0) attach to the LEFT side; everything else RIGHT.
 function sideFor(line) {
     return line <= 0 ? 'LEFT' : 'RIGHT'
+}
+
+// True when a finding has no file at all (the body must carry its full detail).
+function isFileless(f) {
+    return !f.file
+}
+
+// Anchor ladder (spec "Anchor Ladder"): route each posted finding to the most
+// specific GitHub anchor it can carry. A line-0 finding WITH a file is a
+// deletion/file-level anchor → file-level comment; a finding with NO file is
+// fileless → no comment (its detail goes to the body, handled in buildBody).
+function renderComments(postedFindings) {
+    const comments = []
+    for (const f of postedFindings) {
+        if (!f.file) continue                                  // fileless → body only
+        if (f.line > 0) {
+            comments.push({ path: f.file, line: f.line, side: sideFor(f.line), body: renderCommentBody(f) })
+        } else {
+            // file present, no usable positive line → file-level comment.
+            comments.push({ path: f.file, subjectType: 'file', body: renderCommentBody(f) })
+        }
+    }
+    return comments
+}
+
+function buildBody(envelope, postedSet) {
+    // TEMP STUB (replaced in Task 4): include fileless detail so Task 3's test passes.
+    let body = stripCostAndDismissed(envelope.bodyText)
+    for (const f of postedSet) {
+        if (isFileless(f)) body += `\n\n${f.description}\n\n**Suggested fix:** ${f.suggested_fix}`
+    }
+    return body
+}
+function buildLogPayload(envelope) {
+    // TEMP STUB (replaced in Task 5).
+    return { bodyText: envelope.bodyText, findings: [] }
 }
 
 // Class D transformations 2 + 3: strip the `## Cost` and `## Dismissed` sections.

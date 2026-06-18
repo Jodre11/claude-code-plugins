@@ -71,10 +71,14 @@ _op_run_core() {
     ' 2>&1
 }
 
+_op_args() {
+    local sha40="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    echo "{\"agentPrompt\":\"x\",\"flags\":{},\"route\":\"full\",\"selfReReview\":false,\"reviewMode\":\"pr\",\"base\":\"main\",\"headSha\":\"${sha40}\",\"emptyTreeMode\":false,\"pathScope\":\"\",\"tempDir\":\"/tmp/claude-test/x\",\"logTimestamp\":\"2026-06-18T00:00:00Z\"}"
+}
+
 test_posted_set_respects_verdict() {
-    local args env_rc out sha40
-    sha40="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-    args="{\"agentPrompt\":\"x\",\"flags\":{},\"route\":\"full\",\"selfReReview\":false,\"reviewMode\":\"pr\",\"base\":\"main\",\"headSha\":\"${sha40}\",\"emptyTreeMode\":false,\"pathScope\":\"\",\"tempDir\":\"/tmp/claude-test/x\",\"logTimestamp\":\"2026-06-18T00:00:00Z\"}"
+    local args env_rc out
+    args=$(_op_args)
     # REQUEST_CHANGES with a conf-55 consensus Suggestion: it MUST still post.
     env_rc='{"verdict":"REQUEST_CHANGES","rubricRowApplied":3,"rubricReason":"Important [#1] conf 88","tiers":{"consensus":[{"file":"a.cs","line":10,"severity":"Important","confidence":88,"description":"d1","suggested_fix":"f1"},{"file":"b.cs","line":20,"severity":"Suggestion","confidence":55,"description":"d2","suggested_fix":"f2"}],"synthesiser":[],"contested":[],"dismissed":[]},"bodyText":"## Synthesiser Assessment\n> prose\n## Consensus Findings\n#### Finding #1 — t1\n#### Finding #2 — t2\n"}'
     out=$(_op_run_core "$args" "$env_rc")
@@ -82,4 +86,25 @@ test_posted_set_respects_verdict() {
     local n
     n=$(echo "$out" | jq '.comments | length' 2>/dev/null || echo "ERR")
     assert_equals "2" "$n" "REQUEST_CHANGES posts all consensus findings (incl conf 55)"
+}
+
+test_anchor_ladder_routes_comments() {
+    local args env out
+    args=$(_op_args)
+    # Three findings: line-anchored, file-anchored (line 0), fileless (no file).
+    env='{"verdict":"REQUEST_CHANGES","rubricRowApplied":3,"rubricReason":"r","tiers":{"consensus":[{"file":"a.cs","line":42,"severity":"Important","confidence":90,"description":"line-anchored","suggested_fix":"f"},{"file":"b.cs","line":0,"severity":"Important","confidence":90,"description":"file-anchored","suggested_fix":"f"}],"synthesiser":[{"line":0,"severity":"Suggestion","confidence":90,"description":"fileless repo-wide","suggested_fix":"add changelog"}],"contested":[],"dismissed":[]},"bodyText":"## Synthesiser Assessment\n> prose\n"}'
+    out=$(_op_run_core "$args" "$env")
+    local total line_c file_c
+    total=$(echo "$out" | jq '.comments | length')
+    line_c=$(echo "$out" | jq '[.comments[] | select(.subjectType == null and .line != null)] | length')
+    file_c=$(echo "$out" | jq '[.comments[] | select(.subjectType == "file")] | length')
+    assert_equals "2" "$total" "fileless finding produces no comment (2 of 3 anchor)"
+    assert_equals "1" "$line_c" "line-anchored finding → line-level comment"
+    assert_equals "1" "$file_c" "file-anchored finding (line 0, has file) → file-level comment"
+    # The fileless finding's detail must appear in the body instead.
+    if echo "$out" | jq -r '.bodyText' | grep -qF "fileless repo-wide"; then
+        pass "fileless finding detail lands in body"
+    else
+        fail "fileless finding detail lands in body" "fileless description not found in bodyText"
+    fi
 }

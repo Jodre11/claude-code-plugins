@@ -37,6 +37,30 @@ test_finding_file_is_optional() {
     fi
 }
 
+test_finding_agreement_is_optional() {
+    local cr
+    cr=$(_op_cr_dir)
+    local schema="$cr/includes/finding-schema.json"
+    # `agreement` MUST be a declared property of the finding def.
+    if jq -e '.["$defs"].finding.properties.agreement' "$schema" >/dev/null 2>&1; then
+        pass "finding.agreement is a declared property"
+    else
+        fail "finding.agreement is a declared property" "agreement property missing from finding def"
+    fi
+    # `agreement` MUST be an integer.
+    if [[ "$(jq -r '.["$defs"].finding.properties.agreement.type' "$schema" 2>/dev/null)" == "integer" ]]; then
+        pass "finding.agreement is typed integer"
+    else
+        fail "finding.agreement is typed integer" "agreement is not declared type integer"
+    fi
+    # `agreement` MUST NOT be in finding.required (round-1-only output omits it).
+    if jq -e '.["$defs"].finding.required | index("agreement")' "$schema" >/dev/null 2>&1; then
+        fail "finding.agreement is optional" "agreement listed in finding.required"
+    else
+        pass "finding.agreement is optional (not in required)"
+    fi
+}
+
 # Runs review-core.mjs end-to-end with mock globals. $1 = JSON args string.
 # A crafted mock agent returns the envelope passed via OP_SYNTH_ENVELOPE (json)
 # for the synthesiser label, and empty-ok specialist/cross outputs otherwise.

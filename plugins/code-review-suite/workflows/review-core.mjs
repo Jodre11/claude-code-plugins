@@ -40,6 +40,7 @@ const FINDING_SHAPE = {
         description: { type: 'string' },
         suggested_fix: { type: 'string' },
         reference: { type: 'string', description: 'Stable rule/advisory URL when the tool emits one.' },
+        agreement: { type: 'integer', minimum: 1, description: 'Resample agreement count: 2 = both independent draws found this cluster, 1 = a single draw. Optional — omitted in round-1-only output and on the lightweight path. Advisory corroboration for the synthesiser, never a mechanical confidence floor.' },
     },
 }
 

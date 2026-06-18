@@ -351,10 +351,16 @@ function boundaryGateFires(envelope) {
     const consensus = envelope.tiers.consensus ?? []
     const contested = envelope.tiers.contested ?? []
     if (verdict === 'APPROVE') {
-        // B1: a consensus Important just under / around rubric row 3's 70 line.
+        // B1: a consensus Important just under / around rubric row 3's 70 line. The band's
+        // upper slice [70,80) is deliberate, not dead code: under a clean APPROVE a consensus
+        // Important can only sit below 70 (row 3 escalates >=70), so reaching [70,80) means the
+        // synth's tiering and rubric application momentarily disagree — exactly the borderline
+        // we want a 2nd draw to settle. Do NOT narrow this band to [60,70) (spec "Open knobs").
         const b1 = consensus.some(f =>
             f.severity === 'Important' && inBand(f.confidence ?? 0, GATE_APPROVE_IMPORTANT_BAND))
-        // B2: any contested-tier finding the synth declined to promote.
+        // B2: any contested-tier finding the synth declined to promote. NB: bare presence with
+        // no confidence floor — spec "Open knobs" flags this as a possible over-fire source;
+        // Task 7's clean-PR sweep validates it, add a floor here if it fires spuriously.
         const b2 = contested.length > 0
         return b1 || b2
     }

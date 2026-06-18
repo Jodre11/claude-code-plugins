@@ -139,10 +139,18 @@ test_union_agreement_counts_in_round2_prompt() {
     # round 2: one matching (line 12, within +/-3 of 10) + one new (line 99).
     local r2='{"correctness":[{"file":"a.cs","line":12,"severity":"Important","confidence":70,"description":"dup pred","suggested_fix":"f"},{"file":"a.cs","line":99,"severity":"Suggestion","confidence":60,"description":"new","suggested_fix":"f"}]}'
     out=$(_vr_run_core "$(_vr_args)" "$env1" "$env2" "$r1" "$r2")
+    # Guard: a malformed probe (e.g. a harness regression that breaks the node mock)
+    # must fail loudly here, not silently abort the whole `set -euo pipefail` suite via a
+    # downstream empty jq/grep read. See the brace-default bug fixed in commit 6ebc1a2.
+    if ! echo "$out" | jq -e . >/dev/null 2>&1; then
+        fail "union: _vr_run_core emitted valid JSON" "probe was not valid JSON: ${out:0:120}"
+        return
+    fi
     prompt=$(echo "$out" | jq -r '.round2SynthPrompt')
     # The matched cluster carries agreement 2; the round-2-only finding carries agreement 1.
+    # `|| true` keeps a no-match grep from aborting the suite under `set -euo pipefail`.
     local agreements
-    agreements=$(echo "$prompt" | grep -oE '"agreement":[0-9]+' | sort | uniq -c | tr -s ' ')
+    agreements=$(echo "$prompt" | grep -oE '"agreement":[0-9]+' | sort | uniq -c | tr -s ' ' || true)
     if echo "$prompt" | grep -qE '"description":"dup pred"[^}]*"agreement":2|"agreement":2[^}]*"description":"dup pred"'; then
         pass "union: cross-draw match annotated agreement 2"
     else

@@ -30,7 +30,7 @@ export const meta = {
 const FINDING_SHAPE = {
     type: 'object',
     additionalProperties: false,
-    required: ['file', 'line', 'severity', 'confidence', 'description', 'suggested_fix'],
+    required: ['line', 'severity', 'confidence', 'description', 'suggested_fix'],
     properties: {
         file: { type: 'string', description: 'Repo-relative path, no a/ or b/ prefix.' },
         line: { type: 'integer', minimum: 0, description: "Line in the new file's coordinate space. 0 only for deletion anchors handled out-of-band." },

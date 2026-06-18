@@ -1717,8 +1717,8 @@ markdown to parse. In this branch:
   still display normally.
 - SKIP Class D entirely (D.1–D.4). The bundle's `comments[]` is already the
   filtered, rendered post-set, and `bundle.bodyText` is already the constructed
-  GitHub body (Cost/Dismissed stripped, footer applied). Do NOT re-filter or
-  re-render either.
+  GitHub body (Cost/Dismissed stripped; no withheld-count footer — omitted
+  findings are simply absent). Do NOT re-filter or re-render either.
 - Class C posting consumes the bundle directly: post each `bundle.comments[i]` as an
   inline comment — a line-level comment when the entry has `line`/`side`, or a
   **file-level** comment (`subject_type=file`, no line/side) when the entry has
@@ -1776,8 +1776,12 @@ getting an APPROVE.
 
 ### Body construction (orchestrator)
 
-The GitHub top-level review body posts the synthesiser's body verbatim except
-for three deterministic transformations:
+Two paths build the body. The **Workflow path** (default; `review-core.mjs`
+`buildBody`) builds the body from parts — headline + promoted Synthesiser
+Assessment + compact finding index + reformatted Dependency Freshness — and does
+NOT run the verbatim+strips transforms described below. The **non-Workflow
+(inline) path** posts the synthesiser's body verbatim except for three
+deterministic transformations:
 
 - References to filtered-out findings (those dropped by the Posting policy
   above) are elided. The synthesiser tags every consensus finding with a stable
@@ -1787,6 +1791,14 @@ for three deterministic transformations:
   stdout for the implementer.
 - `## Dismissed` section stripped — false-positives, noise for the author.
   Stays in stdout for the implementer.
+
+Two invariants govern the non-Workflow path's strip logic (preserved here now
+that the inline strip functions no longer live in `review-core.mjs`): (a) the
+posted-set membership test is **reference-equality** — the orchestrator must not
+clone or normalise findings between building the posted-set and filtering the
+body, or every finding reads as dropped; (b) dropped consensus sections are
+headed at **H4** (`#### Finding #N`), and the strip runs from that heading
+through the next `####`/`###`/`##` heading or EOF.
 
 ### Synthesiser contract
 

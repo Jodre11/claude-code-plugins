@@ -43,7 +43,7 @@ test_finding_file_is_optional() {
 _op_run_core() {
     local wf
     wf="$(_op_cr_dir)/workflows/review-core.mjs"
-    OP_ARGS="$1" OP_SYNTH_ENVELOPE="$2" node -e '
+    WF="$wf" OP_ARGS="$1" OP_SYNTH_ENVELOPE="$2" node -e '
         const fs = require("fs");
         const src = fs.readFileSync(process.env.WF, "utf8")
             .replace(/^export\s+const\s+meta/m, "const meta");
@@ -59,7 +59,7 @@ _op_run_core() {
         const log = () => {};
         const pipeline = async () => [];
         const workflow = async () => null;
-        const timeoutId = setTimeout(() => { process.stdout.write("TIMEOUT"); process.exit(1); }, 3000);
+        const timeoutId = setTimeout(() => { process.stdout.write("TIMEOUT"); process.exit(1); }, 10000);
         (async () => {
             const fn = new Function("agent","parallel","pipeline","phase","log","args","workflow",
                 "return (async()=>{" + src + "\n})()");
@@ -71,9 +71,15 @@ _op_run_core() {
     ' 2>&1
 }
 
-# Guard test for the posted-set classification. The test harness sometimes hangs
-# on full review-core execution; this defers to Task 4+ for substantive assertions.
-# The helpers are declared and tested via the parity test suite.
 test_posted_set_respects_verdict() {
-    skip "posted set test deferred" "guard test; parity validates syntax, Task 4+ covers behaviour"
+    local args env_rc out sha40
+    sha40="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    args="{\"agentPrompt\":\"x\",\"flags\":{},\"route\":\"full\",\"selfReReview\":false,\"reviewMode\":\"pr\",\"base\":\"main\",\"headSha\":\"${sha40}\",\"emptyTreeMode\":false,\"pathScope\":\"\",\"tempDir\":\"/tmp/claude-test/x\",\"logTimestamp\":\"2026-06-18T00:00:00Z\"}"
+    # REQUEST_CHANGES with a conf-55 consensus Suggestion: it MUST still post.
+    env_rc='{"verdict":"REQUEST_CHANGES","rubricRowApplied":3,"rubricReason":"Important [#1] conf 88","tiers":{"consensus":[{"file":"a.cs","line":10,"severity":"Important","confidence":88,"description":"d1","suggested_fix":"f1"},{"file":"b.cs","line":20,"severity":"Suggestion","confidence":55,"description":"d2","suggested_fix":"f2"}],"synthesiser":[],"contested":[],"dismissed":[]},"bodyText":"## Synthesiser Assessment\n> prose\n## Consensus Findings\n#### Finding #1 — t1\n#### Finding #2 — t2\n"}'
+    out=$(_op_run_core "$args" "$env_rc")
+    # Both consensus findings post as comments under REQUEST_CHANGES.
+    local n
+    n=$(echo "$out" | jq '.comments | length' 2>/dev/null || echo "ERR")
+    assert_equals "2" "$n" "REQUEST_CHANGES posts all consensus findings (incl conf 55)"
 }

@@ -274,6 +274,10 @@ if (reviewMode === 'local') {
     return { verdict: 'NONE', bodyText: envelope.bodyText, comments: [] }
 }
 
+// Shared by isPosted and the PR-mode filter. The 75 bar is deliberate (above
+// the rubric's 70) — see spec "Posted Set".
+const POST_THRESHOLD = 75
+
 const verdict = envelope.verdict  // APPROVE | REQUEST_CHANGES (synth never emits COMMENT)
 const consensus = envelope.tiers.consensus ?? []
 const postSet = verdict === 'REQUEST_CHANGES'
@@ -300,10 +304,6 @@ return { verdict, bodyText, comments }
 // ---------------------------------------------------------------------------
 // Pure string-operation helpers (no prose judgement parsing).
 // ---------------------------------------------------------------------------
-
-// Shared by isPosted and the PR-mode filter. The 75 bar is deliberate (above
-// the rubric's 70) — see spec "Posted Set".
-const POST_THRESHOLD = 75
 
 // Posted-set membership — the existing verdict-driven filter, extracted as a
 // named predicate so body + comments share one rule. REQUEST_CHANGES posts

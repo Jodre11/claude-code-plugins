@@ -147,20 +147,24 @@ test_union_agreement_counts_in_round2_prompt() {
         return
     fi
     prompt=$(echo "$out" | jq -r '.round2SynthPrompt')
-    # The matched cluster carries agreement 2; the round-2-only finding carries agreement 1.
-    # `|| true` keeps a no-match grep from aborting the suite under `set -euo pipefail`.
-    local agreements
-    agreements=$(echo "$prompt" | grep -oE '"agreement":[0-9]+' | sort | uniq -c | tr -s ' ' || true)
-    if echo "$prompt" | grep -qE '"description":"dup pred"[^}]*"agreement":2|"agreement":2[^}]*"description":"dup pred"'; then
-        pass "union: cross-draw match annotated agreement 2"
-    else
-        # Fallback: assert at least one agreement:2 and one agreement:1 present.
-        if echo "$prompt" | grep -qF '"agreement":2' && echo "$prompt" | grep -qF '"agreement":1'; then
-            pass "union: round-2 prompt carries both agreement 2 and agreement 1"
-        else
-            fail "union: round-2 prompt carries agreement counts" "agreements seen: $agreements"
-        fi
+    # Assert agreement counts on the STRUCTURED findings, not by grepping the raw prompt:
+    # a raw-string match can pass vacuously if a bug swaps which finding carries which count.
+    # The synth prompt embeds the unioned findings as `Specialist findings (JSON):\n{...}` on
+    # the line immediately after the label — extract that object and jq the correctness domain.
+    # NB: this fixture relies on `correctness` being a stochastic (non-static) domain in
+    # crossDomains; if coreList is ever restructured, the union path here would no-op.
+    local specJson agrDup agrNew
+    specJson=$(echo "$prompt" | sed -n '/^Specialist findings (JSON):$/{n;p;}')
+    if ! echo "$specJson" | jq -e . >/dev/null 2>&1; then
+        fail "union: round-2 prompt embeds parseable specialist findings" "extracted: ${specJson:0:120}"
+        return
     fi
+    # The cross-draw match (round-1 line 10 ↔ round-2 line 12, within ±3) → agreement 2.
+    agrDup=$(echo "$specJson" | jq -r '.correctness[] | select(.description=="dup pred") | .agreement')
+    # The round-2-only finding (line 99) → agreement 1.
+    agrNew=$(echo "$specJson" | jq -r '.correctness[] | select(.description=="new") | .agreement')
+    assert_equals "2" "$agrDup" "union: cross-draw match annotated agreement 2"
+    assert_equals "1" "$agrNew" "union: round-2-only finding annotated agreement 1"
 }
 
 # local mode returns before the gate → never resamples, verdict NONE.

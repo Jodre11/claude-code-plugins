@@ -204,3 +204,21 @@ test_host_documents_durable_log() {
         fail "durable log documented as default-off" "the toggle's default-false must be explicit"
     fi
 }
+
+test_no_teasing_footer() {
+    local cr f
+    cr=$(_op_cr_dir)
+    # The core must not emit the count-of-hidden-findings footer.
+    if grep -qF 'additional finding' "$cr/workflows/review-core.mjs"; then
+        fail "no teasing footer in review-core.mjs" "the 'N additional finding(s)' footer must be removed"
+    else
+        pass "no teasing footer in review-core.mjs"
+    fi
+    # Behavioural: an APPROVE with a sub-75 consensus finding posts NO footer.
+    local args env out body
+    args=$(_op_args)
+    env='{"verdict":"APPROVE","rubricRowApplied":4,"rubricReason":"clean","tiers":{"consensus":[{"file":"a.cs","line":5,"severity":"Suggestion","confidence":55,"description":"low conf","suggested_fix":"f"}],"synthesiser":[],"contested":[],"dismissed":[]},"bodyText":"## Synthesiser Assessment\n> ok\n"}'
+    out=$(_op_run_core "$args" "$env")
+    body=$(echo "$out" | jq -r '.bodyText')
+    assert_not_matches "additional finding" "$body" "APPROVE body has no teasing footer for the dropped conf-55 finding"
+}

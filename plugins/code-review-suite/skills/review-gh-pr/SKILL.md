@@ -1788,14 +1788,6 @@ for three deterministic transformations:
 - `## Dismissed` section stripped — false-positives, noise for the author.
   Stays in stdout for the implementer.
 
-When any findings were filtered, the orchestrator appends a footer to the
-GitHub body:
-
-> *N additional finding(s) below the 75% confidence threshold were not posted.
-> Run pre-review locally to see the full report.*
-
-(`N` resolves to the count of filtered findings.)
-
 ### Synthesiser contract
 
 For the orchestrator's filtering to be mechanical, the synthesiser MUST produce
@@ -1961,20 +1953,7 @@ Start from the synthesiser's body verbatim. Apply three deterministic transforma
 
 3. **Strip the `## Dismissed` section** if present. Remove from the heading line `## Dismissed Findings` (or `## Dismissed`) through the next `## ` heading or end of file.
 
-#### D.4 Append the footer when findings were filtered
-
-If `$DROPPED_COUNT > 0`, append to the end of the constructed body:
-
-```
-
----
-
-*$DROPPED_COUNT additional finding(s) below the 75% confidence threshold were not posted. Run pre-review locally to see the full report.*
-```
-
-(The leading `---` separates the footer from the synthesiser content. The italic line is the verbatim footer text — substitute `$DROPPED_COUNT` for the count.)
-
-If `$DROPPED_COUNT == 0`, do NOT append the footer.
+#### D.4 (removed) — no withheld-count footer is appended; omitted findings are simply absent (spec: no teasing).
 
 The constructed body is now `$REVIEW_BODY` and feeds the `gh pr review --input -` call in Class C.
 

@@ -109,7 +109,8 @@ record the actual round-1 consensus/contested confidences so the bands can be re
 1. `git -C ~/Repos/haven/finance-erp checkout feat/kvp-dictionaries-partial-replace`
    (restore the original branch — confirm it was the starting branch first).
 2. Record the outcome in the plugin repo's SDD ledger
-   (`.git/sdd/progress.md`, Task 7 section) and in auto-memory.
+   (`~/.claude/plugins/marketplaces/jodre11-plugins/.git/sdd/progress.md`, Task 7
+   section) and in auto-memory.
 3. Remaining Task-7 legs still pending: (a) n≥10 clean-PR no-regression sweep — gate
    must NOT fire on a clean PR; (b) band/window calibration from observed confidences.
 
@@ -121,4 +122,4 @@ record the actual round-1 consensus/contested confidences so the bands can be re
   `feat/kvp-dictionaries-partial-replace`, clean tree, HEAD `3db5e0c6` before replay).
 - review-core gate consts to retune if mis-calibrated: `GATE_APPROVE_IMPORTANT_BAND
   = [60, 80]`, `GATE_RC_IMPORTANT_BAND = [70, 80]`, `CLUSTER_WINDOW = 3` in
-  `plugins/code-review-suite/workflows/review-core.mjs`.
+  `~/.claude/plugins/marketplaces/jodre11-plugins/plugins/code-review-suite/workflows/review-core.mjs`.

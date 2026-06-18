@@ -6,7 +6,7 @@
     "finding": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["file", "line", "severity", "confidence", "description", "suggested_fix"],
+      "required": ["line", "severity", "confidence", "description", "suggested_fix"],
       "properties": {
         "file": { "type": "string", "description": "Repo-relative path, no a/ or b/ prefix." },
         "line": { "type": "integer", "minimum": 0, "description": "Line in the new file's coordinate space. 0 only for deletion anchors handled out-of-band." },
@@ -62,12 +62,41 @@
           "items": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["path", "line", "side", "body"],
+            "required": ["path", "body"],
             "properties": {
               "path": { "type": "string" },
-              "line": { "type": "integer", "minimum": 1 },
-              "side": { "enum": ["RIGHT", "LEFT"] },
+              "line": { "type": "integer", "minimum": 1, "description": "Omitted for file-level comments (subjectType=file)." },
+              "side": { "enum": ["RIGHT", "LEFT"], "description": "Omitted for file-level comments." },
+              "subjectType": { "enum": ["file"], "description": "Present only for file-level comments (no usable line). Absent for line-level comments." },
               "body": { "type": "string" }
+            }
+          }
+        },
+        "log": {
+          "type": "object",
+          "description": "Full unfiltered analytical payload for the durable log. Host writes it to disk when orchestration.full_log is true; absent on lightweight/empty bundles.",
+          "additionalProperties": false,
+          "required": ["bodyText", "findings"],
+          "properties": {
+            "bodyText": { "type": "string", "description": "The synthesiser's complete verbatim prose (all sections)." },
+            "findings": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["tier", "severity", "confidence", "description", "verdict_relevant"],
+                "properties": {
+                  "tier": { "enum": ["consensus", "synthesiser", "contested", "dismissed"] },
+                  "domain": { "type": "string" },
+                  "severity": { "enum": ["Critical", "Important", "Suggestion"] },
+                  "confidence": { "type": "integer", "minimum": 0, "maximum": 100 },
+                  "file": { "type": "string" },
+                  "line": { "type": "integer", "minimum": 0 },
+                  "description": { "type": "string" },
+                  "suggested_fix": { "type": "string" },
+                  "verdict_relevant": { "type": "boolean" }
+                }
+              }
             }
           }
         }

@@ -30,7 +30,7 @@ export const meta = {
 const FINDING_SHAPE = {
     type: 'object',
     additionalProperties: false,
-    required: ['file', 'line', 'severity', 'confidence', 'description', 'suggested_fix'],
+    required: ['line', 'severity', 'confidence', 'description', 'suggested_fix'],
     properties: {
         file: { type: 'string', description: 'Repo-relative path, no a/ or b/ prefix.' },
         line: { type: 'integer', minimum: 0, description: "Line in the new file's coordinate space. 0 only for deletion anchors handled out-of-band." },
@@ -274,33 +274,50 @@ if (reviewMode === 'local') {
     return { verdict: 'NONE', bodyText: envelope.bodyText, comments: [] }
 }
 
+// Shared by isPosted and the PR-mode filter. The 75 bar is deliberate (above
+// the rubric's 70) — see spec "Posted Set".
+const POST_THRESHOLD = 75
+
 const verdict = envelope.verdict  // APPROVE | REQUEST_CHANGES (synth never emits COMMENT)
 const consensus = envelope.tiers.consensus ?? []
-const POST_THRESHOLD = 75
-const postSet = verdict === 'REQUEST_CHANGES'
-    ? consensus
-    : consensus.filter(f => f.confidence >= POST_THRESHOLD)
-const droppedCount = consensus.length - postSet.length
+const synthFindings = envelope.tiers.synthesiser ?? []
 
-const comments = postSet.map(f => ({
-    path: f.file,
-    line: f.line > 0 ? f.line : 1,
-    side: sideFor(f.line),
-    body: renderCommentBody(f),
-}))
+// Posted set = consensus + synthesiser, filtered by the verdict-driven rule.
+const postedSet = [...consensus, ...synthFindings].filter(f => isPosted(f, verdict))
 
-let bodyText = stripCostAndDismissed(envelope.bodyText)
-if (droppedCount > 0) {
-    bodyText = stripDroppedReferences(bodyText, postSet, consensus)
-    bodyText += `\n\n---\n\n*${droppedCount} additional finding(s) below the ${POST_THRESHOLD}% ` +
-        `confidence threshold were not posted. Run pre-review locally to see the full report.*`
-}
+const comments = renderComments(postedSet)
 
-return { verdict, bodyText, comments }
+const bodyText = buildBody(envelope, postedSet)
+const logPayload = buildLogPayload(envelope)
+
+return { verdict, bodyText, comments, log: logPayload }
 
 // ---------------------------------------------------------------------------
 // Pure string-operation helpers (no prose judgement parsing).
 // ---------------------------------------------------------------------------
+
+// Posted-set membership — the existing verdict-driven filter, extracted as a
+// named predicate so body + comments share one rule. REQUEST_CHANGES posts
+// everything; APPROVE posts confidence >= POST_THRESHOLD (75).
+function isPosted(finding, verdict) {
+    if (verdict === 'REQUEST_CHANGES') return true
+    return (finding.confidence ?? 0) >= POST_THRESHOLD
+}
+
+// verdict_relevant — a log annotation: true iff this finding is what the rubric
+// acted on to produce the verdict. APPROVE drives nothing. Under
+// REQUEST_CHANGES: consensus Critical (any confidence) or Important >= 70, plus
+// any finding whose positional [#N] token appears in rubricReason (covers the
+// goal-block row 1). indexToken is the finding's 1-based [#N] within its tier.
+function isVerdictRelevant(finding, tier, verdict, rubricReason, indexToken) {
+    if (verdict !== 'REQUEST_CHANGES') return false
+    if (tier === 'consensus') {
+        if (finding.severity === 'Critical') return true
+        if (finding.severity === 'Important' && (finding.confidence ?? 0) >= 70) return true
+        if (indexToken && rubricReason && rubricReason.includes(`[#${indexToken}]`)) return true
+    }
+    return false
+}
 
 // Render one finding into a GitHub inline-comment body.
 function renderCommentBody(f) {
@@ -313,6 +330,136 @@ function renderCommentBody(f) {
 // Deletion anchors (line <= 0) attach to the LEFT side; everything else RIGHT.
 function sideFor(line) {
     return line <= 0 ? 'LEFT' : 'RIGHT'
+}
+
+// True when a finding has no file at all (the body must carry its full detail).
+function isFileless(f) {
+    return !f.file
+}
+
+// Anchor ladder (spec "Anchor Ladder"): route each posted finding to the most
+// specific GitHub anchor it can carry. A line-0 finding WITH a file is a
+// deletion/file-level anchor → file-level comment; a finding with NO file is
+// fileless → no comment (its detail goes to the body, handled in buildBody).
+function renderComments(postedFindings) {
+    const comments = []
+    for (const f of postedFindings) {
+        if (!f.file) continue                                  // fileless → body only
+        if (f.line > 0) {
+            comments.push({ path: f.file, line: f.line, side: sideFor(f.line), body: renderCommentBody(f) })
+        } else {
+            // file present, no usable positive line → file-level comment.
+            comments.push({ path: f.file, subjectType: 'file', body: renderCommentBody(f) })
+        }
+    }
+    return comments
+}
+
+// Extract the body of a `## <heading>` section (text up to the next `## `
+// heading or EOF). Returns '' when the heading is absent. Pure string op.
+function extractSection(bodyText, heading) {
+    const lines = bodyText.split('\n')
+    const out = []
+    let capturing = false
+    for (const line of lines) {
+        if (capturing) {
+            if (line.startsWith('## ')) break
+            out.push(line)
+            continue
+        }
+        if (line.trim() === `## ${heading}`) capturing = true
+    }
+    return out.join('\n').trim()
+}
+
+// Strip a leading '> ' (or '>') block-quote prefix from every line. Promotes
+// the Synthesiser Assessment from greyed quote to first-class prose.
+function unquote(text) {
+    return text.split('\n').map(l => l.replace(/^>\s?/, '')).join('\n')
+}
+
+// One compact index line per posted, anchorable finding. Fileless findings are
+// rendered with full detail (no inline home to point to).
+function renderFindingIndex(postedSet) {
+    const lines = []
+    for (const f of postedSet) {
+        if (isFileless(f)) {
+            lines.push(`- **[${f.severity}]** ${f.description}\n\n  **Suggested fix:** ${f.suggested_fix}`)
+        } else {
+            const pointer = f.line > 0 ? '↳ inline' : '↳ file comment'
+            const loc = f.line > 0 ? `${f.file}:${f.line}` : f.file
+            lines.push(`- **[${f.severity}]** ${shortTitle(f.description)} — \`${loc}\` ${pointer}`)
+        }
+    }
+    return lines.join('\n')
+}
+
+// First sentence / first 80 chars of the description, for the index summary.
+function shortTitle(desc) {
+    const firstSentence = desc.split(/(?<=[.!?])\s/)[0]
+    const t = (firstSentence || desc).trim()
+    return t.length > 80 ? t.slice(0, 77) + '…' : t
+}
+
+function buildBody(envelope, postedSet) {
+    const verdict = envelope.verdict
+    const reason = envelope.rubricReason || ''
+    const headline = `**${verdict}**${reason ? ` — ${reason}` : ''}`
+
+    const assessment = unquote(extractSection(envelope.bodyText, 'Synthesiser Assessment'))
+    const index = renderFindingIndex(postedSet)
+    const freshness = buildFreshnessSection(envelope.bodyText)
+
+    const parts = [headline]
+    if (assessment) parts.push(assessment)
+    if (index) parts.push(`### Findings\n\n${index}`)
+    if (freshness) parts.push(freshness)
+    return parts.join('\n\n')
+}
+
+// Reformat the synthesiser's Dependency Freshness section for legibility.
+// Three states (spec): omitted entirely when the synth produced no section;
+// an all-current line when the section exists but has no drift table rows;
+// otherwise the section verbatim (numeric columns are already first in the
+// synthesiser's table — see review-synthesiser.md Output Format). The reformat
+// keeps the section heading and its table; it strips only the synth's prose
+// preamble blockquote to keep the body tight.
+function buildFreshnessSection(bodyText) {
+    const section = extractSection(bodyText, 'Dependency Freshness')
+    if (!section) return ''                                    // no dep-bearing files → omit
+    const hasTableRow = section.split('\n').some(l => /^\|.*\|.*\|/.test(l) && !/^\|\s*-+/.test(l) && !/Package|Current|Latest/i.test(l))
+    if (!hasTableRow) {
+        return `### Dependency Freshness\n\n✓ Dependencies checked — all current`
+    }
+    // Keep the table, drop the leading blockquote preamble lines.
+    const kept = section.split('\n').filter(l => !l.trim().startsWith('>')).join('\n').trim()
+    return `### Dependency Freshness\n\n${kept}`
+}
+// Flatten all four tiers into one record-per-finding array for the JSONL log.
+// verdict_relevant is computed per the rubric (Task 2). domain is attached by
+// review-core elsewhere for escalations; default to the tier name when absent.
+function buildLogPayload(envelope) {
+    const verdict = envelope.verdict
+    const reason = envelope.rubricReason || ''
+    const tiers = envelope.tiers || {}
+    const findings = []
+    for (const tier of ['consensus', 'synthesiser', 'contested', 'dismissed']) {
+        const arr = tiers[tier] ?? []
+        arr.forEach((f, i) => {
+            findings.push({
+                tier,
+                domain: f.domain || tier,
+                severity: f.severity,
+                confidence: f.confidence ?? 0,
+                file: f.file || '',
+                line: f.line ?? 0,
+                description: f.description,
+                suggested_fix: f.suggested_fix || '',
+                verdict_relevant: isVerdictRelevant(f, tier, verdict, reason, i + 1),
+            })
+        })
+    }
+    return { bodyText: envelope.bodyText, findings }
 }
 
 // Class D transformations 2 + 3: strip the `## Cost` and `## Dismissed` sections.

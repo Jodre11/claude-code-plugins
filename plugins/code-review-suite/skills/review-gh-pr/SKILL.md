@@ -1360,6 +1360,55 @@ Present the synthesiser's formatted report to the user.
 
 **Optional Playwright verification:** If the ui-reviewer produced a "Findings Requiring Visual Verification" section AND the `playwright-cli` skill is available, verify those specific findings in the browser. Append verification results to the report.
 
+#### Step 7a: Durable full log (opt-in, default OFF)
+
+The full unfiltered analytical record is a fine-tuning instrument with a finite
+useful life. It is **off by default**. Write it ONLY when
+`orchestration.full_log = true` in `.claude/code-review.toml` (read the file the same
+way as `intent.doc_paths`; treat a missing/malformed file as `false`). When off, skip
+this entire step — write nothing.
+
+When on, and when the bundle carries a `log` payload (`bundle.log`):
+
+1. Resolve the marketplace short-SHA (provenance). The plugin has no version field, so
+   the build identity is the marketplace commit:
+
+   ```bash
+   git -C "{plugin-marketplace-dir}" rev-parse --short HEAD
+   ```
+
+   Store as `$PLUGIN_SHA`. If the command fails, use `unknown`.
+
+2. Resolve the durable directory and filenames. `<repo-slug>` is the reviewed repo's
+   `owner/name` with `/` → `-`; `<pr>` is `pr-$ARGUMENTS`; `<sha>` is the 12-char
+   `$HEAD_SHA`:
+
+   ```bash
+   mkdir -p "$HOME/.claude/code-review-suite/logs/{repo-slug}"
+   ```
+
+3. Write the markdown record (verbatim full prose + provenance header) to
+   `$HOME/.claude/code-review-suite/logs/{repo-slug}/{pr}-{sha}.md`. The first line is the
+   provenance comment, then `bundle.log.bodyText` verbatim:
+
+   ```
+   <!-- plugin_sha: $PLUGIN_SHA | ts: $LOG_TS -->
+   ```
+
+   `$LOG_TS` is the current UTC time in ISO-8601 (the host stamps it; e.g.
+   `date -u +%Y-%m-%dT%H:%M:%SZ`).
+
+4. Write the JSONL record to the sibling `.jsonl` file. The FIRST line is the meta
+   record, then one line per `bundle.log.findings[]` entry, then the per-phase rows the
+   orchestrator already holds from `$CLAUDE_TEMP_DIR/tokens.jsonl`:
+
+   ```jsonl
+   {"type":"meta","plugin_sha":"$PLUGIN_SHA","ts":"$LOG_TS"}
+   ```
+
+The durable log is NEVER posted to GitHub and NEVER committed — it is analysis exhaust
+that may contain finding text from private repos.
+
 ---
 
 After the review pipeline completes (whether via lightweight or full path), continue with the additional checks and Step 3 below.
@@ -1529,6 +1578,24 @@ EOF_COMMENT_BODY
 
 Determine `{side}` from the diff hunk: use `'LEFT'` when the finding targets a deleted line (prefixed with `-` in the diff), `'RIGHT'` for added or unchanged context lines.
 
+**For file-level comments** (bundle entries with `subjectType: "file"` — findings that
+name a file but no usable line, per the Anchor Ladder), omit `line` and `side` and pass
+`subject_type=file`:
+
+```bash
+gh api repos/{owner}/{repo}/pulls/{pr}/comments \
+  --method POST \
+  -f commit_id='{head_sha}' \
+  -f path='{file_path}' \
+  -f subject_type='file' \
+  --input -  <<'EOF_COMMENT_BODY'
+{comment_body}
+EOF_COMMENT_BODY
+```
+
+A bundle comment carries EITHER `line` + `side` (line-level) OR `subjectType: "file"`
+(file-level), never both. Dispatch on the presence of `subjectType`.
+
 **For replies to existing comments**, use `in_reply_to` with the original comment's line positioning:
 
 ```bash
@@ -1653,10 +1720,10 @@ markdown to parse. In this branch:
   GitHub body (Cost/Dismissed stripped, footer applied). Do NOT re-filter or
   re-render either.
 - Class C posting consumes the bundle directly: post each `bundle.comments[i]` as an
-  inline comment — `path`, `line`, `side`, `body` map 1:1 to the `gh api`
-  inline-comment fields — then submit `bundle.bodyText` as the `gh pr review
-  --input -` body, using the review flag chosen from `$FINAL_VERDICT` (after the
-  Class A prompt resolves any override).
+  inline comment — a line-level comment when the entry has `line`/`side`, or a
+  **file-level** comment (`subject_type=file`, no line/side) when the entry has
+  `subjectType: "file"`. Then submit `bundle.bodyText` as the `gh pr review --input -`
+  body, using the review flag chosen from `$FINAL_VERDICT`.
 
 If `$USE_WORKFLOW` is false, proceed with the existing Class A–D flow below
 UNCHANGED — that flow is the `$USE_WORKFLOW == false` path.
@@ -1720,14 +1787,6 @@ for three deterministic transformations:
   stdout for the implementer.
 - `## Dismissed` section stripped — false-positives, noise for the author.
   Stays in stdout for the implementer.
-
-When any findings were filtered, the orchestrator appends a footer to the
-GitHub body:
-
-> *N additional finding(s) below the 75% confidence threshold were not posted.
-> Run pre-review locally to see the full report.*
-
-(`N` resolves to the count of filtered findings.)
 
 ### Synthesiser contract
 
@@ -1894,20 +1953,7 @@ Start from the synthesiser's body verbatim. Apply three deterministic transforma
 
 3. **Strip the `## Dismissed` section** if present. Remove from the heading line `## Dismissed Findings` (or `## Dismissed`) through the next `## ` heading or end of file.
 
-#### D.4 Append the footer when findings were filtered
-
-If `$DROPPED_COUNT > 0`, append to the end of the constructed body:
-
-```
-
----
-
-*$DROPPED_COUNT additional finding(s) below the 75% confidence threshold were not posted. Run pre-review locally to see the full report.*
-```
-
-(The leading `---` separates the footer from the synthesiser content. The italic line is the verbatim footer text — substitute `$DROPPED_COUNT` for the count.)
-
-If `$DROPPED_COUNT == 0`, do NOT append the footer.
+#### D.4 (removed) — no withheld-count footer is appended; omitted findings are simply absent (spec: no teasing).
 
 The constructed body is now `$REVIEW_BODY` and feeds the `gh pr review --input -` call in Class C.
 

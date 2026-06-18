@@ -237,14 +237,6 @@ for three deterministic transformations:
 - `## Dismissed` section stripped — false-positives, noise for the author.
   Stays in stdout for the implementer.
 
-When any findings were filtered, the orchestrator appends a footer to the
-GitHub body:
-
-> *N additional finding(s) below the 75% confidence threshold were not posted.
-> Run pre-review locally to see the full report.*
-
-(`N` resolves to the count of filtered findings.)
-
 ### Synthesiser contract
 
 For the orchestrator's filtering to be mechanical, the synthesiser MUST produce

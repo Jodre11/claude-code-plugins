@@ -97,3 +97,22 @@ test_phaselog_captures_round1_and_meta() {
     # Round-1 cogs carry no input (diff reconstructed from meta).
     assert_equals "null" "$(echo "$out" | jq -r '[.log.cogs[] | select(.phase=="round1")][0].input // "null"')" "round-1 cog omits input"
 }
+
+test_phaselog_captures_cross_io() {
+    local args env out
+    args=$(_pe_args)
+    env='{"verdict":"APPROVE","rubricRowApplied":4,"rubricReason":"clean","tiers":{"consensus":[],"synthesiser":[],"contested":[],"dismissed":[]},"bodyText":"## Synthesiser Assessment\n> ok\n"}'
+    out=$(_pe_run_core "$args" "$env")
+    # Cross cogs: one per stochastic domain (8 core, none static here).
+    assert_equals "8" "$(echo "$out" | jq '[.log.cogs[] | select(.phase=="cross")] | length')" "8 cross cogs"
+    # Each cross cog carries its peer-set input and opinions output.
+    local first
+    first=$(echo "$out" | jq -c '[.log.cogs[] | select(.phase=="cross")][0]')
+    assert_equals "false" "$(echo "$first" | jq -r '(.input.peer == null)')" "cross cog carries peer input"
+    assert_equals "false" "$(echo "$first" | jq -r '(.output.opinionsMarkdown == null)')" "cross cog carries opinions output"
+    # Peer set excludes the reviewer's own domain.
+    local dom hasself
+    dom=$(echo "$first" | jq -r '.domain')
+    hasself=$(echo "$first" | jq -r --arg d "$dom" '.input.peer | has($d)')
+    assert_equals "false" "$hasself" "cross cog peer set excludes own domain"
+}

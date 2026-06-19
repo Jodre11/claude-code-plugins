@@ -581,27 +581,34 @@ function buildFreshnessSection(bodyText) {
 // Flatten all four tiers into one record-per-finding array for the JSONL log.
 // verdict_relevant is computed per the rubric (Task 2). domain is attached by
 // review-core elsewhere for escalations; default to the tier name when absent.
-function buildLogPayload(envelope) {
-    const reason = envelope.rubricReason || ''
-    const tiers = envelope.tiers || {}
-    const findings = []
-    for (const tier of ['consensus', 'synthesiser', 'contested', 'dismissed']) {
-        const arr = tiers[tier] ?? []
-        arr.forEach((f, i) => {
-            findings.push({
-                tier,
-                domain: f.domain || tier,
-                severity: f.severity,
-                confidence: f.confidence ?? 0,
-                file: f.file || '',
-                line: f.line ?? 0,
-                description: f.description,
-                suggested_fix: f.suggested_fix || '',
-                verdict_relevant: isVerdictRelevant(f, tier, envelope.verdict, reason, i + 1),
-            })
-        })
-    }
-    return { bodyText: envelope.bodyText, findings }
+function buildLogPayload(envelope, phaseLog) {
+  const reason = envelope.rubricReason || ''
+  const tiers = envelope.tiers || {}
+  const findings = []
+  for (const tier of ['consensus', 'synthesiser', 'contested', 'dismissed']) {
+    const arr = tiers[tier] ?? []
+    arr.forEach((f, i) => {
+      findings.push({
+        tier,
+        domain: f.domain || tier,
+        severity: f.severity,
+        confidence: f.confidence ?? 0,
+        file: f.file || '',
+        line: f.line ?? 0,
+        description: f.description,
+        suggested_fix: f.suggested_fix || '',
+        verdict_relevant: isVerdictRelevant(f, tier, envelope.verdict, reason, i + 1),
+      })
+    })
+  }
+  const payload = { bodyText: envelope.bodyText, findings }
+  // Per-cog corpus (additive). Omitted entirely when no phaseLog was threaded
+  // (lightweight path, or callers that don't capture) — keeps the back-compat shape.
+  if (phaseLog && (phaseLog.meta || phaseLog.cogs)) {
+    if (phaseLog.meta) payload.meta = phaseLog.meta
+    if (phaseLog.cogs) payload.cogs = phaseLog.cogs
+  }
+  return payload
 }
 
 // Lightweight-path bundle (pipeline Step 3: "Present its report and stop").

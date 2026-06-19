@@ -116,3 +116,31 @@ test_phaselog_captures_cross_io() {
     hasself=$(echo "$first" | jq -r --arg d "$dom" '.input.peer | has($d)')
     assert_equals "false" "$hasself" "cross cog peer set excludes own domain"
 }
+
+test_phaselog_captures_synth_cog() {
+    local args env out
+    args=$(_pe_args)
+    env='{"verdict":"APPROVE","rubricRowApplied":4,"rubricReason":"clean","tiers":{"consensus":[],"synthesiser":[],"contested":[],"dismissed":[]},"bodyText":"## Synthesiser Assessment\n> ok\n"}'
+    out=$(_pe_run_core "$args" "$env")
+    assert_equals "1" "$(echo "$out" | jq '[.log.cogs[] | select(.phase=="synth")] | length')" "one synth cog (no gate fire)"
+    # Synth cog input carries the findingsByDomain it synthesised from.
+    assert_equals "false" "$(echo "$out" | jq -r '[.log.cogs[] | select(.phase=="synth")][0].input.findingsByDomain == null')" "synth cog carries findingsByDomain input"
+    # No round-2 / union records when the gate did not fire.
+    assert_equals "0" "$(echo "$out" | jq '[.log.cogs[] | select(.phase=="round2" or .phase=="union")] | length')" "no round2/union records when gate quiet"
+}
+
+test_phaselog_captures_round2_union_when_gate_fires() {
+    local args env out
+    args=$(_pe_args)
+    # B1: APPROVE with a consensus Important in [60,80) → gate fires, round 2 runs.
+    env='{"verdict":"APPROVE","rubricRowApplied":4,"rubricReason":"clean","tiers":{"consensus":[{"file":"a.cs","line":10,"severity":"Important","confidence":72,"description":"d","suggested_fix":"f"}],"synthesiser":[],"contested":[],"dismissed":[]},"bodyText":"## Synthesiser Assessment\n> r1\n"}'
+    out=$(_pe_run_core "$args" "$env")
+    # Round-2 cogs present (one per stochastic domain).
+    assert_equals "8" "$(echo "$out" | jq '[.log.cogs[] | select(.phase=="round2")] | length')" "8 round-2 cogs when gate fires"
+    # Exactly one union record.
+    assert_equals "1" "$(echo "$out" | jq '[.log.cogs[] | select(.phase=="union")] | length')" "one union record when gate fires"
+    # Two synth cogs (round 1 + round 2) — both draws captured.
+    assert_equals "2" "$(echo "$out" | jq '[.log.cogs[] | select(.phase=="synth")] | length')" "two synth cogs when gate fires"
+    # cross2 namespace populated and distinct from cross.
+    assert_equals "8" "$(echo "$out" | jq '[.log.cogs[] | select(.phase=="cross2")] | length')" "8 cross2 cogs (round-2 cross-review)"
+}

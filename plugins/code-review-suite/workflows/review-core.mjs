@@ -195,10 +195,11 @@ for (const [domain, fs] of Object.entries(findingsByDomain)) {
   phaseLog.cogs.push({ phase: 'round1', domain, output: { findings: fs } })
 }
 
-let { envelope, crossByDomain } = await crossAndSynth(findingsByDomain, false)
+let { envelope, crossByDomain, synthInput } = await crossAndSynth(findingsByDomain, false)
 for (const c of crossByDomain) {
   phaseLog.cogs.push({ phase: 'cross', domain: c.domain, input: c.input, output: c.output })
 }
+phaseLog.cogs.push({ phase: 'synth', input: synthInput, output: { tiers: envelope?.tiers ?? {} } })
 
 // Category C guard: a null envelope, or one missing tiers (schema marks tiers required,
 // but sandbox enforcement is best-effort), would crash both modes below. Degrade to an
@@ -226,16 +227,21 @@ if (boundaryGateFires(envelope)) {
     const specialists2 = await dispatchSpecialists(crossDomains, 'resample')
     log(`resample: ${specialists2.filter(s => s.out.status === 'ok').length}/${crossDomains.length} specialists ok`)
     const r2ByDomain = Object.fromEntries(specialists2.map(s => [s.domain, s.out.findings ?? []]))
+    for (const [domain, fs] of Object.entries(r2ByDomain)) {
+      phaseLog.cogs.push({ phase: 'round2', domain, output: { findings: fs } })
+    }
     const unioned = unionFindingsByDomain(findingsByDomain, r2ByDomain, crossDomains)
-    const { envelope: envelope2, crossByDomain: crossByDomain2 } = await crossAndSynth(unioned, true)
+    phaseLog.cogs.push({ phase: 'union', output: { findingsByDomain: unioned } })
+    const { envelope: envelope2, crossByDomain: crossByDomain2, synthInput: synthInput2 } = await crossAndSynth(unioned, true)
     for (const c of crossByDomain2) {
       phaseLog.cogs.push({ phase: 'cross2', domain: c.domain, input: c.input, output: c.output })
     }
     if (envelope2 && envelope2.tiers) {
-        envelope = envelope2
-        log('round 2 complete — adopting resampled synthesis')
+      phaseLog.cogs.push({ phase: 'synth', input: synthInput2, output: { tiers: envelope2.tiers } })
+      envelope = envelope2
+      log('round 2 complete — adopting resampled synthesis')
     } else {
-        log('round 2 synthesis unusable — retaining round-1 verdict')
+      log('round 2 synthesis unusable — retaining round-1 verdict')
     }
 }
 
@@ -367,7 +373,13 @@ async function crossAndSynth(findingsByDomain, resampled) {
     model: 'opus',
     schema: SYNTH_SCHEMA,
   })
-  return { envelope, crossByDomain }
+  const synthInput = {
+    findingsByDomain,
+    crossOpinions,
+    crossEscalations,
+    intent_ledger: intentLedger || '',
+  }
+  return { envelope, crossByDomain, synthInput }
 }
 
 // ---------------------------------------------------------------------------

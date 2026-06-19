@@ -153,34 +153,65 @@ test_phaselog_captures_round2_union_when_gate_fires() {
 # test AND the spec's reconstruction recipe in specialist-context.md must change
 # in lockstep.
 #
-# The helper below encodes the recipe. Each test_* function below derives its
+# Each fixture builds its OWN throwaway git repo (via _pe_make_fixture_repo)
+# with exactly the commit shape it needs. This makes the tests hermetic — they
+# depend on nothing in the ambient environment (no HEAD~1, no rev-list, no
+# minimum clone depth, no global git identity), so they behave identically on a
+# full clone, a shallow CI checkout, or a contributor's machine.
+#
+# The helper below encodes the recipe. Each test_* function derives its
 # "specialist's actual command" side INDEPENDENTLY (literal git commands written
 # per specialist-context.md) so the two sides can genuinely diverge if the
 # recipe drifts.
 # ---------------------------------------------------------------------------
 
+# Build a hermetic throwaway git repo for the reconstruction fixtures and echo
+# its path; the caller rm -rf's it when done. Identity/signing are set locally
+# (never touching global config) so commits succeed in a bare CI environment.
+# Layout: C0 adds alpha.txt; C1 adds beta.txt AND gamma.txt — so C0..C1 touches
+# two files (the path-scope fixture needs ≥2 to prove scoping narrows) and the
+# full snapshot at C1 (three files) differs from the C0..C1 delta (two files),
+# which is what the empty-tree branch-matters assertion relies on.
+_pe_make_fixture_repo() {
+    local dir
+    dir=$(mktemp -d)
+    git -C "$dir" init -q
+    git -C "$dir" config user.email "test@example.com"
+    git -C "$dir" config user.name "phase-efficacy test"
+    git -C "$dir" config commit.gpgsign false
+    printf 'alpha 1\n' > "$dir/alpha.txt"
+    git -C "$dir" add alpha.txt
+    git -C "$dir" commit -q -m "C0: add alpha"
+    printf 'beta 1\n' > "$dir/beta.txt"
+    printf 'gamma 1\n' > "$dir/gamma.txt"
+    git -C "$dir" add beta.txt gamma.txt
+    git -C "$dir" commit -q -m "C1: add beta and gamma"
+    echo "$dir"
+}
+
 # Encode the reconstruction recipe from specialist-context.md §44-46.
-# $1=base $2=head_sha $3=empty_tree_mode (true|false) $4=path_scope (may be empty)
+# $1=repo $2=base $3=head_sha $4=empty_tree_mode (true|false) $5=path_scope (may be empty)
 # Emits the diff piped through git hash-object --stdin.
 _pe_reconstruct_diff() {
-    local base head_sha empty_tree_mode path_scope hash
-    base="$1"
-    head_sha="$2"
-    empty_tree_mode="$3"
-    path_scope="$4"
+    local repo base head_sha empty_tree_mode path_scope hash
+    repo="$1"
+    base="$2"
+    head_sha="$3"
+    empty_tree_mode="$4"
+    path_scope="$5"
     if [ "$empty_tree_mode" = "true" ]; then
         # Two-arg syntax for empty-tree mode (spec §44).
         if [ -n "$path_scope" ]; then
-            hash=$(git -C "$REPO_ROOT" diff "$base" "$head_sha" -- "$path_scope" | git -C "$REPO_ROOT" hash-object --stdin)
+            hash=$(git -C "$repo" diff "$base" "$head_sha" -- "$path_scope" | git -C "$repo" hash-object --stdin)
         else
-            hash=$(git -C "$REPO_ROOT" diff "$base" "$head_sha" | git -C "$REPO_ROOT" hash-object --stdin)
+            hash=$(git -C "$repo" diff "$base" "$head_sha" | git -C "$repo" hash-object --stdin)
         fi
     else
         # Three-dot syntax for normal mode (spec §44).
         if [ -n "$path_scope" ]; then
-            hash=$(git -C "$REPO_ROOT" diff "$base"..."$head_sha" -- "$path_scope" | git -C "$REPO_ROOT" hash-object --stdin)
+            hash=$(git -C "$repo" diff "$base"..."$head_sha" -- "$path_scope" | git -C "$repo" hash-object --stdin)
         else
-            hash=$(git -C "$REPO_ROOT" diff "$base"..."$head_sha" | git -C "$REPO_ROOT" hash-object --stdin)
+            hash=$(git -C "$repo" diff "$base"..."$head_sha" | git -C "$repo" hash-object --stdin)
         fi
     fi
     echo "$hash"
@@ -188,84 +219,75 @@ _pe_reconstruct_diff() {
 
 # Fixture 1: normal three-dot, no path scope.
 test_reconstruction_round_trip_normal() {
-    local base head specialist_hash recipe_hash unscoped_diff
-    base=$(git -C "$REPO_ROOT" rev-parse HEAD~1)
-    head=$(git -C "$REPO_ROOT" rev-parse HEAD)
+    local repo base head specialist_hash recipe_hash unscoped_diff
+    repo=$(_pe_make_fixture_repo)
+    base=$(git -C "$repo" rev-parse HEAD~1)
+    head=$(git -C "$repo" rev-parse HEAD)
     # Specialist's literal command (specialist-context.md §44: three-dot when empty_tree_mode=false).
-    specialist_hash=$(git -C "$REPO_ROOT" diff "$base"..."$head" | git -C "$REPO_ROOT" hash-object --stdin)
+    specialist_hash=$(git -C "$repo" diff "$base"..."$head" | git -C "$repo" hash-object --stdin)
     # Recipe output from meta keys.
-    recipe_hash=$(_pe_reconstruct_diff "$base" "$head" "false" "")
+    recipe_hash=$(_pe_reconstruct_diff "$repo" "$base" "$head" "false" "")
     assert_equals "$specialist_hash" "$recipe_hash" "normal: recipe hash matches specialist three-dot diff"
-    # Diff must be non-empty (HEAD~1..HEAD always has content).
-    unscoped_diff=$(git -C "$REPO_ROOT" diff "$base"..."$head")
+    # Diff must be non-empty (C0..C1 always has content).
+    unscoped_diff=$(git -C "$repo" diff "$base"..."$head")
     if [ -n "$unscoped_diff" ]; then
-        pass "normal: HEAD~1..HEAD diff is non-empty"
+        pass "normal: C0..C1 diff is non-empty"
     else
-        fail "normal: HEAD~1..HEAD diff is non-empty" "diff was empty — fixture assumption broken"
+        fail "normal: C0..C1 diff is non-empty" "diff was empty — fixture assumption broken"
     fi
+    rm -rf "$repo"
 }
 
 # Fixture 2: three-dot with path scope.
-# Discovers a commit at runtime whose diff touches ≥2 files (merge-proof: no
-# specific SHA is pinned). Scoping to one of those files genuinely narrows the
-# diff, so the scoped-hash != unscoped-hash assertion is always meaningful.
+# The fixture repo's C0..C1 touches two files (beta.txt + gamma.txt) by
+# construction, so scoping to one of them genuinely narrows the diff and the
+# scoped-hash != unscoped-hash assertion is always meaningful — no runtime
+# discovery and no dependency on the ambient repo's history.
 test_reconstruction_round_trip_path_scope() {
-    local base head path_scope specialist_hash recipe_hash unscoped_hash
-    local candidates c changed_files file_count first_file
-    # Walk recent history looking for a commit that touches ≥2 files.
-    candidates=$(git -C "$REPO_ROOT" rev-list --max-count=50 HEAD)
-    base=""
-    head=""
-    path_scope=""
-    for c in $candidates; do
-        # Three-dot on a merge commit yields the symmetric diff vs the merge base; linear history here so this is safe.
-        changed_files=$(git -C "$REPO_ROOT" diff --name-only "${c}~1"..."${c}")
-        file_count=$(echo "$changed_files" | grep -c .)
-        if [ "$file_count" -ge 2 ]; then
-            first_file=$(echo "$changed_files" | head -n 1)
-            base="${c}~1"
-            head="$c"
-            path_scope="$first_file"
-            break
-        fi
-    done
-    if [ -z "$head" ]; then
-        fail "path-scope: discovery" "no commit in the last 50 touches ≥2 files — fixture cannot run"
-        return
-    fi
+    local repo base head path_scope specialist_hash recipe_hash unscoped_hash
+    repo=$(_pe_make_fixture_repo)
+    base=$(git -C "$repo" rev-parse HEAD~1)
+    head=$(git -C "$repo" rev-parse HEAD)
+    path_scope="beta.txt"
     # Specialist's literal command (spec §44 three-dot + §46 path scope).
-    specialist_hash=$(git -C "$REPO_ROOT" diff "$base"..."$head" -- "$path_scope" | git -C "$REPO_ROOT" hash-object --stdin)
+    specialist_hash=$(git -C "$repo" diff "$base"..."$head" -- "$path_scope" | git -C "$repo" hash-object --stdin)
     # Recipe output from meta keys.
-    recipe_hash=$(_pe_reconstruct_diff "$base" "$head" "false" "$path_scope")
+    recipe_hash=$(_pe_reconstruct_diff "$repo" "$base" "$head" "false" "$path_scope")
     assert_equals "$specialist_hash" "$recipe_hash" "path-scope: recipe hash matches specialist scoped diff"
     # Scoping must actually narrow the diff — scoped hash must differ from unscoped.
-    unscoped_hash=$(git -C "$REPO_ROOT" diff "$base"..."$head" | git -C "$REPO_ROOT" hash-object --stdin)
+    unscoped_hash=$(git -C "$repo" diff "$base"..."$head" | git -C "$repo" hash-object --stdin)
     if [ "$recipe_hash" != "$unscoped_hash" ]; then
         pass "path-scope: scoped diff differs from unscoped (-- pathspec is applied)"
     else
         fail "path-scope: scoped diff differs from unscoped (-- pathspec is applied)" "hashes identical — path scope had no effect"
     fi
+    rm -rf "$repo"
 }
 
 # Fixture 3: empty-tree two-arg mode (and branch-matters proof).
 test_reconstruction_round_trip_empty_tree() {
-    local empty_tree head specialist_hash recipe_hash normal_hash
+    local repo empty_tree base head specialist_hash recipe_hash delta_hash
+    repo=$(_pe_make_fixture_repo)
     empty_tree="4b825dc642cb6eb9a060e54bf8d69288fbee4904"
-    head=$(git -C "$REPO_ROOT" rev-parse HEAD)
+    base=$(git -C "$repo" rev-parse HEAD~1)
+    head=$(git -C "$repo" rev-parse HEAD)
     # Specialist's literal command (spec §44: two-arg when empty_tree_mode=true).
-    specialist_hash=$(git -C "$REPO_ROOT" diff "$empty_tree" "$head" | git -C "$REPO_ROOT" hash-object --stdin)
+    specialist_hash=$(git -C "$repo" diff "$empty_tree" "$head" | git -C "$repo" hash-object --stdin)
     # Recipe output from meta keys.
-    recipe_hash=$(_pe_reconstruct_diff "$empty_tree" "$head" "true" "")
+    recipe_hash=$(_pe_reconstruct_diff "$repo" "$empty_tree" "$head" "true" "")
     assert_equals "$specialist_hash" "$recipe_hash" "empty-tree: recipe hash matches specialist two-arg diff"
-    # Branch matters: empty-tree (two-arg) hash must differ from normal three-dot HEAD~1..HEAD hash.
-    # If _pe_reconstruct_diff ignored empty_tree_mode and always used three-dot, fixture 3 would fail.
-    # Independent literal — NOT via the helper, so a correlated helper bug cannot produce a false pass.
-    normal_hash=$(git -C "$REPO_ROOT" diff "$(git -C "$REPO_ROOT" rev-parse HEAD~1)"..."$head" | git -C "$REPO_ROOT" hash-object --stdin)
-    if [ "$recipe_hash" != "$normal_hash" ]; then
-        pass "empty-tree: two-arg hash differs from three-dot HEAD~1..HEAD (empty_tree_mode branch is exercised)"
+    # Branch matters: the empty-tree two-arg diff (full snapshot at C1 — three
+    # files) must differ from the three-dot C0..C1 delta (two files). If
+    # _pe_reconstruct_diff ignored empty_tree_mode and always used three-dot,
+    # this would fail. Independent literal — NOT via the helper — so a
+    # correlated helper bug cannot produce a false pass.
+    delta_hash=$(git -C "$repo" diff "$base"..."$head" | git -C "$repo" hash-object --stdin)
+    if [ "$recipe_hash" != "$delta_hash" ]; then
+        pass "empty-tree: two-arg full-snapshot hash differs from three-dot C0..C1 delta (empty_tree_mode branch is exercised)"
     else
-        fail "empty-tree: two-arg hash differs from three-dot HEAD~1..HEAD (empty_tree_mode branch is exercised)" "hashes identical — empty_tree_mode has no effect"
+        fail "empty-tree: two-arg full-snapshot hash differs from three-dot C0..C1 delta (empty_tree_mode branch is exercised)" "hashes identical — empty_tree_mode has no effect"
     fi
+    rm -rf "$repo"
 }
 
 test_schema_documents_cog_payload() {

@@ -41,3 +41,59 @@ test_buildlogpayload_emits_meta_and_cogs() {
     assert_equals "correctness" "$(echo "$out" | jq -r '.cogs[0].domain')" "cog domain passed through"
     assert_equals "round1" "$(echo "$out" | jq -r '.cogs[0].phase')" "cog phase passed through"
 }
+
+# Runs review-core.mjs end-to-end. $1 = args json, $2 = synth envelope json,
+# $3 = round-1 specialist findings map (domain -> findings[]), optional.
+_pe_run_core() {
+    local wf r1
+    wf="$(_pe_cr_dir)/workflows/review-core.mjs"
+    r1='{}'
+    [ "$#" -ge 3 ] && r1="$3"
+    WF="$wf" PE_ARGS="$1" PE_ENV="$2" PE_R1="$r1" node -e '
+        const fs = require("fs");
+        const src = fs.readFileSync(process.env.WF, "utf8")
+            .replace(/^export\s+const\s+meta/m, "const meta");
+        const env = JSON.parse(process.env.PE_ENV);
+        const r1 = JSON.parse(process.env.PE_R1);
+        const agent = async (prompt, opts) => {
+            const label = (opts && opts.label) || "";
+            if (label === "review-synthesiser") return env;
+            if (label.startsWith("cross-")) return { status: "ok", opinionsMarkdown: "op-" + label, escalations: [] };
+            return { status: "ok", findings: r1[label] || [] };  // specialists
+        };
+        const parallel = (thunks) => Promise.all(thunks.map(t => t()));
+        const phase = () => {};
+        const log = () => {};
+        const pipeline = async () => [];
+        const workflow = async () => null;
+        const timeoutId = setTimeout(() => { process.stdout.write("TIMEOUT"); process.exit(1); }, 15000);
+        (async () => {
+            const fn = new Function("agent","parallel","pipeline","phase","log","args","workflow",
+                "return (async()=>{" + src + "\n})()");
+            const bundle = await fn(agent, parallel, pipeline, phase, log, process.env.PE_ARGS, workflow);
+            clearTimeout(timeoutId);
+            process.stdout.write(JSON.stringify(bundle));
+            process.exit(0);
+        })().catch(e => { clearTimeout(timeoutId); process.stdout.write("THREW: " + e.message); process.exit(1); });
+    ' 2>&1
+}
+
+_pe_args() {
+    local sha40="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    echo "{\"agentPrompt\":\"x\",\"flags\":{},\"route\":\"full\",\"selfReReview\":false,\"reviewMode\":\"pr\",\"base\":\"main\",\"headSha\":\"${sha40}\",\"emptyTreeMode\":false,\"pathScope\":\"\",\"tempDir\":\"/tmp/claude-test/x\"}"
+}
+
+test_phaselog_captures_round1_and_meta() {
+    local args env out
+    args=$(_pe_args)
+    env='{"verdict":"APPROVE","rubricRowApplied":4,"rubricReason":"clean","tiers":{"consensus":[],"synthesiser":[],"contested":[],"dismissed":[]},"bodyText":"## Synthesiser Assessment\n> ok\n"}'
+    out=$(_pe_run_core "$args" "$env")
+    # meta carries the four reconstruction keys.
+    assert_equals "main" "$(echo "$out" | jq -r '.log.meta.base')" "log.meta.base captured"
+    assert_equals "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" "$(echo "$out" | jq -r '.log.meta.head_sha')" "log.meta.head_sha captured"
+    assert_equals "false" "$(echo "$out" | jq -r '.log.meta.empty_tree_mode')" "log.meta.empty_tree_mode captured"
+    # One round-1 cog per core specialist (8 core, no conditionals).
+    assert_equals "8" "$(echo "$out" | jq '[.log.cogs[] | select(.phase=="round1")] | length')" "8 round-1 cogs (core list)"
+    # Round-1 cogs carry no input (diff reconstructed from meta).
+    assert_equals "null" "$(echo "$out" | jq -r '[.log.cogs[] | select(.phase=="round1")][0].input // "null"')" "round-1 cog omits input"
+}

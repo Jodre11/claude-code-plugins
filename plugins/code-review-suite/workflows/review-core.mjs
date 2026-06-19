@@ -126,6 +126,19 @@ const {
     base, headSha, emptyTreeMode, pathScope, tempDir, intentLedger,
 } = resolvedArgs
 
+// Per-cog capture accumulator (full_log corpus). Write-only during the run;
+// folded into the bundle by buildLogPayload at the end. Never read by verdict
+// or posting logic. The diff is NOT stored — these four keys reconstruct it.
+const phaseLog = {
+  meta: {
+    base,
+    head_sha: headSha,
+    empty_tree_mode: emptyTreeMode,
+    path_scope: pathScope || '',
+  },
+  cogs: [],
+}
+
 // Lightweight path (pipeline Step 3): single code-analysis pass, no cross/synth.
 if (route === 'lightweight') {
     phase('dispatch')
@@ -178,6 +191,10 @@ const findingsByDomain = Object.fromEntries(
     specialists.map(s => [s.domain, s.out.findings ?? []])
 )
 
+for (const [domain, fs] of Object.entries(findingsByDomain)) {
+  phaseLog.cogs.push({ phase: 'round1', domain, output: { findings: fs } })
+}
+
 let envelope = await crossAndSynth(findingsByDomain, false)
 
 // Category C guard: a null envelope, or one missing tiers (schema marks tiers required,
@@ -193,7 +210,7 @@ if (!envelope || !envelope.tiers) {
 // is on (default off); pre-review documents the log as its sole persisted artefact,
 // so it MUST be carried on this path too — not just the PR path below.
 if (reviewMode === 'local') {
-    const logPayload = buildLogPayload(envelope)
+    const logPayload = buildLogPayload(envelope, phaseLog)
     return { verdict: 'NONE', bodyText: envelope.bodyText, comments: [], log: logPayload }
 }
 
@@ -232,7 +249,7 @@ const suppressedCount = candidates.length - postedSet.length
 const comments = renderComments(postedSet)
 
 const bodyText = buildBody(envelope, postedSet, suppressedCount)
-const logPayload = buildLogPayload(envelope)
+const logPayload = buildLogPayload(envelope, phaseLog)
 
 return { verdict, bodyText, comments, log: logPayload }
 

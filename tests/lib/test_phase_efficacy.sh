@@ -218,6 +218,7 @@ test_reconstruction_round_trip_path_scope() {
     head=""
     path_scope=""
     for c in $candidates; do
+        # Three-dot on a merge commit yields the symmetric diff vs the merge base; linear history here so this is safe.
         changed_files=$(git -C "$REPO_ROOT" diff --name-only "${c}~1"..."${c}")
         file_count=$(echo "$changed_files" | grep -c .)
         if [ "$file_count" -ge 2 ]; then
@@ -258,7 +259,8 @@ test_reconstruction_round_trip_empty_tree() {
     assert_equals "$specialist_hash" "$recipe_hash" "empty-tree: recipe hash matches specialist two-arg diff"
     # Branch matters: empty-tree (two-arg) hash must differ from normal three-dot HEAD~1..HEAD hash.
     # If _pe_reconstruct_diff ignored empty_tree_mode and always used three-dot, fixture 3 would fail.
-    normal_hash=$(_pe_reconstruct_diff "$(git -C "$REPO_ROOT" rev-parse HEAD~1)" "$head" "false" "")
+    # Independent literal — NOT via the helper, so a correlated helper bug cannot produce a false pass.
+    normal_hash=$(git -C "$REPO_ROOT" diff "$(git -C "$REPO_ROOT" rev-parse HEAD~1)"..."$head" | git -C "$REPO_ROOT" hash-object --stdin)
     if [ "$recipe_hash" != "$normal_hash" ]; then
         pass "empty-tree: two-arg hash differs from three-dot HEAD~1..HEAD (empty_tree_mode branch is exercised)"
     else

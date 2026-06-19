@@ -206,11 +206,13 @@ test_reconstruction_round_trip_normal() {
 }
 
 # Fixture 2: three-dot with path scope.
+# Uses HEAD~2..HEAD~1 (which always has ≥2 changed files on this branch) so
+# scoping to one file genuinely narrows the diff.
 test_reconstruction_round_trip_path_scope() {
     local base head path_scope specialist_hash recipe_hash unscoped_hash
-    base=$(git -C "$REPO_ROOT" rev-parse HEAD~1)
-    head=$(git -C "$REPO_ROOT" rev-parse HEAD)
-    # A real path that changed in HEAD~1..HEAD (confirmed at authoring time).
+    base=$(git -C "$REPO_ROOT" rev-parse HEAD~2)
+    head=$(git -C "$REPO_ROOT" rev-parse HEAD~1)
+    # A real path that changed in HEAD~2..HEAD~1 (confirmed at authoring time).
     path_scope="tests/lib/test_phase_efficacy.sh"
     # Specialist's literal command (spec §44 three-dot + §46 path scope).
     specialist_hash=$(git -C "$REPO_ROOT" diff "$base"..."$head" -- "$path_scope" | git -C "$REPO_ROOT" hash-object --stdin)

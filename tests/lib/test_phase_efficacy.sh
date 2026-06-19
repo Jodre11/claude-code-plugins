@@ -206,15 +206,32 @@ test_reconstruction_round_trip_normal() {
 }
 
 # Fixture 2: three-dot with path scope.
-# Uses pinned SHAs (65198f2..bfcd3c1) which always have ≥2 changed files so
-# scoping to one file genuinely narrows the diff regardless of future commits.
+# Discovers a commit at runtime whose diff touches ≥2 files (merge-proof: no
+# specific SHA is pinned). Scoping to one of those files genuinely narrows the
+# diff, so the scoped-hash != unscoped-hash assertion is always meaningful.
 test_reconstruction_round_trip_path_scope() {
     local base head path_scope specialist_hash recipe_hash unscoped_hash
-    # Pinned: feat/capture-per-cog-cross-review-IO → feat/capture-synth-cog-round2-union
-    base="65198f2"
-    head="bfcd3c1"
-    # A real path that changed in 65198f2..bfcd3c1 (confirmed at authoring time).
-    path_scope="tests/lib/test_phase_efficacy.sh"
+    local candidates c changed_files file_count first_file
+    # Walk recent history looking for a commit that touches ≥2 files.
+    candidates=$(git -C "$REPO_ROOT" rev-list --max-count=50 HEAD)
+    base=""
+    head=""
+    path_scope=""
+    for c in $candidates; do
+        changed_files=$(git -C "$REPO_ROOT" diff --name-only "${c}~1"..."${c}")
+        file_count=$(echo "$changed_files" | grep -c .)
+        if [ "$file_count" -ge 2 ]; then
+            first_file=$(echo "$changed_files" | head -n 1)
+            base="${c}~1"
+            head="$c"
+            path_scope="$first_file"
+            break
+        fi
+    done
+    if [ -z "$head" ]; then
+        fail "path-scope: discovery" "no commit in the last 50 touches ≥2 files — fixture cannot run"
+        return
+    fi
     # Specialist's literal command (spec §44 three-dot + §46 path scope).
     specialist_hash=$(git -C "$REPO_ROOT" diff "$base"..."$head" -- "$path_scope" | git -C "$REPO_ROOT" hash-object --stdin)
     # Recipe output from meta keys.

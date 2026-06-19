@@ -267,3 +267,39 @@ test_reconstruction_round_trip_empty_tree() {
         fail "empty-tree: two-arg hash differs from three-dot HEAD~1..HEAD (empty_tree_mode branch is exercised)" "hashes identical — empty_tree_mode has no effect"
     fi
 }
+
+test_schema_documents_cog_payload() {
+    local cr schema
+    cr=$(_pe_cr_dir)
+    schema="$cr/includes/finding-schema.json"
+    # log.meta documented.
+    if jq -e '.["$defs"].sealedBundle.properties.log.properties.meta' "$schema" >/dev/null 2>&1; then
+        pass "log.meta documented in schema"
+    else
+        fail "log.meta documented in schema" "missing meta in log payload"
+    fi
+    # log.cogs documented as an array.
+    if [[ "$(jq -r '.["$defs"].sealedBundle.properties.log.properties.cogs.type' "$schema" 2>/dev/null)" == "array" ]]; then
+        pass "log.cogs documented as array"
+    else
+        fail "log.cogs documented as array" "cogs missing or not array"
+    fi
+    # meta/cogs MUST NOT be in log.required (omitted on lightweight/no-capture).
+    if jq -e '.["$defs"].sealedBundle.properties.log.required | index("cogs")' "$schema" >/dev/null 2>&1; then
+        fail "log.cogs is optional" "cogs wrongly listed in log.required"
+    else
+        pass "log.cogs is optional (not in required)"
+    fi
+}
+
+test_both_hosts_document_cog_jsonl() {
+    local cr file
+    cr=$(_pe_cr_dir)
+    for file in skills/review-gh-pr/SKILL.md commands/pre-review.md; do
+        if grep -qF '"type":"meta"' "$cr/$file" && grep -qF 'empty_tree_mode' "$cr/$file" && grep -qF '"type":"cog"' "$cr/$file"; then
+            pass "host documents per-cog JSONL: $file"
+        else
+            fail "host documents per-cog JSONL: $file" "missing meta reconstruction keys or cog line in writer block"
+        fi
+    done
+}

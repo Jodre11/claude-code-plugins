@@ -144,3 +144,104 @@ test_phaselog_captures_round2_union_when_gate_fires() {
     # cross2 namespace populated and distinct from cross.
     assert_equals "8" "$(echo "$out" | jq '[.log.cogs[] | select(.phase=="cross2")] | length')" "8 cross2 cogs (round-2 cross-review)"
 }
+
+# ---------------------------------------------------------------------------
+# Replay contract: pins the diff-reconstruction recipe documented in
+# specialist-context.md so that a specialist can always regenerate its exact
+# input from the four durable meta keys (base, head_sha, empty_tree_mode,
+# path_scope). If the diff syntax that specialists use ever changes, BOTH this
+# test AND the spec's reconstruction recipe in specialist-context.md must change
+# in lockstep.
+#
+# The helper below encodes the recipe. Each test_* function below derives its
+# "specialist's actual command" side INDEPENDENTLY (literal git commands written
+# per specialist-context.md) so the two sides can genuinely diverge if the
+# recipe drifts.
+# ---------------------------------------------------------------------------
+
+# Encode the reconstruction recipe from specialist-context.md §44-46.
+# $1=base $2=head_sha $3=empty_tree_mode (true|false) $4=path_scope (may be empty)
+# Emits the diff piped through git hash-object --stdin.
+_pe_reconstruct_diff() {
+    local base head_sha empty_tree_mode path_scope hash
+    base="$1"
+    head_sha="$2"
+    empty_tree_mode="$3"
+    path_scope="$4"
+    if [ "$empty_tree_mode" = "true" ]; then
+        # Two-arg syntax for empty-tree mode (spec §44).
+        if [ -n "$path_scope" ]; then
+            hash=$(git -C "$REPO_ROOT" diff "$base" "$head_sha" -- "$path_scope" | git -C "$REPO_ROOT" hash-object --stdin)
+        else
+            hash=$(git -C "$REPO_ROOT" diff "$base" "$head_sha" | git -C "$REPO_ROOT" hash-object --stdin)
+        fi
+    else
+        # Three-dot syntax for normal mode (spec §44).
+        if [ -n "$path_scope" ]; then
+            hash=$(git -C "$REPO_ROOT" diff "$base"..."$head_sha" -- "$path_scope" | git -C "$REPO_ROOT" hash-object --stdin)
+        else
+            hash=$(git -C "$REPO_ROOT" diff "$base"..."$head_sha" | git -C "$REPO_ROOT" hash-object --stdin)
+        fi
+    fi
+    echo "$hash"
+}
+
+# Fixture 1: normal three-dot, no path scope.
+test_reconstruction_round_trip_normal() {
+    local base head specialist_hash recipe_hash unscoped_diff
+    base=$(git -C "$REPO_ROOT" rev-parse HEAD~1)
+    head=$(git -C "$REPO_ROOT" rev-parse HEAD)
+    # Specialist's literal command (specialist-context.md §44: three-dot when empty_tree_mode=false).
+    specialist_hash=$(git -C "$REPO_ROOT" diff "$base"..."$head" | git -C "$REPO_ROOT" hash-object --stdin)
+    # Recipe output from meta keys.
+    recipe_hash=$(_pe_reconstruct_diff "$base" "$head" "false" "")
+    assert_equals "$specialist_hash" "$recipe_hash" "normal: recipe hash matches specialist three-dot diff"
+    # Diff must be non-empty (HEAD~1..HEAD always has content).
+    unscoped_diff=$(git -C "$REPO_ROOT" diff "$base"..."$head")
+    if [ -n "$unscoped_diff" ]; then
+        pass "normal: HEAD~1..HEAD diff is non-empty"
+    else
+        fail "normal: HEAD~1..HEAD diff is non-empty" "diff was empty — fixture assumption broken"
+    fi
+}
+
+# Fixture 2: three-dot with path scope.
+test_reconstruction_round_trip_path_scope() {
+    local base head path_scope specialist_hash recipe_hash unscoped_hash
+    base=$(git -C "$REPO_ROOT" rev-parse HEAD~1)
+    head=$(git -C "$REPO_ROOT" rev-parse HEAD)
+    # A real path that changed in HEAD~1..HEAD (confirmed at authoring time).
+    path_scope="tests/lib/test_phase_efficacy.sh"
+    # Specialist's literal command (spec §44 three-dot + §46 path scope).
+    specialist_hash=$(git -C "$REPO_ROOT" diff "$base"..."$head" -- "$path_scope" | git -C "$REPO_ROOT" hash-object --stdin)
+    # Recipe output from meta keys.
+    recipe_hash=$(_pe_reconstruct_diff "$base" "$head" "false" "$path_scope")
+    assert_equals "$specialist_hash" "$recipe_hash" "path-scope: recipe hash matches specialist scoped diff"
+    # Scoping must actually narrow the diff — scoped hash must differ from unscoped.
+    unscoped_hash=$(git -C "$REPO_ROOT" diff "$base"..."$head" | git -C "$REPO_ROOT" hash-object --stdin)
+    if [ "$recipe_hash" != "$unscoped_hash" ]; then
+        pass "path-scope: scoped diff differs from unscoped (-- pathspec is applied)"
+    else
+        fail "path-scope: scoped diff differs from unscoped (-- pathspec is applied)" "hashes identical — path scope had no effect"
+    fi
+}
+
+# Fixture 3: empty-tree two-arg mode (and branch-matters proof).
+test_reconstruction_round_trip_empty_tree() {
+    local empty_tree head specialist_hash recipe_hash normal_hash
+    empty_tree="4b825dc642cb6eb9a060e54bf8d69288fbee4904"
+    head=$(git -C "$REPO_ROOT" rev-parse HEAD)
+    # Specialist's literal command (spec §44: two-arg when empty_tree_mode=true).
+    specialist_hash=$(git -C "$REPO_ROOT" diff "$empty_tree" "$head" | git -C "$REPO_ROOT" hash-object --stdin)
+    # Recipe output from meta keys.
+    recipe_hash=$(_pe_reconstruct_diff "$empty_tree" "$head" "true" "")
+    assert_equals "$specialist_hash" "$recipe_hash" "empty-tree: recipe hash matches specialist two-arg diff"
+    # Branch matters: empty-tree (two-arg) hash must differ from normal three-dot HEAD~1..HEAD hash.
+    # If _pe_reconstruct_diff ignored empty_tree_mode and always used three-dot, fixture 3 would fail.
+    normal_hash=$(_pe_reconstruct_diff "$(git -C "$REPO_ROOT" rev-parse HEAD~1)" "$head" "false" "")
+    if [ "$recipe_hash" != "$normal_hash" ]; then
+        pass "empty-tree: two-arg hash differs from three-dot HEAD~1..HEAD (empty_tree_mode branch is exercised)"
+    else
+        fail "empty-tree: two-arg hash differs from three-dot HEAD~1..HEAD (empty_tree_mode branch is exercised)" "hashes identical — empty_tree_mode has no effect"
+    fi
+}

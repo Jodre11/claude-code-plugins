@@ -1363,10 +1363,15 @@ Present the synthesiser's formatted report to the user.
 #### Step 7a: Durable full log (opt-in, default OFF)
 
 The full unfiltered analytical record is a fine-tuning instrument with a finite
-useful life. It is **off by default**. Write it ONLY when
-`orchestration.full_log = true` in `.claude/code-review.toml` (read the file the same
-way as `intent.doc_paths`; treat a missing/malformed file as `false`). When off, skip
-this entire step — write nothing.
+useful life. It is **off by default**. Resolve `orchestration.full_log` from two config
+layers, first match wins: (1) the reviewed repo's `.claude/code-review.toml`, then
+(2) the user-level `~/.claude/code-review.toml`. Read each file the same way as
+`intent.doc_paths`; treat a missing/malformed file as not setting the key, and fall
+through to the next layer. If neither layer sets the key, the value is `false`. An
+explicit `false` in the repo-level file wins over a `true` in the user-level file (a
+repo can opt out). The user-level file is a per-machine override that never ships with
+the plugin, so consumers without it get `false`. Write the log ONLY when the resolved
+value is `true`. When off, skip this entire step — write nothing.
 
 When on, and when the bundle carries a `log` payload (`bundle.log`):
 

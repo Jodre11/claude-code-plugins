@@ -1293,13 +1293,19 @@ When on, and when the bundle carries a `log` payload (`bundle.log`):
    `$LOG_TS` is the current UTC time in ISO-8601 (the host stamps it; e.g.
    `date -u +%Y-%m-%dT%H:%M:%SZ`).
 
-4. Write the JSONL record to the sibling `.jsonl` file. The FIRST line is the meta
-   record, then one line per `bundle.log.findings[]` entry, then the per-phase rows the
-   orchestrator already holds from `$CLAUDE_TEMP_DIR/tokens.jsonl`:
+4. Write the JSONL record to the sibling `.jsonl` file, one JSON object per line in this order:
+   the meta record (with diff-reconstruction keys), then one `cog` line per `bundle.log.cogs[]`
+   entry, then one line per `bundle.log.findings[]` entry, then the per-phase token rows the
+   orchestrator holds from `$CLAUDE_TEMP_DIR/tokens.jsonl`:
 
    ```jsonl
-   {"type":"meta","plugin_sha":"$PLUGIN_SHA","ts":"$LOG_TS"}
+   {"type":"meta","plugin_sha":"$PLUGIN_SHA","ts":"$LOG_TS","base":"...","head_sha":"...","empty_tree_mode":false,"path_scope":""}
+   {"type":"cog","phase":"round1","domain":"correctness","output":{"findings":[]}}
    ```
+
+   The `meta` line's `base`/`head_sha`/`empty_tree_mode`/`path_scope` come from
+   `bundle.log.meta`; emit one `{"type":"cog",...}` line per `bundle.log.cogs[]` entry verbatim.
+   When `bundle.log.cogs` is absent (lightweight path), write only meta + finding + phase rows.
 
 The durable log is NEVER posted to GitHub and NEVER committed — it is analysis exhaust
 that may contain finding text from private repos. Local mode posts nothing; the durable

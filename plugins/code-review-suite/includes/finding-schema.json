@@ -98,6 +98,32 @@
                   "verdict_relevant": { "type": "boolean" }
                 }
               }
+            },
+            "meta": {
+              "type": "object",
+              "description": "Reconstruction keys for the per-cog corpus. The diff is regenerated from these, never stored. Present only when full_log captured per-cog I/O.",
+              "additionalProperties": false,
+              "properties": {
+                "base": { "type": "string" },
+                "head_sha": { "type": "string" },
+                "empty_tree_mode": { "type": "boolean" },
+                "path_scope": { "type": "string" }
+              }
+            },
+            "cogs": {
+              "type": "array",
+              "description": "Per-cog I/O records: each specialist, cross-reviewer, the synthesiser, and (when the boundary gate fired) round-2/union. input omitted on round-1 cogs (diff reconstructed from meta).",
+              "items": {
+                "type": "object",
+                "additionalProperties": true,
+                "required": ["phase", "output"],
+                "properties": {
+                  "phase": { "enum": ["round1", "cross", "round2", "cross2", "union", "synth"] },
+                  "domain": { "type": "string" },
+                  "input": { "type": "object" },
+                  "output": { "type": "object" }
+                }
+              }
             }
           }
         }

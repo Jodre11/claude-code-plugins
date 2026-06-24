@@ -24,7 +24,19 @@ specialists skip most of this file. Keep the two copies in sync. -->
 
 ## Context Gathering
 
-Determine the base branch, then gather the diff and changed files yourself.
+Determine the target repository first, then the base branch, then gather the diff and
+changed files yourself.
+
+### Determine the target repository
+
+If a `Repo dir: <abs-path>` line is present in `$ARGUMENTS`, store the path after the
+colon as `$REPO_DIR`. Otherwise set `$REPO_DIR` to the current working directory. Then
+apply this rule to EVERY command below: run every `git` invocation as
+`git -C "$REPO_DIR" …`, and read every repo file (e.g. `CLAUDE.md`,
+`severity-definitions.md`) from under `$REPO_DIR`. The bare `git` and bare file paths
+written below are shorthand — the `-C "$REPO_DIR"` / `$REPO_DIR/` prefix is mandatory so
+the review measures the repository the pipeline targeted, not whatever directory you
+happen to be in. When `$REPO_DIR` is the current working directory this is a no-op.
 
 ### Determine base branch
 
@@ -102,8 +114,8 @@ block in normal operation.
 
 1. Run `git diff --name-only` to get changed files (append `-- "$PATH_SCOPE"` if set). Use the diff syntax determined by `$EMPTY_TREE_MODE` (two-arg when true, three-dot when false). If empty, report "No changes found against $BASE" and stop.
 2. Run `git diff` to get the full diff (append `-- "$PATH_SCOPE"` if set). Use the same diff syntax as above.
-3. Read `CLAUDE.md` in the repo root (if it exists) for project conventions.
-4. Read `includes/severity-definitions.md` (if it exists) for the severity classification definitions to apply when assigning severity to findings.
+3. Read `$REPO_DIR/CLAUDE.md` (the target repo root, if it exists) for project conventions.
+4. Read `includes/severity-definitions.md` (if it exists) for the severity classification definitions to apply when assigning severity to findings. (This is the plugin's own file, resolved relative to the plugin — NOT under `$REPO_DIR`.)
 5. Read each changed file for full context. If more than 20 files changed, prioritise non-test source files with the largest diffs. Skip generated files, lock files, and vendored dependencies.
 
 ### Output line filter

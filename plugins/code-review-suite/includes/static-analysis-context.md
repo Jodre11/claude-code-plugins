@@ -40,12 +40,20 @@ branch" section is inherited). Keep the two copies in sync.
 
 ## 1. Inherit base context
 
-Follow the "Determine base branch" section of `includes/specialist-context.md` to resolve `$BASE`,
-`$HEAD_SHA`, `$EMPTY_TREE_MODE`, `$PATH_SCOPE`, and `$CHANGED_LINES`. Skip the "Gather context"
+Follow the "Determine the target repository" and "Determine base branch" sections of
+`includes/specialist-context.md` to resolve `$REPO_DIR`, `$BASE`, `$HEAD_SHA`,
+`$EMPTY_TREE_MODE`, `$PATH_SCOPE`, and `$CHANGED_LINES`. Skip the "Gather context"
 pass (full diff, CLAUDE.md, file reads) — static-analysis specialists only need the file list.
 
-Run `git diff --name-only` to get the changed file list. Use the diff syntax determined by
-`$EMPTY_TREE_MODE` (two-arg when true, three-dot when false).
+Apply `$REPO_DIR` to EVERY command below: run every `git` invocation as
+`git -C "$REPO_DIR" …`, and point the analysis tool at the work-tree under `$REPO_DIR`
+(resolve solution/config roots beneath it; use the tool's working-directory flag, or
+`git -C "$REPO_DIR" rev-parse --show-toplevel` to anchor the scan). When `$REPO_DIR` is
+the current working directory this is a no-op — it is what lets a static-analysis pass
+target a repository other than the current directory.
+
+Run `git -C "$REPO_DIR" diff --name-only` to get the changed file list. Use the diff syntax
+determined by `$EMPTY_TREE_MODE` (two-arg when true, three-dot when false).
 
 ## 2. File-extension early exit
 

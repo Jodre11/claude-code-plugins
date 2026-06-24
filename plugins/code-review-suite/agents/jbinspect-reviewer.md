@@ -25,7 +25,7 @@ Filter the changed file list to `*.cs` files. If none match, emit the canonical 
 
 The repo may contain multiple `.sln` files. Determine which solutions are affected by the diff:
 
-1. Run `find . -name '*.sln' -not -path '*/bin/*' -not -path '*/obj/*'` to locate all solution files.
+1. Run `find "$REPO_DIR" -name '*.sln' -not -path '*/bin/*' -not -path '*/obj/*'` to locate all solution files (`$REPO_DIR` from `includes/static-analysis-context.md` §1 — the target repo, which may differ from the current directory).
 2. If exactly one `.sln` exists, use it.
 3. If multiple `.sln` files exist, scope to only affected solutions:
    a. For each changed `.cs` file, find its containing `.csproj` by walking up the directory tree (look for the nearest `*.csproj`).

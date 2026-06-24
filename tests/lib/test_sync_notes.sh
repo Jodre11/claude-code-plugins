@@ -742,6 +742,95 @@ test_sync_agent_prompt_empty_tree_mode_uses_variable() {
     done
 }
 
+test_sync_agent_prompt_includes_repo_dir_line() {
+    local cr
+    cr=$(_cr_dir)
+    if [[ ! -d "$cr" ]]; then
+        skip "AGENT_PROMPT Repo dir line" "code-review-suite plugin not found"
+        return
+    fi
+
+    # The $AGENT_PROMPT template (Step 2.9 canonical + 2 inlined copies) must carry a
+    # "Repo dir: $REPO_DIR" line so specialists learn which repo to operate on. Extract
+    # the fenced AGENT_PROMPT block and assert the line is present and interpolated
+    # (literal "$REPO_DIR", not a hardcoded path).
+    local file
+    for file in \
+        "$cr/includes/review-pipeline.md" \
+        "$cr/commands/pre-review.md" \
+        "$cr/skills/review-gh-pr/SKILL.md"; do
+
+        local basename_file
+        basename_file=$(basename "$file")
+
+        if [[ ! -f "$file" ]]; then
+            fail "AGENT_PROMPT Repo dir line: $basename_file" "file not found"
+            continue
+        fi
+
+        local block
+        block=$(awk '
+            /Define `\$AGENT_PROMPT`/ { in_block = 1 }
+            in_block && /^```$/ {
+                if (saw_fence) { in_block = 0 } else { saw_fence = 1 }
+                next
+            }
+            in_block && saw_fence { print }
+        ' "$file")
+
+        if [[ -z "$block" ]]; then
+            fail "AGENT_PROMPT Repo dir line: $basename_file" "AGENT_PROMPT fenced block not found"
+            continue
+        fi
+
+        if echo "$block" | grep -qE '^Repo dir: \$REPO_DIR$'; then
+            pass "AGENT_PROMPT Repo dir line: $basename_file carries 'Repo dir: \$REPO_DIR'"
+        else
+            fail "AGENT_PROMPT Repo dir line: $basename_file carries 'Repo dir: \$REPO_DIR'" \
+                "the AGENT_PROMPT template must include a 'Repo dir: \$REPO_DIR' line so specialists run git -C against the target repo; absent or hardcoded means cross-repo review silently falls back to cwd"
+        fi
+    done
+}
+
+test_sync_phase_minus1_target_repo_present() {
+    local cr
+    cr=$(_cr_dir)
+    if [[ ! -d "$cr" ]]; then
+        skip "Phase -1 target repository" "code-review-suite plugin not found"
+        return
+    fi
+
+    # The Phase -1 governing directive must exist in the canonical (the pipeline inline
+    # sync test then enforces byte-identical propagation to the two consumers). Assert
+    # the heading and the two load-bearing rules are present.
+    local canonical="$cr/includes/review-pipeline.md"
+    if [[ ! -f "$canonical" ]]; then
+        fail "Phase -1 target repository" "review-pipeline.md not found"
+        return
+    fi
+
+    if grep -qE '^## Phase -1: Target repository$' "$canonical"; then
+        pass "Phase -1 target repository: section heading present"
+    else
+        fail "Phase -1 target repository: section heading present" \
+            "review-pipeline.md must contain '## Phase -1: Target repository' before Phase 0 — it resolves \$REPO_DIR and \$OWNER_REPO once and governs git -C / gh --repo for the whole pipeline"
+    fi
+
+    if grep -qF 'git -C "$REPO_DIR"' "$canonical"; then
+        pass "Phase -1 target repository: mandates git -C \$REPO_DIR"
+    else
+        fail "Phase -1 target repository: mandates git -C \$REPO_DIR" \
+            "Phase -1 must instruct running every git command as 'git -C \"\$REPO_DIR\"' — without it the bare-git call sites operate on cwd"
+    fi
+
+    if grep -qF -- '--repo "$OWNER_REPO"' "$canonical"; then
+        pass "Phase -1 target repository: mandates gh --repo \$OWNER_REPO"
+    else
+        fail "Phase -1 target repository: mandates gh --repo \$OWNER_REPO" \
+            "Phase -1 must instruct passing '--repo \"\$OWNER_REPO\"' to gh — without it gh infers owner/repo from cwd's remote"
+    fi
+}
+
 test_sync_static_analysis_cross_feed_documented() {
     local cr
     cr=$(_cr_dir)

@@ -123,7 +123,7 @@ const CROSS_SCHEMA = {
 const resolvedArgs = typeof args === 'string' ? JSON.parse(args) : args
 const {
     agentPrompt, flags, route, selfReReview, reviewMode,
-    base, headSha, emptyTreeMode, pathScope, tempDir, intentLedger,
+    base, headSha, emptyTreeMode, pathScope, tempDir, intentLedger, repoDir,
 } = resolvedArgs
 
 // Per-cog capture accumulator (full_log corpus). Write-only during the run;
@@ -353,6 +353,7 @@ async function crossAndSynth(findingsByDomain, resampled) {
 
   const synthPrompt =
     `ultrathink\n\n` +
+    (repoDir ? `Repo dir: ${repoDir}\n` : ``) +
     `Base branch: ${base}\nHead SHA: ${headSha}\n` +
     (emptyTreeMode ? `Empty tree mode: true\n` : ``) +
     (pathScope ? `Path scope: ${pathScope}\n` : ``) +

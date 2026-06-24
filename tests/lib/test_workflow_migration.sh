@@ -332,3 +332,32 @@ test_review_core_threads_intent_ledger_to_synth() {
             "the synth prompt assembly must include a conditional (intentLedger ? ...) for the ledger block"
     fi
 }
+
+# repoDir must be threaded from args into the synth prompt so the synthesiser analyses
+# the target repository (not cwd) when the review targets a PR in another checkout.
+# Specialists receive repoDir via the host-built agentPrompt's "Repo dir:" line; the
+# synthesiser prompt is built inside review-core, so it needs its own injection.
+test_review_core_threads_repo_dir_to_synth() {
+    local cr
+    cr=$(_wm_cr_dir)
+    local wf="$cr/workflows/review-core.mjs"
+    if [[ ! -f "$wf" ]]; then
+        fail "review-core repoDir threading" "missing: $wf"
+        return
+    fi
+    # Assert repoDir appears in the args destructure.
+    if grep -qE 'repoDir,' "$wf" || grep -qE 'repoDir\s*\}' "$wf"; then
+        pass "review-core destructures repoDir from args"
+    else
+        fail "review-core destructures repoDir from args" \
+            "the args destructure must include repoDir so the synth prompt can target the right repo"
+    fi
+    # Direct check: the synthPrompt assembly references repoDir via a defensive ternary
+    # so the "Repo dir:" line is emitted only when a target repo was supplied.
+    if grep -qE 'repoDir\s*\?' "$wf"; then
+        pass "review-core interpolates repoDir into synth prompt (defensive ternary)"
+    else
+        fail "review-core interpolates repoDir into synth prompt (defensive ternary)" \
+            "the synth prompt assembly must include a conditional (repoDir ? ...) for the Repo dir line"
+    fi
+}

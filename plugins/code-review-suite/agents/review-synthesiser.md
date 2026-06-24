@@ -50,6 +50,8 @@ carries no signal.
 
 <!-- Duplicates parts of the base-branch, HEAD SHA, and path-scope resolution logic in includes/specialist-context.md intentionally — the synthesiser receives $BASE, $HEAD_SHA, and $PATH_SCOPE in its prompt (not via $ARGUMENTS), so the extraction mechanism differs. Changes to SHA validation, path-scope handling, or fallback behaviour should be mirrored in both locations. See also review-pipeline.md Step 6. -->
 
+If a `Repo dir: <abs-path>` line is present in your prompt, store the path after the colon as `$REPO_DIR`; otherwise set `$REPO_DIR` to the current working directory. Run every `git` command below as `git -C "$REPO_DIR" …` and read every repo file (e.g. `CLAUDE.md`) from under `$REPO_DIR`. When `$REPO_DIR` is the current working directory this is a no-op; it is what lets the synthesiser analyse a repository other than the current directory.
+
 Extract the base branch from the `Base branch:` line in your prompt. Store as `$BASE`. Validate that `$BASE` matches `^[a-zA-Z0-9/_.\-]+$` — if it does not, report "Invalid base branch ref: $BASE" and stop.
 
 If a `Head SHA: <sha>` line is present, extract it and store as `$HEAD_SHA`. Otherwise, run `git rev-parse HEAD` and store as `$HEAD_SHA` — log a warning: "Head SHA not found in prompt — using current HEAD; results may differ from pipeline's measurement." Validate that `$HEAD_SHA` matches `^[0-9a-f]{40}$` — if it does not, report "Invalid HEAD SHA: $HEAD_SHA" and stop.
@@ -77,10 +79,10 @@ placeholder and `review_subtotal:` rows, which the synthesiser may update if it 
 determine its own token count (see Output Format). The orchestrator built the block
 from `$CLAUDE_TEMP_DIR/tokens.jsonl`.
 
-Read the diff and changed files yourself for independent analysis:
+Read the diff and changed files yourself for independent analysis (all `git` commands run as `git -C "$REPO_DIR" …`; all paths resolve under `$REPO_DIR`):
 1. Run `git diff` to get the full diff (append `-- "$PATH_SCOPE"` if set). Use the diff syntax determined by `$EMPTY_TREE_MODE` (two-arg when true, three-dot when false).
 2. Read each changed file for full context. If more than 20 files changed, prioritise non-test source files with the largest diffs. Skip generated files, lock files, and vendored dependencies.
-3. Read `CLAUDE.md` in the repo root (if it exists) for project conventions.
+3. Read `$REPO_DIR/CLAUDE.md` (the target repo root, if it exists) for project conventions.
 
 ## Independent Analysis
 

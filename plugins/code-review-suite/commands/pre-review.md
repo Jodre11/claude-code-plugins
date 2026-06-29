@@ -894,9 +894,8 @@ The durable log is NEVER posted to GitHub and NEVER committed — it is analysis
 that may contain finding text from private repos. Local mode posts nothing; the durable
 log is the only persisted artefact.
 
-**Workflow-bundle short-circuit (when $USE_WORKFLOW):** If `$USE_WORKFLOW` is true
-(set in Step 3.5), the `review-core` Workflow returned the sealed bundle
-`{ verdict, bodyText, comments }`. In local (pre-review) mode the bundle's `verdict`
-is `NONE` and `comments` is empty by construction. Print `bundle.bodyText` to stdout
-as the presented report and post NOTHING — local mode never posts. Do NOT re-derive
-or re-render the bundle; the core already constructed `bodyText`.
+**Presenting the bundle.** The `review-core` Workflow (Step 3.5) returned the sealed
+bundle `{ verdict, bodyText, comments }`. In local (pre-review) mode the bundle's
+`verdict` is `NONE` and `comments` is empty by construction. Print `bundle.bodyText`
+to stdout as the presented report and post NOTHING — local mode never posts. Do NOT
+re-derive or re-render the bundle; the core already constructed `bodyText`.

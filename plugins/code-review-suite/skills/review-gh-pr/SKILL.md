@@ -1011,6 +1011,8 @@ After the review pipeline completes, also consider these PR-specific concerns th
 
 ## Step 3: Plan Comments
 
+The Workflow's bundle already filtered and rendered the comment set (`bundle.comments`); your job here is only to reconcile them against existing PR threads.
+
 Before adding comments, cross-reference findings against existing comments from other reviewers.
 
 **Handling existing comments — check resolution status first:**
@@ -1029,66 +1031,6 @@ Resolved threads are hidden on the PR conversation page. Replying to a resolved 
 - **If the point is already well-covered**: Skip it entirely
 
 **IMPORTANT:** Always check open comments for accuracy. Inaccurate or misleading comments must be disputed - do not let incorrect feedback stand unchallenged.
-
-### No-filter rule
-
-> **STOP. Read this before drafting comments.**
->
-> You are NOT authorised to drop a finding because it is low-confidence, low-severity,
-> jbinspect-only, stylistic, redundant-looking, "noise", "not worth raising",
-> "borderline", or "the user can triage it later". Surfacing is the reviewer's job;
-> triage is the author's. The synthesiser already applied the only legitimate filter
-> (its `Dismissed Findings` section).
->
-> The ONLY legal reasons to omit a finding from the outgoing comments are:
-> 1. **`dedup-with-#N`** — merged into another comment. The merged comment body MUST
->    cite both source domains by name (e.g. *"Flagged by both correctness and
->    efficiency …"*). Silent merges are forbidden.
-> 2. **`dismissed-by-synthesiser`** — listed verbatim in the synthesiser's `Dismissed
->    Findings` section. You may not invent your own dismissals.
-> 3. **`filtered-by-confidence (verdict APPROVE, confidence < 75)`** — applied
->    automatically by Class D of Step 6's Output filtering when the synthesiser's
->    verdict is APPROVE (or COMMENT via user override) and the finding's
->    confidence is below 75. This is mechanical, not judgement-driven; you do
->    NOT invent it on your own initiative.
->
-> Anything else — "I judged this trivial", "overlaps loosely with comment N",
-> "low signal" — is a pipeline violation. Re-add the finding before continuing.
-
-### Reconciliation table
-
-Build a row for **every numbered finding** in the synthesiser report. Do not start
-from a "comments I plan to post" list — start from the findings list. This ordering
-is deliberate: it makes dropped findings visible as empty rows rather than absences.
-
-| Finding # | Source domain | File:line | Outgoing comment ID | Rationale |
-|-----------|---------------|-----------|---------------------|-----------|
-| 1 | correctness | foo.cs:42 | C1 (new) | — |
-| 2 | efficiency | foo.cs:42 | C1 | dedup-with-#1 (merged: correctness + efficiency) |
-| 3 | style | bar.cs:10 | — | dismissed-by-synthesiser |
-| 4 | jbinspect | baz.cs:5 | C2 (new, file-level) | — |
-| 5 | consistency | qux.cs:88 | reply to existing #999 (open) | — |
-
-Rules for the table:
-- Every synthesiser finding number appears exactly once as a row.
-- `Outgoing comment ID` may be blank ONLY when `Rationale` is `dedup-with-#N`,
-  `dismissed-by-synthesiser`, or `filtered-by-confidence (verdict APPROVE,
-  confidence < 75)`. No other rationale is permitted.
-- For `dedup-with-#N`, row #N must point at the same `Outgoing comment ID` AND that
-  comment's body must name both source domains. Verify before posting.
-- For `dismissed-by-synthesiser`, the token `#N` (where `N` is the finding number)
-  must appear in the synthesiser's `Dismissed Findings` section. If it does not, you
-  cannot dismiss it.
-- Outgoing comment IDs are arbitrary local labels (C1, C2, …) that you will map to
-  GitHub comment IDs after posting in Step 5.
-
-After building the table, run this self-check before presenting it to the user:
-- `count(rows)` = `count(numbered findings in synthesiser report)`. If not equal,
-  you have lost or duplicated rows — fix before continuing.
-- Every blank `Outgoing comment ID` cell has a permitted rationale. If not, re-add
-  the comment.
-
-Present the reconciliation table to the user and ask if they want to proceed.
 
 ## Step 4: Re-check PR State Before Posting
 
@@ -1134,20 +1076,12 @@ If the plan changes materially, present the updated findings table to the user b
 
 ## Step 5: Add Inline Comments
 
+Iterate `bundle.comments[]` — each entry carries `path` plus either `line`/`side`
+(line-level) or `subjectType: "file"` (file-level). The Workflow already line-filtered
+and rendered every entry, so post them as-is; do not re-filter against any changed-line
+set or re-derive bodies.
+
 **IMPORTANT:** Only reply to **open (unresolved)** comment threads. Never reply to resolved threads — replies to resolved threads remain hidden and will be ignored. If a resolved thread contains an issue that is still present in the code, create a new standalone comment instead.
-
-**Posting-time safety net.** Before posting each inline comment, intersect the `file:line` against `$CHANGED_LINES` (still in scope from Step 2.5 of the pipeline). If the line is NOT in the file's changed-line set:
-
-- Drop the comment silently — do NOT post it
-- Append a record to `$CLAUDE_TEMP_DIR/dropped-findings.log` in this format:
-  `(specialist=<domain>, file=<path>, line=<N>, title=<finding-title>, reason=line-not-in-CHANGED_LINES)`
-- The reconciliation table from Step 3 still includes the row. The user-facing summary in Step 6 must NOT mention dropped comments — they represent specialist drift, not user-relevant findings.
-
-For `archaeology-reviewer` findings only, the `near N` token in `$CHANGED_LINES[file]` IS a valid anchor — when posting, use line `N` directly (the deletion-anchor line number) and the comment will land on the closest still-present line.
-
-The safety net is a defensive layer, not a primary filter. The primary filter is the `$CHANGED_LINES` rule passed to specialists (Step 2.9 of the pipeline). If the safety net catches more than ~5% of findings on any review, treat that as a signal that specialist prompts are not being followed — escalate to the user, do not silently scale.
-
-Note: in self-re-review mode (see Step 1 of this skill), Step 2.5 is not run and `$CHANGED_LINES` is unset — the safety net is a no-op in that case. The user's own review provides the line-anchoring discipline.
 
 **Comment API conventions:** Use `--input -` with a heredoc for the body to avoid shell quoting issues — comment bodies routinely contain single quotes, backticks, and other shell metacharacters from code snippets. The `--input` flag sends stdin as the `body` field. The heredoc uses a collision-resistant delimiter (`EOF_COMMENT_BODY`) to avoid premature termination if the comment body contains a common word like `BODY` on its own line. Use `-F` (not `-f`) for integer parameters (`line`, `in_reply_to`).
 
@@ -1242,29 +1176,6 @@ Should be changed to...
 
 The file attachment provides the link to the existing code - only include the suggested replacement.
 
-## Step 5.5: Post-Posting Reconciliation Check
-
-Before submitting the verdict in Step 6, verify mechanically that nothing was silently
-dropped during posting. This is a hard check, not an estimate.
-
-Compute these counts:
-- `F` = number of numbered findings in the synthesiser report
-- `R` = number of rows in the reconciliation table from Step 3
-- `C` = number of comments actually posted in Step 5 (count successful `gh api ... pulls/{pr}/comments` calls — store the IDs as you post and count them here)
-- `D` = number of rows whose rationale is `dedup-with-#N`
-- `X` = number of rows whose rationale is `dismissed-by-synthesiser`
-- `P` = number of rows whose rationale is `filtered-by-confidence (verdict APPROVE, confidence < 75)` — populated by Class D of Step 6 when the verdict is APPROVE or COMMENT (user override); zero otherwise
-
-Assertions — ALL must hold:
-1. `R == F` — every finding has a row.
-2. `C == R - D - X - P` — every non-deduped, non-dismissed, non-confidence-filtered row produced exactly one comment.
-3. Every `dedup-with-#N` row's outgoing comment body cites both source domains by name.
-4. Every `dismissed-by-synthesiser` row's finding number `N` appears as the token `#N` in the synthesiser's `Dismissed Findings` section (e.g. `#3` for finding 3, matching the synthesiser's `### Finding #N — ...` header format).
-
-If any assertion fails, STOP. Do not submit the verdict. Report the specific gap to
-the user (e.g. `R=26, C=20, D=4, X=0, P=0 — expected C=22, missing 2 comments`) and
-fix before proceeding. You may not rationalise around a count mismatch; surface it.
-
 ## Step 6: Submit Review Verdict
 
 The synthesiser is the sole authority for the PR review verdict. The orchestrator
@@ -1278,149 +1189,38 @@ the user can override the proposed action; the user's `[c]` keypress under the
 `REQUEST_CHANGES` prompt is the only path to a `COMMENT` submission. This is the
 documented caveat to synthesiser-as-sole-authority.
 
-### Step 6.0 — Workflow-bundle short-circuit (when $USE_WORKFLOW)
-
-If `$USE_WORKFLOW` is true (set in Step 3.5), the `review-core` Workflow already
-returned a sealed bundle `{ verdict, bodyText, comments }`. The bundle is the sole
-input to this step — the inline Steps 4–6 did not run, so there is no synthesiser
-markdown to parse. In this branch:
+The `review-core` Workflow (Step 3.5) returned a sealed bundle
+`{ verdict, bodyText, comments }`. The bundle is the sole input to this step — there
+is no synthesiser markdown to parse. The bundle drives the rest of Step 6:
 
 - `$SYNTH_VERDICT = bundle.verdict` — read the verdict directly from the bundle.
-  SKIP the Class A.1 markdown `## Verdict` parse entirely; there is no synthesiser
-  report to scan on this path.
 - **`bundle.verdict == 'NONE'` (lightweight PR path).** `review-core`'s
   `buildLightweightBundle` returns `verdict: 'NONE'` when Step 3.5 resolved
   `route` to `lightweight`. In that case: present `bundle.bodyText` to the user
   and STOP — do NOT run the Class A prompt, do NOT post inline comments, do NOT
-  submit a `gh pr review` verdict. This faithfully reproduces today's inline
-  lightweight behaviour ("present its report and stop" — Step 3), so `--workflow`
-  introduces no posting on the lightweight path. (The trivial/lightweight/full
-  paths producing divergent posted output is a known pre-existing issue, tracked
-  separately — it is out of scope for this migration.)
-- The Class A user-confirmation prompt (A.2/A.3) STILL RUNS for an `APPROVE` /
-  `REQUEST_CHANGES` verdict — the human gate is preserved (design D6). Set
+  submit a `gh pr review` verdict. (The trivial/lightweight/full paths producing
+  divergent posted output is a known pre-existing issue, tracked separately — it
+  is out of scope for this migration.)
+- For an `APPROVE` / `REQUEST_CHANGES` verdict, the Class A user-confirmation
+  prompt (A.2/A.3) STILL RUNS — the human gate is preserved (design D6). Set
   `$PROPOSED_ACTION = bundle.verdict`; the `[s]` / `[r]` / `[n]` (and `[c]` under a
-  `REQUEST_CHANGES` prompt) override semantics are unchanged. Note that the bundle
-  does NOT carry the rubric row, so `$SYNTH_RUBRIC_ROW` is unset on this path and
-  the prompt's `Rubric row …` line renders blank — the verdict and its reason
-  still display normally.
-- SKIP Class D entirely (D.1–D.4). The bundle's `comments[]` is already the
-  filtered, rendered post-set, and `bundle.bodyText` is already the constructed
-  GitHub body (Cost/Dismissed stripped; no withheld-count footer — omitted
-  findings are simply absent). Do NOT re-filter or re-render either.
+  `REQUEST_CHANGES` prompt) override semantics are unchanged. The bundle does NOT
+  carry the rubric row, so `$SYNTH_RUBRIC_ROW` is unset and the prompt's
+  `Rubric row …` line renders blank — the verdict and its reason still display
+  normally.
+- The bundle's `comments[]` is already the filtered, rendered post-set, and
+  `bundle.bodyText` is already the constructed GitHub body. Do NOT re-filter or
+  re-render either.
 - Class C posting consumes the bundle directly: post each `bundle.comments[i]` as an
   inline comment — a line-level comment when the entry has `line`/`side`, or a
   **file-level** comment (`subject_type=file`, no line/side) when the entry has
   `subjectType: "file"`. Then submit `bundle.bodyText` as the `gh pr review --input -`
   body, using the review flag chosen from `$FINAL_VERDICT`.
 
-If `$USE_WORKFLOW` is false, proceed with the existing Class A–D flow below
-UNCHANGED — that flow is the `$USE_WORKFLOW == false` path.
-
-<!-- VERDICT RUBRIC — inlined from includes/verdict-rubric.md (canonical source).
-Edit the include first, then propagate to all listed consumers. -->
-
-### Verdict rubric (PR mode only, first match wins)
-
-| # | Condition | Verdict |
-|---|---|---|
-| 1 | Intent-ledger states a `goal` AND any consensus finding indicates the goal is not achieved | `REQUEST_CHANGES` |
-| 2 | Any consensus **Critical** finding (at any confidence) | `REQUEST_CHANGES` |
-| 3 | Any consensus **Important** finding with confidence ≥ 70 | `REQUEST_CHANGES` |
-| 4 | Otherwise | `APPROVE` |
-
-The synthesiser produces only `APPROVE` or `REQUEST_CHANGES`. `COMMENT` is
-never a synthesiser output, and the orchestrator never auto-downgrades a synth
-verdict to `COMMENT`. The only route to a `COMMENT` verdict is an explicit user
-override at the Class A confirmation prompt.
-
-By construction under `APPROVE`:
-- Either no `goal` was stated in the intent ledger, or no consensus finding
-  indicates the goal is not achieved (row 1 did not fire).
-- No Critical findings exist (row 2 caught them).
-- Important findings only exist below confidence 70 (row 3 caught the rest).
-- Suggestions exist at any confidence.
-
-In `local` (pre-review) mode the rubric does not apply: pre-review produces no
-verdict — the human reader decides what (if anything) to act on. The synthesiser
-emits no `Verdict:` line in local mode.
-
-### Posting policy (orchestrator, mechanical)
-
-The orchestrator filters which consensus findings get posted to GitHub based on
-the synthesiser's verdict. The filter is deterministic — same input, same
-output, no model judgement. It does not constitute "altering findings" because
-the synthesiser's sealed report (severity, confidence, body, fix text) is
-unchanged; only which subset gets posted is decided.
-
-| Verdict path | Filter |
-|---|---|
-| `REQUEST_CHANGES` | Post **every** consensus finding. No filter. The implementer needs the full picture; an under-powered orchestrator must not dilute what a max-effort synthesiser produced. Verbose by design. |
-| `APPROVE` | Post consensus findings with **confidence ≥ 75**. Sub-threshold findings remain visible in the synthesiser's stdout report but are not posted to GitHub. |
-
-The 75 threshold is intentionally above the rubric's 70 cutoff for Important
-findings. Below 70: don't block. Above 75: surface under APPROVE. The 70-75
-band is judged not-confident-enough to distract an author who is already
-getting an APPROVE.
-
-Under `APPROVE`, when one or more consensus or synthesiser findings are suppressed by
-the confidence filter, the Workflow path's posted body carries a single disclosure line
-— `N finding(s) below the posting threshold — see synthesiser report.` — so an APPROVE
-never looks cleaner than the run actually was. This is disclosure only: the sub-threshold
-findings are still NOT posted as inline comments (the 75-bar's noise suppression is
-preserved).
-
-### Body construction (orchestrator)
-
-Two paths build the body. The **Workflow path** (default; `review-core.mjs`
-`buildBody`) builds the body from parts — headline + promoted Synthesiser
-Assessment + compact finding index + reformatted Dependency Freshness — and does
-NOT run the verbatim+strips transforms described below. The **non-Workflow
-(inline) path** posts the synthesiser's body verbatim except for three
-deterministic transformations:
-
-- References to filtered-out findings (those dropped by the Posting policy
-  above) are elided. The synthesiser tags every consensus finding with a stable
-  `[#N]` token (see Synthesiser contract below); the orchestrator strips body
-  paragraphs and bullets that contain `[#N]` tokens for filtered findings.
-- `## Cost` section stripped — instrumentation, not author-facing. Stays in
-  stdout for the implementer.
-- `## Dismissed` section stripped — false-positives, noise for the author.
-  Stays in stdout for the implementer.
-
-Two invariants govern the non-Workflow path's strip logic (preserved here now
-that the inline strip functions no longer live in `review-core.mjs`): (a) the
-posted-set membership test is **reference-equality** — the orchestrator must not
-clone or normalise findings between building the posted-set and filtering the
-body, or every finding reads as dropped; (b) dropped consensus sections are
-headed at **H4** (`#### Finding #N`), and the strip runs from that heading
-through the next `####`/`###`/`##` heading or EOF.
-
-### Synthesiser contract
-
-For the orchestrator's filtering to be mechanical, the synthesiser MUST produce
-a body where every consensus finding is tagged with a stable `[#N]` token in
-its section header, and EVERY reference to that finding elsewhere in the body
-(Synthesiser Assessment, Summary, cross-references) carries the same `[#N]`
-token. The orchestrator filters by stripping paragraphs and bullets that
-contain a filtered-out finding's `[#N]` token via deterministic string
-operations — no prose parsing.
-
----
-
 ### Class A — User confirmation flow
 
-Class A reads two variables from earlier work: `$SYNTH_VERDICT` and
-`$SYNTH_RUBRIC_ROW` are parsed below from the synthesiser's report. There is
-no orchestrator-driven downgrade — Class A renders one of two confirmation
-prompts based purely on `$SYNTH_VERDICT`.
-
-#### A.1 Parse synthesiser verdict
-
-Parse the synthesiser's `## Verdict` block (the `Verdict:` and `Rubric row applied:`
-lines) into `$SYNTH_VERDICT` and `$SYNTH_RUBRIC_ROW`. These are required —
-absence is a pipeline error: report `Pipeline error: synthesiser report missing
-## Verdict block (expected when $REVIEW_MODE = pr)` and stop.
+Class A renders one of two confirmation prompts based purely on `$SYNTH_VERDICT`
+(`= bundle.verdict`). There is no orchestrator-driven downgrade.
 
 #### A.2 Compute proposed action
 
@@ -1516,54 +1316,22 @@ On `n`: halt cleanly without submission.
 ### Class C — Submission mechanics
 
 - Inline comments are posted before the top-level review verdict.
-- Order: file order from `$CHANGED_FILES`, then ascending line number.
-- Side: `RIGHT` for additions/modifications, `LEFT` for deletions. The diff polarity is captured in the synthesiser's `File:` citation; for `archaeology-reviewer` findings on deletion anchors (`near N` in `$CHANGED_LINES`), use the anchor line number directly and `LEFT` side.
+- Order: iterate `bundle.comments[]` in the order delivered.
+- Each entry carries its own `side` (`RIGHT` / `LEFT`) and either `line` or `subjectType: "file"` — use them as delivered; do not re-derive.
 - Verdict (`gh pr review`) is submitted only after all inline comments succeed.
-- No artificial cap on inline comment count. If the synthesiser produced N findings (or N filtered findings under APPROVE / COMMENT — the latter only via user override), all N are posted.
+- No artificial cap on inline comment count. Post every entry in `bundle.comments[]`.
 - On any inline-comment posting failure: stop, surface the error and the failed item, ask user retry / skip-this-comment / cancel-the-whole-submission. No silent partial submissions.
 
-The submission API call uses the body produced by Class D below:
+The submission API call uses `bundle.bodyText` directly:
 
 ```bash
 gh pr review "$ARGUMENTS" --<approve|request-changes|comment> --input - <<'EOF_REVIEW_BODY'
-<filtered body produced by Class D>
+<bundle.bodyText>
 EOF_REVIEW_BODY
 ```
 
 The flag (`--approve` / `--request-changes` / `--comment`) is selected from
 `$FINAL_VERDICT` after the user's confirmation prompt response in Class A.
-
-### Class D — Output filtering
-
-The orchestrator filters which consensus findings get posted to GitHub based on
-`$FINAL_VERDICT` (the verdict after Class A user confirmation, which is either
-the synthesiser's proposal or the user's override). The filter is the only
-content-shaping power the orchestrator has, and it is mechanical.
-
-#### D.1 Compute the post set
-
-- If `$FINAL_VERDICT == REQUEST_CHANGES`: `$POST_SET` = every consensus finding. No filter.
-- If `$FINAL_VERDICT == APPROVE` or `$FINAL_VERDICT == COMMENT` (COMMENT reached only via user override under the `REQUEST_CHANGES` prompt): `$POST_SET` = consensus findings with `Confidence: <C>` where `C >= 75`. Sub-threshold findings are dropped from inline-comment posting AND from body references.
-
-Capture `$DROPPED_SET` = consensus findings NOT in `$POST_SET`. `$DROPPED_COUNT` = its size.
-
-#### D.2 Filter inline comments
-
-When iterating consensus findings to post inline (Step 5 of this skill), skip any finding whose `[#N]` token is NOT in `$POST_SET`. The reconciliation table from Step 3 still records the full row set; the table's `Outgoing comment ID` cell for a filtered finding is blank with rationale `filtered-by-confidence (verdict APPROVE, confidence < 75)`. This is a NEW permitted rationale alongside `dedup-with-#N` and `dismissed-by-synthesiser`. Three propagation sites in Step 3 and Step 5.5 of this skill must reflect the same set of rationales, all if not already done: (a) the no-filter rule in Step 3 (the bullet list of legal omission reasons), (b) the table column rule in Step 3 (the "may be blank ONLY when …" rule directly under the example reconciliation table), and (c) Step 5.5's assertion 2 (which must subtract `P`, the filtered-by-confidence count) and its accompanying variable list (which must define `P`).
-
-#### D.3 Construct the GitHub body
-
-Start from the synthesiser's body verbatim. Apply three deterministic transformations:
-
-1. **Strip filtered-finding references.** For every finding in `$DROPPED_SET`, locate every paragraph or bullet in the body that contains the finding's `[#N]` token (e.g. `[#3]`) and remove it. The synthesiser contract guarantees every reference to that finding carries the `[#N]` token, so deterministic string match suffices. Also remove the finding's full `### Finding #N — [...]` section under `## Consensus Findings`.
-
-2. **Strip the `## Cost` section** if present. Remove from the heading line `## Cost` through the next `## ` heading or end of file.
-
-3. **Strip the `## Dismissed` section** if present. Remove from the heading line `## Dismissed Findings` (or `## Dismissed`) through the next `## ` heading or end of file.
-
-#### D.4 (removed) — no withheld-count footer is appended; omitted findings are simply absent (spec: no teasing).
-
-The constructed body is now `$REVIEW_BODY` and feeds the `gh pr review --input -` call in Class C.
 
 ## Step 7: Summarize
 

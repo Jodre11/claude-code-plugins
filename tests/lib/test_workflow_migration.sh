@@ -129,7 +129,30 @@ test_host_wires_workflow_flag() {
             pass "host wires workflow flag: $file calls workflow({scriptPath})"
         else
             fail "host wires workflow flag: $file calls workflow({scriptPath})" \
-                "the Step 3.5 routing gate must call workflow({scriptPath: \$REVIEW_CORE_PATH}, ...) in every pipeline copy"
+                "Step 3.5 must call workflow({scriptPath: \$REVIEW_CORE_PATH}, ...) unconditionally in every pipeline copy — the Workflow is the only orchestration path"
+        fi
+    done
+}
+
+test_no_inline_dispatch_fallback() {
+    # The Workflow is the ONLY orchestration path: there is no inline specialist-dispatch
+    # fallback gated by $USE_WORKFLOW / --no-workflow. Assert none of the three pipeline
+    # copies retain the routing-gate tokens. This is the structural guarantee that the
+    # ~40% inline-dispatch bypass cannot recur from the prose.
+    local cr
+    cr=$(_wm_cr_dir)
+    local file
+    for file in includes/review-pipeline.md skills/review-gh-pr/SKILL.md commands/pre-review.md; do
+        local path="$cr/$file"
+        if [[ ! -f "$path" ]]; then
+            fail "no inline dispatch fallback: $file" "file not found"
+            continue
+        fi
+        if grep -qE 'USE_WORKFLOW|--no-workflow|orchestration\.use_workflow' "$path"; then
+            fail "no inline dispatch fallback: $file" \
+                "found a routing-gate token (USE_WORKFLOW / --no-workflow / orchestration.use_workflow) in $file — the inline fallback must be fully deleted, not gated. The Workflow is the only path."
+        else
+            pass "no inline dispatch fallback: $file has no routing-gate tokens"
         fi
     done
 }

@@ -842,23 +842,26 @@ test_sync_static_analysis_cross_feed_documented() {
     local pipeline="$cr/includes/review-pipeline.md"
     local sa_context="$cr/includes/static-analysis-context.md"
     local cr_mode="$cr/includes/cross-review-mode.md"
+    local review_core="$cr/workflows/review-core.mjs"
 
     local file
-    for file in "$pipeline" "$sa_context" "$cr_mode"; do
+    for file in "$pipeline" "$sa_context" "$cr_mode" "$review_core"; do
         if [[ ! -f "$file" ]]; then
             fail "static-analysis cross-feed documentation: $(basename "$file") present" "file not found"
             return
         fi
     done
 
-    # Assertion 1: review-pipeline.md Step 5.2 sub-step 3 must require static-analysis
-    # findings to be included in EVERY cross-reviewer's prompt. The phrase "for ALL
-    # cross-reviewers" is the load-bearing part.
-    if grep -qE 'Include findings from any static-analysis specialist .*for ALL cross-reviewers' "$pipeline"; then
-        pass "static-analysis cross-feed: Step 5.2 sub-step 3 includes findings for ALL cross-reviewers"
+    # Assertion 1: the cross-feed now lives in the Workflow engine (review-core.mjs), not
+    # inline prose. crossAndSynth must build a `peer` object over crossDomains, and the
+    # STATIC set must be EXCLUDED from RECEIVING cross-review (crossDomains filters STATIC
+    # out). Both the STATIC set definition and the crossDomains filter are load-bearing.
+    if grep -qE 'const STATIC = new Set\(\[' "$review_core" \
+            && grep -qE 'const crossDomains = allSpecialists\.filter\(d => !STATIC\.has\(d\)\)' "$review_core"; then
+        pass "static-analysis cross-feed: review-core.mjs excludes STATIC from receiving cross-review"
     else
-        fail "static-analysis cross-feed: Step 5.2 sub-step 3 includes findings for ALL cross-reviewers" \
-            "the canonical Step 5.2 sub-step 3 in review-pipeline.md must contain the load-bearing phrase 'Include findings from any static-analysis specialist ... for ALL cross-reviewers' — this is what wires static-analysis findings into the stochastic cross-reviewer prompts"
+        fail "static-analysis cross-feed: review-core.mjs excludes STATIC from receiving cross-review" \
+            "review-core.mjs must define 'const STATIC = new Set([...])' and 'const crossDomains = allSpecialists.filter(d => !STATIC.has(d))' — this is what excludes static-analysis specialists from receiving cross-review while still feeding their findings to the cross-reviewers (the peer object in crossAndSynth)"
     fi
 
     # Assertion 2: static-analysis-context.md §8 must affirm that findings ARE shown
@@ -880,27 +883,27 @@ test_sync_static_analysis_cross_feed_documented() {
     fi
 
     # Assertion 4: each of the five static-analysis specialist names must appear in
-    # both review-pipeline.md and static-analysis-context.md. We assert presence
-    # individually (not order/format) so that legitimate prose variations between
-    # the two canonicals do not trigger false positives. The names are the load-
-    # bearing tokens: a future edit that drops one of them from either canonical
-    # would silently shrink the cross-feed scope.
-    local name pipeline_missing sa_missing
-    pipeline_missing=""
+    # both review-core.mjs (the STATIC set — the engine excludes them from receiving
+    # cross-review) and static-analysis-context.md. We assert presence individually
+    # (not order/format) so that legitimate prose variations do not trigger false
+    # positives. The names are the load-bearing tokens: a future edit that drops one of
+    # them would silently shrink the cross-feed scope.
+    local name core_missing sa_missing
+    core_missing=""
     sa_missing=""
     for name in jbinspect eslint ruff trivy housekeeper; do
-        if ! grep -q "$name" "$pipeline"; then
-            pipeline_missing="$pipeline_missing $name"
+        if ! grep -q "$name" "$review_core"; then
+            core_missing="$core_missing $name"
         fi
         if ! grep -q "$name" "$sa_context"; then
             sa_missing="$sa_missing $name"
         fi
     done
-    if [[ -z "$pipeline_missing" && -z "$sa_missing" ]]; then
+    if [[ -z "$core_missing" && -z "$sa_missing" ]]; then
         pass "static-analysis cross-feed: specialist enumeration consistent across canonicals"
     else
         fail "static-analysis cross-feed: specialist enumeration consistent across canonicals" \
-            "review-pipeline.md missing names:${pipeline_missing:-<none>}; static-analysis-context.md missing names:${sa_missing:-<none>} — both canonicals must reference all five (jbinspect, eslint, ruff, trivy, housekeeper) static-analysis specialists"
+            "review-core.mjs missing names:${core_missing:-<none>}; static-analysis-context.md missing names:${sa_missing:-<none>} — both must reference all five (jbinspect, eslint, ruff, trivy, housekeeper) static-analysis specialists"
     fi
 }
 
@@ -912,38 +915,26 @@ test_sync_synthesiser_dispatch_includes_review_mode() {
         return
     fi
 
-    local file
-    for file in \
-        "$cr/includes/review-pipeline.md" \
-        "$cr/commands/pre-review.md" \
-        "$cr/skills/review-gh-pr/SKILL.md"; do
+    # The synthesiser is now dispatched only by the Workflow engine (review-core.mjs
+    # crossAndSynth). Its synthPrompt must include "Review mode: ${reviewMode}" so the
+    # synthesiser can suppress verdict guidance in local mode.
+    local review_core="$cr/workflows/review-core.mjs"
+    if [[ ! -f "$review_core" ]]; then
+        fail "synthesiser dispatch Review mode: review-core.mjs" "review-core.mjs not found"
+        return
+    fi
 
-        local basename_file
-        basename_file=$(basename "$file")
-
-        if [[ ! -f "$file" ]]; then
-            fail "synthesiser dispatch Review mode: $basename_file" "file not found"
-            continue
-        fi
-
-        # Find the synthesiser dispatch prompt (single line containing the prompt
-        # template) and assert it includes "Review mode: $REVIEW_MODE". The three
-        # files enumerated above are the contractually-mandated synthesiser dispatch
-        # sites — failure to find a dispatch in any of them is a regression, not a
-        # benign skip. If a future file legitimately drops the dispatch, remove it
-        # from the loop above rather than relaxing this branch.
-        if grep -qE 'subagent_type: "code-review-suite:review-synthesiser"' "$file"; then
-            if grep -qE 'Review mode: \$REVIEW_MODE' "$file"; then
-                pass "synthesiser dispatch Review mode: $basename_file includes \$REVIEW_MODE"
-            else
-                fail "synthesiser dispatch Review mode: $basename_file includes \$REVIEW_MODE" \
-                    "the synthesiser dispatch prompt must include 'Review mode: \$REVIEW_MODE\\n' so the synthesiser can suppress verdict guidance in local mode"
-            fi
+    if grep -qE "agentType: 'code-review-suite:review-synthesiser'" "$review_core"; then
+        if grep -qE 'Review mode: \$\{reviewMode\}' "$review_core"; then
+            pass "synthesiser dispatch Review mode: review-core.mjs synthPrompt includes reviewMode"
         else
-            fail "synthesiser dispatch Review mode: $basename_file" \
-                "expected file to contain a synthesiser dispatch (subagent_type: \"code-review-suite:review-synthesiser\") but none was found — was the dispatch deleted?"
+            fail "synthesiser dispatch Review mode: review-core.mjs synthPrompt includes reviewMode" \
+                "review-core.mjs's synthPrompt must include 'Review mode: \${reviewMode}' so the synthesiser can suppress verdict guidance in local mode"
         fi
-    done
+    else
+        fail "synthesiser dispatch Review mode: review-core.mjs" \
+            "expected review-core.mjs to dispatch the synthesiser (agentType: 'code-review-suite:review-synthesiser') but none was found — was the dispatch deleted?"
+    fi
 }
 
 test_sync_synthesiser_dispatch_uses_ultrathink() {
@@ -954,45 +945,35 @@ test_sync_synthesiser_dispatch_uses_ultrathink() {
         return
     fi
 
-    local file
-    for file in \
-        "$cr/includes/review-pipeline.md" \
-        "$cr/commands/pre-review.md" \
-        "$cr/skills/review-gh-pr/SKILL.md"; do
+    # The synthesiser's synthPrompt (review-core.mjs) must START with the literal
+    # "ultrathink" keyword, followed by \n\n. The keyword is what Claude Code's keyword
+    # detector looks for to set the max thinking budget.
+    local review_core="$cr/workflows/review-core.mjs"
+    if [[ ! -f "$review_core" ]]; then
+        fail "synthesiser dispatch ultrathink keyword: review-core.mjs" "review-core.mjs not found"
+        return
+    fi
 
-        local basename_file
-        basename_file=$(basename "$file")
-
-        if [[ ! -f "$file" ]]; then
-            fail "synthesiser dispatch ultrathink keyword: $basename_file" "file not found"
-            continue
-        fi
-
-        # The synthesiser dispatch prompt body must START with the literal "ultrathink"
-        # keyword, followed by \n\n, before any other content. The keyword is what
-        # Claude Code's keyword detector looks for to set the max thinking budget.
-        # Detect the dispatch via the subagent_type marker, then assert the prompt
-        # field begins with "ultrathink\n\n".
-        if grep -qE 'subagent_type: "code-review-suite:review-synthesiser"' "$file"; then
-            if grep -qE 'prompt: "ultrathink\\n\\n' "$file"; then
-                pass "synthesiser dispatch ultrathink keyword: $basename_file prompt starts with ultrathink"
-            else
-                fail "synthesiser dispatch ultrathink keyword: $basename_file prompt starts with ultrathink" \
-                    "the synthesiser dispatch prompt must begin with the literal 'ultrathink\\n\\n' so Claude Code's keyword detector sets the max thinking budget; without it, the synthesiser runs at default effort regardless of any frontmatter declaration"
-            fi
+    if grep -qE "agentType: 'code-review-suite:review-synthesiser'" "$review_core"; then
+        if grep -qE "const synthPrompt =" "$review_core" \
+                && grep -qE '`ultrathink\\n\\n`' "$review_core"; then
+            pass "synthesiser dispatch ultrathink keyword: review-core.mjs synthPrompt starts with ultrathink"
         else
-            fail "synthesiser dispatch ultrathink keyword: $basename_file" \
-                "expected file to contain a synthesiser dispatch (subagent_type: \"code-review-suite:review-synthesiser\") but none was found — was the dispatch deleted?"
+            fail "synthesiser dispatch ultrathink keyword: review-core.mjs synthPrompt starts with ultrathink" \
+                "review-core.mjs's synthPrompt must begin with the literal \`ultrathink\\n\\n\` so Claude Code's keyword detector sets the max thinking budget; without it, the synthesiser runs at default effort regardless of any frontmatter declaration"
         fi
-    done
+    else
+        fail "synthesiser dispatch ultrathink keyword: review-core.mjs" \
+            "expected review-core.mjs to dispatch the synthesiser (agentType: 'code-review-suite:review-synthesiser') but none was found — was the dispatch deleted?"
+    fi
 }
 
 test_sync_synth_dispatch_passes_intent_ledger() {
     # The synthesiser's verdict rubric row 1 fires on "Intent-ledger states a goal AND
     # any consensus finding indicates the goal is not achieved." Row 1 is unevaluable
-    # without the ledger, so the dispatch prompt MUST include $INTENT_LEDGER. The
+    # without the ledger, so the synthPrompt MUST include the intent ledger. The
     # synthesiser's agent definition already has the `Intent ledger:` extraction
-    # block; this test asserts the producer side is wired up too.
+    # block; this test asserts the producer side (review-core.mjs) is wired up too.
     local cr
     cr=$(_cr_dir)
     if [[ ! -d "$cr" ]]; then
@@ -1000,36 +981,25 @@ test_sync_synth_dispatch_passes_intent_ledger() {
         return
     fi
 
-    local file
-    for file in \
-        "$cr/includes/review-pipeline.md" \
-        "$cr/commands/pre-review.md" \
-        "$cr/skills/review-gh-pr/SKILL.md"; do
+    local review_core="$cr/workflows/review-core.mjs"
+    if [[ ! -f "$review_core" ]]; then
+        fail "synthesiser dispatch intent ledger: review-core.mjs" "review-core.mjs not found"
+        return
+    fi
 
-        local basename_file
-        basename_file=$(basename "$file")
-
-        if [[ ! -f "$file" ]]; then
-            fail "synthesiser dispatch intent ledger: $basename_file" "file not found"
-            continue
-        fi
-
-        if grep -qE 'subagent_type: "code-review-suite:review-synthesiser"' "$file"; then
-            # The dispatch prompt must contain '\n\n$INTENT_LEDGER\n' between the
-            # Review mode line and the trust boundary advisory. The literal token
-            # `$INTENT_LEDGER` is the variable name as it appears in the prompt
-            # template — the orchestrator substitutes its value at runtime.
-            if grep -qE 'Review mode: \$REVIEW_MODE\\n\\n\$INTENT_LEDGER\\n\\nTrust boundary' "$file"; then
-                pass "synthesiser dispatch intent ledger: $basename_file passes \$INTENT_LEDGER"
-            else
-                fail "synthesiser dispatch intent ledger: $basename_file passes \$INTENT_LEDGER" \
-                    "the synthesiser dispatch prompt must include \$INTENT_LEDGER between the Review mode line and the trust boundary advisory — without it the synthesiser cannot evaluate verdict rubric row 1 (intent-ledger goal unachieved) and must infer the goal from the diff non-deterministically"
-            fi
+    if grep -qE "agentType: 'code-review-suite:review-synthesiser'" "$review_core"; then
+        # The synthPrompt interpolates the intentLedger arg between the Review mode line
+        # and the trust boundary advisory.
+        if grep -qE 'intentLedger \? `\$\{intentLedger\}' "$review_core"; then
+            pass "synthesiser dispatch intent ledger: review-core.mjs synthPrompt passes intentLedger"
         else
-            fail "synthesiser dispatch intent ledger: $basename_file" \
-                "expected file to contain a synthesiser dispatch (subagent_type: \"code-review-suite:review-synthesiser\") but none was found — was the dispatch deleted?"
+            fail "synthesiser dispatch intent ledger: review-core.mjs synthPrompt passes intentLedger" \
+                "review-core.mjs's synthPrompt must interpolate \${intentLedger} — without it the synthesiser cannot evaluate verdict rubric row 1 (intent-ledger goal unachieved) and must infer the goal from the diff non-deterministically"
         fi
-    done
+    else
+        fail "synthesiser dispatch intent ledger: review-core.mjs" \
+            "expected review-core.mjs to dispatch the synthesiser (agentType: 'code-review-suite:review-synthesiser') but none was found — was the dispatch deleted?"
+    fi
 }
 
 test_sync_verdict_rubric_inline_matches_canonical() {
@@ -1057,10 +1027,12 @@ test_sync_verdict_rubric_inline_matches_canonical() {
         return
     fi
 
+    # review-synthesiser.md is the sole inlining consumer. SKILL.md (Step 6) no longer
+    # inlines the rubric: the Workflow's synthesiser applies the rubric and review-core
+    # builds the body, so the orchestrator's posting step consumes only bundle.verdict.
     local consumer
     for consumer in \
-        "$cr/agents/review-synthesiser.md" \
-        "$cr/skills/review-gh-pr/SKILL.md"; do
+        "$cr/agents/review-synthesiser.md"; do
 
         local basename_consumer
         basename_consumer=$(basename "$(dirname "$consumer")")/$(basename "$consumer")
@@ -1166,14 +1138,13 @@ test_skill_md_step6_references_rubric_and_classes() {
         return
     fi
 
-    # Six assertions on Step 6's body, encoded as parallel arrays of
+    # Assertions on Step 6's body, encoded as parallel arrays of
     # (sense, pattern, pass_label, fail_explanation) tuples. `sense` is `present` if the
-    # pattern is required to appear (rubric heading, four Class headings) or `absent` if
-    # it is forbidden (the legacy decision matrix). The loop body branches once on sense
-    # and dispatches the same pass/fail bookkeeping in both cases — replaces an earlier
-    # mix of two ad-hoc assertions and one for-loop with a single uniform structure.
+    # pattern is required to appear or `absent` if it is forbidden (the legacy decision
+    # matrix). Since the Workflow is the only path, Step 6 consumes bundle.verdict directly:
+    # the rubric is no longer inlined here (review-core's synthesiser applies it) and Class D
+    # output filtering is gone (review-core applies it). Only Classes A/B/C remain.
     local senses=(
-        present
         absent
         present
         present
@@ -1181,28 +1152,25 @@ test_skill_md_step6_references_rubric_and_classes() {
         present
     )
     local patterns=(
-        '^### Verdict rubric \(PR mode only, first match wins\)$'
         '^\| \*\*APPROVE\*\* \| No comments are blockers'
         '^### Class A —'
         '^### Class B —'
         '^### Class C —'
-        '^### Class D —'
+        'bundle\.verdict'
     )
     local labels=(
-        "rubric inlined"
         "decision matrix removed"
         "Class A heading present"
         "Class B heading present"
         "Class C heading present"
-        "Class D heading present"
+        "consumes bundle.verdict"
     )
     local explanations=(
-        "Step 6 must inline the verdict rubric heading '### Verdict rubric (PR mode only, first match wins)' — without it the orchestrator has no documented authority chain to the synthesiser's verdict"
         "Step 6 still contains the legacy decision matrix ('| **APPROVE** | No comments are blockers …') — this lets the orchestrator pick a verdict on its own initiative, conflicting with synthesiser-as-sole-authority. Delete the matrix; the rubric replaces it."
-        "Step 6 must contain a heading '### Class A — …'. The four classes (A: user-confirmation, B: PR-thread state, C: submission mechanics, D: output filtering) document the orchestrator's full decision scope — missing one means a class of orchestrator behaviour is undocumented and may drift toward judgement-driven action"
-        "Step 6 must contain a heading '### Class B — …'. The four classes (A: user-confirmation, B: PR-thread state, C: submission mechanics, D: output filtering) document the orchestrator's full decision scope — missing one means a class of orchestrator behaviour is undocumented and may drift toward judgement-driven action"
-        "Step 6 must contain a heading '### Class C — …'. The four classes (A: user-confirmation, B: PR-thread state, C: submission mechanics, D: output filtering) document the orchestrator's full decision scope — missing one means a class of orchestrator behaviour is undocumented and may drift toward judgement-driven action"
-        "Step 6 must contain a heading '### Class D — …'. The four classes (A: user-confirmation, B: PR-thread state, C: submission mechanics, D: output filtering) document the orchestrator's full decision scope — missing one means a class of orchestrator behaviour is undocumented and may drift toward judgement-driven action"
+        "Step 6 must contain a heading '### Class A — …'. The three remaining classes (A: user-confirmation, B: PR-thread state, C: submission mechanics) document the orchestrator's full decision scope on the Workflow-only path — missing one means a class of orchestrator behaviour is undocumented and may drift toward judgement-driven action"
+        "Step 6 must contain a heading '### Class B — …'. The three remaining classes (A: user-confirmation, B: PR-thread state, C: submission mechanics) document the orchestrator's full decision scope on the Workflow-only path — missing one means a class of orchestrator behaviour is undocumented and may drift toward judgement-driven action"
+        "Step 6 must contain a heading '### Class C — …'. The three remaining classes (A: user-confirmation, B: PR-thread state, C: submission mechanics) document the orchestrator's full decision scope on the Workflow-only path — missing one means a class of orchestrator behaviour is undocumented and may drift toward judgement-driven action"
+        "Step 6 must read the verdict directly from the Workflow bundle (\$SYNTH_VERDICT = bundle.verdict) — on the Workflow-only path there is no synthesiser markdown to parse, so the orchestrator consumes bundle.verdict rather than re-deriving a verdict"
     )
     local i
     for ((i = 0; i < ${#senses[@]}; i++)); do
@@ -1220,65 +1188,6 @@ test_skill_md_step6_references_rubric_and_classes() {
             fail "SKILL.md Step 6 rubric and classes: ${labels[i]}" "${explanations[i]}"
         fi
     done
-}
-
-test_skill_md_filter_rationale_propagated_to_three_sites() {
-    # The `filtered-by-confidence` rationale (introduced by Class D §D.2) is a third
-    # permitted blank-`Outgoing comment ID` rationale. It must be enumerated at three
-    # propagation sites in SKILL.md, otherwise Step 5.5 false-halts on every APPROVE
-    # with sub-75 confidence findings, or Step 3's table column rule contradicts the
-    # no-filter rule introduced in the same step.
-    local cr
-    cr=$(_cr_dir)
-    if [[ ! -d "$cr" ]]; then
-        skip "SKILL.md filter rationale propagation" "code-review-suite plugin not found"
-        return
-    fi
-
-    local skill="$cr/skills/review-gh-pr/SKILL.md"
-    if [[ ! -f "$skill" ]]; then
-        fail "SKILL.md filter rationale propagation" "SKILL.md not found"
-        return
-    fi
-
-    # Site 1: Step 3 no-filter rule must list filtered-by-confidence as a permitted
-    # blank-rationale (alongside dedup-with-#N and dismissed-by-synthesiser).
-    if grep -qE '^> 3\. \*\*`filtered-by-confidence' "$skill"; then
-        pass "SKILL.md filter rationale propagation: Step 3 no-filter rule lists filtered-by-confidence"
-    else
-        fail "SKILL.md filter rationale propagation: Step 3 no-filter rule lists filtered-by-confidence" \
-            "Step 3's no-filter rule (the bulleted list of legal omission reasons) must include a third item starting '> 3. **\`filtered-by-confidence' — without it the rule contradicts Class D §D.2's permission for confidence-driven omissions"
-    fi
-
-    # Site 2: Step 3 table column rule must also list filtered-by-confidence. This
-    # is the rule directly under the example reconciliation table that says
-    # "may be blank ONLY when ...". Earlier versions listed only two rationales,
-    # contradicting the no-filter rule; the third rationale must propagate here too.
-    if grep -qE 'may be blank ONLY when `Rationale` is `dedup-with-#N`,$' "$skill" \
-            && grep -qE '`dismissed-by-synthesiser`, or `filtered-by-confidence ' "$skill"; then
-        pass "SKILL.md filter rationale propagation: Step 3 table column rule lists filtered-by-confidence"
-    else
-        fail "SKILL.md filter rationale propagation: Step 3 table column rule lists filtered-by-confidence" \
-            "Step 3's table column rule under the example reconciliation table must enumerate all three rationales — currently it omits filtered-by-confidence and contradicts the no-filter rule above it"
-    fi
-
-    # Site 3: Step 5.5 must define P (filtered-by-confidence count) and the assertion
-    # must subtract it. C == R - D - X without the P term false-halts every APPROVE
-    # with sub-75 findings; that is the common case under APPROVE so the missing
-    # term is a hot-path bug.
-    if grep -qE '^- `P` = number of rows whose rationale is `filtered-by-confidence' "$skill"; then
-        pass "SKILL.md filter rationale propagation: Step 5.5 defines P"
-    else
-        fail "SKILL.md filter rationale propagation: Step 5.5 defines P" \
-            "Step 5.5's variable list must include 'P = number of rows whose rationale is filtered-by-confidence (verdict APPROVE, confidence < 75)' — without P the assertion 2 formula does not account for confidence-filtered rows"
-    fi
-
-    if grep -qE '`C == R - D - X - P`' "$skill"; then
-        pass "SKILL.md filter rationale propagation: Step 5.5 assertion subtracts P"
-    else
-        fail "SKILL.md filter rationale propagation: Step 5.5 assertion subtracts P" \
-            "Step 5.5 assertion 2 must read 'C == R - D - X - P' — the pre-existing 'C == R - D - X' false-halts every APPROVE verdict where any consensus finding has confidence < 75 (the common case)"
-    fi
 }
 
 test_sync_phase_055_local_branch_freshness_check() {

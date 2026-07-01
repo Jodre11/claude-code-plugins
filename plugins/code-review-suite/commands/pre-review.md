@@ -50,6 +50,51 @@ both rules are no-ops in effect — `git -C "$REPO_DIR"` and a cwd-inferred `gh`
 exactly as the bare forms did. Threading them unconditionally is what lets the pipeline
 target a PR in a repository other than the current directory.
 
+## Phase -0.5: Ephemeral worktree
+
+Run Phase -0.5 AFTER Phase -1 and BEFORE Phase 0. It runs only when
+`$REVIEW_MODE` is `pr`. If `$REVIEW_MODE` is `local`, skip this entire section
+(leave `$WORKTREE_OWNED = false`) and continue to Phase 0 — pre-review measures
+the working tree in place and must not relocate it.
+
+The review must analyse the exact commit the PR head points to, in a worktree
+that neither disturbs nor is disturbed by the target repo's live checkout.
+Resolve the mode below, first match wins:
+
+1. **External worktree supplied.** If `$ARGUMENTS` contains a
+   `Worktree: <abs-path>` line, set `$REPO_DIR` to that path, set
+   `$WORKTREE_OWNED = false`, and skip both creation and teardown. The supplier
+   (e.g. shakedown) owns that worktree's lifecycle. Validate the path is
+   absolute and `git -C "$REPO_DIR" rev-parse --show-toplevel` succeeds; if not,
+   report `Invalid worktree: $REPO_DIR` and stop.
+
+2. **Opt-out.** If `$ARGUMENTS` contains a `--no-worktree` token, skip creation;
+   keep today's in-place behaviour against the Phase -1 `$REPO_DIR`. Set
+   `$WORKTREE_OWNED = false`.
+
+3. **Default (plugin-owned worktree).**
+   - Resolve the PR head branch `$HEAD_BRANCH` from
+     `gh pr view "$ARGUMENTS" --repo "$OWNER_REPO" --json headRefName -q .headRefName`.
+   - Resolve `$EXPECTED_HEAD_SHA` from
+     `gh pr view "$ARGUMENTS" --repo "$OWNER_REPO" --json headRefOid -q .headRefOid`.
+     Validate it matches `^[0-9a-f]{40}$`; if not, report
+     `Phase -0.5 halt: could not resolve PR head SHA` and stop.
+   - Call the helper (from this plugin's `bin/` directory, already on `PATH`):
+
+     ```bash
+     review-worktree add "$REPO_DIR" "$HEAD_BRANCH" "$EXPECTED_HEAD_SHA"
+     ```
+
+     On a **non-zero exit**, hard-halt with the helper's stderr message and run
+     no review — never analyse an unverified tree.
+   - On success, capture the printed absolute path. Reassign `$REPO_DIR` to it,
+     set `$WORKTREE_OWNED = true`, and pin `$HEAD_SHA = $EXPECTED_HEAD_SHA` for
+     the rest of the pipeline.
+
+Announce `> Phase -0.5: reviewing in worktree $REPO_DIR at $HEAD_SHA` on the
+owned path, or `> Phase -0.5: worktree skipped ($WORKTREE_OWNED reason)`
+otherwise, and continue to Phase 0.
+
 ## Phase 0: Intent Ledger
 
 Run Phase 0 BEFORE Step 1 (Determine base branch). The pipeline must not enter Step 1
@@ -224,6 +269,14 @@ review analyses stale code and ships a false-clean report against the wrong
 commit set. The local checkout MAY be ahead of the remote head — that is the
 correct review surface in workflows where the implementer iterates locally
 before pushing — but it must not be behind.
+
+### 0.55.0 Skip when the worktree is plugin-owned
+
+If `$WORKTREE_OWNED = true`, skip this entire section and continue to Phase 0.6.
+The owned worktree was cut from the freshly fetched-and-verified PR head in
+Phase -0.5, so the "local HEAD behind remote" staleness halt is redundant. The
+`--no-worktree` and external-worktree paths keep `$WORKTREE_OWNED = false` and
+still run the checks below.
 
 ### 0.55.1 Skip in local mode
 
@@ -814,7 +867,7 @@ workflow({scriptPath: $REVIEW_CORE_PATH}, {
     reviewMode: $REVIEW_MODE,
     base: $BASE, headSha: $HEAD_SHA, emptyTreeMode: $EMPTY_TREE_MODE,
     pathScope: $PATH_SCOPE, tempDir: $RESOLVED_TEMP_DIR,
-    intentLedger: $INTENT_LEDGER
+    intentLedger: $INTENT_LEDGER, repoDir: $REPO_DIR
 })
 ```
 
@@ -826,6 +879,22 @@ filter and rendered comment bodies. You may only POST it (PR mode) or PRINT it (
 `review-core` tolerates both `args` shapes: the `workflow()` primitive delivers an
 object, while the Workflow tool (which the main agent loop uses, having no primitive)
 delivers a JSON string — the script normalises a string arg before destructuring.
+
+## Phase 9: Worktree teardown
+
+If `$WORKTREE_OWNED = true`, tear the plugin-owned worktree down on **every**
+exit path from this pipeline — successful completion, clean halt, or error —
+by running:
+
+```bash
+review-worktree remove "$REPO_DIR"
+```
+
+`remove` is idempotent (safe to call when already gone, safe to double-call).
+Combined with the prune-on-next-`add` self-heal in the helper, a worktree
+leaked by a hard crash between `add` and `remove` is reclaimed on the next
+review. When `$WORKTREE_OWNED = false` (external or `--no-worktree`), do
+nothing — the worktree is not ours to remove.
 
 ### Step 4: Present results
 

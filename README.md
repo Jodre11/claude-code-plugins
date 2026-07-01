@@ -64,6 +64,13 @@ in the Claude Code docs for details.
 - [`tests/ab/`](tests/ab/README.md) — A/B test harness for the code review suite.
   Operator-driven; runs identical inputs through the suite under different
   agent parameter configurations and captures mechanical metrics.
+- [`plugins/code-review-suite/bin/review-worktree`](plugins/code-review-suite/bin/review-worktree)
+  — deterministic add/remove of the ephemeral, verified worktree PR reviews run
+  against. By default `review-gh-pr` cuts a worktree from the exact PR head SHA
+  so concurrent reviews never collide and never analyse stale code. Pass
+  `--no-worktree` in the review arguments to review in place, or a
+  `Worktree: <abs-path>` line to supply an externally-owned worktree (the plugin
+  then neither creates nor tears it down).
 
 ## Licence
 

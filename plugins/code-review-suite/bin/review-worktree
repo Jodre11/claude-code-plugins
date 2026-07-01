@@ -1,0 +1,122 @@
+#!/usr/bin/env bash
+# review-worktree — deterministic ephemeral git-worktree lifecycle for
+# code-review-suite. The fragile multi-step git sequence is deterministic,
+# unit-tested shell — never LLM-improvised prose.
+#
+# Subcommands:
+#   add <repoDir> <branch> <expectedHeadSha>
+#       Prune stale plugin-owned worktrees, fetch <branch>, assert the fetched
+#       head equals <expectedHeadSha>, create a detached worktree at that
+#       immutable SHA under the session temp root, re-assert HEAD, print the
+#       absolute path. Exits non-zero and creates nothing on any failure.
+#   remove <worktreePath>
+#       Idempotent teardown. Exit 0 whether or not the path exists.
+#
+# Worktree root: ${CLAUDE_TEMP_DIR:-${TMPDIR:-/tmp}}/review-worktrees
+# Stale age threshold (minutes): ${REVIEW_WORKTREE_STALE_MINUTES:-360}
+set -euo pipefail
+
+STALE_MINUTES="${REVIEW_WORKTREE_STALE_MINUTES:-360}"
+
+_root() {
+    printf '%s/review-worktrees' "${CLAUDE_TEMP_DIR:-${TMPDIR:-/tmp}}"
+}
+
+_die() {
+    echo "review-worktree: $*" >&2
+    exit 1
+}
+
+# Reclaim leaked plugin-owned worktrees older than the threshold (self-heal for
+# a worktree left behind by a crashed run), then prune git's admin records.
+# Age-based so a concurrent review's fresh worktree is never reclaimed.
+_prune_stale() {
+    local repo_dir="$1"
+    local root dir
+    root="$(_root)"
+    if [[ -d "$root" ]]; then
+        while IFS= read -r dir; do
+            [[ -n "$dir" ]] || continue
+            git -C "$repo_dir" worktree remove --force "$dir" 2>/dev/null || rm -rf "$dir"
+        done < <(find "$root" -maxdepth 1 -type d -name 'wt-*' -mmin "+$STALE_MINUTES" 2>/dev/null)
+    fi
+    git -C "$repo_dir" worktree prune 2>/dev/null || true
+}
+
+cmd_add() {
+    local repo_dir="${1:-}" branch="${2:-}" expected_sha="${3:-}"
+    [[ -n "$repo_dir" && -n "$branch" && -n "$expected_sha" ]] \
+        || _die "add requires <repoDir> <branch> <expectedHeadSha>"
+    [[ "$expected_sha" =~ ^[0-9a-f]{40}$ ]] \
+        || _die "expected head SHA is not a 40-hex string: $expected_sha"
+    git -C "$repo_dir" rev-parse --show-toplevel >/dev/null 2>&1 \
+        || _die "not a git repo: $repo_dir"
+
+    _prune_stale "$repo_dir"
+
+    # Fetch the exact head by branch.
+    git -C "$repo_dir" fetch --quiet origin "$branch" \
+        || _die "fetch failed for origin/$branch"
+
+    # Verify the fetched ref matches the expected SHA.
+    local fetched_sha
+    fetched_sha="$(git -C "$repo_dir" rev-parse FETCH_HEAD)"
+    [[ "$fetched_sha" == "$expected_sha" ]] \
+        || _die "fetched head $fetched_sha != expected $expected_sha (branch $branch)"
+
+    # Create the worktree detached at the immutable SHA.
+    local root worktree_path
+    root="$(_root)"
+    mkdir -p "$root"
+    worktree_path="${root}/wt-${expected_sha:0:12}-$$"
+    if ! git -C "$repo_dir" worktree add --quiet --detach "$worktree_path" "$expected_sha"; then
+        git -C "$repo_dir" worktree remove --force "$worktree_path" 2>/dev/null || rm -rf "$worktree_path"
+        git -C "$repo_dir" worktree prune 2>/dev/null || true
+        _die "worktree add failed at $expected_sha"
+    fi
+
+    # Post-condition: the new worktree is at the expected SHA.
+    local actual_sha
+    actual_sha="$(git -C "$worktree_path" rev-parse HEAD)"
+    if [[ "$actual_sha" != "$expected_sha" ]]; then
+        git -C "$repo_dir" worktree remove --force "$worktree_path" 2>/dev/null || rm -rf "$worktree_path"
+        git -C "$repo_dir" worktree prune 2>/dev/null || true
+        _die "post-condition failed: worktree HEAD $actual_sha != $expected_sha"
+    fi
+
+    printf '%s\n' "$worktree_path"
+}
+
+cmd_remove() {
+    local worktree_path="${1:-}"
+    [[ -n "$worktree_path" ]] || _die "remove requires <worktreePath>"
+    if [[ -d "$worktree_path" ]]; then
+        # Resolve the owning repo from the worktree's common gitdir.
+        local common_dir repo_dir
+        common_dir="$(git -C "$worktree_path" rev-parse --git-common-dir 2>/dev/null || true)"
+        if [[ -n "$common_dir" ]]; then
+            case "$common_dir" in
+                /*) : ;;
+                *) common_dir="$worktree_path/$common_dir" ;;
+            esac
+            repo_dir="$(dirname "$common_dir")"
+            git -C "$repo_dir" worktree remove --force "$worktree_path" 2>/dev/null || rm -rf "$worktree_path"
+            git -C "$repo_dir" worktree prune 2>/dev/null || true
+        else
+            rm -rf "$worktree_path"
+        fi
+    fi
+    exit 0
+}
+
+main() {
+    local sub="${1:-}"
+    shift || true
+    case "$sub" in
+        add) cmd_add "$@" ;;
+        remove) cmd_remove "$@" ;;
+        *) _die "unknown subcommand: ${sub:-<none>} (expected add|remove)" ;;
+    esac
+}
+
+main "$@"

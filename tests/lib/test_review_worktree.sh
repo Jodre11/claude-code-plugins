@@ -164,3 +164,42 @@ test_review_worktree_remove_idempotent() {
 
     rm -rf "$root" "$work" "$origin"
 }
+
+test_review_worktree_phase_prose_present_and_synced() {
+    local cr
+    cr=$(_rw_cr_dir)
+    local tokens=(
+        '## Phase -0.5: Ephemeral worktree'
+        'WORKTREE_OWNED'
+        '--no-worktree'
+        'Worktree:'
+        'review-worktree add'
+        'review-worktree remove'
+    )
+    local files=(
+        "includes/review-pipeline.md"
+        "skills/review-gh-pr/SKILL.md"
+        "commands/pre-review.md"
+    )
+    local missing=()
+    local f t
+    for f in "${files[@]}"; do
+        for t in "${tokens[@]}"; do
+            if ! grep -qF -e "$t" "$cr/$f" 2>/dev/null; then
+                missing+=("$f::$t")
+            fi
+        done
+    done
+    if [[ ${#missing[@]} -eq 0 ]]; then
+        pass "worktree phase prose present in all three consumers"
+    else
+        fail "worktree phase prose present in all three consumers" "missing: ${missing[*]}"
+    fi
+
+    # Gate: Phase 0.55 must run only when the worktree is NOT owned.
+    if grep -qF 'WORKTREE_OWNED = false' "$cr/includes/review-pipeline.md" 2>/dev/null; then
+        pass "Phase 0.55 gated on \$WORKTREE_OWNED = false"
+    else
+        fail "Phase 0.55 gated on \$WORKTREE_OWNED = false" "gating clause not found"
+    fi
+}

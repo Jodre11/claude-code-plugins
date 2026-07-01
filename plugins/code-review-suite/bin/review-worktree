@@ -69,8 +69,11 @@ cmd_add() {
     root="$(_root)"
     mkdir -p "$root"
     worktree_path="${root}/wt-${expected_sha:0:12}-$$"
-    git -C "$repo_dir" worktree add --quiet --detach "$worktree_path" "$expected_sha" \
-        || _die "worktree add failed at $expected_sha"
+    if ! git -C "$repo_dir" worktree add --quiet --detach "$worktree_path" "$expected_sha"; then
+        git -C "$repo_dir" worktree remove --force "$worktree_path" 2>/dev/null || rm -rf "$worktree_path"
+        git -C "$repo_dir" worktree prune 2>/dev/null || true
+        _die "worktree add failed at $expected_sha"
+    fi
 
     # Post-condition: the new worktree is at the expected SHA.
     local actual_sha

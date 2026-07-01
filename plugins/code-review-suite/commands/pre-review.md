@@ -73,8 +73,8 @@ Resolve the mode below, first match wins:
    `$WORKTREE_OWNED = false`.
 
 3. **Default (plugin-owned worktree).**
-   - Resolve the PR head branch `$HEAD_BRANCH` from the `headRefName` field of
-     the Step 1 PR data.
+   - Resolve the PR head branch `$HEAD_BRANCH` from
+     `gh pr view "$ARGUMENTS" --repo "$OWNER_REPO" --json headRefName -q .headRefName`.
    - Resolve `$EXPECTED_HEAD_SHA` from
      `gh pr view "$ARGUMENTS" --repo "$OWNER_REPO" --json headRefOid -q .headRefOid`.
      Validate it matches `^[0-9a-f]{40}$`; if not, report

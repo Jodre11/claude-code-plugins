@@ -813,7 +813,7 @@ workflow({scriptPath: $REVIEW_CORE_PATH}, {
     reviewMode: $REVIEW_MODE,
     base: $BASE, headSha: $HEAD_SHA, emptyTreeMode: $EMPTY_TREE_MODE,
     pathScope: $PATH_SCOPE, tempDir: $RESOLVED_TEMP_DIR,
-    intentLedger: $INTENT_LEDGER
+    intentLedger: $INTENT_LEDGER, repoDir: $REPO_DIR
 })
 ```
 

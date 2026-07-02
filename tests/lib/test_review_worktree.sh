@@ -202,6 +202,93 @@ test_review_worktree_remove_idempotent() {
     rm -rf "$root" "$work" "$origin"
 }
 
+test_review_worktree_remove_refuses_primary_repo() {
+    # Direct regression for the incident: remove must NEVER delete a primary
+    # working tree. Calling remove on the fixture's *work* dir (a primary
+    # worktree, not a wt-* under review-worktrees) must fail both gates.
+    local helper
+    helper="$(_rw_cr_dir)/bin/review-worktree"
+    if [[ ! -x "$helper" ]]; then
+        fail "review-worktree remove: refuses primary repo" "helper missing"
+        return
+    fi
+    local work origin sha rc
+    read -r work origin sha < <(_rw_make_fixture)
+
+    set +e
+    "$helper" remove "$work" >/dev/null 2>&1; rc=$?
+    set -e
+
+    if [[ $rc -ne 0 ]]; then
+        pass "review-worktree remove: refuses primary repo root (non-zero exit)"
+    else
+        fail "review-worktree remove: refuses primary repo root (non-zero exit)" "exit 0"
+    fi
+    if [[ -d "$work" ]]; then
+        pass "review-worktree remove: primary repo root survives"
+    else
+        fail "review-worktree remove: primary repo root survives" "work dir deleted"
+    fi
+
+    rm -rf "$work" "$origin"
+}
+
+test_review_worktree_remove_refuses_arbitrary_dir() {
+    # An arbitrary non-worktree directory must survive: it fails the structural
+    # gate (not review-worktrees/wt-*) before any rm -rf can fire.
+    local helper
+    helper="$(_rw_cr_dir)/bin/review-worktree"
+    if [[ ! -x "$helper" ]]; then
+        fail "review-worktree remove: refuses arbitrary dir" "helper missing"
+        return
+    fi
+    local victim rc
+    victim=$(mktemp -d)
+    echo "precious" > "$victim/keep.txt"
+
+    set +e
+    "$helper" remove "$victim" >/dev/null 2>&1; rc=$?
+    set -e
+
+    if [[ $rc -ne 0 ]]; then
+        pass "review-worktree remove: refuses arbitrary dir (non-zero exit)"
+    else
+        fail "review-worktree remove: refuses arbitrary dir (non-zero exit)" "exit 0"
+    fi
+    if [[ -f "$victim/keep.txt" ]]; then
+        pass "review-worktree remove: arbitrary dir survives"
+    else
+        fail "review-worktree remove: arbitrary dir survives" "dir/contents deleted"
+    fi
+
+    rm -rf "$victim"
+}
+
+test_review_worktree_callers_pass_temp_root() {
+    # All three consumers must pass the 4th positional tempRoot arg to
+    # `review-worktree add`, else worktrees land under $TMPDIR (/var/folders)
+    # — the silent-landing defect behind the incident.
+    local cr
+    cr=$(_rw_cr_dir)
+    local expected='review-worktree add "$REPO_DIR" "$HEAD_BRANCH" "$EXPECTED_HEAD_SHA" "$RESOLVED_TEMP_DIR"'
+    local missing=()
+    local f
+    for f in \
+        "includes/review-pipeline.md" \
+        "skills/review-gh-pr/SKILL.md" \
+        "commands/pre-review.md"; do
+        if ! grep -qF "$expected" "$cr/$f" 2>/dev/null; then
+            missing+=("$f")
+        fi
+    done
+    if [[ ${#missing[@]} -eq 0 ]]; then
+        pass "review-worktree add: 4-token tempRoot form in all three consumers"
+    else
+        fail "review-worktree add: 4-token tempRoot form in all three consumers" \
+            "missing 4th-arg form in: ${missing[*]}"
+    fi
+}
+
 test_review_worktree_phase_prose_present_and_synced() {
     local cr
     cr=$(_rw_cr_dir)

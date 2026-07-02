@@ -184,10 +184,15 @@ Resolve the mode below, first match wins:
      `gh pr view "$ARGUMENTS" --repo "$OWNER_REPO" --json headRefOid -q .headRefOid`.
      Validate it matches `^[0-9a-f]{40}$`; if not, report
      `Phase -0.5 halt: could not resolve PR head SHA` and stop.
+   - Resolve `$RESOLVED_TEMP_DIR` (the concrete `/tmp/claude-<session-id>/`
+     path — see Step 2.9) now, before the call. Pass it as the 4th argument so
+     the worktree lands under a session-temp path the Bash guard permits;
+     `CLAUDE_TEMP_DIR` is not exported to Bash subprocesses, so omitting it
+     silently lands the worktree under `$TMPDIR` (`/var/folders` on macOS).
    - Call the helper (from this plugin's `bin/` directory, already on `PATH`):
 
      ```bash
-     review-worktree add "$REPO_DIR" "$HEAD_BRANCH" "$EXPECTED_HEAD_SHA"
+     review-worktree add "$REPO_DIR" "$HEAD_BRANCH" "$EXPECTED_HEAD_SHA" "$RESOLVED_TEMP_DIR"
      ```
 
      On a **non-zero exit**, hard-halt with the helper's stderr message and run

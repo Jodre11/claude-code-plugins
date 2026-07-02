@@ -35,6 +35,42 @@ _die() {
     exit 1
 }
 
+# Canonicalise a path (resolving symlinks and ..). Prefers realpath; falls back
+# to a cd -P of the parent so the gates work on systems without realpath.
+_realpath() {
+    if command -v realpath >/dev/null 2>&1; then
+        realpath "$1" 2>/dev/null && return 0
+    fi
+    local dir base
+    dir="$(cd "$(dirname "$1")" 2>/dev/null && pwd -P)" || return 1
+    base="$(basename "$1")"
+    printf '%s/%s\n' "$dir" "$base"
+}
+
+# Refuse to delete anything that is not a plugin-owned *linked* worktree. Two
+# independent gates — a primary working tree (or any arbitrary directory) fails
+# both. This is the load-bearing safety layer: a mis-resolved path must never
+# reach an rm -rf. On failure, _die loudly and delete nothing.
+_assert_deletable_worktree() {
+    local path="$1" resolved base parent git_dir
+    resolved="$(_realpath "$path")" || _die "cannot resolve path for deletion: $path"
+
+    # Gate 1 — structural: basename matches wt-*, parent dir is review-worktrees.
+    base="$(basename "$resolved")"
+    parent="$(basename "$(dirname "$resolved")")"
+    [[ "$base" == wt-* && "$parent" == "review-worktrees" ]] \
+        || _die "refusing to remove path failing structural gate (expected review-worktrees/wt-*): $resolved"
+
+    # Gate 2 — git-linked: a linked worktree's git-dir lives under
+    # <common>/worktrees/<name>; a primary worktree's git-dir is the common dir
+    # itself. Refuse anything whose git-dir is not under a worktrees/ path.
+    git_dir="$(git -C "$path" rev-parse --git-dir 2>/dev/null || true)"
+    case "$git_dir" in
+        */worktrees/*) : ;;
+        *) _die "refusing to remove path failing git-linked gate (git-dir not under worktrees/): $resolved (git-dir: ${git_dir:-none})" ;;
+    esac
+}
+
 # Reclaim leaked plugin-owned worktrees older than the threshold (self-heal for
 # a worktree left behind by a crashed run), then prune git's admin records.
 # Age-based so a concurrent review's fresh worktree is never reclaimed.
@@ -100,6 +136,10 @@ cmd_remove() {
     local worktree_path="${1:-}"
     [[ -n "$worktree_path" ]] || _die "remove requires <worktreePath>"
     if [[ -d "$worktree_path" ]]; then
+        # Structural + git-linked gates: prove this is a plugin-owned linked
+        # worktree before any deletion can fire (guards the rm -rf fallback).
+        _assert_deletable_worktree "$worktree_path"
+
         # Resolve the owning repo from the worktree's common gitdir.
         local common_dir repo_dir
         common_dir="$(git -C "$worktree_path" rev-parse --git-common-dir 2>/dev/null || true)"

@@ -736,20 +736,29 @@ inline (no still-present line exists in the new tree) — see
 `agents/archaeology-reviewer.md` for the top-level-prose rule.
 
 **Serialisation.** Once built, serialise `$CHANGED_LINES` into a compact form
-for the agent prompt:
+for the agent prompt. Collapse any run of **3 or more consecutive** added-line
+integers into an inclusive `N-M` range token; leave runs of 1 or 2 as bare
+integers (a range is no shorter than `N, N+1`). `near N` anchors never
+participate in a range — they are discrete and emitted verbatim in position:
 
 ```
 Changed lines:
-path/to/file1.cs: 12, 13, 14, 17, near 22
-path/to/file2.md: 5, 6, 7
+path/to/file1.cs: 12-14, 17, near 22
+path/to/file2.md: 5-7
+path/to/big-new-file.tf: 1-457
 path/to/renamed.txt: (empty — rename only)
 path/to/deleted-file.cs (deleted): near 1
 ```
 
-- Bare integers are added/modified lines (line numbers in the new file).
+- Bare integers are single added/modified lines (line numbers in the new file).
+- `N-M` is an inclusive contiguous run of added/modified lines (`12-14` = 12,
+  13, 14). Only emitted for runs of ≥3; both endpoints are themselves touched
+  lines. This keeps the block compact for wholly-new files (a 457-line file
+  serialises to `1-457`, not 457 comma-separated integers) — load-bearing when
+  the block is carried through a Workflow `args` payload.
 - `near N` tags are deletion anchors for `archaeology-reviewer`. They mean:
   "a line was deleted just below or at line N in the new file" — the closest
-  still-present line.
+  still-present line. Never collapsed into a range.
 - `(empty — rename only)` documents files that appear in the diff with zero
   hunks.
 

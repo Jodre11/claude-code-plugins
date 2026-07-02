@@ -77,7 +77,11 @@ line as `<file path>[ (sentinel)]: <comma-separated tokens>`.
 
 Tokens after the colon are one of:
 - a bare integer (touched line in the new file)
-- `near N` (deletion anchor — used by `archaeology-reviewer`)
+- `N-M` (inclusive contiguous run of touched lines — `12-14` means lines 12, 13, and 14
+  are all touched; expand it to every integer in `[N, M]`). Emitted by the serialiser only
+  for runs of ≥3 consecutive lines; treat `N-M` and the equivalent comma-separated integers
+  as identical.
+- `near N` (deletion anchor — used by `archaeology-reviewer`; never appears inside a range)
 - `(empty — rename only)` as the entire token list — file accepts no findings (rename
   without content change)
 
@@ -90,17 +94,17 @@ Optional file-path modifiers (appearing before the colon, not after):
 
 ```
 Changed lines:
-src/Foo.cs: 12, 13, 14, 17, near 22
-docs/README.md: 5, 6, 7
+src/Foo.cs: 12-14, 17, near 22
+docs/README.md: 5-7
 src/Renamed.cs: (empty — rename only)
 src/RemovedHelper.cs (deleted): near 1
 ```
 
-In this example, `Foo.cs` accepts findings on lines 12-14 and 17 (added/modified)
-and on line 22 (deletion anchor — archaeology only). `README.md` accepts findings
-on lines 5-7. `Renamed.cs` accepts no findings (rename without content change).
-`RemovedHelper.cs` is fully deleted; only archaeology may emit findings, and they
-must be top-level prose (no inline anchor).
+In this example, `Foo.cs` accepts findings on lines 12-14 (the `12-14` range) and 17
+(added/modified) and on line 22 (deletion anchor — archaeology only). `README.md` accepts
+findings on lines 5-7 (the `5-7` range). `Renamed.cs` accepts no findings (rename without
+content change). `RemovedHelper.cs` is fully deleted; only archaeology may emit findings,
+and they must be top-level prose (no inline anchor).
 
 The block is the orchestrator's authoritative line-level filter. Specialists MUST emit
 findings only on lines that appear as bare integers (or `near N` for archaeology

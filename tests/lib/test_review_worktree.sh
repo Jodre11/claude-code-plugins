@@ -78,6 +78,43 @@ test_review_worktree_add_happy_path() {
     rm -rf "$root" "$work" "$origin"
 }
 
+test_review_worktree_add_explicit_root_no_env() {
+    # Regression: the 4th positional tempRoot arg must pin the worktree parent
+    # even when CLAUDE_TEMP_DIR is unset in the environment (it is present in the
+    # session's conversation context but NOT exported to Bash subprocesses, so
+    # relying on the env fallback silently lands under $TMPDIR). Callers pass the
+    # resolved temp dir explicitly; this proves that path is honoured.
+    local helper
+    helper="$(_rw_cr_dir)/bin/review-worktree"
+    if [[ ! -x "$helper" ]]; then
+        fail "review-worktree add: explicit root arg" "helper missing"
+        return
+    fi
+    local root work origin sha wt_path
+    root=$(mktemp -d)
+    read -r work origin sha < <(_rw_make_fixture)
+
+    # No CLAUDE_TEMP_DIR in env; pass root as the 4th positional instead.
+    wt_path=$(env -u CLAUDE_TEMP_DIR "$helper" add "$work" main "$sha" "$root")
+
+    case "$wt_path" in
+        "$root/review-worktrees/"*)
+            pass "review-worktree add: explicit root arg pins worktree parent" ;;
+        *)
+            fail "review-worktree add: explicit root arg pins worktree parent" \
+                "expected under $root/review-worktrees/, got: $wt_path" ;;
+    esac
+
+    if [[ -d "$wt_path" ]]; then
+        pass "review-worktree add: explicit-root worktree exists"
+    else
+        fail "review-worktree add: explicit-root worktree exists" "path: $wt_path"
+    fi
+
+    git -C "$work" worktree remove --force "$wt_path" 2>/dev/null || true
+    rm -rf "$root" "$work" "$origin"
+}
+
 test_review_worktree_add_sha_mismatch_halts() {
     local helper
     helper="$(_rw_cr_dir)/bin/review-worktree"

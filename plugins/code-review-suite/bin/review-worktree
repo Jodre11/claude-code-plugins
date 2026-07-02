@@ -4,22 +4,30 @@
 # unit-tested shell — never LLM-improvised prose.
 #
 # Subcommands:
-#   add <repoDir> <branch> <expectedHeadSha>
+#   add <repoDir> <branch> <expectedHeadSha> [tempRoot]
 #       Prune stale plugin-owned worktrees, fetch <branch>, assert the fetched
 #       head equals <expectedHeadSha>, create a detached worktree at that
 #       immutable SHA under the session temp root, re-assert HEAD, print the
 #       absolute path. Exits non-zero and creates nothing on any failure.
+#       [tempRoot] (optional) pins the parent temp directory explicitly; the
+#       helper appends /review-worktrees to it. Callers should pass this rather
+#       than rely on env inference: CLAUDE_TEMP_DIR is set in the session's
+#       conversation context but is NOT exported into Bash subprocesses, so the
+#       env fallback silently lands under $TMPDIR (/var/folders on macOS).
 #   remove <worktreePath>
 #       Idempotent teardown. Exit 0 whether or not the path exists.
 #
-# Worktree root: ${CLAUDE_TEMP_DIR:-${TMPDIR:-/tmp}}/review-worktrees
+# Worktree root: <tempRoot arg>/review-worktrees, else
+#                ${CLAUDE_TEMP_DIR:-${TMPDIR:-/tmp}}/review-worktrees
 # Stale age threshold (minutes): ${REVIEW_WORKTREE_STALE_MINUTES:-360}
 set -euo pipefail
 
 STALE_MINUTES="${REVIEW_WORKTREE_STALE_MINUTES:-360}"
+ROOT_OVERRIDE=""
 
 _root() {
-    printf '%s/review-worktrees' "${CLAUDE_TEMP_DIR:-${TMPDIR:-/tmp}}"
+    local base="${ROOT_OVERRIDE:-${CLAUDE_TEMP_DIR:-${TMPDIR:-/tmp}}}"
+    printf '%s/review-worktrees' "$base"
 }
 
 _die() {
@@ -44,9 +52,10 @@ _prune_stale() {
 }
 
 cmd_add() {
-    local repo_dir="${1:-}" branch="${2:-}" expected_sha="${3:-}"
+    local repo_dir="${1:-}" branch="${2:-}" expected_sha="${3:-}" temp_root="${4:-}"
     [[ -n "$repo_dir" && -n "$branch" && -n "$expected_sha" ]] \
-        || _die "add requires <repoDir> <branch> <expectedHeadSha>"
+        || _die "add requires <repoDir> <branch> <expectedHeadSha> [tempRoot]"
+    ROOT_OVERRIDE="$temp_root"
     [[ "$expected_sha" =~ ^[0-9a-f]{40}$ ]] \
         || _die "expected head SHA is not a 40-hex string: $expected_sha"
     git -C "$repo_dir" rev-parse --show-toplevel >/dev/null 2>&1 \

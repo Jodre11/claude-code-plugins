@@ -73,18 +73,21 @@ Two crux decisions (user-approved):
 ## Data flow
 
 ```
-review-core (normal route)
+review-core (normal route, round-1 site)
   crossAndSynth() → agent(synthPrompt, {model:opus, schema:SYNTH_SCHEMA})
-     │  synthStalled?  ── yes ──▶ return { synthDeferred:true, synthPrompt }
-     │                            (BEFORE the Category-C guard — see Component 2)
-     ▼ no (envelope, possibly null on a non-stall API error)
-  Category-C guard (envelope null / missing tiers) ──▶ empty bundle
+     │  synthStalled?  ── yes ──▶ return { synthDeferred:true, synthPrompt }   (defer, BEFORE finalize)
+     ▼ no (envelope; may be null on a non-stall API error)
+  reviewMode==='pr' && boundaryGateFires(envelope)? ── yes ──▶ round 2 (dispatchSpecialists)
+     │                                                          → re-synth → maybe replace envelope
      ▼
-  local mode? ── yes ──▶ finalizeBundle(envelope, 'local', phaseLog) ──▶ prose bundle
-     ▼ no (pr mode)
-  boundary gate fires? ── yes ──▶ round 2 (dispatchSpecialists) → re-synth → maybe replace envelope
-     ▼
-  finalizeBundle(envelope, 'pr', phaseLog) ──▶ sealed bundle
+  return finalizeBundle(envelope, reviewMode, phaseLog)
+        ├─ envelope null / missing tiers ──▶ empty bundle (verdict NONE, no comments)
+        ├─ reviewMode==='local'          ──▶ prose bundle (verdict NONE, no comments, + log)
+        └─ pr mode                       ──▶ Class D filter + renderComments + buildBody ──▶ sealed bundle
+  ────────────────────────────────────────────────────────────────────────────
+finalize route (recovery re-entry) — enters near the top of the script:
+  if (route === 'finalize') return finalizeBundle(resolvedArgs.envelope, reviewMode, null)
+     → same three-way body as above; spawns ZERO agents; the boundary gate is never reached.
   ────────────────────────────────────────────────────────────────────────────
 caller (review-pipeline.md Step 3.5, main agent loop)
   bundle = workflow({scriptPath}, {...})
@@ -96,10 +99,11 @@ caller (review-pipeline.md Step 3.5, main agent loop)
   post (PR) / print (local) bundle as normal
 ```
 
-The `finalize` route enters review-core near the top and calls **only** `finalizeBundle`
-— it does NOT run the boundary gate or `dispatchSpecialists`, so it spawns zero agents and
-the watchdog never engages. The boundary gate lives on the **normal** path only (PR mode),
-exactly where it is today.
+`finalizeBundle` is the **single tail** shared by the normal path and the `finalize` route:
+it owns the Category-C guard, the local-mode branch, and the PR-mode Class D filter/render.
+The boundary gate + round-2 block are NOT part of it — they stay on the normal path, ahead of
+the `finalizeBundle` call and guarded to PR mode, so the finalize route (which never runs them)
+spawns zero agents and the watchdog never engages.
 
 ## Components
 
@@ -124,18 +128,24 @@ If `synthStalled` after the round-1 `crossAndSynth`, return `{ synthDeferred:tru
 
 **Placement is load-bearing: the defer check MUST run before the Category-C guard (current
 ~L207), not merely "before the boundary gate".** A stall sets `envelope = null`, and the
-Category-C guard (`if (!envelope || !envelope.tiers)`) sits *ahead* of the boundary gate and
-returns an empty bundle on any null envelope. If the defer check is placed after it, the stall
-is swallowed as a Category-C empty bundle and the recovery path never fires. So the order at the
-round-1 site becomes:
+Category-C guard (`if (!envelope || !envelope.tiers)`) — which moves into `finalizeBundle`
+(Component 3) — returns an empty bundle on any null envelope. If the defer check is placed
+after that guard runs, the stall is swallowed as a Category-C empty bundle and the recovery
+path never fires. Since Component 3 also folds the local-mode branch into `finalizeBundle`,
+the round-1 site collapses to this order (the Category-C guard and local branch that were
+inline at ~L207-219 now live inside `finalizeBundle`):
 
 ```
-1. if (synthStalled) return { synthDeferred:true, synthPrompt }   ← NEW, first
-2. if (!envelope || !envelope.tiers) return <empty bundle>        ← existing Category-C guard
-3. if (reviewMode === 'local') return finalizeBundle(envelope, 'local', phaseLog)
-4. if (boundaryGateFires(envelope)) { …round 2… }                 ← PR path only
-5. return finalizeBundle(envelope, 'pr', phaseLog)
+1. if (synthStalled) return { synthDeferred:true, synthPrompt }          ← NEW, first
+2. if (reviewMode !== 'local' && boundaryGateFires(envelope)) { …r2… }   ← PR path only
+3. return finalizeBundle(envelope, reviewMode, phaseLog)                 ← guard + local + Class D live here
 ```
+
+`finalizeBundle` internally short-circuits to the empty bundle when `envelope` is null/missing
+tiers, and to the prose bundle when `reviewMode === 'local'` — so those two behaviours are
+preserved exactly, just relocated. The `boundaryGateFires` call is now explicitly guarded to
+PR mode (`reviewMode !== 'local'`), because it previously relied on the local branch's early
+return at ~L216 to shield it — see Component 3.
 
 The defer payload is just the exact prompt string — the leanest option available *relative to
 also threading `phaseLog` back*, though not lean in absolute terms: `synthPrompt` is ~52 KB
@@ -214,6 +224,14 @@ structured envelope (the object already fully specified in the existing "Envelop
 (review-core consumer)" section) as JSON to `<path>`. Prose → human; JSON file → machine
 hand-off. No change to analysis, tiering, or verdict logic.
 
+**Grant the `Write` tool (load-bearing, not cosmetic).** The synthesiser's current frontmatter
+is `tools: Read, Grep, Glob, Bash` — no `Write`. The standalone recovery dispatch (Component 4)
+inherits this frontmatter, so without adding `Write` the agent physically cannot honour the
+contract above: it writes no file, the caller's defensive read fails, and every recovery
+degrades to the empty bundle — defeating the whole recovery net. Add `Write` to the tools line.
+This is safe for the normal in-sandbox synth path, which never receives an `Envelope output
+path:` line and so never writes.
+
 **No runtime schema enforcement on this path (accepted).** The in-sandbox synth gets
 `agent(..., {schema: SYNTH_SCHEMA})` enforcement; the standalone Agent just `Write`s JSON, so
 the shape is only as good as the model's adherence to the contract. `JSON.parse` catches gross
@@ -270,6 +288,18 @@ cites the canonical "Envelope output" section) to minimise drift.
 ## Files touched
 
 - `workflows/review-core.mjs` — stall guard, deferred bundle, `finalizeBundle` extraction, `finalize` route.
-- `agents/review-synthesiser.md` — standalone recovery-mode envelope-write note.
-- `includes/review-pipeline.md` — Step 3.5 standalone-dispatch + finalize re-entry branch.
-- `tests/run.sh` — structural assertions.
+- `agents/review-synthesiser.md` — standalone recovery-mode envelope-write note + `Write` added to the `tools:` frontmatter (the standalone dispatch inherits it; without `Write` the recovery cannot write the envelope file).
+- `includes/review-pipeline.md` — Step 3.5 standalone-dispatch + finalize re-entry branch (**canonical**).
+- `skills/review-gh-pr/SKILL.md` — the Step 3.5 block is inlined **verbatim** from the canonical
+  pipeline; `tests/lib/test_sync_notes.sh` (`test_sync_pipeline_inline_matches_canonical`) asserts
+  byte-identical propagation, so the recovery branch must be copied here too.
+- `commands/pre-review.md` — same verbatim-inlined Step 3.5 block; same byte-identical sync
+  requirement. (Local/pre-review mode never posts to GitHub, but it still receives a
+  `synthDeferred` bundle and must run the recovery to render the prose report.)
+- `tests/lib/test_workflow_migration.sh` — the finalize-route unit test (stub-globals node
+  harness, mirroring `test_review_core_survives_null_agent_results`) and the structural
+  assertions. `tests/run.sh` auto-discovers `test_*` functions; no edit to `run.sh` itself.
+
+**Sync-note discipline:** because the Step 3.5 block is triplicated, edit the canonical
+`includes/review-pipeline.md` first, then propagate the identical text to `SKILL.md` and
+`pre-review.md`. Run `tests/run.sh` — the sync test fails loudly on any drift.

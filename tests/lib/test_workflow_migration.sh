@@ -552,6 +552,30 @@ test_synth_stall_defers() {
     fi
 }
 
+# Task 4: all three pipeline copies must document the caller-side stall-recovery branch
+# (synthDeferred → standalone dispatch → finalize re-entry). The sync test enforces the three
+# are byte-identical; this test asserts the recovery tokens are present in each.
+test_caller_wires_stall_recovery() {
+    local cr
+    cr=$(_wm_cr_dir)
+    local file
+    for file in includes/review-pipeline.md skills/review-gh-pr/SKILL.md commands/pre-review.md; do
+        local path="$cr/$file"
+        if [[ ! -f "$path" ]]; then
+            fail "caller wires stall recovery: $file" "file not found"
+            continue
+        fi
+        if grep -qF 'synthDeferred' "$path" \
+            && grep -qF 'synth-standalone-recovery' "$path" \
+            && grep -qF "route: 'finalize'" "$path"; then
+            pass "caller wires stall recovery: $file has the synthDeferred recovery branch"
+        else
+            fail "caller wires stall recovery: $file has the synthDeferred recovery branch" \
+                "Step 3.5 must handle a synthDeferred bundle: standalone review-synthesiser dispatch (name synth-standalone-recovery) then a workflow re-invoke with route: 'finalize'"
+        fi
+    done
+}
+
 # Task 3: the synthesiser agent must document the standalone recovery mode — when an
 # `Envelope output path:` line is present, Write the structured envelope JSON to that path.
 # It must ALSO be granted the Write tool, or the standalone dispatch inherits a toolset that

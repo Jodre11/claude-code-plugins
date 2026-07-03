@@ -468,6 +468,74 @@ test_finalize_route_parity() {
     fi
 }
 
+# Task 4 (recovery-path degrade): the finalize route is what seals a recovered envelope, but
+# the standalone synth can write a corrupt/absent file — the caller's defensive Read/parse then
+# hands finalize a null (or the caller emits the empty bundle directly). finalizeBundle's
+# Category-C guard MUST turn a null/missing-tiers envelope into the exact empty bundle
+# `{ verdict:'NONE', bodyText:'(synthesiser produced no usable output)', comments:[] }` with ZERO
+# agent() calls — that is the "degrade, never hang" promise on the recovery path itself. The
+# parity test only drives finalize with a well-formed envelope; this asserts the degrade branch.
+test_finalize_route_null_envelope_degrades() {
+    local cr
+    cr=$(_wm_cr_dir)
+    local wf="$cr/workflows/review-core.mjs"
+    if [[ ! -f "$wf" ]]; then
+        fail "finalize route null-envelope degrade" "missing: $wf"
+        return
+    fi
+    local result
+    result=$(node -e '
+        const fs = require("fs");
+        const src = fs.readFileSync(process.argv[1], "utf8")
+            .replace(/^export\s+const\s+meta/m, "const meta");
+        const baseArgs = {
+            agentPrompt: "x", flags: {}, selfReReview: false,
+            reviewMode: "pr", base: "main", headSha: "a".repeat(40),
+            emptyTreeMode: false, pathScope: "", tempDir: "/tmp/x",
+        };
+        const parallel = (thunks) => Promise.all(thunks.map(t => t()));
+        const phase = () => {};
+        const log = () => {};
+        const pipeline = async () => [];
+        const workflow = async () => null;
+        const run = (agent, args) => {
+            const fn = new Function("agent","parallel","pipeline","phase","log","args","workflow",
+                "return (async()=>{" + src + "\n})()");
+            return fn(agent, parallel, pipeline, phase, log, args, workflow);
+        };
+        (async () => {
+            // finalize route with a null envelope (corrupt/absent recovery file) must NOT call
+            // agent() and must return the exact empty bundle.
+            let called = false;
+            const agentNever = async () => { called = true; return null; };
+            let bundle;
+            try {
+                bundle = await run(agentNever, { ...baseArgs, route: "finalize", envelope: null });
+            } catch (e) { console.log("THREW(null): " + e.message); return; }
+            if (called) { console.log("AGENT_CALLED_ON_NULL_FINALIZE"); return; }
+            if (bundle.verdict !== "NONE") { console.log("BADVERDICT: " + bundle.verdict); return; }
+            if (!Array.isArray(bundle.comments) || bundle.comments.length !== 0) { console.log("BADCOMMENTS: " + JSON.stringify(bundle.comments)); return; }
+            if (bundle.bodyText !== "(synthesiser produced no usable output)") { console.log("BADBODY: " + JSON.stringify(bundle.bodyText)); return; }
+            // Also cover a valid-JSON-but-missing-tiers envelope (partial corruption that JSON.parse
+            // accepts): same Category-C guard, same empty bundle.
+            let bundle2;
+            try {
+                bundle2 = await run(agentNever, { ...baseArgs, route: "finalize", envelope: { verdict: "APPROVE" } });
+            } catch (e) { console.log("THREW(notiers): " + e.message); return; }
+            if (bundle2.verdict !== "NONE" || bundle2.bodyText !== "(synthesiser produced no usable output)") {
+                console.log("NOTIERS_NOT_DEGRADED: " + JSON.stringify(bundle2)); return;
+            }
+            console.log("OK");
+        })();
+    ' "$wf" 2>&1)
+    if [[ "$result" == "OK" ]]; then
+        pass "finalize route degrades a null/missing-tiers envelope to the empty bundle with zero agents"
+    else
+        fail "finalize route degrades a null/missing-tiers envelope to the empty bundle with zero agents" \
+            "$result"
+    fi
+}
+
 # Task 2: a synth agent() that throws the runtime stall message must be caught inside
 # crossAndSynth; the round-1 site then returns a synthDeferred bundle (NOT a crash, NOT an
 # empty Category-C bundle). A non-stall throw must re-propagate. A round-2 stall must be

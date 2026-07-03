@@ -551,3 +551,39 @@ test_synth_stall_defers() {
             "$result"
     fi
 }
+
+# Task 3: the synthesiser agent must document the standalone recovery mode — when an
+# `Envelope output path:` line is present, Write the structured envelope JSON to that path.
+# It must ALSO be granted the Write tool, or the standalone dispatch inherits a toolset that
+# cannot honour the contract and every recovery silently degrades to the empty bundle.
+test_synthesiser_documents_standalone_recovery() {
+    local cr
+    cr=$(_wm_cr_dir)
+    local synth="$cr/agents/review-synthesiser.md"
+    if [[ ! -f "$synth" ]]; then
+        fail "synthesiser standalone recovery note" "review-synthesiser.md not found"
+        return
+    fi
+    if grep -qF 'Envelope output path:' "$synth"; then
+        pass "synthesiser documents the Envelope output path: recovery trigger"
+    else
+        fail "synthesiser documents the Envelope output path: recovery trigger" \
+            "review-synthesiser.md must document the standalone recovery mode keyed on an 'Envelope output path:' prompt line"
+    fi
+    if grep -qiE 'standalone recovery' "$synth"; then
+        pass "synthesiser has a Standalone recovery mode section"
+    else
+        fail "synthesiser has a Standalone recovery mode section" \
+            "add a 'Standalone recovery mode' note instructing the agent to Write the envelope JSON"
+    fi
+    # The recovery contract is inert without the Write tool: the standalone dispatch inherits
+    # this frontmatter, so a missing Write grant means the agent cannot write the envelope file
+    # and the caller's defensive read always falls back to the empty bundle. Assert the tools:
+    # frontmatter line grants Write.
+    if grep -qE '^tools:.*\bWrite\b' "$synth"; then
+        pass "synthesiser frontmatter grants the Write tool (recovery envelope file write)"
+    else
+        fail "synthesiser frontmatter grants the Write tool (recovery envelope file write)" \
+            "review-synthesiser.md 'tools:' frontmatter must include Write — without it the standalone recovery dispatch cannot write the envelope JSON and every recovery degrades to the empty bundle"
+    fi
+}

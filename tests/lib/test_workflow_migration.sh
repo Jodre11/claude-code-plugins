@@ -384,3 +384,86 @@ test_review_core_threads_repo_dir_to_synth() {
             "the synth prompt assembly must include a conditional (repoDir ? ...) for the Repo dir line"
     fi
 }
+
+# Task 1: the finalize route re-enters review-core with a recovered envelope, runs
+# finalizeBundle (Class D filter + render) with ZERO agent() calls, and produces a bundle
+# identical (in verdict/comments/bodyText) to the normal path for the same non-gate-firing
+# envelope. Uses an APPROVE envelope with no contested tier and no Important consensus, so
+# boundaryGateFires() is false and the two paths are directly comparable.
+test_finalize_route_parity() {
+    local cr
+    cr=$(_wm_cr_dir)
+    local wf="$cr/workflows/review-core.mjs"
+    if [[ ! -f "$wf" ]]; then
+        fail "finalize route parity" "missing: $wf"
+        return
+    fi
+    local result
+    result=$(node -e '
+        const fs = require("fs");
+        const src = fs.readFileSync(process.argv[1], "utf8")
+            .replace(/^export\s+const\s+meta/m, "const meta");
+        const ENV = {
+            verdict: "APPROVE",
+            rubricRowApplied: 4,
+            rubricReason: "no high-confidence findings",
+            tiers: {
+                consensus: [{ file: "a.js", line: 10, severity: "Suggestion", confidence: 90, description: "desc one", suggested_fix: "fix one" }],
+                synthesiser: [{ file: "b.js", line: 20, severity: "Suggestion", confidence: 50, description: "desc two", suggested_fix: "fix two" }],
+                contested: [],
+                dismissed: [],
+            },
+            bodyText: "## Summary\n1 file(s) changed | 1 finding(s) | 0 contested\n\n## Synthesiser Assessment\n> Looks fine.\n",
+        };
+        const baseArgs = {
+            agentPrompt: "x", flags: {}, selfReReview: false,
+            reviewMode: "pr", base: "main", headSha: "a".repeat(40),
+            emptyTreeMode: false, pathScope: "", tempDir: "/tmp/x",
+        };
+        const parallel = (thunks) => Promise.all(thunks.map(t => t()));
+        const phase = () => {};
+        const log = () => {};
+        const pipeline = async () => [];
+        const workflow = async () => null;
+        const run = (agent, args) => {
+            const fn = new Function("agent","parallel","pipeline","phase","log","args","workflow",
+                "return (async()=>{" + src + "\n})()");
+            return fn(agent, parallel, pipeline, phase, log, args, workflow);
+        };
+        const pick = (b) => ({ verdict: b.verdict, comments: b.comments, bodyText: b.bodyText });
+        (async () => {
+            // (a) finalize route: agent() must NEVER be called; envelope passed as arg.
+            let called = false;
+            const agentNever = async () => { called = true; return null; };
+            let finalizeBundle;
+            try {
+                finalizeBundle = await run(agentNever, { ...baseArgs, route: "finalize", envelope: ENV });
+            } catch (e) { console.log("THREW(finalize): " + e.message); return; }
+            if (called) { console.log("AGENT_CALLED_ON_FINALIZE"); return; }
+            if (finalizeBundle.verdict !== "APPROVE") { console.log("BADVERDICT: " + finalizeBundle.verdict); return; }
+            if (!Array.isArray(finalizeBundle.comments) || finalizeBundle.comments.length !== 1) { console.log("BADCOMMENTS: " + JSON.stringify(finalizeBundle.comments)); return; }
+            if (finalizeBundle.comments[0].path !== "a.js" || finalizeBundle.comments[0].line !== 10) { console.log("BADANCHOR: " + JSON.stringify(finalizeBundle.comments[0])); return; }
+            if (!finalizeBundle.bodyText.includes("**APPROVE**")) { console.log("NOHEADLINE"); return; }
+            // (b) normal path with a synth mock returning the SAME envelope, no gate fires.
+            const agentSynth = async (prompt, opts) => {
+                if (opts && opts.agentType === "code-review-suite:review-synthesiser") return ENV;
+                return { status: "ok", findings: [], opinionsMarkdown: "", escalations: [] };
+            };
+            let normal;
+            try {
+                normal = await run(agentSynth, { ...baseArgs, route: "full" });
+            } catch (e) { console.log("THREW(normal): " + e.message); return; }
+            if (JSON.stringify(pick(normal)) !== JSON.stringify(pick(finalizeBundle))) {
+                console.log("PARITY_MISMATCH\nnormal=" + JSON.stringify(pick(normal)) + "\nfinalize=" + JSON.stringify(pick(finalizeBundle)));
+                return;
+            }
+            console.log("OK");
+        })();
+    ' "$wf" 2>&1)
+    if [[ "$result" == "OK" ]]; then
+        pass "finalize route runs finalizeBundle with zero agents and matches normal-path output"
+    else
+        fail "finalize route runs finalizeBundle with zero agents and matches normal-path output" \
+            "$result"
+    fi
+}

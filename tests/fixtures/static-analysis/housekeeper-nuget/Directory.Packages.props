@@ -1,0 +1,6 @@
+<Project>
+  <ItemGroup>
+    <PackageVersion Include="Serilog" Version="2.10.0" />
+    <PackageVersion Include="WindowsAzure.Storage" Version="9.3.3" />
+  </ItemGroup>
+</Project>

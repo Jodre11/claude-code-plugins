@@ -1,0 +1,36 @@
+# OS
+.DS_Store
+Thumbs.db
+
+# Editors
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Hooks
+.githooks/patterns.local
+
+# Python
+__pycache__/
+*.pyc
+
+# Node
+node_modules/
+package-lock.json
+# Exception: the eslint A/B fixture commits its lockfile so `npm ci` is
+# reproducible in the per-agent harness (Phase 3.2b apparatus fix).
+!tests/fixtures/static-analysis/eslint/package-lock.json
+
+# Test artefacts
+tests/lib/.static-analysis-smoke-results.json
+
+# .NET build output (the jbinspect A/B fixture is a real C# project; InspectCode
+# restores + builds it into bin/obj inside each per-trial copy, never in-repo, but
+# guard against an in-place `dotnet build`/`jb inspectcode` leaving artefacts behind)
+tests/fixtures/static-analysis/jbinspect/bin/
+tests/fixtures/static-analysis/jbinspect/obj/
+
+# A/B test harness output
+tests/ab/runs/

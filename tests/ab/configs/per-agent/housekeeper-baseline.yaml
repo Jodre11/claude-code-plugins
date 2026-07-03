@@ -1,0 +1,7 @@
+name: housekeeper-baseline
+description: Production reference for housekeeper-reviewer — sonnet at default effort.
+mode: per-agent
+agent: housekeeper-reviewer
+session:
+  model: sonnet
+  effort: default

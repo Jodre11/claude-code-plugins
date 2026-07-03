@@ -1,0 +1,14 @@
+id: smoke-with-setup
+agent: eslint-reviewer
+captured_at: 2026-06-02T00:00:00Z
+captured_under:
+  suite_sha: deadbeef
+  agent_model: sonnet
+  agent_effort: default
+working_dir_strategy: copy
+setup:
+  command: npm ci
+source_path: tests/fixtures/static-analysis/eslint/
+intent_ledger: |
+  - Test fixture for setup-command parsing.
+depends_on: []

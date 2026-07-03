@@ -1,0 +1,7 @@
+{
+  "name": "fixture-eslint",
+  "private": true,
+  "devDependencies": {
+    "eslint": "^10.4.1"
+  }
+}

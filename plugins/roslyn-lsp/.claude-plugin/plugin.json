@@ -1,0 +1,15 @@
+{
+  "name": "roslyn-lsp",
+  "description": "Solution-aware C# LSP via Microsoft Roslyn + ClaudeCodeRoslynLspProxy. Re-host of unsafePtr/ClaudeCodeRoslynLspProxy with locally-tuned defaults.",
+  "author": {
+    "name": "Christian Haddrell"
+  },
+  "homepage": "https://github.com/unsafePtr/ClaudeCodeRoslynLspProxy",
+  "license": "MIT",
+  "keywords": [
+    "csharp",
+    "dotnet",
+    "lsp",
+    "roslyn"
+  ]
+}

@@ -1,0 +1,28 @@
+id: housekeeper-nuget-stale-deps
+agent: housekeeper-reviewer
+captured_at: 2026-06-11T11:31:02Z
+baseline_revision: 1
+captured_under:
+  suite_sha: ca815a4b75d99170e47da2addcf5a9ca9b1aff36
+  agent_model: sonnet
+  agent_effort: default
+working_dir_strategy: copy
+source_path: tests/fixtures/static-analysis/housekeeper-nuget/
+base_sha: ""  # synthetic fixture: no real diff
+head_sha: ""
+path_scope: ""
+empty_tree_mode: false
+registry_fixtures: registry/   # INERT: harness has no env-passthrough (CLAUDE_CODE_SUBPROCESS_ENV_SCRUB=1); the live capture (Task 13) hits real registries. Kept as a forward marker.
+intent_ledger: |
+  ## Intent ledger
+  - Synthetic NuGet fixture exercising housekeeper-reviewer against a CPM
+    solution (Directory.Packages.props central versions; version-less csproj
+    refs resolving through CPM). Two deterministic Suggestion findings: Serilog
+    2.10.0 -> 4.0.0 (stale) and WindowsAzure.Storage 9.3.3 current-but-deprecated
+    (pure-health). Slice-2 baseline for the Haiku/low cost-tuning probe.
+depends_on:
+  - plugins/code-review-suite/agents/housekeeper-reviewer.md
+  - plugins/code-review-suite/bin/housekeeper-freshness
+  - plugins/code-review-suite/includes/static-analysis-context.md
+  - tests/fixtures/static-analysis/housekeeper-nuget/src/Api/Api.csproj
+  - tests/fixtures/static-analysis/housekeeper-nuget/Directory.Packages.props

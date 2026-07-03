@@ -1,0 +1,72 @@
+title = "claude-code-plugins gitleaks config"
+
+# Org-specific rules (supplement the built-in rules)
+
+[[rules]]
+id = "org-aws-account-id"
+description = "AWS account ID in context (ARN, SSO config, ECR)"
+regex = '''(?:arn:aws[a-z-]*:[a-z0-9-]+:[a-z0-9-]*:|sso_account_id\s*=\s*|account[_-]?id["'\s:=]+)\d{12}'''
+tags = ["corporate", "aws"]
+
+[[rules]]
+id = "org-sso-url"
+description = "Organisation SSO start URL"
+regex = '''yourorg\.awsapps\.com'''
+tags = ["corporate", "aws"]
+
+[[rules]]
+id = "org-ecr-registry"
+description = "AWS ECR registry URL"
+regex = '''\d{12}\.dkr\.ecr\.[a-z0-9-]+\.amazonaws\.com'''
+tags = ["corporate", "aws"]
+
+[[rules]]
+id = "org-bedrock-arn-fragment"
+description = "Bedrock inference profile ARN fragment"
+regex = '''application-inference-profile/[a-z0-9]{10,16}'''
+tags = ["corporate", "aws"]
+
+[[rules]]
+id = "org-ad-path"
+description = "Active Directory path"
+regex = '''DC=your-domain'''
+tags = ["corporate"]
+
+[[rules]]
+id = "org-name"
+description = "Organisation references"
+regex = '''(?i)(YourOrgEngineering|yourorg|your-company\.com|your-stage\.com|your-dev-server|your-prod-server|yourorgltd)'''
+tags = ["corporate"]
+
+[[rules]]
+id = "org-internal-project"
+description = "Internal project names"
+regex = '''(?i)(internal-project-1|internal-project-2|internal-project-3|internal-project-4|YOUR_NUGET_PAT|internal-project-5)'''
+tags = ["corporate"]
+
+[[rules]]
+id = "org-s3-defaults"
+description = "Organisation S3 bucket and profile names"
+regex = '''(your-bucket-name|your-profile-name)'''
+tags = ["corporate", "aws"]
+
+[[rules]]
+id = "personal-identity"
+description = "Personal identity markers"
+regex = '''(YourGitHubUser|your\.name|@your-company\.com|@your-email\.co\.uk|/Users/yourusername/)'''
+tags = ["personal"]
+
+[[rules]]
+id = "ssh-private-key"
+description = "SSH private key"
+regex = '''-----BEGIN.*PRIVATE KEY-----'''
+tags = ["secret"]
+
+# Global allowlist — files that necessarily contain the patterns being detected
+[allowlist]
+paths = [
+    '''.githooks/pre-commit''',
+    '''.gitleaks.toml''',
+    '''.claude-plugin/marketplace.json''',
+    '''plugins/.*/.claude-plugin/plugin.json''',
+]

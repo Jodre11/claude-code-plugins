@@ -1,0 +1,30 @@
+{
+  "name": "code-review-suite",
+  "description": "Multi-agent code review with specialist, cross-review, and synthesis agents — includes review pipeline, PR review skill, pre-review and address-pr-comments commands",
+  "author": {
+    "name": "Christian Haddrell"
+  },
+  "license": "MIT",
+  "keywords": [
+    "code-review",
+    "agents",
+    "security",
+    "correctness",
+    "consistency",
+    "style",
+    "archaeology",
+    "reuse",
+    "efficiency",
+    "alignment",
+    "jetbrains",
+    "accessibility",
+    "ui",
+    "synthesis",
+    "pre-review",
+    "trivial-mode",
+    "static-analysis",
+    "eslint",
+    "ruff",
+    "trivy"
+  ]
+}

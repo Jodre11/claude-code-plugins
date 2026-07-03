@@ -1,0 +1,39 @@
+id: silentfail-unique-hit
+agent: correctness-reviewer
+type: synthetic
+captured_at: 2026-06-17T15:05:00Z
+baseline_revision: 1
+captured_under:
+  suite_sha: a07ab82ea6ec7cf4d67fdbd0d0cfec185fa267d1
+  agent_model: opus
+  agent_effort: default
+working_dir_strategy: copy
+source_path: tests/fixtures/silent-failure/unique-hit/
+setup:
+  command: |
+    export GIT_AUTHOR_NAME=ab-trial GIT_AUTHOR_EMAIL=ab-trial@example.invalid GIT_COMMITTER_NAME=ab-trial GIT_COMMITTER_EMAIL=ab-trial@example.invalid GIT_AUTHOR_DATE="2026-01-01T00:00:00 +0000" GIT_COMMITTER_DATE="2026-01-01T00:00:00 +0000"
+    mv lib/dispatch_client.py .dispatch_client.py.planted
+    git init -q -b main
+    git add README.md
+    git commit -q -m "base: rate-limit resolution scaffold"
+    mkdir -p lib
+    mv .dispatch_client.py.planted lib/dispatch_client.py
+    git add lib/dispatch_client.py
+    git commit -q -m "feat: add per-tenant rate-limit resolver"
+base_sha: ""
+head_sha: ""
+path_scope: ""
+empty_tree_mode: false
+review_mode: pr
+planted:
+  file: lib/dispatch_client.py
+  line: 21
+  expect_arm_b: Important  # arm B (post-edit) must flag the fallback-without-signal path
+  expect_arm_a: ABSENT     # arm A (pre-edit) lacks the "fallback returning default without signalling" clause
+intent_ledger: |
+  ## Intent ledger
+  - goal: add a per-tenant rate-limit resolver that returns the tenant-specific limit from the config API
+depends_on:
+  - plugins/code-review-suite/agents/correctness-reviewer.md
+  - tests/fixtures/silent-failure/unique-hit/lib/dispatch_client.py
+  - tests/fixtures/silent-failure/unique-hit/README.md

@@ -1,0 +1,7 @@
+name: housekeeper-pypi-haiku-low
+description: Slice-4 single-arm validation — housekeeper-reviewer at Haiku/low on the PyPI corpus. No sonnet baseline (chassis equivalence settled); 20/20 recorded-fixture sweep guards apparatus determinism.
+mode: per-agent
+agent: housekeeper-reviewer
+session:
+  model: haiku
+  effort: low

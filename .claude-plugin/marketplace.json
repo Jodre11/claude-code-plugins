@@ -1,0 +1,38 @@
+{
+  "name": "jodre11-plugins",
+  "owner": {
+    "name": "Christian Haddrell"
+  },
+  "plugins": [
+    {
+      "name": "code-review-suite",
+      "description": "13 specialist code review agents (incl. ESLint, Ruff, Trivy IaC, JetBrains InspectCode), shared static-analysis include, PR review skill, pre-review and address-pr-comments commands",
+      "source": "./plugins/code-review-suite"
+    },
+    {
+      "name": "web-search",
+      "description": "Web search via SearXNG — no API key, no tracking",
+      "source": "./plugins/web-search"
+    },
+    {
+      "name": "playwright-cli",
+      "description": "Browser automation via playwright-cli — testing, form filling, screenshots, data extraction",
+      "source": "./plugins/playwright-cli"
+    },
+    {
+      "name": "md-to-clipboard",
+      "description": "Convert Markdown to Teams-compatible rich text on the macOS clipboard",
+      "source": "./plugins/md-to-clipboard"
+    },
+    {
+      "name": "pdf-reader",
+      "description": "Extract text from any PDF — native text via poppler, scanned/image via tesseract OCR",
+      "source": "./plugins/pdf-reader"
+    },
+    {
+      "name": "roslyn-lsp",
+      "description": "Solution-aware C# LSP via Microsoft Roslyn + ClaudeCodeRoslynLspProxy. Re-host of unsafePtr/ClaudeCodeRoslynLspProxy (MIT) with locally-tuned defaults",
+      "source": "./plugins/roslyn-lsp"
+    }
+  ]
+}

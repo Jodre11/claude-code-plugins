@@ -1,0 +1,2 @@
+{"type":"assistant","message":{"content":[{"type":"text","text":"## ESLint Findings\n\n### Finding — no-var\n- **File:** bad.js:1\n- **Rule:** no-var (eslint)"}]}}
+{"type":"result","subtype":"success","is_error":false,"num_turns":7,"total_cost_usd":0.0625,"usage":{"output_tokens":1234,"cache_read_input_tokens":98765}}

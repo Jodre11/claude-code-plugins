@@ -1,0 +1,7 @@
+name: style-baseline
+description: Style per-agent arm for the reasoning-economy ablation. opus/default; the ablation swaps only style-reviewer.md via run-specialist-ablation.sh.
+mode: per-agent
+agent: style-reviewer
+session:
+  model: opus
+  effort: default

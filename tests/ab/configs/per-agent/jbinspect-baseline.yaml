@@ -1,0 +1,7 @@
+name: jbinspect-baseline
+description: Production reference for jbinspect-reviewer — sonnet at default effort.
+mode: per-agent
+agent: jbinspect-reviewer
+session:
+  model: sonnet
+  effort: default

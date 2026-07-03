@@ -1,0 +1,28 @@
+id: housekeeper-docker-stale-base
+agent: housekeeper-reviewer
+captured_at: 2026-06-11T00:00:00Z
+baseline_revision: 1
+captured_under:
+  suite_sha: a981b0a0a2105947645395765396b096c887f813
+  agent_model: haiku
+  agent_effort: low
+working_dir_strategy: copy
+source_path: tests/fixtures/static-analysis/housekeeper-docker/
+base_sha: ""  # synthetic fixture: no real diff
+head_sha: ""
+path_scope: ""
+empty_tree_mode: false
+registry_fixtures: registry/   # INERT marker (env-scrubbed harness); a live sweep hits real registries
+intent_ledger: |
+  ## Intent ledger
+  - Synthetic Docker fixture exercising housekeeper-reviewer against a single
+    stale, variant-pinned base image (FROM node:18.20.0-alpine where latest GA
+    in the alpine lineage is 22.3.0). The .cs change with no Dockerfile in the
+    diff pulls the Dockerfile in via Anchor A. One deterministic Suggestion
+    finding. Slice-3 single-arm Haiku/low validation corpus.
+depends_on:
+  - plugins/code-review-suite/agents/housekeeper-reviewer.md
+  - plugins/code-review-suite/bin/housekeeper-freshness
+  - plugins/code-review-suite/includes/static-analysis-context.md
+  - tests/fixtures/static-analysis/housekeeper-docker/src/Api/Dockerfile
+  - tests/fixtures/static-analysis/housekeeper-docker/registry/docker/library__node.json

@@ -1,0 +1,7 @@
+name: trivy-baseline
+description: Production reference for trivy-reviewer — sonnet at default effort.
+mode: per-agent
+agent: trivy-reviewer
+session:
+  model: sonnet
+  effort: default

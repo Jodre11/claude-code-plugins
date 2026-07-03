@@ -1,0 +1,8 @@
+name: no-ultrathink
+description: Strip the ultrathink keyword from synthesiser dispatch; leave all model assignments at production defaults.
+session:
+  model: opus
+  effort: max
+agents:
+  review-synthesiser:
+    ultrathink: false

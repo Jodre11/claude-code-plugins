@@ -1,0 +1,7 @@
+name: jbinspect-haiku-low
+description: Phase 3.4 directional probe — jbinspect-reviewer at Haiku/low. Compared against jbinspect-baseline (sonnet/default) on per-trial findings hash.
+mode: per-agent
+agent: jbinspect-reviewer
+session:
+  model: haiku
+  effort: low

@@ -1,0 +1,7 @@
+name: trivy-haiku-low
+description: Phase 3.3 directional probe — trivy-reviewer at Haiku/low. Compared against trivy-baseline (sonnet/default) on per-trial findings hash.
+mode: per-agent
+agent: trivy-reviewer
+session:
+  model: haiku
+  effort: low

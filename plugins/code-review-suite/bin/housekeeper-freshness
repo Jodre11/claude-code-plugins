@@ -1,0 +1,1518 @@
+#!/usr/bin/env python3
+"""housekeeper-freshness — deterministic dependency/version freshness engine.
+
+Emits a JSON array of stale-version tuples for the code-review-suite
+housekeeper specialist. Pure-stdlib (pyproject parsing needs tomllib, 3.11+).
+Source classes: github-actions, runner, npm, nuget, docker, pypi. See
+agents/housekeeper-reviewer.md.
+"""
+import argparse
+import gzip
+import json
+import os
+import re
+import sys
+import urllib.error
+import urllib.parse
+import urllib.request
+
+
+# --- changed-lines parsing (for T3 target modulation) ----------------------
+
+def parse_changed_lines(text):
+    """Parse a 'Changed lines:' block into {path: set(int)}.
+
+    Lines look like '  path/to/file: 1,2,5-7'. Range tokens expand. A
+    '(empty — rename only)' marker yields an empty set. Robust to the
+    trailing blank-line separator the pipeline appends.
+    """
+    result = {}
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line or line == "Changed lines:" or line.endswith(":"):
+            continue
+        if ":" not in line:
+            continue
+        path, _, spec = line.partition(":")
+        path = path.strip()
+        spec = spec.strip()
+        nums = set()
+        if "empty" not in spec.lower():
+            for tok in spec.split(","):
+                tok = tok.strip()
+                if "-" in tok:
+                    a, _, b = tok.partition("-")
+                    if a.isdigit() and b.isdigit():
+                        nums.update(range(int(a), int(b) + 1))
+                elif tok.isdigit():
+                    nums.add(int(tok))
+        result[path] = nums
+    return result
+
+
+# --- registry fetch abstraction --------------------------------------------
+
+class Registry:
+    """Fetches registry JSON, with an optional recorded-fixture override.
+
+    When fixtures_dir is set, reads <fixtures_dir>/<source>/<slug>.json
+    instead of the network. <slug> is the item name with '/' -> '__'.
+    Returns the parsed JSON dict, or None on any miss/error (the caller
+    then emits no finding — honouring the no-untrustworthy-answer rule).
+    """
+
+    def __init__(self, fixtures_dir=None):
+        self.fixtures_dir = fixtures_dir
+
+    def _slug(self, item):
+        return item.replace("/", "__")
+
+    def fetch(self, source, item, url):
+        if self.fixtures_dir:
+            path = os.path.join(self.fixtures_dir, source, self._slug(item) + ".json")
+            try:
+                with open(path, encoding="utf-8") as fh:
+                    return json.load(fh)
+            except (OSError, ValueError):
+                return None
+        req = urllib.request.Request(
+            url,
+            headers={
+                "User-Agent": "code-review-suite-housekeeper",
+                "Accept": "application/json",
+                "Cache-Control": "no-cache",
+            },
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                return json.load(resp)
+        except (urllib.error.URLError, ValueError, TimeoutError, OSError):
+            return None
+
+    # --- NuGet registration (licence + deprecation/unlisted metadata) ------
+
+    _REG_BASE = "https://api.nuget.org/v3/registration5-gz-semver2/%s/index.json"
+
+    def _get_json(self, url):
+        """Fetch a URL and parse JSON, transparently gunzipping the body.
+
+        The registration5-gz endpoint always serves gzip; we gunzip best-effort
+        and fall back to the raw body. Returns the parsed object or None."""
+        req = urllib.request.Request(
+            url,
+            headers={
+                "User-Agent": "code-review-suite-housekeeper",
+                "Accept": "application/json",
+                "Accept-Encoding": "gzip",
+                "Cache-Control": "no-cache",
+            },
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                raw = resp.read()
+        except (urllib.error.URLError, TimeoutError, OSError):
+            return None
+        try:
+            raw = gzip.decompress(raw)
+        except (OSError, gzip.BadGzipFile):
+            pass  # body was not gzipped
+        try:
+            return json.loads(raw)
+        except ValueError:
+            return None
+
+    def registration(self, item):
+        """Return {version: {licence, deprecation, listed}} for a NuGet
+        package, or None on any miss. Walks the paginated registration index,
+        fetching external page leaves when a page omits inline 'items'.
+
+        In fixture mode reads <fixtures_dir>/nuget-registration/<slug>.json
+        (decompressed JSON; fixtures inline all pages, so no external page
+        fetch is attempted)."""
+        slug = item.lower().replace("/", "__")
+        if self.fixtures_dir:
+            path = os.path.join(self.fixtures_dir, "nuget-registration", slug + ".json")
+            try:
+                with open(path, encoding="utf-8") as fh:
+                    index = json.load(fh)
+            except (OSError, ValueError):
+                return None
+            return self._walk_registration(index, fetch_page=lambda _url: None)
+        index = self._get_json(self._REG_BASE % slug)
+        if index is None:
+            return None
+        return self._walk_registration(index, fetch_page=self._get_json)
+
+    @staticmethod
+    def _walk_registration(index, fetch_page):
+        """Flatten a registration index into a {version: {...}} map. A page
+        with inline 'items' is read directly; a page without is fetched via
+        fetch_page(page['@id']). fetch_page may return None (fixture mode)."""
+        result = {}
+        for page in (index.get("items") or []):
+            leaves = page.get("items")
+            if leaves is None:
+                page_id = page.get("@id")
+                page_doc = fetch_page(page_id) if page_id else None
+                leaves = (page_doc or {}).get("items") or []
+            for leaf in leaves:
+                ce = leaf.get("catalogEntry") or {}
+                version = ce.get("version")
+                if not version:
+                    continue
+                result[version] = {
+                    "licence": ce.get("licenseExpression") or ce.get("licenseUrl"),
+                    "deprecation": ce.get("deprecation"),
+                    "listed": ce.get("listed", True),
+                }
+        return result or None
+
+    # --- docker (OCI Distribution v2 tags/list, anonymous) -----------------
+
+    def docker_tags(self, ref):
+        """Return the tag list for a Docker image reference, or None on any
+        miss. Fixture mode reads <fixtures_dir>/docker/<repo-slug>.json
+        ({"tags": [...]}). Live mode hits GET /v2/<repo>/tags/list, performing
+        the anonymous WWW-Authenticate bearer-token dance on a 401. ECR hosts
+        resolve to None (see _docker_parse_ref)."""
+        parsed = _docker_parse_ref(ref)
+        if parsed is None:
+            return None
+        host, repo = parsed
+        if self.fixtures_dir:
+            slug = repo.replace("/", "__")
+            path = os.path.join(self.fixtures_dir, "docker", slug + ".json")
+            try:
+                with open(path, encoding="utf-8") as fh:
+                    return (json.load(fh) or {}).get("tags")
+            except (OSError, ValueError):
+                return None
+        url = "https://%s/v2/%s/tags/list" % (host, repo)
+        doc = self._docker_get(url, token=None)
+        if doc is not None:
+            return (doc or {}).get("tags")
+        token = self._docker_anon_token(host, repo)
+        if token is None:
+            return None
+        doc = self._docker_get(url, token=token)
+        return (doc or {}).get("tags")
+
+    def _docker_get(self, url, token):
+        """GET url as JSON. Returns the parsed dict on 200, or None on a 401
+        (caller then runs the token dance) or any other error."""
+        headers = {"User-Agent": "code-review-suite-housekeeper",
+                   "Accept": "application/json"}
+        if token:
+            headers["Authorization"] = "Bearer " + token
+        req = urllib.request.Request(url, headers=headers)
+        try:
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                return json.load(resp)
+        except urllib.error.HTTPError:
+            return None  # 401 (need token) or 404 (no such repo) -> None
+        except (urllib.error.URLError, ValueError, TimeoutError, OSError):
+            return None
+
+    def _docker_anon_token(self, host, repo):
+        """Fetch an anonymous bearer token by replaying the registry's
+        WWW-Authenticate challenge. Returns the token string or None."""
+        probe = urllib.request.Request(
+            "https://%s/v2/%s/tags/list" % (host, repo),
+            headers={"User-Agent": "code-review-suite-housekeeper"})
+        challenge = None
+        try:
+            urllib.request.urlopen(probe, timeout=10)
+        except urllib.error.HTTPError as e:
+            challenge = e.headers.get("WWW-Authenticate")
+        except (urllib.error.URLError, TimeoutError, OSError):
+            return None
+        if not challenge or not challenge.lower().startswith("bearer"):
+            return None
+        realm, params = _docker_parse_challenge(challenge)
+        if not realm:
+            return None
+        token_url = realm + ("&" if "?" in realm else "?") + urllib.parse.urlencode(params)
+        doc = self._docker_get(token_url, token=None)
+        if not doc:
+            return None
+        return (doc or {}).get("token") or (doc or {}).get("access_token")
+
+    # --- pypi (JSON API: releases map) -------------------------------------
+
+    def pypi_releases(self, project):
+        """Return the {version: [file-records]} releases map for a PyPI project,
+        or None on any miss. Fixture mode reads <fixtures_dir>/pypi/<slug>.json
+        (full JSON shape, slug = PEP 503 normalised name); live mode GETs
+        https://pypi.org/pypi/<project>/json."""
+        if self.fixtures_dir:
+            slug = _pypi_normalize(project)
+            path = os.path.join(self.fixtures_dir, "pypi", slug + ".json")
+            try:
+                with open(path, encoding="utf-8") as fh:
+                    doc = json.load(fh)
+            except (OSError, ValueError):
+                return None
+            return (doc or {}).get("releases")
+        doc = self.fetch("pypi", project,
+                         "https://pypi.org/pypi/%s/json" % project)
+        if not doc:
+            return None
+        return doc.get("releases")
+
+
+# --- version core ----------------------------------------------------------
+
+_VERSION_RE = re.compile(r"^[vV]?(\d+)(?:\.(\d+))?(?:\.(\d+))?(?:\.(\d+))?")
+
+
+def parse_version(s):
+    """Return (major, minor, patch, revision) ints, or None if unparsable.
+
+    Drops a leading v, a -prerelease suffix, and +build metadata. Missing
+    parts default to 0, so 'v4' == (4, 0, 0, 0) and a 3-part '1.2.3'
+    compares identically to its 4-part '1.2.3.0' form — backward-compatible
+    with the slice-1 npm/Actions/runner sources by construction. NuGet's
+    4-part versions ('1.2.3.4') populate the revision slot."""
+    if not s:
+        return None
+    m = _VERSION_RE.match(s.strip())
+    if not m:
+        return None
+    return (int(m.group(1)), int(m.group(2) or 0),
+            int(m.group(3) or 0), int(m.group(4) or 0))
+
+
+def is_ga(s):
+    """True if s is a general-availability version (no -prerelease marker)."""
+    if not s:
+        return False
+    core = s.strip()
+    if core[:1] in ("v", "V"):
+        core = core[1:]
+    # A hyphen after the numeric core marks a prerelease (1.2.3-rc.1, 2.0.0-beta).
+    return parse_version(s) is not None and "-" not in core
+
+
+def compare_versions(a, b):
+    """-1 if a<b, 0 if equal, 1 if a>b (by parsed numeric tuple)."""
+    pa, pb = parse_version(a), parse_version(b)
+    if pa is None or pb is None:
+        return 0
+    return (pa > pb) - (pa < pb)
+
+
+def latest_ga(versions):
+    """Highest GA version in the list, or None if none are GA."""
+    ga = [v for v in versions if is_ga(v)]
+    if not ga:
+        return None
+    return max(ga, key=parse_version)
+
+
+def nearest_in_major(current, versions):
+    """Highest GA version sharing current's major; falls back to current."""
+    cur = parse_version(current)
+    if cur is None:
+        return current
+    same_major = [v for v in versions if is_ga(v) and parse_version(v)[0] == cur[0]]
+    if not same_major:
+        return current
+    best = max(same_major, key=parse_version)
+    return best if compare_versions(best, current) > 0 else current
+
+
+def strip_constraint(spec):
+    """Extract a concrete version from an npm version range, or None.
+
+    Handles ^x.y.z, ~x.y.z, >=x.y.z, plain x.y.z. Returns None for
+    wildcards, tags, and non-registry specs (git:, file:, workspace:)."""
+    if not spec:
+        return None
+    spec = spec.strip()
+    if any(spec.startswith(p) for p in ("github:", "git+", "git:", "file:", "workspace:", "link:", "npm:")):
+        return None
+    if spec in ("*", "latest", "next", "") or spec.startswith("http"):
+        return None
+    m = re.search(r"(\d+(?:\.\d+){0,2}(?:-[0-9A-Za-z.\-]+)?)", spec)
+    return m.group(1) if m else None
+
+
+# --- PyPI version core (PEP 440) -------------------------------------------
+
+_PYPI_VERSION_RE = re.compile(
+    r"^\s*v?"
+    r"(?:(?P<epoch>\d+)!)?"
+    r"(?P<release>\d+(?:\.\d+)*)"
+    r"(?:[-_.]?(?P<pre_l>a|b|c|rc|alpha|beta|pre|preview)[-_.]?(?P<pre_n>\d+)?)?"
+    r"(?:(?:[-_.]?(?P<post_l>post|rev|r)[-_.]?(?P<post_n>\d+)?)|(?:-(?P<post_imp>\d+)))?"
+    r"(?:[-_.]?(?P<dev_l>dev)[-_.]?(?P<dev_n>\d+)?)?"
+    r"(?:\+(?P<local>[a-z0-9]+(?:[-_.][a-z0-9]+)*))?"
+    r"\s*$",
+    re.IGNORECASE,
+)
+
+_PYPI_PRE_ORDER = {"a": 0, "alpha": 0, "b": 1, "beta": 1,
+                   "c": 2, "rc": 2, "pre": 2, "preview": 2}
+
+
+def _pypi_parse(s):
+    """Parse a PEP 440 version string into its components, or None. Release has
+    trailing zeros stripped so 1.0 == 1.0.0. Local version segments are parsed
+    but ignored for ordering."""
+    if not s:
+        return None
+    m = _PYPI_VERSION_RE.match(s.strip())
+    if not m:
+        return None
+    release = tuple(int(p) for p in m.group("release").split("."))
+    while len(release) > 1 and release[-1] == 0:
+        release = release[:-1]
+    pre = None
+    if m.group("pre_l"):
+        pre = (_PYPI_PRE_ORDER[m.group("pre_l").lower()], int(m.group("pre_n") or 0))
+    post = None
+    if m.group("post_l"):
+        post = int(m.group("post_n") or 0)
+    elif m.group("post_imp"):
+        post = int(m.group("post_imp"))
+    dev = None
+    if m.group("dev_l"):
+        dev = int(m.group("dev_n") or 0)
+    return {"epoch": int(m.group("epoch") or 0), "release": release,
+            "pre": pre, "post": post, "dev": dev}
+
+
+def _pypi_stage_key(p):
+    """Phase-first ordering tuple for the post-release portion. The leading
+    phase int decides across phases (so mismatched tuple shapes are never
+    compared element-for-element); within a phase the shape is uniform.
+    Order: dev-of-final < prerelease(.dev) < final < post(.dev)."""
+    pre, post, dev = p["pre"], p["post"], p["dev"]
+    if pre is None and post is None and dev is not None:
+        return (0, dev)
+    if pre is not None:
+        if dev is not None:
+            return (1, pre[0], pre[1], 0, dev)
+        return (1, pre[0], pre[1], 1, 0)
+    if post is None and dev is None:
+        return (2,)
+    if dev is not None:
+        return (3, post, 0, dev)
+    return (3, post, 1, 0)
+
+
+def pypi_version_key(s):
+    """Return a comparable PEP 440 sort key (epoch, release, stage), or None."""
+    p = _pypi_parse(s)
+    if p is None:
+        return None
+    return (p["epoch"], p["release"], _pypi_stage_key(p))
+
+
+def pypi_is_ga(s):
+    """True if s is a PEP 440 GA release: parseable, not a pre-release, not a
+    dev-release. Post-releases ARE GA."""
+    p = _pypi_parse(s)
+    return p is not None and p["pre"] is None and p["dev"] is None
+
+
+def pypi_compare(a, b):
+    """-1/0/1 by PEP 440 ordering; 0 if either is unparsable."""
+    ka, kb = pypi_version_key(a), pypi_version_key(b)
+    if ka is None or kb is None:
+        return 0
+    return (ka > kb) - (ka < kb)
+
+
+def pypi_latest_ga(versions):
+    """Highest GA version, or None if none are GA."""
+    ga = [v for v in versions if pypi_is_ga(v)]
+    if not ga:
+        return None
+    return max(ga, key=pypi_version_key)
+
+
+def pypi_nearest_in_major(current, versions):
+    """Highest GA version sharing current's major; falls back to current."""
+    cp = _pypi_parse(current)
+    if cp is None:
+        return current
+    cur_major = cp["release"][0]
+    same = []
+    for v in versions:
+        vp = _pypi_parse(v)
+        if vp is not None and pypi_is_ga(v) and vp["release"][0] == cur_major:
+            same.append(v)
+    if not same:
+        return current
+    best = max(same, key=pypi_version_key)
+    return best if pypi_compare(best, current) > 0 else current
+
+
+_PYPI_FLOOR_RE = re.compile(
+    r"^(?:===|==|~=|>=|\^|~)?\s*v?"
+    r"(\d+(?:\.\d+)*"
+    r"(?:[-_.]?(?:a|b|c|rc|alpha|beta|pre|preview|post|rev|r|dev)[-_.]?\d*)*"
+    r"(?:\+[a-z0-9]+(?:[-_.][a-z0-9]+)*)?)\s*$",
+    re.IGNORECASE,
+)
+
+
+def _pypi_normalize(name):
+    """PEP 503 project-name normalisation: lowercase, runs of [-_.] -> '-'."""
+    return re.sub(r"[-_.]+", "-", name).lower()
+
+
+def pypi_strip_constraint(spec):
+    """Return the concrete floor version of a single-anchor PyPI constraint, or
+    None for any form we cannot name a trustworthy 'current' for: wildcards,
+    comma-compound/upper-bounded ranges, != exclusions, bare </> /<=, and
+    URL/VCS/path references. Acts on ==, ===, ~=, >=, Poetry ^/~, and bare."""
+    if not spec:
+        return None
+    s = spec.strip()
+    if not s:
+        return None
+    if "://" in s or s.startswith(("git+", "file:", ".", "/")):
+        return None
+    if "," in s or "!=" in s or "*" in s:
+        return None
+    if s.startswith(("<", ">")) and not s.startswith(">="):
+        return None
+    m = _PYPI_FLOOR_RE.match(s)
+    if not m:
+        return None
+    ver = m.group(1)
+    return ver if _pypi_parse(ver) is not None else None
+
+
+def _pypi_pep508_name_spec(req):
+    """Split a PEP 508 requirement string into (name, version_spec), or None.
+    Strips a trailing environment marker (; ...) and an [extras] group. Returns
+    None for blank/comment lines and direct URL references (name @ url)."""
+    if not req:
+        return None
+    s = req.strip()
+    if not s or s.startswith("#"):
+        return None
+    s = s.split(";", 1)[0].strip()
+    if "@" in s:
+        return None  # direct URL reference — no registry version
+    m = re.match(r"^([A-Za-z0-9][A-Za-z0-9._-]*)\s*(?:\[[^\]]*\])?\s*(.*)$", s)
+    if not m:
+        return None
+    return m.group(1), m.group(2).strip()
+
+
+def parse_requirements(text):
+    """Return [(name, spec, line)] from a requirements*.txt body. Skips blank
+    lines, comments, option lines (-r/-c/-e/--flag), and URL/VCS/path entries.
+    Inline '# comment' is stripped; extras and markers are dropped by the PEP
+    508 splitter. One requirement per physical line."""
+    out = []
+    for i, raw in enumerate(text.splitlines(), start=1):
+        line = raw.strip()
+        if not line or line.startswith("#") or line.startswith("-"):
+            continue
+        # Strip an inline comment (' #...'); only a space-preceded '#' is treated
+        # as a comment (a tab-preceded '#' is left in place — such a line then
+        # fails the floor regex and drops, which is fail-safe).
+        if " #" in line:
+            line = line.split(" #", 1)[0].strip()
+        # Skip bare URL/VCS/path entries; the splitter only drops 'name @ url'.
+        if "://" in line or line.startswith(("git+", "file:", ".", "/")):
+            continue
+        ns = _pypi_pep508_name_spec(line)
+        if ns is None:
+            continue
+        out.append((ns[0], ns[1], i))
+    return out
+
+
+def parse_pyproject(text):
+    """Return [(name, spec, line)] from a pyproject.toml: PEP 621
+    [project].dependencies + [project.optional-dependencies], and Poetry
+    [tool.poetry.dependencies] + [tool.poetry.group.<g>.dependencies]. Uses
+    stdlib tomllib (lazy import; returns [] if unavailable — the agent gates on
+    python>=3.11). tomllib discards line numbers, so each dependency's line is
+    resolved by a best-effort first-occurrence scan for its name (one
+    declaration per line assumed, consistent with the csproj/npm parsers)."""
+    try:
+        import tomllib
+    except ImportError:
+        return []
+    try:
+        data = tomllib.loads(text)
+    except (ValueError, TypeError):
+        return []
+    lines = text.splitlines()
+
+    def line_of(token):
+        for i, ln in enumerate(lines, start=1):
+            if token in ln:
+                return i
+        return 1
+
+    out = []
+    proj = data.get("project") or {}
+    proj_deps = proj.get("dependencies")
+    pep621 = list(proj_deps) if isinstance(proj_deps, list) else []
+    for grp in (proj.get("optional-dependencies") or {}).values():
+        if isinstance(grp, list):
+            pep621.extend(grp)
+    for dep in pep621:
+        if not isinstance(dep, str):
+            continue
+        ns = _pypi_pep508_name_spec(dep)
+        if ns is not None:
+            out.append((ns[0], ns[1], line_of(ns[0])))
+
+    poetry = (data.get("tool") or {}).get("poetry") or {}
+
+    def poetry_table(tbl):
+        for name, val in (tbl or {}).items():
+            if name.lower() == "python":
+                continue
+            if isinstance(val, str):
+                spec = val
+            elif isinstance(val, dict):
+                spec = val.get("version", "")
+            else:
+                # A list-of-inline-tables (multi-platform Poetry constraint) is
+                # intentionally unhandled and degrades to no-finding.
+                spec = ""
+            out.append((name, spec, line_of(name)))
+
+    poetry_table(poetry.get("dependencies"))
+    for grp in (poetry.get("group") or {}).values():
+        poetry_table(grp.get("dependencies"))
+    return out
+
+
+# --- source collectors (filled in Tasks 3-5) -------------------------------
+
+# --- source: github-actions -------------------------------------------------
+
+_USES_RE = re.compile(
+    r"^\s*-?\s*uses:\s*([A-Za-z0-9._-]+/[A-Za-z0-9._/-]+)@(\S+)(?:\s*#\s*(v?\d[\w.\-]*))?.*$"
+)
+
+
+def find_action_uses(text):
+    """Return [(action, version, line_no)] for tag-pinned or
+    sha+comment-pinned actions. Skips local (./), docker://, and
+    bare-SHA pins without a version comment."""
+    out = []
+    for i, raw in enumerate(text.splitlines(), start=1):
+        m = _USES_RE.match(raw)
+        if not m:
+            continue
+        action, ref, comment = m.group(1), m.group(2), m.group(3)
+        if action.startswith(".") or action.startswith("docker:"):
+            continue
+        # A tag-like ref (starts with v or a digit) is the current version;
+        # otherwise it is a SHA pin and the version comes from the comment.
+        if re.match(r"^v?\d", ref):
+            current = ref
+        elif comment:
+            current = comment
+        else:
+            continue  # bare SHA, no trustworthy version -> skip
+        out.append((action, current, i))
+    return out
+
+
+def collect_github_actions(changed_files, file_text, changed_lines, registry):
+    findings = []
+    for path in changed_files:
+        if not (path.startswith(".github/workflows/")
+                and path.endswith((".yml", ".yaml"))):
+            continue
+        text = file_text.get(path)
+        if text is None:
+            continue
+        for action, current, line in find_action_uses(text):
+            # Nested/subpath actions (owner/repo/subdir) resolve releases
+            # from the owner/repo only; the subdir is not part of the slug.
+            owner_repo = "/".join(action.split("/")[:2])
+            data = registry.fetch(
+                "github-actions", action,
+                "https://api.github.com/repos/%s/releases/latest" % owner_repo)
+            if not data:
+                continue
+            latest = data.get("tag_name")
+            if not latest or not is_ga(latest):
+                continue
+            cur_parsed = parse_version(current)
+            latest_parsed = parse_version(latest)
+            if cur_parsed is None or latest_parsed is None:
+                continue
+            # Actions float by major: stale only when the latest GA major
+            # exceeds the pinned major. Same-major patch/minor drift is churn.
+            if latest_parsed[0] <= cur_parsed[0]:
+                continue
+            # Target is the latest major tag (vN).
+            target = "v%d" % latest_parsed[0]
+            findings.append({
+                "source": "github-actions", "item": action,
+                "current": current, "latest_ga": latest, "target": target,
+                "file": path, "line": line,
+                "licence_current": None, "licence_latest": None,
+                "health": None,
+            })
+    return findings
+
+
+# --- source: runner ---------------------------------------------------------
+
+# Curated latest GitHub-hosted runner labels. MANUALLY MAINTAINED — there is
+# no live registry for runner images. Keep in sync with the cookbook table.
+# Reviewed 2026-06-05.
+LATEST_RUNNERS = {
+    "ubuntu": "24.04",
+    "windows": "2025",
+    "macos": "15",
+}
+
+_RUNS_ON_RE = re.compile(
+    r"^\s*runs-on:\s*['\"]?\[?\s*([A-Za-z0-9._-]+)\s*\]?['\"]?\s*(?:#.*)?$")
+
+
+def find_runner_labels(text):
+    """Return [(family, version, line_no)] for known-family runner labels
+    like ubuntu-22.04. '-latest' and unknown families are skipped here only
+    if they fail the family-version split; collect_runners does the final
+    known-family gate. Deliberate non-matches (no stale literal visible to
+    miss): multi-element inline arrays and ${{ matrix.os }} indirection."""
+    out = []
+    for i, raw in enumerate(text.splitlines(), start=1):
+        m = _RUNS_ON_RE.match(raw)
+        if not m:
+            continue
+        label = m.group(1)
+        if "-" not in label:
+            continue
+        family, _, version = label.partition("-")
+        out.append((family, version, i))
+    return out
+
+
+def collect_runners(changed_files, file_text, changed_lines):
+    findings = []
+    for path in changed_files:
+        if not (path.startswith(".github/workflows/")
+                and path.endswith((".yml", ".yaml"))):
+            continue
+        text = file_text.get(path)
+        if text is None:
+            continue
+        for family, version, line in find_runner_labels(text):
+            latest = LATEST_RUNNERS.get(family)
+            if latest is None:
+                continue  # unknown family / -latest -> no trustworthy answer
+            if compare_versions(version, latest) >= 0:
+                continue
+            findings.append({
+                "source": "runner", "item": family,
+                "current": "%s-%s" % (family, version),
+                "latest_ga": "%s-%s" % (family, latest),
+                "target": "%s-%s" % (family, latest),
+                "file": path, "line": line,
+                "licence_current": None, "licence_latest": None,
+                "health": None,
+            })
+    return findings
+
+
+# --- source: npm ------------------------------------------------------------
+
+_DEP_LINE_RE = re.compile(r'^\s*"([^"]+)"\s*:\s*"([^"]+)"\s*,?\s*$')
+_DEP_SECTIONS = ("dependencies", "devDependencies", "optionalDependencies", "peerDependencies")
+
+
+def parse_package_json(text):
+    """Return {(section, name): (spec, line_no)} across all dependency sections.
+
+    Keyed by (section, name) so a dep appearing in multiple sections (e.g. both
+    dependencies and peerDependencies) yields a distinct entry per section
+    rather than collapsing to the last occurrence."""
+    deps = {}
+    section = None
+    for i, raw in enumerate(text.splitlines(), start=1):
+        stripped = raw.strip()
+        hit = next((s for s in _DEP_SECTIONS
+                    if ('"%s"' % s) in stripped and stripped.endswith("{")), None)
+        if hit:
+            section = hit
+            continue
+        if section is not None and stripped.startswith("}"):
+            section = None
+            continue
+        if section is not None:
+            m = _DEP_LINE_RE.match(raw)
+            if m:
+                deps[(section, m.group(1))] = (m.group(2), i)
+    return deps
+
+
+# Files that mark membership of a JS/TS (npm) solution. A changed file only
+# pulls in its containing package.json when it belongs to the npm ecosystem —
+# a sibling Python/Go/etc. file under the same dir is part of a *different*
+# buildable unit and must not drag the npm manifest into scope.
+_NPM_SCOPE_SUFFIXES = (
+    ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".mts", ".cts",
+    ".vue", ".svelte",
+)
+
+
+def _is_npm_scope_file(path):
+    base = path.rsplit("/", 1)[-1]
+    if base in ("package.json", "package-lock.json", ".npmrc", "yarn.lock", "pnpm-lock.yaml"):
+        return True
+    # npm-meaningful JSON only: tsconfig*.json and *.config.json. A bare
+    # data.json must NOT drag a sibling package.json into scope.
+    if base.startswith("tsconfig") and base.endswith(".json"):
+        return True
+    if base.endswith(".config.json"):
+        return True
+    return path.endswith(_NPM_SCOPE_SUFFIXES)
+
+
+def npm_scope_roots(changed_files, all_package_jsons):
+    """Map each changed file to the nearest ancestor package.json, returning
+    the set of in-scope package.json paths (the T1 solution gate).
+
+    Only JS/TS-ecosystem files participate: a changed file pulls in its
+    *containing* npm solution, so a Python source file under a dir that also
+    happens to hold a package.json does not count as touching that solution."""
+    roots = set()
+    for f in changed_files:
+        if not _is_npm_scope_file(f):
+            continue
+        parts = f.split("/")
+        for n in range(len(parts), 0, -1):
+            cand = "/".join(parts[:n - 1] + ["package.json"]) if n > 1 else "package.json"
+            if cand in all_package_jsons:
+                roots.add(cand)
+                break
+    return roots
+
+
+def collect_npm(file_text, changed_lines, registry):
+    """file_text maps each in-scope package.json path -> its content."""
+    findings = []
+    for path, text in file_text.items():
+        if not path.endswith("package.json"):
+            continue
+        deps = parse_package_json(text)
+        touched = changed_lines.get(path, set())
+        for (section, name), (spec, line) in deps.items():
+            current = strip_constraint(spec)
+            if current is None:
+                continue
+            doc = registry.fetch("npm", name, "https://registry.npmjs.org/%s" % name)
+            if not doc:
+                continue
+            versions = list((doc.get("versions") or {}).keys())
+            vmap = doc.get("versions") or {}
+            latest = (doc.get("dist-tags") or {}).get("latest")
+            if not latest or not is_ga(latest):
+                latest = latest_ga(versions)
+            if not latest:
+                continue
+            # npm carries per-version 'deprecated' (a string message) in the
+            # registry doc; surface it as a uniform health rider.
+            dep = (vmap.get(current) or {}).get("deprecated")
+            health = {"state": "deprecated", "detail": dep} if isinstance(dep, str) and dep else None
+            stale = compare_versions(latest, current) > 0
+            if stale:
+                # T3: touched manifest line -> full bump; else nearest in-major.
+                if line in touched:
+                    target = latest
+                else:
+                    target = nearest_in_major(current, versions)
+                    if compare_versions(target, current) <= 0:
+                        stale = False  # nothing newer within the current major
+            if not stale and health is None:
+                continue  # widened emit rule: stale OR health-flagged
+            if not stale:
+                target = current
+            # Licence diff is against the RECOMMENDED target, not latest GA:
+            # an untouched-line finding targets the nearest in-major, which may
+            # carry a different licence than latest (e.g. a BSL flip at the next
+            # major we are not recommending). Reporting latest's licence here
+            # would be a factually wrong claim about the suggested upgrade.
+            lic_cur = (vmap.get(current) or {}).get("license")
+            lic_new = (vmap.get(target) or {}).get("license")
+            findings.append({
+                "source": "npm", "item": name,
+                "current": current, "latest_ga": latest, "target": target,
+                "file": path, "line": line,
+                "licence_current": lic_cur, "licence_latest": lic_new,
+                "health": health,
+            })
+    return findings
+
+
+# --- source: nuget ----------------------------------------------------------
+
+# A PackageReference / PackageVersion attribute scan. We deliberately scan
+# DECLARED source only: no <Import> graph evaluation, no $(property) resolution,
+# no condition evaluation. .targets files are out of scope.
+
+_PR_INCLUDE_RE = re.compile(r'Include\s*=\s*"([^"]+)"')
+_PR_VERSION_RE = re.compile(r'\bVersion\s*=\s*"([^"]+)"')
+_PR_OVERRIDE_RE = re.compile(r'\bVersionOverride\s*=\s*"([^"]+)"')
+_CHILD_VERSION_RE = re.compile(r"<Version>\s*([^<]+?)\s*</Version>")
+
+
+def nuget_strip_constraint(spec):
+    """Return a bare concrete NuGet version, or None for any form we cannot
+    name a trustworthy 'current' for without evaluating the build:
+    property refs $(...), version ranges [1.0,2.0) / (,2.0], and floating
+    wildcards 1.* / 1.2.*. Concrete pins 1.2.3 / 1.2.3.4 (with an optional
+    -prerelease) are returned verbatim."""
+    if not spec:
+        return None
+    s = spec.strip()
+    if "$(" in s or "*" in s:
+        return None
+    if s[:1] in "[(" or "," in s:
+        return None  # version range
+    if re.fullmatch(r"\d+(?:\.\d+){0,3}(?:-[0-9A-Za-z.\-]+)?", s):
+        return s
+    return None
+
+
+def parse_csproj(text):
+    """Return {name: (spec_or_None, line)} for <PackageReference> entries.
+
+    spec is the raw version string from VersionOverride (wins), an inline
+    Version attribute, or a child <Version> element. A version-less reference
+    records (None, ref_line) -> resolved later via CPM. The recorded line is
+    the literal version's line (or the opening-tag line when version-less).
+
+    Known limitation: one PackageReference per physical line is assumed (the
+    attribute scans match the first occurrence per line); MSBuild items are
+    one-per-line in practice."""
+    refs = {}
+    pending = None  # (name, ref_line) awaiting a child <Version> element
+    for i, raw in enumerate(text.splitlines(), start=1):
+        if pending is not None:
+            cm = _CHILD_VERSION_RE.search(raw)
+            if cm:
+                refs[pending[0]] = (cm.group(1).strip(), i)
+                pending = None
+                continue
+            if "</PackageReference>" in raw:
+                # Closed without a <Version> -> version-less (CPM-resolved).
+                refs[pending[0]] = (None, pending[1])
+                pending = None
+                # fall through: this same line may open nothing else
+        if "<PackageReference" not in raw:
+            continue
+        im = _PR_INCLUDE_RE.search(raw)
+        if not im:
+            continue
+        name = im.group(1)
+        override = _PR_OVERRIDE_RE.search(raw)
+        version = _PR_VERSION_RE.search(raw)
+        if override:
+            refs[name] = (override.group(1), i)
+        elif version:
+            refs[name] = (version.group(1), i)
+        elif "/>" in raw or "</PackageReference>" in raw:
+            refs[name] = (None, i)  # self-closed version-less -> CPM
+        else:
+            pending = (name, i)  # multi-line: await a child <Version>
+    if pending is not None:
+        refs[pending[0]] = (None, pending[1])
+    return refs
+
+
+def parse_packages_props(text):
+    """Return (central, global_refs) for a .props file.
+
+    central: {name: (version, line)} from <PackageVersion Include Version>
+             (CPM central versions).
+    global_refs: {name: (version, line)} from <PackageReference Include Version>
+             (global deps declared in props, e.g. Directory.Build.props).
+    Only concrete attribute versions are recorded here; the collector applies
+    nuget_strip_constraint before acting."""
+    central = {}
+    global_refs = {}
+    for i, raw in enumerate(text.splitlines(), start=1):
+        im = _PR_INCLUDE_RE.search(raw)
+        vm = _PR_VERSION_RE.search(raw)
+        if not im or not vm:
+            continue
+        name, version = im.group(1), vm.group(1)
+        if "<PackageVersion" in raw:
+            central[name] = (version, i)
+        elif "<PackageReference" in raw:
+            global_refs[name] = (version, i)
+    return central, global_refs
+
+
+# Files that mark membership of a C#/.NET (NuGet) buildable unit. A changed
+# file only pulls in its nearest-ancestor .csproj when it belongs to this
+# ecosystem — a sibling JS/Python/etc. file under the same dir is a different
+# buildable unit.
+_NUGET_SCOPE_SUFFIXES = (
+    ".cs", ".fs", ".vb", ".razor", ".cshtml", ".csproj", ".fsproj", ".vbproj",
+    ".props", ".targets",
+)
+
+
+def _is_nuget_scope_file(path):
+    base = path.rsplit("/", 1)[-1]
+    if base == "packages.lock.json":
+        return True
+    return path.endswith(_NUGET_SCOPE_SUFFIXES)
+
+
+def _dirname(path):
+    return path.rsplit("/", 1)[0] if "/" in path else ""
+
+
+def _dir_is_ancestor_or_same(ancestor, descendant):
+    """True if directory `ancestor` is `descendant` itself or an ancestor of
+    it. The repo root is represented by the empty string and is an ancestor of
+    everything."""
+    if ancestor == "":
+        return True
+    return descendant == ancestor or descendant.startswith(ancestor + "/")
+
+
+def nuget_scope_roots(changed_files, all_csprojs, all_props):
+    """Return (in_scope_csprojs, in_scope_props).
+
+    in_scope_csprojs: for each changed C#-ecosystem file, its nearest-ancestor
+    .csproj (the deepest csproj whose directory is an ancestor-or-same of the
+    file's directory). in_scope_props: every .props whose directory is an
+    ancestor-or-same of an in-scope csproj's directory (governing props found by
+    walking up)."""
+    csprojs = set()
+    for f in changed_files:
+        if not _is_nuget_scope_file(f):
+            continue
+        fdir = _dirname(f)
+        best = None
+        best_dir = None
+        for c in all_csprojs:
+            cdir = _dirname(c)
+            if _dir_is_ancestor_or_same(cdir, fdir):
+                if best is None or len(cdir) > len(best_dir):
+                    best, best_dir = c, cdir
+        if best is not None:
+            csprojs.add(best)
+    props = set()
+    for c in csprojs:
+        cdir = _dirname(c)
+        for p in all_props:
+            if _dir_is_ancestor_or_same(_dirname(p), cdir):
+                props.add(p)
+    return csprojs, props
+
+
+def _nuget_health(reg_entry):
+    """Map a registration entry to a health dict, or None. Deterministic:
+    deprecation wins over unlisted; detail is rendered verbatim, never judged."""
+    if not reg_entry:
+        return None
+    dep = reg_entry.get("deprecation")
+    if dep:
+        detail = dep.get("message") or ", ".join(dep.get("reasons") or [])
+        return {"state": "deprecated", "detail": detail or ""}
+    if reg_entry.get("listed") is False:
+        return {"state": "unlisted", "detail": ""}
+    return None
+
+
+def collect_nuget(csproj_text, props_text, changed_lines, registry):
+    """csproj_text / props_text map each in-scope path -> its content. Builds a
+    deduplicated candidate set (csproj refs resolved through CPM; props global
+    refs), then emits a tuple per candidate that is stale OR health-flagged."""
+    # CPM central versions and props global refs across all in-scope props.
+    # On a multi-props collision, the deepest-dir declaration wins (tie-break
+    # lexical) so resolution is deterministic.
+    central = {}   # name -> (version, file, line)
+    candidates = {}  # (file, line, name) -> (name, concrete, touched)
+
+    def _consider_props_winner(store, name, version, path, line):
+        prev = store.get(name)
+        if prev is None or (len(_dirname(path)), path) > (len(_dirname(prev[1])), prev[1]):
+            store[name] = (version, path, line)
+
+    def _is_touched(path, line):
+        return line in changed_lines.get(path, set())
+
+    props_globals = {}
+    for path, text in sorted(props_text.items()):
+        cen, glob = parse_packages_props(text)
+        for name, (version, line) in cen.items():
+            _consider_props_winner(central, name, version, path, line)
+        for name, (version, line) in glob.items():
+            _consider_props_winner(props_globals, name, version, path, line)
+
+    def _add_candidate(name, spec, path, line, touched):
+        concrete = nuget_strip_constraint(spec)
+        if concrete is None:
+            return
+        key = (path, line, name)
+        prev = candidates.get(key)
+        if prev is not None:
+            touched = touched or prev[2]
+        candidates[key] = (name, concrete, touched)
+
+    # csproj references (inline / override win; version-less -> CPM). A
+    # CPM-resolved candidate's literal lives in props, but the T3 'touched'
+    # signal is OR'd across the referencing csproj line AND the props literal:
+    # editing the reference site is an intentional touch even when the central
+    # version stays put, so it warrants the full latest-GA bump.
+    for path, text in sorted(csproj_text.items()):
+        for name, (spec, line) in parse_csproj(text).items():
+            if spec is not None:
+                _add_candidate(name, spec, path, line, _is_touched(path, line))
+            else:
+                cpm = central.get(name)
+                if cpm is not None:
+                    touched = _is_touched(path, line) or _is_touched(cpm[1], cpm[2])
+                    _add_candidate(name, cpm[0], cpm[1], cpm[2], touched)
+    # props global PackageReference declarations are candidates in their own right.
+    for name, (version, path, line) in props_globals.items():
+        _add_candidate(name, version, path, line, _is_touched(path, line))
+
+    findings = []
+    for (path, line, name) in sorted(candidates):
+        _, current, touched = candidates[(path, line, name)]
+        slug = name.lower()
+        doc = registry.fetch(
+            "nuget", slug,
+            "https://api.nuget.org/v3-flatcontainer/%s/index.json" % slug)
+        if not doc:
+            continue  # no trustworthy latest -> suppress entirely
+        versions = list(doc.get("versions") or [])
+        latest = latest_ga(versions)
+        if not latest:
+            continue
+        reg_map = registry.registration(name)
+        health = _nuget_health((reg_map or {}).get(current))
+        stale = compare_versions(latest, current) > 0
+        if stale:
+            target = latest if touched else nearest_in_major(current, versions)
+            if compare_versions(target, current) <= 0:
+                stale = False  # in-major exhausted for an untouched line
+        if not stale and health is None:
+            continue  # widened emit rule: stale OR health-flagged
+        if not stale:
+            target = current
+        lic_cur = (reg_map or {}).get(current, {}).get("licence")
+        lic_new = (reg_map or {}).get(target, {}).get("licence")
+        findings.append({
+            "source": "nuget", "item": name,
+            "current": current, "latest_ga": latest, "target": target,
+            "file": path, "line": line,
+            "licence_current": lic_cur, "licence_latest": lic_new,
+            "health": health,
+        })
+    return findings
+
+
+# --- source: docker (base-image FROM tags) ----------------------------------
+
+# A FROM instruction. Group 1 = optional --platform flag (discarded). Group 2 =
+# the image reference (host/repo). Group 3 = the tag (or None). Group 4 = the
+# optional AS-alias stage name. Keywords are case-insensitive.
+_DOCKER_FROM_RE = re.compile(
+    r"^\s*FROM\s+(?:--platform=\S+\s+)?"
+    r"([A-Za-z0-9][A-Za-z0-9._:/-]*?)"          # image ref (greedy-min)
+    r"(?::([A-Za-z0-9][A-Za-z0-9._-]*))?"        # optional :tag
+    r"(?:@[A-Za-z0-9]+:[A-Za-z0-9]+)?"           # optional @digest after the tag
+    r"(?:\s+AS\s+(\S+))?\s*$",
+    re.IGNORECASE,
+)
+
+# A concrete, act-on tag core: at least three dot-separated numeric components
+# (M.N.P, optional .W). parse_version cannot distinguish 20.11 from 20.11.0, so
+# the M.N.P-presence test lives here against the raw string.
+_DOCKER_CORE_RE = re.compile(r"^(\d+\.\d+\.\d+(?:\.\d+)?)(?:-(.+))?$")
+
+
+def parse_dockerfile(text):
+    """Return [(image_ref, core, variant, line_no)] for act-on FROM lines.
+
+    Act-on = a registry image pinned to a concrete M.N.P[.W] semver tag, with
+    an optional variant suffix. A digest may trail the tag (node:1.2.3@sha256:..)
+    and we still act on the tag. Everything in the trust gate (no-tag, latest,
+    floating/partial tags, digest-only pins, scratch, $VAR interpolation, and
+    AS-stage references) is deliberately skipped — see the design spec §2.4. One
+    FROM per physical line is assumed."""
+    out = []
+    stages = set()
+    for i, raw in enumerate(text.splitlines(), start=1):
+        m = _DOCKER_FROM_RE.match(raw)
+        if not m:
+            continue
+        ref, tag, alias = m.group(1), m.group(2), m.group(3)
+        if alias:
+            stages.add(alias)
+        # A FROM whose ref is a prior stage alias is an internal reference.
+        if ref in stages:
+            continue
+        if ref == "scratch":
+            continue
+        if tag is None:
+            continue  # no tag, or a digest-only pin (tag group did not capture)
+        if "$" in tag:
+            continue  # ${VAR} / $VAR interpolation — value not statically known
+        cm = _DOCKER_CORE_RE.match(tag)
+        if not cm:
+            continue  # not a concrete M.N.P[.W] tag (latest, floating, etc.)
+        core, variant = cm.group(1), (cm.group(2) or "")
+        out.append((ref, core, variant, i))
+    return out
+
+
+def _docker_parse_ref(ref):
+    """Return (host, repository) for a Docker image reference, or None for an
+    ECR host (deliberately unresolved). Applies Docker Hub library/ and
+    org/img normalisation; an explicit host (first segment containing '.' or a
+    ':' port, or 'localhost') is used verbatim with the remainder as the repo."""
+    first = ref.split("/", 1)[0]
+    has_host = ("." in first) or (":" in first) or first == "localhost"
+    if has_host:
+        host, _, repo = ref.partition("/")
+        if ".dkr.ecr." in host:
+            return None  # private ECR — see design §2.5
+        return host, repo
+    # No explicit host -> Docker Hub.
+    if "/" not in ref:
+        return "registry-1.docker.io", "library/" + ref
+    return "registry-1.docker.io", ref
+
+
+_DOCKER_CHALLENGE_KV_RE = re.compile(r'(\w+)="([^"]*)"')
+
+
+def _docker_parse_challenge(header):
+    """Parse a 'Bearer realm="...",service="...",scope="..."' WWW-Authenticate
+    header into (realm, {param: value}). realm is popped out of the param map."""
+    params = dict(_DOCKER_CHALLENGE_KV_RE.findall(header))
+    realm = params.pop("realm", None)
+    return realm, params
+
+
+# Doc/markup suffixes that masquerade as Dockerfile.<suffix> but are prose, not
+# build files (e.g. notes/Dockerfile.md). Excluded before the startswith check.
+_DOCKERFILE_DOC_SUFFIXES = (".md", ".markdown", ".txt", ".rst")
+
+
+def _is_dockerfile(path):
+    """True if path's basename is Dockerfile, Dockerfile.<suffix>, or ends
+    .dockerfile. (Containerfile is intentionally excluded this slice.) A doc
+    suffix (.md/.markdown/.txt/.rst) is rejected so Dockerfile.md — a markdown
+    doc that merely mentions Dockerfile — is not treated as a build file."""
+    base = path.rsplit("/", 1)[-1]
+    if base.endswith(_DOCKERFILE_DOC_SUFFIXES):
+        return False
+    return (base == "Dockerfile"
+            or base.startswith("Dockerfile.")
+            or base.endswith(".dockerfile"))
+
+
+def docker_scope_roots(changed_files, all_dockerfiles, nuget_csprojs, npm_roots):
+    """Return the in-scope Dockerfile set (Anchor A). A Dockerfile is in scope
+    when it is directly changed, OR its directory is an ancestor-or-same of a
+    resolved buildable unit's directory (the unit's nearest-ancestor csproj /
+    package.json, already computed by collect_findings). Docker scope is thus a
+    strict function of units we already parse — no independent directory walk."""
+    roots = set()
+    for f in changed_files:
+        if _is_dockerfile(f) and f in all_dockerfiles:
+            roots.add(f)
+    unit_dirs = {_dirname(u) for u in nuget_csprojs} | {_dirname(u) for u in npm_roots}
+    for df in all_dockerfiles:
+        ddir = _dirname(df)
+        for udir in unit_dirs:
+            if _dir_is_ancestor_or_same(ddir, udir):
+                roots.add(df)
+                break
+    return roots
+
+
+# Source extensions that pull in their nearest-ancestor pyproject.toml (the T1
+# Python solution gate). Mirror in the Step 2.6 trigger prose + sync test.
+_PYPI_SCOPE_SUFFIXES = (".py", ".pyi")
+
+
+def _is_requirements_file(base):
+    """True if a basename is a requirements*.txt pin file."""
+    return base.startswith("requirements") and base.endswith(".txt")
+
+
+def _nearest_ancestor(fdir, manifests):
+    """Deepest manifest whose directory is an ancestor-or-same of fdir, or None."""
+    best = None
+    best_dir = None
+    for man in manifests:
+        mdir = _dirname(man)
+        if _dir_is_ancestor_or_same(mdir, fdir):
+            if best is None or len(mdir) > len(best_dir):
+                best, best_dir = man, mdir
+    return best
+
+
+def pypi_scope_roots(changed_files, all_pyprojects, all_requirements):
+    """Return (in_scope_pyprojects, in_scope_requirements).
+
+    A directly-changed pyproject.toml / requirements*.txt is always in scope. A
+    changed .py/.pyi walks up to its nearest-ancestor pyproject.toml; if none
+    exists, it falls back to its nearest-ancestor requirements*.txt (so a
+    requirements-only project gets the same source-pull-in symmetry)."""
+    pyprojects = set()
+    requirements = set()
+    for f in changed_files:
+        base = f.rsplit("/", 1)[-1]
+        if base == "pyproject.toml" and f in all_pyprojects:
+            pyprojects.add(f)
+            continue
+        if _is_requirements_file(base) and f in all_requirements:
+            requirements.add(f)
+            continue
+        if not f.endswith(_PYPI_SCOPE_SUFFIXES):
+            continue
+        fdir = _dirname(f)
+        pj = _nearest_ancestor(fdir, all_pyprojects)
+        if pj is not None:
+            pyprojects.add(pj)
+            continue
+        rq = _nearest_ancestor(fdir, all_requirements)
+        if rq is not None:
+            requirements.add(rq)
+    return pyprojects, requirements
+
+
+def _docker_split_tag(tag):
+    """Split a registry tag into (core, variant) using the same grammar as the
+    FROM parser, or None if it is not a concrete M.N.P[.W] tag (so floating /
+    rc tags in the registry list are ignored for comparison)."""
+    cm = _DOCKER_CORE_RE.match(tag)
+    if not cm:
+        return None
+    return cm.group(1), (cm.group(2) or "")
+
+
+def collect_docker(dockerfile_text, changed_lines, registry):
+    """dockerfile_text maps each in-scope Dockerfile path -> its content. Emits
+    a tuple per stale FROM base-image, comparing only within the pinned tag's
+    variant lineage. No health axis this slice (licence/health are null)."""
+    findings = []
+    for path, text in sorted(dockerfile_text.items()):
+        touched = changed_lines.get(path, set())
+        for ref, core, variant, line in parse_dockerfile(text):
+            tags = registry.docker_tags(ref)
+            if not tags:
+                continue  # no trustworthy answer
+            # Cores of registry tags sharing this candidate's exact variant.
+            same_variant_cores = []
+            for t in tags:
+                split = _docker_split_tag(t)
+                if split is not None and split[1] == variant:
+                    same_variant_cores.append(split[0])
+            latest = latest_ga(same_variant_cores)
+            if not latest:
+                continue
+            if compare_versions(latest, core) <= 0:
+                continue  # not stale
+            if line in touched:
+                target = latest
+            else:
+                target = nearest_in_major(core, same_variant_cores)
+                if compare_versions(target, core) <= 0:
+                    continue  # in-major exhausted for an untouched line
+            findings.append({
+                "source": "docker", "item": ref,
+                "current": core, "latest_ga": latest, "target": target,
+                "file": path, "line": line,
+                "licence_current": None, "licence_latest": None,
+                "health": None,
+            })
+    return findings
+
+
+def _pypi_yanked(records):
+    """True if a release's file records exist and are ALL yanked. An empty
+    records list is treated as NOT yanked (eligible), the fail-safe direction."""
+    return bool(records) and all(r.get("yanked") for r in records)
+
+
+def _pypi_yank_reason(records):
+    """First non-empty yanked_reason among a release's records, or ''."""
+    for r in records or []:
+        if r.get("yanked") and r.get("yanked_reason"):
+            return r["yanked_reason"]
+    return ""
+
+
+def collect_pypi(pyproject_text, requirements_text, changed_lines, registry):
+    """pyproject_text / requirements_text map each in-scope manifest path -> its
+    content. Emits a tuple per dependency that is stale OR yanked-current,
+    comparing only non-yanked GA releases for the target. Licence is null this
+    slice."""
+    units = []
+    for path, text in sorted(pyproject_text.items()):
+        units.append((path, parse_pyproject(text)))
+    for path, text in sorted(requirements_text.items()):
+        units.append((path, parse_requirements(text)))
+
+    findings = []
+    for path, deps in units:
+        touched = changed_lines.get(path, set())
+        for name, spec, line in deps:
+            current = pypi_strip_constraint(spec)
+            if current is None:
+                continue
+            releases = registry.pypi_releases(name)
+            if not releases:
+                continue
+            non_yanked = [v for v in releases if not _pypi_yanked(releases[v])]
+            latest = pypi_latest_ga(non_yanked)
+            if not latest:
+                continue
+            health = None
+            cur_records = releases.get(current)
+            if cur_records is not None and _pypi_yanked(cur_records):
+                health = {"state": "yanked",
+                          "detail": _pypi_yank_reason(cur_records)}
+            stale = pypi_compare(latest, current) > 0
+            if stale:
+                if line in touched:
+                    target = latest
+                else:
+                    target = pypi_nearest_in_major(current, non_yanked)
+                    if pypi_compare(target, current) <= 0:
+                        stale = False
+            if not stale and health is None:
+                continue
+            if not stale:
+                target = current
+            findings.append({
+                "source": "pypi", "item": name,
+                "current": current, "latest_ga": latest, "target": target,
+                "file": path, "line": line,
+                "licence_current": None, "licence_latest": None,
+                "health": health,
+            })
+    return findings
+
+
+def collect_findings(root, changed_files, changed_lines, registry):
+    def read(path):
+        try:
+            with open(os.path.join(root, path), encoding="utf-8") as fh:
+                return fh.read()
+        except OSError:
+            return None
+
+    workflow_text = {
+        p: read(p) for p in changed_files
+        if p.startswith(".github/workflows/") and p.endswith((".yml", ".yaml"))
+    }
+    workflow_text = {p: t for p, t in workflow_text.items() if t is not None}
+
+    # Solution gate: discover every manifest in the tree (npm package.json;
+    # NuGet .csproj/.fsproj/.vbproj/.props; Dockerfiles; PyPI pyproject.toml and
+    # requirements*.txt), then map changed files to their governing manifests.
+    # node_modules/bin/obj plus .venv/__pycache__/.tox/.eggs are pruned in place
+    # so os.walk never recurses into (potentially enormous) build/dependency trees.
+    all_pkgs = set()
+    all_csprojs = set()
+    all_props = set()
+    all_dockerfiles = set()
+    all_pyprojects = set()
+    all_requirements = set()
+    for dirpath, dirs, names in os.walk(root):
+        for prune in ("node_modules", "bin", "obj",
+                      ".venv", "__pycache__", ".tox", ".eggs"):
+            if prune in dirs:
+                dirs.remove(prune)
+        if "package.json" in names:
+            rel = os.path.relpath(os.path.join(dirpath, "package.json"), root)
+            all_pkgs.add(rel.replace(os.sep, "/"))
+        for nm in names:
+            rel = os.path.relpath(os.path.join(dirpath, nm), root).replace(os.sep, "/")
+            if nm.endswith(".csproj") or nm.endswith(".fsproj") or nm.endswith(".vbproj"):
+                all_csprojs.add(rel)
+            elif nm.endswith(".props"):
+                all_props.add(rel)
+            if _is_dockerfile(rel):
+                all_dockerfiles.add(rel)
+            if nm == "pyproject.toml":
+                all_pyprojects.add(rel)
+            elif _is_requirements_file(nm):
+                all_requirements.add(rel)
+    npm_roots = npm_scope_roots(changed_files, all_pkgs)
+    npm_text = {p: read(p) for p in npm_roots}
+    npm_text = {p: t for p, t in npm_text.items() if t is not None}
+
+    nuget_csprojs, nuget_props = nuget_scope_roots(changed_files, all_csprojs, all_props)
+    csproj_text = {p: read(p) for p in nuget_csprojs}
+    csproj_text = {p: t for p, t in csproj_text.items() if t is not None}
+    props_text = {p: read(p) for p in nuget_props}
+    props_text = {p: t for p, t in props_text.items() if t is not None}
+
+    # Docker scope depends on the resolved npm/nuget units (Anchor A), so this
+    # must run after npm_roots and nuget_csprojs are computed.
+    docker_roots = docker_scope_roots(
+        changed_files,
+        all_dockerfiles,
+        nuget_csprojs,
+        npm_roots)
+    dockerfile_text = {p: read(p) for p in docker_roots}
+    dockerfile_text = {p: t for p, t in dockerfile_text.items() if t is not None}
+
+    pypi_pyprojects, pypi_requirements = pypi_scope_roots(
+        changed_files, all_pyprojects, all_requirements)
+    pyproject_text = {p: read(p) for p in pypi_pyprojects}
+    pyproject_text = {p: t for p, t in pyproject_text.items() if t is not None}
+    requirements_text = {p: read(p) for p in pypi_requirements}
+    requirements_text = {p: t for p, t in requirements_text.items() if t is not None}
+
+    findings = []
+    findings += collect_github_actions(changed_files, workflow_text, changed_lines, registry)
+    findings += collect_runners(changed_files, workflow_text, changed_lines)
+    findings += collect_npm(npm_text, changed_lines, registry)
+    findings += collect_nuget(csproj_text, props_text, changed_lines, registry)
+    findings += collect_docker(dockerfile_text, changed_lines, registry)
+    findings += collect_pypi(pyproject_text, requirements_text, changed_lines, registry)
+    # Deterministic ordering for hash stability.
+    findings.sort(key=lambda f: (f["file"], f["line"], f["source"], f["item"]))
+    return findings
+
+
+# --- CLI --------------------------------------------------------------------
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(prog="housekeeper-freshness")
+    parser.add_argument("--root", required=True)
+    parser.add_argument("--changed-files-from", required=True)
+    parser.add_argument("--changed-lines-from", required=True)
+    parser.add_argument("--registry-fixtures",
+                        default=os.environ.get("HOUSEKEEPER_REGISTRY_FIXTURES"))
+    args = parser.parse_args(argv)
+
+    with open(args.changed_files_from, encoding="utf-8") as fh:
+        changed_files = [ln.strip() for ln in fh if ln.strip()]
+    with open(args.changed_lines_from, encoding="utf-8") as fh:
+        changed_lines = parse_changed_lines(fh.read())
+
+    registry = Registry(args.registry_fixtures)
+    findings = collect_findings(args.root, changed_files, changed_lines, registry)
+    json.dump(findings, sys.stdout)
+    sys.stdout.write("\n")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

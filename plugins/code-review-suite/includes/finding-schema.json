@@ -1,0 +1,144 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://jodre11.plugins/code-review-suite/finding-schema.json",
+  "title": "Code-review finding schema",
+  "$defs": {
+    "finding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["line", "severity", "confidence", "description", "suggested_fix"],
+      "properties": {
+        "file": { "type": "string", "description": "Repo-relative path, no a/ or b/ prefix." },
+        "line": { "type": "integer", "minimum": 0, "description": "Line in the new file's coordinate space. 0 only for deletion anchors handled out-of-band." },
+        "rule_id": { "type": "string", "description": "Static-analysis rule ID (e.g. F401, DS-002). Omit for LLM-specialist findings." },
+        "severity": { "enum": ["Critical", "Important", "Suggestion"] },
+        "confidence": { "type": "integer", "minimum": 0, "maximum": 100 },
+        "description": { "type": "string" },
+        "suggested_fix": { "type": "string" },
+        "reference": { "type": "string", "description": "Stable rule/advisory URL when the tool emits one." },
+        "agreement": { "type": "integer", "minimum": 1, "description": "Resample agreement count: 2 = both independent draws found this cluster, 1 = a single draw. Optional — omitted in round-1-only output and on the lightweight path. Advisory corroboration for the synthesiser, never a mechanical confidence floor." }
+      }
+    },
+    "specialistOutput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "findings"],
+      "properties": {
+        "status": { "enum": ["ok", "skipped", "failed"], "description": "skipped = tool legitimately absent; failed = error; ok = ran." },
+        "statusReason": { "type": "string", "description": "One-line reason when status is skipped or failed." },
+        "findings": { "type": "array", "items": { "$ref": "#/$defs/finding" } }
+      }
+    },
+    "synthEnvelope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["verdict", "tiers", "bodyText"],
+      "properties": {
+        "verdict": { "enum": ["APPROVE", "REQUEST_CHANGES"], "description": "Synthesiser is sole authority. COMMENT is never emitted here — only a user override produces it." },
+        "rubricRowApplied": { "enum": [1, 2, 3, 4], "description": "Verdict-rubric row, first match wins. Omitted in local mode." },
+        "rubricReason": { "type": "string", "description": "One-line condition matched, may cite [#N] tokens." },
+        "tiers": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["consensus", "synthesiser", "contested", "dismissed"],
+          "properties": {
+            "consensus": { "type": "array", "items": { "$ref": "#/$defs/finding" } },
+            "synthesiser": { "type": "array", "items": { "$ref": "#/$defs/finding" } },
+            "contested": { "type": "array", "items": { "$ref": "#/$defs/finding" } },
+            "dismissed": { "type": "array", "items": { "$ref": "#/$defs/finding" } }
+          }
+        },
+        "bodyText": { "type": "string", "description": "The synthesiser's full prose report (markdown). Free-text — the schema wraps, never flattens, the judgement." }
+      }
+    },
+    "sealedBundle": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["verdict", "bodyText", "comments"],
+      "properties": {
+        "verdict": { "enum": ["APPROVE", "REQUEST_CHANGES", "COMMENT", "NONE"], "description": "NONE in local mode (pre-review produces no verdict)." },
+        "bodyText": { "type": "string", "description": "Rendered GitHub body. Workflow path: built by review-core buildBody() (headline + assessment + index). Non-Workflow path: Class D transforms applied by the host orchestrator." },
+        "comments": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["path", "body"],
+            "properties": {
+              "path": { "type": "string" },
+              "line": { "type": "integer", "minimum": 1, "description": "Omitted for file-level comments (subjectType=file)." },
+              "side": { "enum": ["RIGHT", "LEFT"], "description": "Omitted for file-level comments." },
+              "subjectType": { "enum": ["file"], "description": "Present only for file-level comments (no usable line). Absent for line-level comments." },
+              "body": { "type": "string" }
+            }
+          }
+        },
+        "log": {
+          "type": "object",
+          "description": "Full unfiltered analytical payload for the durable log. Host writes it to disk when orchestration.full_log is true; absent on lightweight/empty bundles.",
+          "additionalProperties": false,
+          "required": ["bodyText", "findings"],
+          "properties": {
+            "bodyText": { "type": "string", "description": "The synthesiser's complete verbatim prose (all sections)." },
+            "findings": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["tier", "severity", "confidence", "description", "verdict_relevant"],
+                "properties": {
+                  "tier": { "enum": ["consensus", "synthesiser", "contested", "dismissed"] },
+                  "domain": { "type": "string" },
+                  "severity": { "enum": ["Critical", "Important", "Suggestion"] },
+                  "confidence": { "type": "integer", "minimum": 0, "maximum": 100 },
+                  "file": { "type": "string" },
+                  "line": { "type": "integer", "minimum": 0 },
+                  "description": { "type": "string" },
+                  "suggested_fix": { "type": "string" },
+                  "verdict_relevant": { "type": "boolean" }
+                }
+              }
+            },
+            "meta": {
+              "type": "object",
+              "description": "Reconstruction keys for the per-cog corpus. The diff is regenerated from these, never stored. Present only when full_log captured per-cog I/O.",
+              "additionalProperties": false,
+              "properties": {
+                "base": { "type": "string" },
+                "head_sha": { "type": "string" },
+                "empty_tree_mode": { "type": "boolean" },
+                "path_scope": { "type": "string" }
+              }
+            },
+            "cogs": {
+              "type": "array",
+              "description": "Per-cog I/O records: each specialist, cross-reviewer, the synthesiser, and (when the boundary gate fired) round-2/union. input omitted on round-1 cogs (diff reconstructed from meta).",
+              "items": {
+                "type": "object",
+                "additionalProperties": true,
+                "required": ["phase", "output"],
+                "properties": {
+                  "phase": { "enum": ["round1", "cross", "round2", "cross2", "union", "synth"] },
+                  "domain": { "type": "string" },
+                  "input": { "type": "object" },
+                  "output": { "type": "object" }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "crossOpinionEnvelope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "opinionsMarkdown", "escalations"],
+      "properties": {
+        "status": { "enum": ["ok", "skipped", "failed"], "description": "skipped = nothing to review; failed = error; ok = ran." },
+        "statusReason": { "type": "string", "description": "One-line reason when status is skipped or failed." },
+        "opinionsMarkdown": { "type": "string", "description": "The cross-reviewer's verbatim ## Cross-Review Opinions block (Agree/Disagree/Escalate verdicts + reasoning). Free-text — the synthesiser reads it exactly as it reads inline cross-review prose. Empty string when no opinions." },
+        "escalations": { "type": "array", "items": { "$ref": "#/$defs/finding" }, "description": "New cross-domain findings this reviewer raised. Each is a full finding; provenance (the cross-reviewer's own domain) is attached by review-core, not the agent." }
+      }
+    }
+  }
+}

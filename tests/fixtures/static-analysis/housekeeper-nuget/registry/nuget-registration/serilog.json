@@ -1,0 +1,10 @@
+{
+  "items": [
+    {
+      "items": [
+        {"catalogEntry": {"version": "2.10.0", "licenseExpression": "Apache-2.0", "listed": true}},
+        {"catalogEntry": {"version": "4.0.0", "licenseExpression": "Apache-2.0", "listed": true}}
+      ]
+    }
+  ]
+}

@@ -1,0 +1,13 @@
+{
+  "name": "web-search",
+  "description": "Web search via SearXNG — no API key, no tracking",
+  "author": {
+    "name": "Christian Haddrell"
+  },
+  "license": "MIT",
+  "keywords": [
+    "web-search",
+    "searxng",
+    "self-hosted"
+  ]
+}

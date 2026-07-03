@@ -1,0 +1,2 @@
+Changed lines:
+  bad.js: 1,2,3,6

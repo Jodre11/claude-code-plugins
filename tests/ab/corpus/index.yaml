@@ -1,0 +1,96 @@
+fixtures:
+  - id: ruff-smoke-bad-py
+    agent: ruff-reviewer
+    type: synthetic
+    description: F401 unused import on a single Python file. Bootstraps the per-agent loop.
+    tags: [smoke, deterministic]
+  - id: eslint-smoke-bad-js
+    agent: eslint-reviewer
+    type: synthetic
+    description: Multi-rule finding set (no-var, prefer-const, no-unused-vars, eqeqeq) on a single JS file. Phase 3.2 baseline.
+    tags: [smoke, deterministic]
+  - id: trivy-smoke-bad-dockerfile
+    agent: trivy-reviewer
+    type: synthetic
+    description: Three-finding IaC set (DS-0001 latest-tag, DS-0004 port-22, DS-0031 secret-env) on a single Dockerfile. Phase 3.3 baseline.
+    tags: [smoke, deterministic]
+  - id: jbinspect-smoke-bad-cs
+    agent: jbinspect-reviewer
+    type: synthetic
+    description: Three-finding C# set (RedundantUsingDirective line 2, PossibleNullReferenceException line 11, UnusedMember.Local line 14) on a single project. Phase 3.4 baseline.
+    tags: [smoke, deterministic]
+  - id: housekeeper-smoke-stale-deps
+    agent: housekeeper-reviewer
+    type: synthetic
+    description: Three-finding freshness set (actions/checkout v3→v4, ubuntu-22.04→24.04, react 18.2.0→19.0.0) via recorded registry fixtures. Vertical-slice-1 baseline.
+    tags: [smoke, deterministic]
+  - id: housekeeper-nuget-stale-deps
+    agent: housekeeper-reviewer
+    type: synthetic
+    description: Two-finding NuGet set (Serilog 2.10.0->4.0.0 via CPM resolution; WindowsAzure.Storage 9.3.3 current-but-deprecated pure-health) via recorded flat-container + registration fixtures. Slice-2 baseline.
+    tags: [smoke, deterministic]
+  - id: housekeeper-docker-stale-base
+    agent: housekeeper-reviewer
+    type: synthetic
+    description: One-finding Docker base-image set (FROM node:18.20.0-alpine pulled in via Anchor A by a .cs-only change; nearest-in-major target 18.20.4, latest GA 22.3.0 in the alpine lineage) via recorded OCI v2 tag fixture. Slice-3 baseline.
+    tags: [smoke, deterministic]
+  - id: housekeeper-pypi-stale-deps
+    agent: housekeeper-reviewer
+    type: synthetic
+    description: Two-finding PyPI set (requests 2.20.0->2.31.0 stale via Anchor pull-in by a .py-only change; urllib3 2.0.6 stale-and-yanked health rider) via recorded PyPI JSON fixtures. Slice-4 baseline.
+    tags: [smoke, deterministic]
+  - id: synth-hazard-hit
+    agent: review-synthesiser
+    type: synthetic
+    description: Lying-comment fixture — comment falsely calls a load-bearing move_to_end "safe to drop" on LRU-correct code. Agent-hazard hit; arm B expected to keep Important, arm A to downgrade.
+    tags: [agent-hazard, synthesiser]
+  - id: synth-hazard-nearmiss
+    agent: review-synthesiser
+    type: synthetic
+    description: Vague-but-honest comment fixture — accurate but unspecific, no contradiction. Inflation guard; both arms expected Suggestion.
+    tags: [agent-hazard, synthesiser]
+  - id: silentfail-hit
+    agent: correctness-reviewer
+    type: synthetic
+    description: Silent-catch-and-swallow fixture — fetch_user_profile wraps external call in bare except with no log. Arm B expected Important; arm A ABSENT.
+    tags: [silent-failure, correctness]
+  - id: silentfail-nearmiss
+    agent: correctness-reviewer
+    type: synthetic
+    description: Signalled-failure fixture — fetch_user_profile logs the exception before returning None. Inflation guard; arm B expected ABSENT.
+    tags: [silent-failure, correctness]
+  - id: silentfail-unique-hit
+    agent: correctness-reviewer
+    type: synthetic
+    description: Fallback-returns-default fixture — resolve_tenant_rate_limit silently serves DEFAULT_RATE_LIMIT when the API omits rate_limit (legitimate control flow, no exception). Arm B expected Important via the new "fallback without signalling" clause; arm A expected ABSENT (no error path for the pre-edit bullets to grab). Unique-fire contrast.
+    tags: [silent-failure, correctness, unique-fire]
+  - id: reuse-hit
+    agent: reuse-reviewer
+    type: synthetic
+    description: Non-trivial canonical reimplementation fixture — render_invoice_summary duplicates format_currency from utils/formatting.py. Both arms expected Suggestion; confirms no regression on the kept case.
+    tags: [reuse, triviality]
+  - id: reuse-nearmiss
+    agent: reuse-reviewer
+    type: synthetic
+    description: Trivial one-liner duplication fixture — generate_report_filename duplicates a one-line slugify from utils/strings.py. Arm B expected Suggestion (retarget de-escalates trivial dup of a named/exported helper Important→Suggestion, not ABSENT); arm A expected Important. Behavioural proof of triviality bifurcation (observed 5/5, p=0.00794).
+    tags: [reuse, triviality]
+  - id: style-hit
+    agent: style-reviewer
+    type: synthetic
+    description: Misleading-name fixture — get_user_settings performs a DB write on first call despite a name that implies a pure read. Arm B expected Important (up-weighted by reasoning-economy retarget); arm A expected Suggestion.
+    tags: [style, reasoning-economy]
+  - id: style-nearmiss
+    agent: style-reviewer
+    type: synthetic
+    description: Long-but-linear fixture — build_audit_report is ~65 lines of sequential field rendering with no branching. Arm B expected ABSENT (inverted length heuristic); arm A expected Suggestion. Proves the inversion.
+    tags: [style, reasoning-economy]
+  - id: test-quality-hit
+    agent: test-quality-reviewer
+    type: synthetic
+    description: Asserts-on-the-mock fixture — test_rejects_invalid_email mocks validate() then asserts the mock's configured return. Arm B expected Important (false-green = agent-hazard); arm A expected ABSENT.
+    tags: [test-quality, agent-hazard]
+  - id: test-quality-nearmiss
+    agent: test-quality-reviewer
+    type: synthetic
+    description: Clean-test fixture — test_create_user_stores_record uses real assertions on a real DB. Inflation guard; both arms expected ABSENT.
+    tags: [test-quality, inflation-guard]

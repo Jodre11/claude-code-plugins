@@ -1,0 +1,5 @@
+name: smoke
+mode: per-agent
+session:
+  model: sonnet
+  effort: default

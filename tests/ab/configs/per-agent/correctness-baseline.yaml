@@ -1,0 +1,7 @@
+name: correctness-baseline
+description: Correctness per-agent arm for the silent-failure-path ablation. opus/default; the ablation swaps only correctness-reviewer.md via run-specialist-ablation.sh.
+mode: per-agent
+agent: correctness-reviewer
+session:
+  model: opus
+  effort: default

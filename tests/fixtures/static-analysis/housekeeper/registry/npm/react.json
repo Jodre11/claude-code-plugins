@@ -1,0 +1,9 @@
+{
+  "dist-tags": {"latest": "19.0.0"},
+  "versions": {
+    "18.0.0": {"license": "MIT"},
+    "18.2.0": {"license": "MIT"},
+    "18.3.1": {"license": "MIT"},
+    "19.0.0": {"license": "MIT"}
+  }
+}

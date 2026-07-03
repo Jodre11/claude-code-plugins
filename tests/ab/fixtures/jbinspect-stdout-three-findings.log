@@ -1,0 +1,29 @@
+Some preamble noise from the dispatched session.
+
+## JetBrains InspectCode Findings
+
+### Finding — redundant using directive
+- **File:** BadCode.cs:2
+- **Confidence:** 100
+- **Severity:** Important
+- **Rule:** RedundantUsingDirective (Redundancies in Code)
+- **Description:** Using directive is not required by the code and can be safely removed.
+- **Suggested fix:** Remove the `using System.Text;` directive on line 2.
+
+### Finding — possible null reference
+- **File:** BadCode.cs:11
+- **Confidence:** 100
+- **Severity:** Important
+- **Rule:** PossibleNullReferenceException (Potential Code Quality Issues)
+- **Description:** Possible 'System.NullReferenceException'.
+- **Suggested fix:** Guard `value` against null before dereferencing `.Length` on line 11.
+
+### Finding — unused private member
+- **File:** BadCode.cs:14
+- **Confidence:** 100
+- **Severity:** Important
+- **Rule:** UnusedMember.Local (Redundancies in Symbol Declarations)
+- **Description:** Method 'UnusedHelper' is never used.
+- **Suggested fix:** Remove the unused private method `UnusedHelper` on line 14, or call it where intended.
+
+Trailing prose that must not be parsed as a finding.

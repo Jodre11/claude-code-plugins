@@ -1,0 +1,5 @@
+{"type":"system","subtype":"init","session_id":"fixture-empty-result"}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"I'll run Ruff on the changed Python file."}]}}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"Running ruff against bad.py and parsing the JSON output."}]}}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"## Ruff Findings\n\n### Finding — `sys` imported but unused\n- **File:** bad.py:1\n- **Confidence:** 100\n- **Severity:** Important\n- **Rule:** F401 (Pyflakes)\n- **Description:** `sys` imported but unused\n- **Suggested fix:** Remove the `import sys` statement on line 1; ruff's safe auto-fix removes the import entirely."}]}}
+{"type":"result","subtype":"success","is_error":false,"result":"","stop_reason":"end_turn","session_id":"fixture-empty-result"}

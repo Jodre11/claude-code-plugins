@@ -1,0 +1,6 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <PackageReference Include="Serilog" />
+    <PackageReference Include="WindowsAzure.Storage" />
+  </ItemGroup>
+</Project>

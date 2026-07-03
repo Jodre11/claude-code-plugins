@@ -1,0 +1,20 @@
+{
+  "csharp": {
+    "command": "ClaudeCodeRoslynLspProxy",
+    "args": [
+      "--server", "roslyn-language-server",
+      "--",
+      "--stdio",
+      "--autoLoadProjects",
+      "--logLevel", "Warning"
+    ],
+    "transport": "stdio",
+    "extensionToLanguage": {
+      ".cs": "csharp",
+      ".csx": "csharp",
+      ".cshtml": "csharp"
+    },
+    "startupTimeout": 120000,
+    "maxRestarts": 3
+  }
+}

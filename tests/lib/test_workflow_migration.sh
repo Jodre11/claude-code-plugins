@@ -467,3 +467,87 @@ test_finalize_route_parity() {
             "$result"
     fi
 }
+
+# Task 2: a synth agent() that throws the runtime stall message must be caught inside
+# crossAndSynth; the round-1 site then returns a synthDeferred bundle (NOT a crash, NOT an
+# empty Category-C bundle). A non-stall throw must re-propagate. A round-2 stall must be
+# absorbed by the existing "retain round-1" degrade (no defer, no crash).
+test_synth_stall_defers() {
+    local cr
+    cr=$(_wm_cr_dir)
+    local wf="$cr/workflows/review-core.mjs"
+    if [[ ! -f "$wf" ]]; then
+        fail "synth stall recovery" "missing: $wf"
+        return
+    fi
+    local result
+    result=$(node -e '
+        const fs = require("fs");
+        const src = fs.readFileSync(process.argv[1], "utf8")
+            .replace(/^export\s+const\s+meta/m, "const meta");
+        const STALL = "agent stalled on all 6 attempts (no progress for 180000ms each)";
+        const baseArgs = {
+            agentPrompt: "x", flags: {}, route: "full", selfReReview: false,
+            reviewMode: "pr", base: "main", headSha: "a".repeat(40),
+            emptyTreeMode: false, pathScope: "", tempDir: "/tmp/x",
+        };
+        const parallel = (thunks) => Promise.all(thunks.map(t => t()));
+        const phase = () => {};
+        const log = () => {};
+        const pipeline = async () => [];
+        const workflow = async () => null;
+        const run = (agent, args) => {
+            const fn = new Function("agent","parallel","pipeline","phase","log","args","workflow",
+                "return (async()=>{" + src + "\n})()");
+            return fn(agent, parallel, pipeline, phase, log, args, workflow);
+        };
+        const isSynth = (opts) => opts && opts.agentType === "code-review-suite:review-synthesiser";
+        (async () => {
+            // (a) round-1 synth stall → synthDeferred bundle carrying the prompt.
+            const agentStall = async (prompt, opts) => {
+                if (isSynth(opts)) throw new Error(STALL);
+                return { status: "ok", findings: [], opinionsMarkdown: "", escalations: [] };
+            };
+            let deferred;
+            try { deferred = await run(agentStall, baseArgs); }
+            catch (e) { console.log("THREW(stall): " + e.message); return; }
+            if (deferred.synthDeferred !== true) { console.log("NO_DEFER: " + JSON.stringify(deferred).slice(0, 120)); return; }
+            if (typeof deferred.synthPrompt !== "string" || !deferred.synthPrompt.includes("ultrathink")) { console.log("BAD_PROMPT"); return; }
+            // (b) a non-stall throw must re-propagate.
+            const agentOtherThrow = async (prompt, opts) => {
+                if (isSynth(opts)) throw new Error("some other failure");
+                return { status: "ok", findings: [], opinionsMarkdown: "", escalations: [] };
+            };
+            let propagated = false;
+            try { await run(agentOtherThrow, baseArgs); }
+            catch (e) { propagated = /some other failure/.test(e.message); }
+            if (!propagated) { console.log("NONSTALL_NOT_PROPAGATED"); return; }
+            // (c) round-2 stall is absorbed: round-1 gate fires (APPROVE + contested), round-2
+            // synth stalls, and the run retains the round-1 verdict without deferring/crashing.
+            const ENV_GATE = {
+                verdict: "APPROVE", rubricRowApplied: 4, rubricReason: "borderline",
+                tiers: { consensus: [], synthesiser: [],
+                         contested: [{ file: "c.js", line: 5, severity: "Suggestion", confidence: 55, description: "d", suggested_fix: "f" }],
+                         dismissed: [] },
+                bodyText: "## Synthesiser Assessment\n> hi\n",
+            };
+            let synthCalls = 0;
+            const agentGateThenStall = async (prompt, opts) => {
+                if (isSynth(opts)) { synthCalls++; if (synthCalls === 1) return ENV_GATE; throw new Error(STALL); }
+                return { status: "ok", findings: [], opinionsMarkdown: "", escalations: [] };
+            };
+            let r2;
+            try { r2 = await run(agentGateThenStall, baseArgs); }
+            catch (e) { console.log("THREW(round2): " + e.message); return; }
+            if (r2.synthDeferred) { console.log("ROUND2_WRONGLY_DEFERRED"); return; }
+            if (r2.verdict !== "APPROVE") { console.log("ROUND2_LOST_R1_VERDICT: " + r2.verdict); return; }
+            console.log("OK");
+        })();
+    ' "$wf" 2>&1)
+    if [[ "$result" == "OK" ]]; then
+        pass "synth stall defers (round 1), re-propagates non-stall, absorbs round-2 stall"
+    else
+        fail "synth stall defers (round 1), re-propagates non-stall, absorbs round-2 stall" \
+            "$result"
+    fi
+}

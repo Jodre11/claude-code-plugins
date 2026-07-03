@@ -204,7 +204,13 @@ for (const [domain, fs] of Object.entries(findingsByDomain)) {
   phaseLog.cogs.push({ phase: 'round1', domain, output: { findings: fs } })
 }
 
-let { envelope, crossByDomain, synthInput } = await crossAndSynth(findingsByDomain, false)
+let { envelope, crossByDomain, synthInput, synthPrompt, synthStalled } = await crossAndSynth(findingsByDomain, false)
+// Round-1 stall → defer out of the sandbox. Return the exact synth prompt so the caller
+// (main agent loop) can re-dispatch the synthesiser as a standalone Agent under the 600s
+// async-agent watchdog, then re-enter via the finalize route. MUST precede finalizeBundle:
+// a stall leaves envelope null, which finalizeBundle would otherwise swallow as a
+// Category-C empty bundle, and the recovery would never fire.
+if (synthStalled) return { synthDeferred: true, synthPrompt }
 for (const c of crossByDomain) {
   phaseLog.cogs.push({ phase: 'cross', domain: c.domain, input: c.input, output: c.output })
 }
@@ -343,20 +349,39 @@ async function crossAndSynth(findingsByDomain, resampled) {
     `Cross-review escalations (JSON, each {domain, finding}):\n${JSON.stringify(crossEscalations)}\n\n` +
     `Use ${tempDir} for temporary files.`
 
-  const envelope = await agent(synthPrompt, {
-    label: 'review-synthesiser',
-    phase: 'synth',
-    agentType: 'code-review-suite:review-synthesiser',
-    model: 'opus',
-    schema: SYNTH_SCHEMA,
-  })
+  // The lone in-sandbox synth turn. Under heavy Bedrock latency this can trip the
+  // Workflow sandbox's fixed 180s no-progress watchdog, which throws
+  // `agent stalled on all N attempts (no progress for 180000ms each)` and would
+  // otherwise terminate the whole workflow uncaught. Catch ONLY that message and
+  // signal a deferral; re-throw everything else (user-abandon, script bugs) so genuine
+  // errors are never masked. synthStalled is the sole signal distinguishing a stall-null
+  // from a benign API-error null — the round-1 caller keys the recovery on it.
+  let envelope = null
+  let synthStalled = false
+  try {
+    envelope = await agent(synthPrompt, {
+      label: 'review-synthesiser',
+      phase: 'synth',
+      agentType: 'code-review-suite:review-synthesiser',
+      model: 'opus',
+      schema: SYNTH_SCHEMA,
+    })
+  } catch (e) {
+    if (/stalled on all \d+ attempts/.test((e && e.message) || '')) {
+      log('synth stalled on the sandbox watchdog — deferring to out-of-sandbox recovery')
+      envelope = null
+      synthStalled = true
+    } else {
+      throw e
+    }
+  }
   const synthInput = {
     findingsByDomain,
     crossOpinions,
     crossEscalations,
     intent_ledger: intentLedger || '',
   }
-  return { envelope, crossByDomain, synthInput }
+  return { envelope, crossByDomain, synthInput, synthPrompt, synthStalled }
 }
 
 // The deterministic tail, shared by the normal path and the `finalize` recovery route.

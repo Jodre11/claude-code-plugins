@@ -893,6 +893,37 @@ filter and rendered comment bodies. You may only POST it (PR mode) or PRINT it (
 object, while the Workflow tool (which the main agent loop uses, having no primitive)
 delivers a JSON string — the script normalises a string arg before destructuring.
 
+**Stall-recovery branch.** The returned object is normally the sealed bundle. If instead it
+carries `synthDeferred: true`, the in-sandbox synthesiser stalled on the Workflow watchdog and
+review-core deferred it rather than dying. Recover it out-of-sandbox — do NOT re-run the
+Workflow's synth path (it would re-stall):
+
+1. Dispatch `review-synthesiser` as a **standalone Agent** (`mode: auto`, name
+   `synth-standalone-recovery`) — NOT via the Workflow, so it runs under the 600s async-agent
+   watchdog instead of the 180s sandbox one. Its prompt is `bundle.synthPrompt` with a single
+   line appended:
+
+   ```
+   Envelope output path: $RESOLVED_TEMP_DIR/synth-envelope-$HEAD_SHA.json
+   ```
+
+2. When it returns, `Read` that path and `JSON.parse` it into `$RECOVERED_ENVELOPE`. If the
+   file is missing, empty, or does not parse, do NOT retry into the sandbox — present the empty
+   bundle `{ verdict: 'NONE', bodyText: '(synthesiser produced no usable output)', comments: [] }`
+   and continue to Step 4 / report rendering. The review degrades; it never hangs. (This branch
+   is model-executed prose, not deterministic code, so the fallback must be explicit.)
+
+3. Re-invoke the Workflow to seal the recovered envelope deterministically:
+
+   ```
+   workflow({scriptPath: $REVIEW_CORE_PATH}, { route: 'finalize', reviewMode: $REVIEW_MODE, envelope: $RECOVERED_ENVELOPE })
+   ```
+
+   The `finalize` route spawns zero agents (the watchdog never engages) and runs the same
+   Class D filter + comment renderer as the normal path. Its return value is the sealed bundle;
+   use it exactly as the normal bundle below. The launch-approval prompt for this second
+   Workflow invoke is silenced under `auto` mode (already required for the first launch).
+
 ## Phase 9: Worktree teardown
 
 If `$WORKTREE_OWNED = true`, tear the plugin-owned worktree down on **every**

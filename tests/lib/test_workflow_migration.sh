@@ -384,3 +384,298 @@ test_review_core_threads_repo_dir_to_synth() {
             "the synth prompt assembly must include a conditional (repoDir ? ...) for the Repo dir line"
     fi
 }
+
+# Task 1: the finalize route re-enters review-core with a recovered envelope, runs
+# finalizeBundle (Class D filter + render) with ZERO agent() calls, and produces a bundle
+# identical (in verdict/comments/bodyText) to the normal path for the same non-gate-firing
+# envelope. Uses an APPROVE envelope with no contested tier and no Important consensus, so
+# boundaryGateFires() is false and the two paths are directly comparable.
+test_finalize_route_parity() {
+    local cr
+    cr=$(_wm_cr_dir)
+    local wf="$cr/workflows/review-core.mjs"
+    if [[ ! -f "$wf" ]]; then
+        fail "finalize route parity" "missing: $wf"
+        return
+    fi
+    local result
+    result=$(node -e '
+        const fs = require("fs");
+        const src = fs.readFileSync(process.argv[1], "utf8")
+            .replace(/^export\s+const\s+meta/m, "const meta");
+        const ENV = {
+            verdict: "APPROVE",
+            rubricRowApplied: 4,
+            rubricReason: "no high-confidence findings",
+            tiers: {
+                consensus: [{ file: "a.js", line: 10, severity: "Suggestion", confidence: 90, description: "desc one", suggested_fix: "fix one" }],
+                synthesiser: [{ file: "b.js", line: 20, severity: "Suggestion", confidence: 50, description: "desc two", suggested_fix: "fix two" }],
+                contested: [],
+                dismissed: [],
+            },
+            bodyText: "## Summary\n1 file(s) changed | 1 finding(s) | 0 contested\n\n## Synthesiser Assessment\n> Looks fine.\n",
+        };
+        const baseArgs = {
+            agentPrompt: "x", flags: {}, selfReReview: false,
+            reviewMode: "pr", base: "main", headSha: "a".repeat(40),
+            emptyTreeMode: false, pathScope: "", tempDir: "/tmp/x",
+        };
+        const parallel = (thunks) => Promise.all(thunks.map(t => t()));
+        const phase = () => {};
+        const log = () => {};
+        const pipeline = async () => [];
+        const workflow = async () => null;
+        const run = (agent, args) => {
+            const fn = new Function("agent","parallel","pipeline","phase","log","args","workflow",
+                "return (async()=>{" + src + "\n})()");
+            return fn(agent, parallel, pipeline, phase, log, args, workflow);
+        };
+        const pick = (b) => ({ verdict: b.verdict, comments: b.comments, bodyText: b.bodyText });
+        (async () => {
+            // (a) finalize route: agent() must NEVER be called; envelope passed as arg.
+            let called = false;
+            const agentNever = async () => { called = true; return null; };
+            let finalizeBundle;
+            try {
+                finalizeBundle = await run(agentNever, { ...baseArgs, route: "finalize", envelope: ENV });
+            } catch (e) { console.log("THREW(finalize): " + e.message); return; }
+            if (called) { console.log("AGENT_CALLED_ON_FINALIZE"); return; }
+            if (finalizeBundle.verdict !== "APPROVE") { console.log("BADVERDICT: " + finalizeBundle.verdict); return; }
+            if (!Array.isArray(finalizeBundle.comments) || finalizeBundle.comments.length !== 1) { console.log("BADCOMMENTS: " + JSON.stringify(finalizeBundle.comments)); return; }
+            if (finalizeBundle.comments[0].path !== "a.js" || finalizeBundle.comments[0].line !== 10) { console.log("BADANCHOR: " + JSON.stringify(finalizeBundle.comments[0])); return; }
+            if (!finalizeBundle.bodyText.includes("**APPROVE**")) { console.log("NOHEADLINE"); return; }
+            // (b) normal path with a synth mock returning the SAME envelope, no gate fires.
+            const agentSynth = async (prompt, opts) => {
+                if (opts && opts.agentType === "code-review-suite:review-synthesiser") return ENV;
+                return { status: "ok", findings: [], opinionsMarkdown: "", escalations: [] };
+            };
+            let normal;
+            try {
+                normal = await run(agentSynth, { ...baseArgs, route: "full" });
+            } catch (e) { console.log("THREW(normal): " + e.message); return; }
+            if (JSON.stringify(pick(normal)) !== JSON.stringify(pick(finalizeBundle))) {
+                console.log("PARITY_MISMATCH\nnormal=" + JSON.stringify(pick(normal)) + "\nfinalize=" + JSON.stringify(pick(finalizeBundle)));
+                return;
+            }
+            console.log("OK");
+        })();
+    ' "$wf" 2>&1)
+    if [[ "$result" == "OK" ]]; then
+        pass "finalize route runs finalizeBundle with zero agents and matches normal-path output"
+    else
+        fail "finalize route runs finalizeBundle with zero agents and matches normal-path output" \
+            "$result"
+    fi
+}
+
+# Task 4 (recovery-path degrade): the finalize route is what seals a recovered envelope, but
+# the standalone synth can write a corrupt/absent file — the caller's defensive Read/parse then
+# hands finalize a null (or the caller emits the empty bundle directly). finalizeBundle's
+# Category-C guard MUST turn a null/missing-tiers envelope into the exact empty bundle
+# `{ verdict:'NONE', bodyText:'(synthesiser produced no usable output)', comments:[] }` with ZERO
+# agent() calls — that is the "degrade, never hang" promise on the recovery path itself. The
+# parity test only drives finalize with a well-formed envelope; this asserts the degrade branch.
+test_finalize_route_null_envelope_degrades() {
+    local cr
+    cr=$(_wm_cr_dir)
+    local wf="$cr/workflows/review-core.mjs"
+    if [[ ! -f "$wf" ]]; then
+        fail "finalize route null-envelope degrade" "missing: $wf"
+        return
+    fi
+    local result
+    result=$(node -e '
+        const fs = require("fs");
+        const src = fs.readFileSync(process.argv[1], "utf8")
+            .replace(/^export\s+const\s+meta/m, "const meta");
+        const baseArgs = {
+            agentPrompt: "x", flags: {}, selfReReview: false,
+            reviewMode: "pr", base: "main", headSha: "a".repeat(40),
+            emptyTreeMode: false, pathScope: "", tempDir: "/tmp/x",
+        };
+        const parallel = (thunks) => Promise.all(thunks.map(t => t()));
+        const phase = () => {};
+        const log = () => {};
+        const pipeline = async () => [];
+        const workflow = async () => null;
+        const run = (agent, args) => {
+            const fn = new Function("agent","parallel","pipeline","phase","log","args","workflow",
+                "return (async()=>{" + src + "\n})()");
+            return fn(agent, parallel, pipeline, phase, log, args, workflow);
+        };
+        (async () => {
+            // finalize route with a null envelope (corrupt/absent recovery file) must NOT call
+            // agent() and must return the exact empty bundle.
+            let called = false;
+            const agentNever = async () => { called = true; return null; };
+            let bundle;
+            try {
+                bundle = await run(agentNever, { ...baseArgs, route: "finalize", envelope: null });
+            } catch (e) { console.log("THREW(null): " + e.message); return; }
+            if (called) { console.log("AGENT_CALLED_ON_NULL_FINALIZE"); return; }
+            if (bundle.verdict !== "NONE") { console.log("BADVERDICT: " + bundle.verdict); return; }
+            if (!Array.isArray(bundle.comments) || bundle.comments.length !== 0) { console.log("BADCOMMENTS: " + JSON.stringify(bundle.comments)); return; }
+            if (bundle.bodyText !== "(synthesiser produced no usable output)") { console.log("BADBODY: " + JSON.stringify(bundle.bodyText)); return; }
+            // Also cover a valid-JSON-but-missing-tiers envelope (partial corruption that JSON.parse
+            // accepts): same Category-C guard, same empty bundle.
+            let bundle2;
+            try {
+                bundle2 = await run(agentNever, { ...baseArgs, route: "finalize", envelope: { verdict: "APPROVE" } });
+            } catch (e) { console.log("THREW(notiers): " + e.message); return; }
+            if (bundle2.verdict !== "NONE" || bundle2.bodyText !== "(synthesiser produced no usable output)") {
+                console.log("NOTIERS_NOT_DEGRADED: " + JSON.stringify(bundle2)); return;
+            }
+            console.log("OK");
+        })();
+    ' "$wf" 2>&1)
+    if [[ "$result" == "OK" ]]; then
+        pass "finalize route degrades a null/missing-tiers envelope to the empty bundle with zero agents"
+    else
+        fail "finalize route degrades a null/missing-tiers envelope to the empty bundle with zero agents" \
+            "$result"
+    fi
+}
+
+# Task 2: a synth agent() that throws the runtime stall message must be caught inside
+# crossAndSynth; the round-1 site then returns a synthDeferred bundle (NOT a crash, NOT an
+# empty Category-C bundle). A non-stall throw must re-propagate. A round-2 stall must be
+# absorbed by the existing "retain round-1" degrade (no defer, no crash).
+test_synth_stall_defers() {
+    local cr
+    cr=$(_wm_cr_dir)
+    local wf="$cr/workflows/review-core.mjs"
+    if [[ ! -f "$wf" ]]; then
+        fail "synth stall recovery" "missing: $wf"
+        return
+    fi
+    local result
+    result=$(node -e '
+        const fs = require("fs");
+        const src = fs.readFileSync(process.argv[1], "utf8")
+            .replace(/^export\s+const\s+meta/m, "const meta");
+        const STALL = "agent stalled on all 6 attempts (no progress for 180000ms each)";
+        const baseArgs = {
+            agentPrompt: "x", flags: {}, route: "full", selfReReview: false,
+            reviewMode: "pr", base: "main", headSha: "a".repeat(40),
+            emptyTreeMode: false, pathScope: "", tempDir: "/tmp/x",
+        };
+        const parallel = (thunks) => Promise.all(thunks.map(t => t()));
+        const phase = () => {};
+        const log = () => {};
+        const pipeline = async () => [];
+        const workflow = async () => null;
+        const run = (agent, args) => {
+            const fn = new Function("agent","parallel","pipeline","phase","log","args","workflow",
+                "return (async()=>{" + src + "\n})()");
+            return fn(agent, parallel, pipeline, phase, log, args, workflow);
+        };
+        const isSynth = (opts) => opts && opts.agentType === "code-review-suite:review-synthesiser";
+        (async () => {
+            // (a) round-1 synth stall → synthDeferred bundle carrying the prompt.
+            const agentStall = async (prompt, opts) => {
+                if (isSynth(opts)) throw new Error(STALL);
+                return { status: "ok", findings: [], opinionsMarkdown: "", escalations: [] };
+            };
+            let deferred;
+            try { deferred = await run(agentStall, baseArgs); }
+            catch (e) { console.log("THREW(stall): " + e.message); return; }
+            if (deferred.synthDeferred !== true) { console.log("NO_DEFER: " + JSON.stringify(deferred).slice(0, 120)); return; }
+            if (typeof deferred.synthPrompt !== "string" || !deferred.synthPrompt.includes("ultrathink")) { console.log("BAD_PROMPT"); return; }
+            // (b) a non-stall throw must re-propagate.
+            const agentOtherThrow = async (prompt, opts) => {
+                if (isSynth(opts)) throw new Error("some other failure");
+                return { status: "ok", findings: [], opinionsMarkdown: "", escalations: [] };
+            };
+            let propagated = false;
+            try { await run(agentOtherThrow, baseArgs); }
+            catch (e) { propagated = /some other failure/.test(e.message); }
+            if (!propagated) { console.log("NONSTALL_NOT_PROPAGATED"); return; }
+            // (c) round-2 stall is absorbed: round-1 gate fires (APPROVE + contested), round-2
+            // synth stalls, and the run retains the round-1 verdict without deferring/crashing.
+            const ENV_GATE = {
+                verdict: "APPROVE", rubricRowApplied: 4, rubricReason: "borderline",
+                tiers: { consensus: [], synthesiser: [],
+                         contested: [{ file: "c.js", line: 5, severity: "Suggestion", confidence: 55, description: "d", suggested_fix: "f" }],
+                         dismissed: [] },
+                bodyText: "## Synthesiser Assessment\n> hi\n",
+            };
+            let synthCalls = 0;
+            const agentGateThenStall = async (prompt, opts) => {
+                if (isSynth(opts)) { synthCalls++; if (synthCalls === 1) return ENV_GATE; throw new Error(STALL); }
+                return { status: "ok", findings: [], opinionsMarkdown: "", escalations: [] };
+            };
+            let r2;
+            try { r2 = await run(agentGateThenStall, baseArgs); }
+            catch (e) { console.log("THREW(round2): " + e.message); return; }
+            if (r2.synthDeferred) { console.log("ROUND2_WRONGLY_DEFERRED"); return; }
+            if (r2.verdict !== "APPROVE") { console.log("ROUND2_LOST_R1_VERDICT: " + r2.verdict); return; }
+            console.log("OK");
+        })();
+    ' "$wf" 2>&1)
+    if [[ "$result" == "OK" ]]; then
+        pass "synth stall defers (round 1), re-propagates non-stall, absorbs round-2 stall"
+    else
+        fail "synth stall defers (round 1), re-propagates non-stall, absorbs round-2 stall" \
+            "$result"
+    fi
+}
+
+# Task 4: all three pipeline copies must document the caller-side stall-recovery branch
+# (synthDeferred → standalone dispatch → finalize re-entry). The sync test enforces the three
+# are byte-identical; this test asserts the recovery tokens are present in each.
+test_caller_wires_stall_recovery() {
+    local cr
+    cr=$(_wm_cr_dir)
+    local file
+    for file in includes/review-pipeline.md skills/review-gh-pr/SKILL.md commands/pre-review.md; do
+        local path="$cr/$file"
+        if [[ ! -f "$path" ]]; then
+            fail "caller wires stall recovery: $file" "file not found"
+            continue
+        fi
+        if grep -qF 'synthDeferred' "$path" \
+            && grep -qF 'synth-standalone-recovery' "$path" \
+            && grep -qF "route: 'finalize'" "$path"; then
+            pass "caller wires stall recovery: $file has the synthDeferred recovery branch"
+        else
+            fail "caller wires stall recovery: $file has the synthDeferred recovery branch" \
+                "Step 3.5 must handle a synthDeferred bundle: standalone review-synthesiser dispatch (name synth-standalone-recovery) then a workflow re-invoke with route: 'finalize'"
+        fi
+    done
+}
+
+# Task 3: the synthesiser agent must document the standalone recovery mode — when an
+# `Envelope output path:` line is present, Write the structured envelope JSON to that path.
+# It must ALSO be granted the Write tool, or the standalone dispatch inherits a toolset that
+# cannot honour the contract and every recovery silently degrades to the empty bundle.
+test_synthesiser_documents_standalone_recovery() {
+    local cr
+    cr=$(_wm_cr_dir)
+    local synth="$cr/agents/review-synthesiser.md"
+    if [[ ! -f "$synth" ]]; then
+        fail "synthesiser standalone recovery note" "review-synthesiser.md not found"
+        return
+    fi
+    if grep -qF 'Envelope output path:' "$synth"; then
+        pass "synthesiser documents the Envelope output path: recovery trigger"
+    else
+        fail "synthesiser documents the Envelope output path: recovery trigger" \
+            "review-synthesiser.md must document the standalone recovery mode keyed on an 'Envelope output path:' prompt line"
+    fi
+    if grep -qiE 'standalone recovery' "$synth"; then
+        pass "synthesiser has a Standalone recovery mode section"
+    else
+        fail "synthesiser has a Standalone recovery mode section" \
+            "add a 'Standalone recovery mode' note instructing the agent to Write the envelope JSON"
+    fi
+    # The recovery contract is inert without the Write tool: the standalone dispatch inherits
+    # this frontmatter, so a missing Write grant means the agent cannot write the envelope file
+    # and the caller's defensive read always falls back to the empty bundle. Assert the tools:
+    # frontmatter line grants Write.
+    if grep -qE '^tools:.*\bWrite\b' "$synth"; then
+        pass "synthesiser frontmatter grants the Write tool (recovery envelope file write)"
+    else
+        fail "synthesiser frontmatter grants the Write tool (recovery envelope file write)" \
+            "review-synthesiser.md 'tools:' frontmatter must include Write — without it the standalone recovery dispatch cannot write the envelope JSON and every recovery degrades to the empty bundle"
+    fi
+}

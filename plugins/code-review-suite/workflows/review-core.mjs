@@ -126,6 +126,15 @@ const {
     base, headSha, emptyTreeMode, pathScope, tempDir, intentLedger, repoDir,
 } = resolvedArgs
 
+// Shared by isPosted and the PR-mode filter. The 75 bar is deliberate (above
+// the rubric's 70) — see "Posting policy" in verdict-rubric.md. Hoisted to
+// module scope so the finalize-route early return can reach it via isPosted.
+const POST_THRESHOLD = 75
+
+// Finalize route (stall-recovery re-entry): run only the deterministic tail on a
+// recovered envelope. Spawns ZERO agents, so the sandbox watchdog never engages.
+if (route === 'finalize') return finalizeBundle(resolvedArgs.envelope, reviewMode, null)
+
 // Per-cog capture accumulator (full_log corpus). Write-only during the run;
 // folded into the bundle by buildLogPayload at the end. Never read by verdict
 // or posting logic. The diff is NOT stored — these four keys reconstruct it.
@@ -195,34 +204,25 @@ for (const [domain, fs] of Object.entries(findingsByDomain)) {
   phaseLog.cogs.push({ phase: 'round1', domain, output: { findings: fs } })
 }
 
-let { envelope, crossByDomain, synthInput } = await crossAndSynth(findingsByDomain, false)
+let { envelope, crossByDomain, synthInput, synthPrompt, synthStalled } = await crossAndSynth(findingsByDomain, false)
+// Round-1 stall → defer out of the sandbox. Return the exact synth prompt so the caller
+// (main agent loop) can re-dispatch the synthesiser as a standalone Agent under the 600s
+// async-agent watchdog, then re-enter via the finalize route. MUST precede finalizeBundle:
+// a stall leaves envelope null, which finalizeBundle would otherwise swallow as a
+// Category-C empty bundle, and the recovery would never fire.
+if (synthStalled) return { synthDeferred: true, synthPrompt }
 for (const c of crossByDomain) {
   phaseLog.cogs.push({ phase: 'cross', domain: c.domain, input: c.input, output: c.output })
 }
 phaseLog.cogs.push({ phase: 'synth', input: synthInput, output: { tiers: envelope?.tiers ?? {} } })
 
-// Category C guard: a null envelope, or one missing tiers (schema marks tiers required,
-// but sandbox enforcement is best-effort), would crash both modes below. Degrade to an
-// empty bundle instead of taking down the whole review.
-if (!envelope || !envelope.tiers) {
-    log('synth: synthesiser returned null or missing tiers — returning empty bundle')
-    return { verdict: 'NONE', bodyText: '(synthesiser produced no usable output)', comments: [] }
-}
-
-// Local mode: no verdict, no GitHub filter — return the prose plus the durable
-// log payload. The host writes the log to disk only when orchestration.full_log
-// is on (default off); pre-review documents the log as its sole persisted artefact,
-// so it MUST be carried on this path too — not just the PR path below.
-if (reviewMode === 'local') {
-    const logPayload = buildLogPayload(envelope, phaseLog)
-    return { verdict: 'NONE', bodyText: envelope.bodyText, comments: [], log: logPayload }
-}
-
 // Boundary gate (PR path only): if the round-1 verdict sits near the
 // APPROVE/REQUEST_CHANGES boundary, take a 2nd independent draw of the stochastic
-// specialists, union with agreement counts, and re-synthesise. crossDomains is
-// exactly the stochastic set (non-static specialists present this run).
-if (boundaryGateFires(envelope)) {
+// specialists, union with agreement counts, and re-synthesise. Guarded to PR mode
+// explicitly: the local-mode early return that used to shield it now lives inside
+// finalizeBundle (called after the gate), so without this guard local mode would
+// resample — which it never does.
+if (reviewMode !== 'local' && boundaryGateFires(envelope)) {
     log('boundary gate fired — round 2 (stochastic resample)')
     const specialists2 = await dispatchSpecialists(crossDomains, 'resample')
     log(`resample: ${specialists2.filter(s => s.out.status === 'ok').length}/${crossDomains.length} specialists ok`)
@@ -245,25 +245,7 @@ if (boundaryGateFires(envelope)) {
     }
 }
 
-// Shared by isPosted and the PR-mode filter. The 75 bar is deliberate (above
-// the rubric's 70) — see "Posting policy" in verdict-rubric.md.
-const POST_THRESHOLD = 75
-
-const verdict = envelope.verdict  // APPROVE | REQUEST_CHANGES (synth never emits COMMENT)
-const consensus = envelope.tiers.consensus ?? []
-const synthFindings = envelope.tiers.synthesiser ?? []
-
-// Posted set = consensus + synthesiser, filtered by the verdict-driven rule.
-const candidates = [...consensus, ...synthFindings]
-const postedSet = candidates.filter(f => isPosted(f, verdict))
-const suppressedCount = candidates.length - postedSet.length
-
-const comments = renderComments(postedSet)
-
-const bodyText = buildBody(envelope, postedSet, suppressedCount)
-const logPayload = buildLogPayload(envelope, phaseLog)
-
-return { verdict, bodyText, comments, log: logPayload }
+return finalizeBundle(envelope, reviewMode, phaseLog)
 
 // ---------------------------------------------------------------------------
 // Dispatch and synthesis helpers.
@@ -367,20 +349,80 @@ async function crossAndSynth(findingsByDomain, resampled) {
     `Cross-review escalations (JSON, each {domain, finding}):\n${JSON.stringify(crossEscalations)}\n\n` +
     `Use ${tempDir} for temporary files.`
 
-  const envelope = await agent(synthPrompt, {
-    label: 'review-synthesiser',
-    phase: 'synth',
-    agentType: 'code-review-suite:review-synthesiser',
-    model: 'opus',
-    schema: SYNTH_SCHEMA,
-  })
+  // The lone in-sandbox synth turn. Under heavy Bedrock latency this can trip the
+  // Workflow sandbox's fixed 180s no-progress watchdog, which throws
+  // `agent stalled on all N attempts (no progress for 180000ms each)` and would
+  // otherwise terminate the whole workflow uncaught. Catch ONLY that message and
+  // signal a deferral; re-throw everything else (user-abandon, script bugs) so genuine
+  // errors are never masked. synthStalled is the sole signal distinguishing a stall-null
+  // from a benign API-error null — the round-1 caller keys the recovery on it.
+  let envelope = null
+  let synthStalled = false
+  try {
+    envelope = await agent(synthPrompt, {
+      label: 'review-synthesiser',
+      phase: 'synth',
+      agentType: 'code-review-suite:review-synthesiser',
+      model: 'opus',
+      schema: SYNTH_SCHEMA,
+    })
+  } catch (e) {
+    if (/stalled on all \d+ attempts/.test((e && e.message) || '')) {
+      log('synth stalled on the sandbox watchdog — deferring to out-of-sandbox recovery')
+      envelope = null
+      synthStalled = true
+    } else {
+      throw e
+    }
+  }
   const synthInput = {
     findingsByDomain,
     crossOpinions,
     crossEscalations,
     intent_ledger: intentLedger || '',
   }
-  return { envelope, crossByDomain, synthInput }
+  return { envelope, crossByDomain, synthInput, synthPrompt, synthStalled }
+}
+
+// The deterministic tail, shared by the normal path and the `finalize` recovery route.
+// Owns the Category-C guard, the local-mode branch, and the PR-mode Class D filter +
+// comment renderer. Spawns NO agents by construction — that is what makes the finalize
+// route immune to the sandbox watchdog. phaseLog is null on the recovery path (the
+// per-cog corpus is not threaded back through the main loop); buildLogPayload tolerates
+// a null phaseLog and still emits findings + bodyText.
+function finalizeBundle(envelope, reviewMode, phaseLog) {
+    // Category C guard: a null envelope, or one missing tiers (schema marks tiers required,
+    // but sandbox enforcement is best-effort), would crash both modes below. Degrade to an
+    // empty bundle instead of taking down the whole review. Also the finalize route's guard
+    // against a malformed/absent recovered envelope.
+    if (!envelope || !envelope.tiers) {
+        log('finalize: envelope null or missing tiers — returning empty bundle')
+        return { verdict: 'NONE', bodyText: '(synthesiser produced no usable output)', comments: [] }
+    }
+
+    // Local mode: no verdict, no GitHub filter — return the prose plus the durable
+    // log payload. The host writes the log to disk only when orchestration.full_log
+    // is on (default off); pre-review documents the log as its sole persisted artefact,
+    // so it MUST be carried on this path too — not just the PR path below.
+    if (reviewMode === 'local') {
+        const logPayload = buildLogPayload(envelope, phaseLog)
+        return { verdict: 'NONE', bodyText: envelope.bodyText, comments: [], log: logPayload }
+    }
+
+    const verdict = envelope.verdict  // APPROVE | REQUEST_CHANGES (synth never emits COMMENT)
+    const consensus = envelope.tiers.consensus ?? []
+    const synthFindings = envelope.tiers.synthesiser ?? []
+
+    // Posted set = consensus + synthesiser, filtered by the verdict-driven rule.
+    const candidates = [...consensus, ...synthFindings]
+    const postedSet = candidates.filter(f => isPosted(f, verdict))
+    const suppressedCount = candidates.length - postedSet.length
+
+    const comments = renderComments(postedSet)
+    const bodyText = buildBody(envelope, postedSet, suppressedCount)
+    const logPayload = buildLogPayload(envelope, phaseLog)
+
+    return { verdict, bodyText, comments, log: logPayload }
 }
 
 // ---------------------------------------------------------------------------

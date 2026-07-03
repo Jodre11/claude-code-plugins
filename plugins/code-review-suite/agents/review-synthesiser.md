@@ -2,7 +2,7 @@
 name: review-synthesiser
 description: Synthesises specialist code review findings into a tiered report with independent deep analysis. Dispatched by the review include after specialists complete.
 model: opus
-tools: Read, Grep, Glob, Bash
+tools: Read, Grep, Glob, Bash, Write
 # background: omitted — synthesiser runs in foreground for streaming output
 ---
 
@@ -429,6 +429,19 @@ X file(s) changed | 0 findings — LGTM
 > Still provide your high-level assessment even when there are no findings.
 > Note what you looked at, any areas you considered flagging but decided were fine, and why.
 ```
+
+## Standalone recovery mode (envelope file output)
+
+When your prompt contains a line of the form `Envelope output path: <path>`, you are being
+run as a **standalone stall-recovery** dispatch (the in-sandbox synthesis stalled on the
+Workflow watchdog). In addition to your normal stdout prose report, you MUST `Write` the
+structured envelope — the exact object specified in "Envelope output (review-core consumer)"
+above (`verdict`, `rubricRowApplied`, `rubricReason`, `tiers.{consensus,synthesiser,contested,dismissed}`,
+`bodyText`) — as JSON to `<path>`. The prose stdout is for the human; the JSON file is the
+machine hand-off that review-core's `finalize` route reads to run the Class D filter and render
+comments. Write valid JSON only (no markdown fences around it). Nothing else about your
+analysis, reclassification, tiering, or verdict computation changes — this mode only adds the
+JSON file write.
 
 ## Rules
 

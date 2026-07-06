@@ -470,6 +470,92 @@ test_review_core_threads_full_diff_file_to_synth() {
     fi
 }
 
+# PR E: cross-reviewers stop re-running git to reconstruct context by being handed the
+# pinned diff as data. The cross prompt is assembled inside review-core's crossAndSynth
+# (NOT the host agentPrompt, and NOT agent_dispatch.sh — the cross path is review-core-only),
+# so the "Full diff file:" line must be threaded there, derived from tempDir + the Step 2.85
+# filename exactly as the synth prompt is. Without it the cross-reviewers never see the line
+# and fall back to git. Drive the REAL module and capture the actual cross prompt via the
+# agent() mock (cross-reviewers are dispatched before the synth turn, so a synth stall still
+# lets us observe the cross prompt the module built).
+test_review_core_threads_full_diff_file_to_cross() {
+    local cr
+    cr=$(_wm_cr_dir)
+    local wf="$cr/workflows/review-core.mjs"
+    if [[ ! -f "$wf" ]]; then
+        fail "review-core full-diff-file threading to cross" "missing: $wf"
+        return
+    fi
+
+    # Structural: the cross prompt assembly must emit a "Full diff file:" line via a
+    # defensive ternary so it appears only when the diff path is resolvable. The grep
+    # targets the fullDiffFile-interpolated form used in the cross agent() prompt string.
+    if grep -qE 'Full diff file: \$\{fullDiffFile\}' "$wf"; then
+        pass "review-core interpolates Full diff file into cross prompt"
+    else
+        fail "review-core interpolates Full diff file into cross prompt" \
+            "the cross-reviewer prompt must include a 'Full diff file: \${fullDiffFile}' line so cross-reviewers read the pinned diff (PR E)"
+    fi
+
+    # Behavioural: drive the REAL module and capture the FIRST cross-reviewer prompt. Cross
+    # reviewers run under a non-synthesiser agentType; the synth turn throws a stall so the
+    # run returns the synthDeferred bundle without needing a full envelope. Assert the
+    # captured cross prompt carries the resolved, clean "Full diff file:" line and, as a
+    # guard against re-inlining the whole diff, that the prompt still passes peer findings.
+    local result
+    result=$(node -e '
+        const fs = require("fs");
+        const src = fs.readFileSync(process.argv[1], "utf8")
+            .replace(/^export\s+const\s+meta/m, "const meta");
+        const STALL = "agent stalled on all 6 attempts (no progress for 180000ms each)";
+        const parallel = (thunks) => Promise.all(thunks.map(t => t()));
+        const phase = () => {};
+        const log = () => {};
+        const pipeline = async () => [];
+        const workflow = async () => null;
+        const run = (agent, args) => {
+            const fn = new Function("agent","parallel","pipeline","phase","log","args","workflow",
+                "return (async()=>{" + src + "\n})()");
+            return fn(agent, parallel, pipeline, phase, log, args, workflow);
+        };
+        const isSynth = (opts) => opts && opts.agentType === "code-review-suite:review-synthesiser";
+        let crossPrompt = null;
+        const agentMock = async (prompt, opts) => {
+            if (isSynth(opts)) throw new Error(STALL);
+            // Capture the first cross-review prompt (round-1 specialists get the host
+            // agentPrompt "x"; cross prompts are the ones that open with "Mode: cross-review").
+            if (crossPrompt === null && typeof prompt === "string" && prompt.startsWith("Mode: cross-review")) {
+                crossPrompt = prompt;
+            }
+            return { status: "ok", findings: [], opinionsMarkdown: "", escalations: [] };
+        };
+        (async () => {
+            const args = {
+                agentPrompt: "x", flags: {}, route: "full", selfReReview: false,
+                reviewMode: "pr", base: "main", headSha: "a".repeat(40),
+                emptyTreeMode: false, pathScope: "", tempDir: "/tmp/claude-abc/",
+            };
+            try { await run(agentMock, args); }
+            catch (e) { console.log("THREW: " + e.message); return; }
+            if (typeof crossPrompt !== "string") { console.log("NO_CROSS_PROMPT"); return; }
+            if (!crossPrompt.includes("Full diff file: /tmp/claude-abc/review-diff.patch")) {
+                console.log("MISSING_OR_BAD_LINE: " + (crossPrompt.match(/Full diff file:.*/)||["<absent>"])[0]);
+                return;
+            }
+            if (crossPrompt.includes("//review-diff")) { console.log("DOUBLE_SLASH"); return; }
+            if (!crossPrompt.includes("Peer findings (JSON):")) { console.log("NO_PEER_FINDINGS"); return; }
+            console.log("OK");
+        })();
+    ' "$wf" 2>&1)
+
+    if [[ "$result" == "OK" ]]; then
+        pass "review-core cross prompt carries a clean Full diff file line (real module, trailing-slash tempDir)"
+    else
+        fail "review-core cross prompt carries a clean Full diff file line (real module, trailing-slash tempDir)" \
+            "expected OK, got: $result"
+    fi
+}
+
 # Task 1: the finalize route re-enters review-core with a recovered envelope, runs
 # finalizeBundle (Class D filter + render) with ZERO agent() calls, and produces a bundle
 # identical (in verdict/comments/bodyText) to the normal path for the same non-gate-firing

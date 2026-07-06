@@ -333,12 +333,23 @@ async function crossAndSynth(findingsByDomain, resampled) {
       `floor.\n\n`
     : ``
 
+  // The orchestrator materialises the pinned diff at $RESOLVED_TEMP_DIR/review-diff.patch
+  // (review-pipeline.md Step 2.85). Thread that path into the synth prompt as a Full diff
+  // file: line so the synthesiser reads the pre-computed diff instead of re-running git diff
+  // (its Context Gathering step 1). Derived from tempDir — the filename mirrors Step 2.85 —
+  // and emitted only when tempDir is set; the synthesiser keeps its git fallback otherwise.
+  // Strip a trailing slash so the join is clean whether tempDir ends in / or not.
+  const fullDiffFile = tempDir
+    ? `${tempDir.replace(/\/+$/, '')}/review-diff.patch`
+    : ''
+
   const synthPrompt =
     `ultrathink\n\n` +
     (repoDir ? `Repo dir: ${repoDir}\n` : ``) +
     `Base branch: ${base}\nHead SHA: ${headSha}\n` +
     (emptyTreeMode ? `Empty tree mode: true\n` : ``) +
     (pathScope ? `Path scope: ${pathScope}\n` : ``) +
+    (fullDiffFile ? `Full diff file: ${fullDiffFile}\n` : ``) +
     `Review mode: ${reviewMode}\n\n` +
     (intentLedger ? `${intentLedger}\n\n` : ``) +
     agreementClause +

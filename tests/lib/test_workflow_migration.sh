@@ -679,3 +679,72 @@ test_synthesiser_documents_standalone_recovery() {
             "review-synthesiser.md 'tools:' frontmatter must include Write — without it the standalone recovery dispatch cannot write the envelope JSON and every recovery degrades to the empty bundle"
     fi
 }
+
+# The lone in-sandbox synth turn reasons in 2min+ silent windows (opus + ultrathink), which
+# trips the Workflow sandbox's default 180s (V$m=180000) no-progress watchdog on EVERY full
+# review — 6 stalled attempts + ~30min + ~77k discarded output tokens before the out-of-sandbox
+# recovery fires. The watchdog timeout is NOT fixed: the binary binds it from a per-agent()-call
+# `stallMs` option (`ie = se?.stallMs != null ? Number(se.stallMs) : V$m`), forwarded on the
+# workflow path. Setting stallMs to the async-path budget (600000, 3.3x headroom, proven by the
+# standalone recovery run) keeps the synth in-sandbox and lets it complete in one attempt. This
+# test drives review-core with a mock agent() that captures the synth call's opts and asserts the
+# stallMs value actually reaches the call — a behavioural guard, immune to comments/stray tokens,
+# so a future refactor cannot silently drop it and reintroduce the stall tax.
+test_synth_call_sets_stall_budget() {
+    local cr
+    cr=$(_wm_cr_dir)
+    local wf="$cr/workflows/review-core.mjs"
+    if [[ ! -f "$wf" ]]; then
+        fail "synth stall budget" "missing: $wf"
+        return
+    fi
+    local result
+    result=$(node -e '
+        const fs = require("fs");
+        const src = fs.readFileSync(process.argv[1], "utf8")
+            .replace(/^export\s+const\s+meta/m, "const meta");
+        const ENV = {
+            verdict: "APPROVE",
+            rubricRowApplied: 4,
+            rubricReason: "no high-confidence findings",
+            tiers: { consensus: [], synthesiser: [], contested: [], dismissed: [] },
+            bodyText: "## Synthesiser Assessment\n> Looks fine.\n",
+        };
+        const baseArgs = {
+            agentPrompt: "x", flags: {}, route: "full", selfReReview: false,
+            reviewMode: "pr", base: "main", headSha: "a".repeat(40),
+            emptyTreeMode: false, pathScope: "", tempDir: "/tmp/x",
+        };
+        const parallel = (thunks) => Promise.all(thunks.map(t => t()));
+        const phase = () => {};
+        const log = () => {};
+        const pipeline = async () => [];
+        const workflow = async () => null;
+        const run = (agent, args) => {
+            const fn = new Function("agent","parallel","pipeline","phase","log","args","workflow",
+                "return (async()=>{" + src + "\n})()");
+            return fn(agent, parallel, pipeline, phase, log, args, workflow);
+        };
+        (async () => {
+            let synthOpts = null;
+            const agent = async (prompt, opts) => {
+                if (opts && opts.agentType === "code-review-suite:review-synthesiser") {
+                    synthOpts = opts;
+                    return ENV;
+                }
+                return { status: "ok", findings: [], opinionsMarkdown: "", escalations: [] };
+            };
+            try { await run(agent, baseArgs); }
+            catch (e) { console.log("THREW: " + e.message); return; }
+            if (synthOpts === null) { console.log("SYNTH_NOT_CALLED"); return; }
+            if (synthOpts.stallMs !== 600000) { console.log("BAD_STALLMS: " + JSON.stringify(synthOpts.stallMs)); return; }
+            console.log("OK");
+        })();
+    ' "$wf" 2>&1)
+    if [[ "$result" == "OK" ]]; then
+        pass "synth agent() call carries stallMs=600000 (raises sandbox watchdog above 180s)"
+    else
+        fail "synth agent() call carries stallMs=600000 (raises sandbox watchdog above 180s)" \
+            "$result"
+    fi
+}

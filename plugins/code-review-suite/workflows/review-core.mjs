@@ -349,13 +349,18 @@ async function crossAndSynth(findingsByDomain, resampled) {
     `Cross-review escalations (JSON, each {domain, finding}):\n${JSON.stringify(crossEscalations)}\n\n` +
     `Use ${tempDir} for temporary files.`
 
-  // The lone in-sandbox synth turn. Under heavy Bedrock latency this can trip the
-  // Workflow sandbox's fixed 180s no-progress watchdog, which throws
-  // `agent stalled on all N attempts (no progress for 180000ms each)` and would
-  // otherwise terminate the whole workflow uncaught. Catch ONLY that message and
-  // signal a deferral; re-throw everything else (user-abandon, script bugs) so genuine
-  // errors are never masked. synthStalled is the sole signal distinguishing a stall-null
-  // from a benign API-error null — the round-1 caller keys the recovery on it.
+  // The lone in-sandbox synth turn (opus + ultrathink) reasons in 2min+ silent windows,
+  // which trip the Workflow sandbox's no-progress watchdog. That watchdog is NOT fixed: the
+  // runtime binds its timeout from this call's `stallMs` option (`ie = stallMs ?? 180000`,
+  // armed only while `ie > 0`), forwarded on the workflow-agent path. At the 180000 default it
+  // fires on every full review — 6 stalled attempts, then the out-of-sandbox recovery below.
+  // stallMs raises the budget to the async-agent path's proven 600s (3.3x headroom), so the
+  // synth completes in-sandbox in one attempt and the recovery net stays dormant.
+  //
+  // The try/catch is retained as a dormant backstop for a genuine >600s stall: catch ONLY the
+  // stall message and signal a deferral; re-throw everything else (user-abandon, script bugs)
+  // so genuine errors are never masked. synthStalled is the sole signal distinguishing a
+  // stall-null from a benign API-error null — the round-1 caller keys the recovery on it.
   let envelope = null
   let synthStalled = false
   try {
@@ -365,6 +370,7 @@ async function crossAndSynth(findingsByDomain, resampled) {
       agentType: 'code-review-suite:review-synthesiser',
       model: 'opus',
       schema: SYNTH_SCHEMA,
+      stallMs: 600000,
     })
   } catch (e) {
     if (/stalled on all \d+ attempts/.test((e && e.message) || '')) {

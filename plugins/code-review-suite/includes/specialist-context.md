@@ -116,8 +116,10 @@ block in normal operation.
 
 ### Gather context
 
-1. Run `git diff --name-only` to get changed files (append `-- "$PATH_SCOPE"` if set). Use the diff syntax determined by `$EMPTY_TREE_MODE` (two-arg when true, three-dot when false). If empty, report "No changes found against $BASE" and stop.
-2. Run `git diff` to get the full diff (append `-- "$PATH_SCOPE"` if set). Use the same diff syntax as above.
+The pipeline orchestrator has already measured the diff once and written it to files, naming them in your prompt as `Full diff file:` and `Changed files file:` lines (absolute paths — see `includes/review-pipeline.md` Step 2.85). Prefer reading those files: they are pinned to `Head SHA:` so they are byte-identical to what a fresh `git diff` would produce, and reading them saves re-running git. They are read-only inputs — never modify or delete them.
+
+1. Get the changed-file list. If a `Changed files file: <abs-path>` line is present in your prompt, `Read` that file — one repo-relative path per line — as the changed-file list. Otherwise (no line, or standalone / direct-invocation run) run `git diff --name-only` to get changed files (append `-- "$PATH_SCOPE"` if set), using the diff syntax determined by `$EMPTY_TREE_MODE` (two-arg when true, three-dot when false). Either way, if the list is empty, report "No changes found against $BASE" and stop.
+2. Get the full diff. If a `Full diff file: <abs-path>` line is present in your prompt, `Read` that file as the full diff. Otherwise run `git diff` to get the full diff (append `-- "$PATH_SCOPE"` if set), using the same diff syntax as above.
 3. Read `$REPO_DIR/CLAUDE.md` (the target repo root, if it exists) for project conventions.
 4. Read `includes/severity-definitions.md` (if it exists) for the severity classification definitions to apply when assigning severity to findings. (This is the plugin's own file, resolved relative to the plugin — NOT under `$REPO_DIR`.)
 5. Read each changed file for full context. If more than 20 files changed, prioritise non-test source files with the largest diffs. Skip generated files, lock files, and vendored dependencies.

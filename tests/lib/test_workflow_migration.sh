@@ -385,6 +385,91 @@ test_review_core_threads_repo_dir_to_synth() {
     fi
 }
 
+# PR D: the synthesiser's Context Gathering step 1 reads the pinned diff from a
+# "Full diff file:" line when present. That line is built inside review-core's
+# synthPrompt (the synthesiser prompt is assembled here, not by the host), derived
+# from tempDir to match review-pipeline.md Step 2.85's $RESOLVED_TEMP_DIR/review-diff.patch.
+# Without this threading the synthesiser never sees the line and always falls back to git.
+test_review_core_threads_full_diff_file_to_synth() {
+    local cr
+    cr=$(_wm_cr_dir)
+    local wf="$cr/workflows/review-core.mjs"
+    if [[ ! -f "$wf" ]]; then
+        fail "review-core full-diff-file threading" "missing: $wf"
+        return
+    fi
+
+    # Structural: the synthPrompt assembly must emit a "Full diff file:" line via a
+    # defensive ternary so it appears only when the diff path is resolvable.
+    if grep -qE 'Full diff file: \$\{fullDiffFile\}' "$wf"; then
+        pass "review-core interpolates Full diff file into synth prompt"
+    else
+        fail "review-core interpolates Full diff file into synth prompt" \
+            "synthPrompt must include a 'Full diff file: \${fullDiffFile}' line so the synthesiser reads the pinned diff (PR D)"
+    fi
+
+    # Structural: the path must be derived from tempDir + the Step 2.85 filename.
+    if grep -qE 'review-diff\.patch' "$wf"; then
+        pass "review-core derives the diff path from the Step 2.85 filename"
+    else
+        fail "review-core derives the diff path from the Step 2.85 filename" \
+            "the diff path must reference review-diff.patch (the artifact review-pipeline.md Step 2.85 writes)"
+    fi
+
+    # Behavioural: drive the REAL module (as the stall test does) and capture the actual
+    # synthPrompt it builds. Force a round-1 synth stall so crossAndSynth returns the
+    # synthDeferred bundle carrying synthPrompt, then assert the resolved "Full diff file:"
+    # line is present with the correct joined path (tempDir + Step 2.85 filename).
+    local result
+    result=$(node -e '
+        const fs = require("fs");
+        const src = fs.readFileSync(process.argv[1], "utf8")
+            .replace(/^export\s+const\s+meta/m, "const meta");
+        const STALL = "agent stalled on all 6 attempts (no progress for 180000ms each)";
+        const parallel = (thunks) => Promise.all(thunks.map(t => t()));
+        const phase = () => {};
+        const log = () => {};
+        const pipeline = async () => [];
+        const workflow = async () => null;
+        const run = (agent, args) => {
+            const fn = new Function("agent","parallel","pipeline","phase","log","args","workflow",
+                "return (async()=>{" + src + "\n})()");
+            return fn(agent, parallel, pipeline, phase, log, args, workflow);
+        };
+        const isSynth = (opts) => opts && opts.agentType === "code-review-suite:review-synthesiser";
+        const agentStall = async (prompt, opts) => {
+            if (isSynth(opts)) throw new Error(STALL);
+            return { status: "ok", findings: [], opinionsMarkdown: "", escalations: [] };
+        };
+        (async () => {
+            // tempDir with a trailing slash — the join must not double up.
+            const args = {
+                agentPrompt: "x", flags: {}, route: "full", selfReReview: false,
+                reviewMode: "pr", base: "main", headSha: "a".repeat(40),
+                emptyTreeMode: false, pathScope: "", tempDir: "/tmp/claude-abc/",
+            };
+            let deferred;
+            try { deferred = await run(agentStall, args); }
+            catch (e) { console.log("THREW: " + e.message); return; }
+            const p = deferred && deferred.synthPrompt;
+            if (typeof p !== "string") { console.log("NO_PROMPT"); return; }
+            if (!p.includes("Full diff file: /tmp/claude-abc/review-diff.patch")) {
+                console.log("MISSING_OR_BAD_LINE: " + (p.match(/Full diff file:.*/)||["<absent>"])[0]);
+                return;
+            }
+            if (p.includes("//review-diff")) { console.log("DOUBLE_SLASH"); return; }
+            console.log("OK");
+        })();
+    ' "$wf" 2>&1)
+
+    if [[ "$result" == "OK" ]]; then
+        pass "review-core synthPrompt carries a clean Full diff file line (real module, trailing-slash tempDir)"
+    else
+        fail "review-core synthPrompt carries a clean Full diff file line (real module, trailing-slash tempDir)" \
+            "expected OK, got: $result"
+    fi
+}
+
 # Task 1: the finalize route re-enters review-core with a recovered envelope, runs
 # finalizeBundle (Class D filter + render) with ZERO agent() calls, and produces a bundle
 # identical (in verdict/comments/bodyText) to the normal path for the same non-gate-firing

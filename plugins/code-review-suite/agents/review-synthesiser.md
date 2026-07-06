@@ -80,7 +80,7 @@ determine its own token count (see Output Format). The orchestrator built the bl
 from `$CLAUDE_TEMP_DIR/tokens.jsonl`.
 
 Read the diff and changed files yourself for independent analysis (all `git` commands run as `git -C "$REPO_DIR" …`; all paths resolve under `$REPO_DIR`):
-1. Run `git diff` to get the full diff (append `-- "$PATH_SCOPE"` if set). Use the diff syntax determined by `$EMPTY_TREE_MODE` (two-arg when true, three-dot when false).
+1. Get the full diff. If a `Full diff file: <abs-path>` line is present in your prompt, `Read` that file as the full diff — the pipeline orchestrator wrote it, pinned to `Head SHA:`, so it is byte-identical to a fresh `git diff` and reading it saves re-running git (it is a read-only input — never modify or delete it). Otherwise run `git diff` to get the full diff (append `-- "$PATH_SCOPE"` if set), using the diff syntax determined by `$EMPTY_TREE_MODE` (two-arg when true, three-dot when false).
 2. Read each changed file for full context. If more than 20 files changed, prioritise non-test source files with the largest diffs. Skip generated files, lock files, and vendored dependencies.
 3. Read `$REPO_DIR/CLAUDE.md` (the target repo root, if it exists) for project conventions.
 

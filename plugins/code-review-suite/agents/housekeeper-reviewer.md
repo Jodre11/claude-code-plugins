@@ -31,30 +31,36 @@ The temp-dir contract (`includes/static-analysis-context.md` §4) is satisfied b
 
 Let `<TEMP_DIR>` denote the resolved temp-dir path read from your prompt. **Substitute that literal absolute path wherever `<TEMP_DIR>` appears below — never type the characters `<TEMP_DIR>` (or any `$`-prefixed variable) into a Bash command, and never rely on the shell to expand a variable: shell state does not persist between your separate Bash calls.** Execute each step as a **separate, single-command Bash call** — no `&&`, no `;`, no heredocs, no multi-line command bodies, no loops, no variable assignments.
 
-1. Write the changed file list to `<TEMP_DIR>/housekeeper-files.txt`:
-   ```
-   git diff --name-only <diff-args> > <TEMP_DIR>/housekeeper-files.txt
-   ```
-   Use the diff syntax determined by `$EMPTY_TREE_MODE` (two-arg when true, three-dot when false), as resolved by the base-context procedure. **If that file ends up empty** — no base resolved, or the working tree is not a git repository — fall back to the paths named in the `Changed lines:` block of your prompt: each non-blank, non-header entry has the shape `  <path>: <lines>`, so the text before the first colon is a changed file. Write one path per line using separate `printf` calls:
-   ```
-   printf '%s\n' 'path/to/file1' > <TEMP_DIR>/housekeeper-files.txt
-   ```
-   ```
-   printf '%s\n' 'path/to/file2' >> <TEMP_DIR>/housekeeper-files.txt
-   ```
-   The `Changed lines:` block is the pipeline's authoritative scope input; the engine needs this file list to scan workflows and gate npm solutions, so never run the engine against an empty list when the prompt names changed files.
+The engine reads its two scope inputs from files. The pipeline orchestrator has already written them (see `includes/review-pipeline.md` Step 2.85) and names them in your prompt as `Changed files file:` and `Changed lines file:` lines — absolute paths to a changed-file list and the `Changed lines:` block respectively. Prefer those paths: they are byte-identical to what a local `git diff` would produce (the orchestrator pinned the diff to the head SHA), so passing them directly saves you from re-deriving the same lists.
 
-2. Write the `Changed lines:` block from your prompt to `<TEMP_DIR>/housekeeper-lines.txt`. Use separate `printf` calls — one per line of the block. Each call is a single `printf '%s\n' '…'` statement writing one entry — never combine multiple entries into one call, never use a loop, never embed real newlines in the command.
-   ```
-   printf '%s\n' '.github/workflows/ci.yml: 12, 15' > <TEMP_DIR>/housekeeper-lines.txt
-   ```
-   ```
-   printf '%s\n' 'package.json: 4' >> <TEMP_DIR>/housekeeper-lines.txt
-   ```
+1. Resolve the changed-file list path.
+   - **If your prompt has a `Changed files file: <abs-path>` line,** use that path directly as the engine's `--changed-files-from` argument — do NOT copy, re-write, or re-derive it. Skip to step 3.
+   - **Otherwise** (standalone / direct-invocation run, no path line), write the list yourself to `<TEMP_DIR>/housekeeper-files.txt`:
+     ```
+     git diff --name-only <diff-args> > <TEMP_DIR>/housekeeper-files.txt
+     ```
+     Use the diff syntax determined by `$EMPTY_TREE_MODE` (two-arg when true, three-dot when false), as resolved by the base-context procedure. **If that file ends up empty** — no base resolved, or the working tree is not a git repository — fall back to the paths named in the `Changed lines:` block of your prompt: each non-blank, non-header entry has the shape `  <path>: <lines>`, so the text before the first colon is a changed file. Write one path per line using separate `printf` calls:
+     ```
+     printf '%s\n' 'path/to/file1' > <TEMP_DIR>/housekeeper-files.txt
+     ```
+     ```
+     printf '%s\n' 'path/to/file2' >> <TEMP_DIR>/housekeeper-files.txt
+     ```
+     The `Changed lines:` block is the pipeline's authoritative scope input; the engine needs this file list to scan workflows and gate npm solutions, so never run the engine against an empty list when the prompt names changed files.
 
-3. Run the engine (live registry mode — no `--registry-fixtures`):
+2. Resolve the changed-lines path.
+   - **If your prompt has a `Changed lines file: <abs-path>` line,** use that path directly as the engine's `--changed-lines-from` argument — do NOT copy or re-write it. Skip to step 3.
+   - **Otherwise,** write the `Changed lines:` block from your prompt to `<TEMP_DIR>/housekeeper-lines.txt`. Use separate `printf` calls — one per line of the block. Each call is a single `printf '%s\n' '…'` statement writing one entry — never combine multiple entries into one call, never use a loop, never embed real newlines in the command.
+     ```
+     printf '%s\n' '.github/workflows/ci.yml: 12, 15' > <TEMP_DIR>/housekeeper-lines.txt
+     ```
+     ```
+     printf '%s\n' 'package.json: 4' >> <TEMP_DIR>/housekeeper-lines.txt
+     ```
+
+3. Run the engine (live registry mode — no `--registry-fixtures`), passing the two paths resolved in steps 1–2. When the prompt supplied them, that is the orchestrator's `Changed files file:` / `Changed lines file:`; otherwise it is the `<TEMP_DIR>` files you wrote:
    ```
-   housekeeper-freshness --root . --changed-files-from <TEMP_DIR>/housekeeper-files.txt --changed-lines-from <TEMP_DIR>/housekeeper-lines.txt
+   housekeeper-freshness --root . --changed-files-from <changed-files-path> --changed-lines-from <changed-lines-path>
    ```
    It prints a JSON array of stale-version tuples to stdout. Parse it inline.
 
@@ -91,7 +97,7 @@ If the engine emits `[]`, emit the canonical zero-state and stop:
 
 If the engine crashes (non-zero exit), follow the **Failure handling** section above: emit `FAILED — housekeeper-freshness could not be invoked (engine exit code <N>).` and stop. Do NOT emit `Skipped` for an engine crash.
 
-After rendering, clean up the two temp files with two separate single-command Bash calls (substituting the literal path for `<TEMP_DIR>`):
+After rendering, clean up ONLY the temp files you wrote yourself in steps 1–2. When the prompt supplied `Changed files file:` / `Changed lines file:` paths you passed them straight to the engine and wrote nothing, so there is nothing to remove — skip this cleanup entirely. **Never `rm` the orchestrator's `Changed files file:` / `Changed lines file:` artifacts:** they live in the shared temp dir, other reviewers read them, and deleting them would breach the read-only mandate. Only when you fell back to writing `<TEMP_DIR>/housekeeper-files.txt` and/or `<TEMP_DIR>/housekeeper-lines.txt` yourself, remove each one you created with a separate single-command Bash call (substituting the literal path for `<TEMP_DIR>`):
 
 ```
 rm <TEMP_DIR>/housekeeper-files.txt

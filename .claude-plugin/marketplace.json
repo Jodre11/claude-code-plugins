@@ -33,6 +33,11 @@
       "name": "roslyn-lsp",
       "description": "Solution-aware C# LSP via Microsoft Roslyn + ClaudeCodeRoslynLspProxy. Re-host of unsafePtr/ClaudeCodeRoslynLspProxy (MIT) with locally-tuned defaults",
       "source": "./plugins/roslyn-lsp"
+    },
+    {
+      "name": "mattpocock-skills",
+      "description": "Vendored subset of Matt Pocock's engineering skills (MIT): writing-great-skills, codebase-design, domain-modeling, grill-with-docs, teach — curated to complement the superpowers/code-review stack without conflict",
+      "source": "./plugins/mattpocock-skills"
     }
   ]
 }

@@ -70,31 +70,31 @@ Note the opus turns are **reuse-specialist-shaped on a small fixture diff** — 
 
 - [ ] **Step 1: Write the params JSON**
 
-Prices are **illustrative placeholders** — Task 3 replaces them with real Bedrock rates from the `claude-api` skill and the cross-check validates them. Structure is final; values are not. Per-token USD (i.e. per-1M-token rate ÷ 1e6).
+Prices below are the **real Bedrock per-token rates** (sourced from the `claude-api` skill and **already validated** — see the note after the block). Per-token USD = per-1M-token list rate ÷ 1e6. `cache_creation` is set to the **1-hour** TTL rate (2× input) because every trial in the current corpus has `ephemeral_5m_input_tokens: 0` (all-1h) — see the cache-TTL guard below. Task 3 re-confirms these against recorded `costUSD`; it does not re-fetch them.
 
 Create `tests/ab/lib/cost_model_params.json`:
 
 ```json
 {
-  "_note": "Per-token USD prices. Populate `prices` from the claude-api skill's Bedrock rates in Task 3; the cross-check validates them. Model keys are plain model tokens (scanner-safe), never ARNs.",
+  "_note": "Per-token USD Bedrock prices, verified against recorded modelUsage.costUSD (see plan Task 3). Model keys are plain model tokens (scanner-safe), never ARNs. cache_creation = 1h TTL rate (2x input); corpus is all-1h. If any real trial shows usage.cache_creation.ephemeral_5m_input_tokens > 0, split into cache_creation_5m (1.25x input) + cache_creation_1h (2x input) per the cache-TTL guard.",
   "prices": {
     "claude-opus-4-8": {
-      "input": 0.000015,
-      "output": 0.000075,
-      "cache_read": 0.0000015,
-      "cache_creation": 0.00001875
+      "input": 0.000005,
+      "output": 0.000025,
+      "cache_read": 0.0000005,
+      "cache_creation": 0.00001
     },
     "claude-sonnet-4-6": {
       "input": 0.000003,
       "output": 0.000015,
       "cache_read": 0.0000003,
-      "cache_creation": 0.00000375
+      "cache_creation": 0.000006
     },
     "claude-haiku-4-5": {
-      "input": 0.0000008,
-      "output": 0.000004,
-      "cache_read": 0.00000008,
-      "cache_creation": 0.000001
+      "input": 0.000001,
+      "output": 0.000005,
+      "cache_read": 0.0000001,
+      "cache_creation": 0.000002
     }
   },
   "turn_counts": {
@@ -117,6 +117,13 @@ Create `tests/ab/lib/cost_model_params.json`:
   }
 }
 ```
+
+> **These rates are verified, not placeholder.** Reproduced during planning against both fixtures' recorded `modelUsage[...].costUSD` to the cent:
+> - Opus reuse (in 12, out 1700, cache_read 271407, cache_creation 19227): `12·5e-6 + 1700·25e-6 + 271407·0.5e-6 + 19227·1e-5 = 0.3705335` = recorded `0.37053349999999996` ✓
+> - Sonnet housekeeper (in 13, out 3003, cache_read 373295, cache_creation 12831): `13·3e-6 + 3003·15e-6 + 373295·0.3e-6 + 12831·6e-6 = 0.2340585` = recorded `0.2340585` ✓
+> Bedrock uses Anthropic list pricing for these models, and Opus 1M context carries no long-context premium. Haiku rates ($1/$5 per 1M) are unverified — no haiku turn is in the corpus.
+>
+> **Cache-TTL guard (load-bearing):** `usage.cache_creation` in a result record splits into `ephemeral_5m_input_tokens` (billed 1.25× input) and `ephemeral_1h_input_tokens` (billed 2× input). Both fixtures — and every sampled trial — are all-1h (`ephemeral_5m_input_tokens: 0`), so a single `cache_creation` rate at the 1h value reproduces cost exactly. **Do not add a 5m/1h split unless Task 7's real-data run finds a trial with `ephemeral_5m_input_tokens > 0`** — YAGNI until the data shows it. If it does, split `cache_creation` into two rates and have `parse_trial` read the two sub-fields.
 
 - [ ] **Step 2: Write the opus fixture trial**
 
@@ -367,8 +374,8 @@ EOF
 
 **Files:**
 - Modify: `tests/ab/lib/cost_model.py`
-- Modify: `tests/ab/lib/cost_model_params.json` (replace illustrative prices with real Bedrock rates)
 - Modify: `tests/python/test_cost_model.py`
+- (`tests/ab/lib/cost_model_params.json` already carries the verified Bedrock rates from Task 1 — this task validates them, it does not populate them.)
 
 **Interfaces:**
 - Consumes: `parse_trial` (Task 2); the params `prices` block (Task 1).
@@ -434,7 +441,8 @@ def cross_check(trial, price_row, rel_tol=0.05):
     INDEPENDENT validation of the price row — provided the price row is
     sourced independently (from the claude-api skill), never back-filled
     from the recorded cost. A rel_err above rel_tol means the price row is
-    wrong or stale (e.g. a 1M-context premium not modelled).
+    wrong or stale (e.g. a list-rate change, or a cache-TTL band mismatch
+    if a 5m-TTL trial appears — see the Task 1 cache-TTL guard).
     """
     recomputed = price_turn(trial["usage"], price_row)["total"]
     recorded = trial["recorded_cost_usd"]
@@ -449,11 +457,11 @@ def cross_check(trial, price_row, rel_tol=0.05):
 Run: `python3 -m unittest tests.python.test_cost_model.PriceEngineTest -v`
 Expected: 3 tests PASS.
 
-- [ ] **Step 5: Obtain real Bedrock prices and validate against recorded cost**
+- [ ] **Step 5: Add the data-driven cross-check on the real fixtures**
 
-**Do not guess prices** (CLAUDE.md: "Don't guess"). Invoke the `claude-api` skill to read the current Bedrock per-1M-token rates for `claude-opus-4-8`, `claude-sonnet-4-6`, and `claude-haiku-4-5` (input / output / cache-read / cache-write). Convert to per-token (÷ 1e6) and write them into `tests/ab/lib/cost_model_params.json` `prices`, replacing the illustrative values from Task 1.
+The Bedrock rates are already in the params block from Task 1 and were verified during planning (see the note under Task 1's params). Prices come from the `claude-api` skill — **do not back-fill them from recorded cost** (that would make the cross-check a tautology). This step adds the automated test that guards them.
 
-Then add a data-driven validation test that runs the cross-check on the real fixtures. Add to `tests/python/test_cost_model.py`:
+Add to `tests/python/test_cost_model.py`:
 
 ```python
 class CrossCheckOnFixturesTest(unittest.TestCase):
@@ -479,24 +487,24 @@ class CrossCheckOnFixturesTest(unittest.TestCase):
                         f"{res['recomputed']:.5f} vs recorded {res['recorded']:.5f}")
 ```
 
-- [ ] **Step 6: Run the cross-check; if opus fails, investigate the 1M-context premium**
+- [ ] **Step 6: Run the cross-check**
 
 Run: `python3 -m unittest tests.python.test_cost_model.CrossCheckOnFixturesTest -v`
-Expected: both PASS. If `test_opus_...` FAILS with recomputed materially below recorded, the opus turn was billed at the **1M-context premium** (fixture `contextWindow` is 1000000). Add a distinct price row `claude-opus-4-8-1m` in the params and a resolver rule keying on `contextWindow > 200000`; re-run until green. Record the outcome — it is a real finding for the write-up (opus panel prompts are large and may hit the premium). Do **not** back-fill the price to force a pass — the price must stay the independent claude-api value.
+Expected: both PASS with `rel_err` ≈ 0 (planning reproduced both recorded costs to the cent — see the Task 1 note). The default `rel_tol=0.05` is generous headroom; if a future rate change drifts either arm, the failing assertion prints recomputed-vs-recorded so the stale price is obvious. **1M-context premium is ruled out** for these models — the opus fixture (`contextWindow: 1000000`) reproduces exactly at the standard $5/$25 rate, confirming no long-context surcharge. Do **not** back-fill any price to force a pass — prices stay the independent claude-api values.
 
 - [ ] **Step 7: Run the full suite and commit**
 
 Run: `tests/run.sh` — expected green.
 
 ```bash
-git add tests/ab/lib/cost_model.py tests/ab/lib/cost_model_params.json tests/python/test_cost_model.py
+git add tests/ab/lib/cost_model.py tests/python/test_cost_model.py
 git commit -m "$(cat <<'EOF'
 feat(code-review): cost-model price engine + Bedrock cross-check
 
 price_turn composes per-channel token x price; cross_check recomputes a
 turn's cost and compares to the recorded Bedrock costUSD as an independent
-self-validation. Real Bedrock rates sourced from the claude-api skill;
-validated against the on-disk opus and sonnet turns.
+self-validation. Verified Bedrock rates (sourced from the claude-api skill)
+reproduce the on-disk opus and sonnet turn costs to the cent.
 EOF
 )"
 ```

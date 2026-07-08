@@ -171,3 +171,27 @@ def compose_arm(arm_name, params, prices, diff_tokens, depth_output,
     return {"usd": stage1_usd + middle_usd,
             "stage1_usd": stage1_usd,
             "middle_usd": middle_usd}
+
+
+# --- wall clock + verdict ---------------------------------------------------
+
+def wall_clock(arm_name, params, depth_output, per_turn_secs):
+    """Predicted critical-path seconds for the middle stage (Stage 1 common,
+    excluded). old = parallel cross fan-out THEN serial opus-max synth long
+    pole. panel = one parallel opus turn (N panelists concurrent) THEN a short
+    sonnet writer. The structural win is dropping the serial cross stage from
+    ahead of a deep opus turn; per-turn opus depth may still be large."""
+    opus_secs = (depth_output / 1000.0) * per_turn_secs["opus_per_1k_output"]
+    if arm_name == "old":
+        return per_turn_secs["cross"] + opus_secs
+    if arm_name.startswith("panel-"):
+        return opus_secs + per_turn_secs["writer"]
+    raise ValueError(f"unknown arm: {arm_name}")
+
+
+def classify(arm_total_usd, arm_wall_s, old_usd, old_wall_s):
+    """KILL iff dominated (dearer on BOTH tokens and wall-clock); else
+    SURVIVE-to-A/B. A cost model never returns 'go'."""
+    if arm_total_usd > old_usd and arm_wall_s > old_wall_s:
+        return "KILL"
+    return "SURVIVE"

@@ -279,7 +279,8 @@ def main(argv=None):
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args(argv)
 
-    params = json.loads(open(args.params, encoding="utf-8").read())
+    with open(args.params, encoding="utf-8") as fh:
+        params = json.loads(fh.read())
     trials = load_runs(args.runs)
     if not trials:
         print(f"no trials found under {args.runs}", file=sys.stderr)
@@ -289,7 +290,8 @@ def main(argv=None):
         text = json.dumps(rep, indent=2)
         print(text)
         if args.out:
-            open(args.out, "w", encoding="utf-8").write(text + "\n")
+            with open(args.out, "w", encoding="utf-8") as fh:
+                fh.write(text + "\n")
     else:
         _print_report(rep)
     return 0

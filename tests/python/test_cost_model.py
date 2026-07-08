@@ -62,3 +62,52 @@ class ParseTrialTest(unittest.TestCase):
         trials = cost_model.load_runs(str(FIXTURES))
         models = sorted(t["model"] for t in trials)
         self.assertEqual(models, ["claude-opus-4-8", "claude-sonnet-4-6"])
+
+
+class PriceEngineTest(unittest.TestCase):
+    def test_price_turn_sums_per_channel(self):
+        usage = {"input": 100, "output": 10, "cache_read": 1000, "cache_creation": 50}
+        row = {"input": 0.00001, "output": 0.0001, "cache_read": 0.000001, "cache_creation": 0.00002}
+        out = cost_model.price_turn(usage, row)
+        # 100*1e-5 + 10*1e-4 + 1000*1e-6 + 50*2e-5 = 0.001 + 0.001 + 0.001 + 0.001
+        self.assertAlmostEqual(out["total"], 0.004)
+        self.assertAlmostEqual(out["cache_read"], 0.001)
+
+    def test_cross_check_flags_agreement(self):
+        # Contrived exact prices so recomputed == recorded.
+        trial = {"usage": {"input": 0, "output": 100, "cache_read": 0, "cache_creation": 0},
+                 "recorded_cost_usd": 0.01, "model": "x"}
+        row = {"input": 0, "output": 0.0001, "cache_read": 0, "cache_creation": 0}
+        res = cost_model.cross_check(trial, row)
+        self.assertTrue(res["ok"])
+        self.assertAlmostEqual(res["rel_err"], 0.0)
+
+    def test_cross_check_flags_disagreement(self):
+        trial = {"usage": {"input": 0, "output": 100, "cache_read": 0, "cache_creation": 0},
+                 "recorded_cost_usd": 0.01, "model": "x"}
+        row = {"input": 0, "output": 0.0005, "cache_read": 0, "cache_creation": 0}  # 5x off
+        res = cost_model.cross_check(trial, row)
+        self.assertFalse(res["ok"])
+
+
+class CrossCheckOnFixturesTest(unittest.TestCase):
+    def setUp(self):
+        self.params = json.loads(PARAMS_PATH.read_text(encoding="utf-8"))
+
+    def _trial(self, name):
+        return cost_model.parse_trial(
+            (FIXTURES / name / "stream.jsonl").read_text(encoding="utf-8"))
+
+    def test_opus_price_row_reproduces_recorded_cost(self):
+        t = self._trial("opus-reuse")
+        res = cost_model.cross_check(t, self.params["prices"][t["model"]])
+        self.assertTrue(res["ok"],
+                        f"opus rel_err {res['rel_err']:.3f}; recomputed "
+                        f"{res['recomputed']:.5f} vs recorded {res['recorded']:.5f}")
+
+    def test_sonnet_price_row_reproduces_recorded_cost(self):
+        t = self._trial("sonnet-housekeeper")
+        res = cost_model.cross_check(t, self.params["prices"][t["model"]])
+        self.assertTrue(res["ok"],
+                        f"sonnet rel_err {res['rel_err']:.3f}; recomputed "
+                        f"{res['recomputed']:.5f} vs recorded {res['recorded']:.5f}")

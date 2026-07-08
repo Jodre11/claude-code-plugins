@@ -73,24 +73,34 @@ review behaviour.
 - **No pipeline change.** The panel path, the flag, the Stage-3 writer, and the Step 7a
   instrumentation fix all belong to later stages, not this one.
 - **No new review runs.** The model reads existing on-disk data; it does not dispatch agents or
-  run reviews. Opus per-turn cost is grounded by harvesting the **real opus-max synth turn** from
-  an existing session transcript (`~/.claude/projects/**/*.jsonl`) — the same transcript the
-  back-test reads anyway — to anchor a reasoning-depth curve; no *new* opus turn is run.
+  run reviews. Opus per-turn *price* is grounded empirically from the real opus turns already in
+  the harness corpus (the reuse trials ran on `claude-opus-4-8`); the panel's per-turn *reasoning
+  depth* — the one genuinely unmeasured quantity — is bracketed between those shallow on-disk opus
+  turns (floor) and the deep opus-max synth turn harvested from a session transcript
+  (`~/.claude/projects/**/*.jsonl`, ceiling). No *new* opus turn is run.
 
 ## Data sources (verified present on disk)
 
 1. **Harness per-turn usage** — `tests/ab/runs/**/trial-*/stream.jsonl`, the `{type:"result"}`
    record. Verified to carry `usage` (`input_tokens`, `output_tokens`,
    `cache_creation_input_tokens`, `cache_read_input_tokens`), `num_turns`, `duration_ms`,
-   `duration_api_ms`, and `total_cost_usd` per agent turn. Four run directories currently exist
-   (housekeeper + reuse specialists).
-   - **Caveat, load-bearing:** these runs are **per-agent, single-specialist** turns, and
-     **none are opus**. They ground *sonnet* and *haiku* per-turn costs from real data, and their
-     recorded `total_cost_usd` doubles as an end-to-end check on the price×token engine for
-     non-opus turns (see Self-validation). No opus turn exists in *this* corpus — but the real
-     **opus-max synth** turn is recoverable from a session transcript (source 4), so the **opus
-     panelist** cost is an *anchored extrapolation* (a synth-anchored depth curve), not an
-     unanchored guess.
+   `duration_api_ms`, `total_cost_usd`, and a `model` field + a per-ARN `modelUsage` map (which
+   both name the model behind each turn) per agent turn. Four run directories currently exist
+   (housekeeper + reuse specialists), covering **two real models**:
+   - `*-housekeeper-smoke-*` trials ran on **`claude-sonnet-4-6`** (200k context) — ground the
+     *sonnet* per-turn cost.
+   - `*-reuse-hit` trials ran on **`claude-opus-4-8`** (1M context) — ground the *opus* per-turn
+     **price** (input / output / cache at real 4-8 Bedrock rates) empirically.
+   - **Caveat, load-bearing:** these are **per-agent, single-specialist** turns on **small
+     fixture diffs**, so the on-disk opus turns are *shallow* (few turns, ~1.5–3k output) and
+     **not panel-shaped** — no brief + full diff + all findings + vote-every-finding deep
+     reasoning. They therefore pin the opus *price row* and a depth *floor*, but the panel-depth
+     *ceiling* still comes from the deep opus-max synth turn harvested from a transcript
+     (source 4). No *haiku* turn is in the current corpus, so haiku (static specialists) is
+     priced from the parameter block until a haiku run is captured.
+   - The recorded `total_cost_usd` / `modelUsage[arn].costUSD` on every one of these turns is
+     already **Bedrock-priced**, so it doubles as an end-to-end check on the price×token engine
+     for **both** sonnet and opus (see Self-validation).
 
 2. **Architecture turn-counts** — from the verified pipeline map:
    - Stage 1 full run: 8 core sonnet agentic + up to ~4 conditional (haiku statics +
@@ -101,17 +111,21 @@ review behaviour.
 
 3. **Model pricing constants** — externalised (see Parameters), not inlined. **Bedrock** per-model
    input / output / cache-read / cache-creation prices for haiku / sonnet / opus (pin which opus —
-   4.8 — and its Bedrock rate). Canonical arm cost = token-counts × this price block. Recorded
-   `total_cost_usd` in the harness data is only comparable if it was Bedrock-priced: token counts
-   transfer across providers, recorded USD does not — so never fold recorded USD into a recomputed
-   arm total (use it only as the engine cross-check in source 1's caveat).
+   4.8 — and its Bedrock rate). Canonical arm cost = token-counts × this price block. The harness
+   `modelUsage[arn].costUSD` is confirmed Bedrock-priced, so it is a valid engine cross-check — but
+   it is *recorded* output, never an *input*: never fold recorded USD into a recomputed arm total
+   (use it only as the cross-check in source 1's caveat). The ARN → model mapping needed to price a
+   turn is read from the record's own `model` / `modelUsage` fields, not hard-coded.
 
 4. **Real opus-max synth turn** — one end-to-end old-path run's session transcript
    (`~/.claude/projects/**/*.jsonl`) carries the actual opus synth `usage` (input / output-incl-
-   thinking / cache) and `duration_ms`. This both anchors the opus depth curve (source 1 caveat)
-   and is the back-test target (Self-validation). **Precondition:** the plan's first action must
-   confirm such a run is recoverable — Step 7a durable logging is known not to be firing, so this
-   is not guaranteed and it gates the whole self-validation approach.
+   thinking / cache) and `duration_ms`. This supplies the panel-depth **ceiling** (a deep,
+   large-prompt opus turn — the shape the on-disk reuse turns lack) and is the `old`-arm back-test
+   target (Self-validation). **Precondition, now non-fatal:** the plan's first action confirms such
+   a run is recoverable — Step 7a durable logging is known not to be firing, so it is not
+   guaranteed. If it is missing, opus *pricing* is unaffected (source 1 grounds it) and the depth
+   ceiling falls back to a parameterised multiple of the on-disk opus floor, but the `old`-arm
+   back-test is then unavailable — that loss must be surfaced as the primary residual risk.
 
 ## What the model computes
 
@@ -158,10 +172,11 @@ decides it), plus a cost-attractiveness ranking among survivors.
 **Honesty requirements — two co-equal unknowable inputs, not one:**
 
 - **Panel reasoning depth.** Parameterise panel per-turn reasoning (thinking + vote output) as
-  low / medium / high bands, anchored at the top by the harvested real synth turn (source 4) and
-  extrapolated *down* — noting the synth's output *overstates* a panelist's (the synth writes the
-  full report; a panelist only votes and may add findings — the sonnet writer writes the report).
-  Report a **range**, not a point estimate.
+  low / medium / high bands **bracketed by real data**: the *floor* is the shallow on-disk opus
+  reuse turns (source 1), the *ceiling* is the deep harvested synth turn (source 4) — noting the
+  synth's output *overstates* a panelist's (the synth writes the full report; a panelist only
+  votes and may add findings — the sonnet writer writes the report). Report a **range** across the
+  bracket, not a point estimate.
 - **Cross-panelist cache sharing.** The panel sends a large shared prefix (brief + full diff + all
   findings) to N opus turns; whether parallel Bedrock dispatches share a warm cache is not
   guaranteed and, at opus input rates, brackets between `1× cache-creation + (N−1)× cache-read`
@@ -173,18 +188,18 @@ decides it), plus a cost-attractiveness ranking among survivors.
 
 ## Model self-validation (how we trust it without running the panel)
 
-- **Precondition (gates everything below):** confirm at least one real end-to-end old-path run is
-  recoverable from a session transcript (`~/.claude/projects/**/*.jsonl`). Step 7a durable logging
-  is known not to be firing, so this is not guaranteed; if no such run exists the self-validation
-  gate cannot run, and that must be surfaced as the primary risk, ahead of any depth estimate.
-- **Back-test the known arm:** reconstruct the `old` path's predicted cost from per-turn data and
-  check it against that run's actual total. If the model cannot reproduce today's known cost it
-  cannot be trusted to predict the panel's. This same transcript yields the real opus-max synth
-  `usage` that anchors the opus depth curve (source 4) — the back-test and the opus anchor are the
-  same harvest.
-- **Engine cross-check (free):** the recorded `total_cost_usd` on the real sonnet / haiku harness
-  turns validates the price×token engine end-to-end for non-opus turns, independent of the opus
-  estimate. Use it; never mix recorded USD *into* a recomputed arm total.
+- **Engine cross-check (free, always available):** the recorded Bedrock `modelUsage[arn].costUSD`
+  on the on-disk turns validates the price×token engine end-to-end for **both sonnet and opus**
+  (housekeeper trials pin sonnet, reuse trials pin opus). This is the primary, always-runnable
+  self-validation — it is independent of the transcript precondition. Use it; never mix recorded
+  USD *into* a recomputed arm total.
+- **Back-test the known arm (best-effort):** if the transcript precondition is met, reconstruct the
+  `old` path's predicted total cost from per-turn data and check it against a real end-to-end run's
+  actual total. If the model cannot reproduce today's known cost it cannot be trusted to predict
+  the panel's. This same transcript yields the deep opus synth `usage` that sets the depth ceiling
+  (source 4) — the back-test and the ceiling anchor are the same harvest. If the precondition is
+  unmet, this whole-arm back-test is unavailable (surface as residual risk); the per-turn engine
+  cross-check above still holds.
 - **Sensitivity table** as above — the model must expose, not hide, its dependence on the depth
   *and* cache-sharing assumptions across the diff-size sweep.
 
@@ -195,11 +210,14 @@ the analysis reads, so the later A/B stage can re-run the model with *measured* 
 
 - Per-model **Bedrock** token prices (haiku / sonnet / opus, input / output / cache-read /
   cache-creation); opus pinned to 4.8.
+- ARN → model → price-key map (so a harness turn's `model` / `modelUsage` ARN resolves to a price
+  row); the two known ARNs (`…/5kqc3rwmz09k` → sonnet-4-6, `…/4jqtkehs0zy3[1m]` → opus-4-8) seed it.
 - Per-stage turn counts (Stage 1 core + conditionals, cross count).
 - Resample: `P(gate fires)` (or the `[no-resample … always-resample]` bracket).
 - Panel N candidates (`3`, `5`).
-- Panel reasoning-depth bands (low / med / high thinking+output tokens), with the harvested synth
-  turn as the anchoring upper reference.
+- Panel reasoning-depth bands (low / med / high thinking+output tokens), bracketed by the on-disk
+  opus reuse turns (floor) and the harvested synth turn (ceiling); a fallback ceiling multiple for
+  when the transcript is unavailable.
 - Cross-panelist cache-sharing bracket (shared-warm ↔ no-sharing).
 - Distilled concern-brief token size (the ×N opus-input addend).
 - Diff-size sweep set (small / median / large representative sizes).

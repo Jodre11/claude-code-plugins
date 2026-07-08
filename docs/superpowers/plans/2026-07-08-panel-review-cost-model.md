@@ -987,29 +987,48 @@ EOF
 **Interfaces:**
 - Consumes: everything above; real local data in `tests/ab/runs/` and session transcripts in `~/.claude/projects/`.
 - Produces:
-  - `find_old_path_synth_turn(transcript_text: str) -> dict | None` — scan one transcript's JSONL for the deepest opus turn (a `result`/assistant record with `model` starting `claude-opus-4-8` and the largest `output_tokens`); return a normalised usage dict or `None` if absent. Pure over the passed text.
+  - `find_old_path_synth_turn(transcript_text: str) -> dict | None` — scan one **session transcript's** JSONL for the deepest opus turn and return `{"model": str, "usage": {"input","output","cache_read","cache_creation"}}`, or `None` if no opus turn is present. Pure over the passed text. **Shape note (verified against the real transcript):** a session transcript carries NO `{type:"result"}` record — token usage lives on each `{type:"assistant"}` record nested at `message.usage`, emitted once per streaming chunk, so the synth turn is the opus `assistant` record with the **largest** `output_tokens` (the final accumulated chunk). This is a DIFFERENT shape from the harness `stream.jsonl` that `parse_trial` reads (top-level `result` + flat `usage`), so this function does NOT reuse `parse_trial`. No `recorded_cost_usd`/`duration_ms` in the return — transcripts don't carry `costUSD`; the ceiling only needs `output`, and the back-test prices the returned tokens via the engine.
 
 - [ ] **Step 1: Write the failing test for the transcript scanner**
 
 Add to `tests/python/test_cost_model.py`:
 
+The fixture mirrors the **real** transcript shape (verified against the on-disk synth turn):
+`{type:"assistant"}` records with usage nested at `message.usage`, one per streaming chunk, so
+the deepest turn is the max-`output_tokens` chunk (here 25956, matching the real turn). The
+`input_tokens: 2` value is the real streaming artifact — the function must NOT treat it as the
+real input; the ceiling only consumes `output`.
+
 ```python
 class SynthHarvestTest(unittest.TestCase):
-    def test_finds_deepest_opus_turn(self):
+    def test_finds_deepest_opus_turn_from_streaming_chunks(self):
+        # Real transcripts have NO result record; usage is at message.usage,
+        # repeated per streaming chunk. Take the max output_tokens.
         text = "\n".join([
-            json.dumps({"type": "assistant", "message": {"model": "claude-opus-4-8"}}),
-            json.dumps({"type": "result", "usage": {
-                "input_tokens": 5000, "output_tokens": 8000,
-                "cache_read_input_tokens": 100, "cache_creation_input_tokens": 50},
-                "modelUsage": {"claude-opus-4-8": {"costUSD": 1.0}},
-                "duration_ms": 120000, "num_turns": 1}),
+            json.dumps({"type": "assistant", "message": {"model": "claude-opus-4-8",
+                "usage": {"input_tokens": 2, "output_tokens": 9603,
+                          "cache_read_input_tokens": 74158, "cache_creation_input_tokens": 2830}}}),
+            json.dumps({"type": "assistant", "message": {"model": "claude-opus-4-8",
+                "usage": {"input_tokens": 2, "output_tokens": 25956,
+                          "cache_read_input_tokens": 76988, "cache_creation_input_tokens": 561}}}),
+            json.dumps({"type": "user", "message": {"role": "user"}}),
         ])
         turn = cost_model.find_old_path_synth_turn(text)
         self.assertIsNotNone(turn)
-        self.assertEqual(turn["usage"]["output"], 8000)
+        self.assertEqual(turn["model"], "claude-opus-4-8")
+        self.assertEqual(turn["usage"]["output"], 25956)   # max chunk, not first
+        self.assertEqual(turn["usage"]["cache_read"], 76988)
 
-    def test_returns_none_without_opus(self):
-        text = json.dumps({"type": "assistant", "message": {"model": "claude-sonnet-4-6"}})
+    def test_ignores_non_opus_assistant_records(self):
+        text = "\n".join([
+            json.dumps({"type": "assistant", "message": {"model": "claude-sonnet-4-6",
+                "usage": {"input_tokens": 5, "output_tokens": 40000,
+                          "cache_read_input_tokens": 0, "cache_creation_input_tokens": 0}}}),
+        ])
+        self.assertIsNone(cost_model.find_old_path_synth_turn(text))
+
+    def test_returns_none_without_any_usage(self):
+        text = json.dumps({"type": "assistant", "message": {"model": "claude-opus-4-8"}})
         self.assertIsNone(cost_model.find_old_path_synth_turn(text))
 ```
 
@@ -1018,38 +1037,77 @@ class SynthHarvestTest(unittest.TestCase):
 Run: `python3 -m unittest tests.python.test_cost_model.SynthHarvestTest -v`
 Expected: FAIL — `AttributeError: ... 'find_old_path_synth_turn'`.
 
-- [ ] **Step 3: Implement the scanner (reuse `parse_trial`)**
+- [ ] **Step 3: Implement the scanner (standalone — does NOT reuse `parse_trial`)**
 
-Append to `tests/ab/lib/cost_model.py`:
+`parse_trial` reads the harness `stream.jsonl` shape (top-level `result` + flat `usage`); a
+session transcript has neither. Scan `assistant` records, read `message.usage`, keep the opus
+record with the largest `output_tokens`. Append to `tests/ab/lib/cost_model.py`:
 
 ```python
 def find_old_path_synth_turn(transcript_text):
-    """Return the deepest opus turn (max output tokens) in a transcript, or
-    None. Used to set the panel-depth ceiling and the old-arm back-test."""
-    try:
-        turn = parse_trial(transcript_text)
-    except (ValueError, KeyError, json.JSONDecodeError):
-        return None
-    if turn["model"].startswith("claude-opus-4-8"):
-        return turn
-    return None
+    """Return the deepest opus turn in a session transcript, or None.
+
+    Session transcripts (~/.claude/projects/**/*.jsonl) carry NO {type:"result"}
+    record — token usage is on each {type:"assistant"} record at message.usage,
+    emitted once per streaming chunk. The synth turn is the claude-opus-4-8
+    assistant record with the largest output_tokens (the final accumulated
+    chunk). Returns the same normalised usage keys parse_trial produces (input/
+    output/cache_read/cache_creation) so downstream pricing is uniform; no
+    recorded_cost_usd (transcripts don't carry costUSD). Used to set the
+    panel-depth ceiling and the old-arm back-test.
+    """
+    best = None
+    for line in transcript_text.splitlines():
+        if not line.strip():
+            continue
+        try:
+            rec = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if rec.get("type") != "assistant":
+            continue
+        msg = rec.get("message", {})
+        if not str(msg.get("model", "")).startswith("claude-opus-4-8"):
+            continue
+        u = msg.get("usage")
+        if not u or "output_tokens" not in u:
+            continue
+        if best is None or u["output_tokens"] > best["usage"]["output"]:
+            best = {
+                "model": msg["model"],
+                "usage": {
+                    "input": u.get("input_tokens", 0),
+                    "output": u["output_tokens"],
+                    "cache_read": u.get("cache_read_input_tokens", 0),
+                    "cache_creation": u.get("cache_creation_input_tokens", 0),
+                },
+            }
+    return best
 ```
 
-(Note: the plan keeps this deliberately simple — one deep synth turn per transcript. If a transcript interleaves many turns, extend `parse_trial` to iterate all `result` records and pick the max-output opus one; only do so if Step 6 finds such a transcript.)
+(Verified against the real synth transcript: 26 `assistant` chunk records, `output_tokens`
+climbing to 25956 on the final chunk. `input_tokens: 2` is a streaming artifact and is
+intentionally not used as a real-input signal — the depth ceiling only reads `output`.)
 
 - [ ] **Step 4: Run to verify it passes**
 
 Run: `python3 -m unittest tests.python.test_cost_model.SynthHarvestTest -v`
-Expected: 2 tests PASS.
+Expected: 3 tests PASS.
 
 - [ ] **Step 5: Run the model on the REAL harness data**
 
 Run: `python3 tests/ab/lib/cost_model.py --params tests/ab/lib/cost_model_params.json --runs tests/ab/runs --json --out /tmp/claude-<session>/cost-report.json`
 (substitute the real `CLAUDE_TEMP_DIR`). Expected: exit 0, a JSON report over the ~80 real trials (opus reuse + sonnet housekeeper). Note the per-model cross-check `rel_err` values — these are the headline self-validation result.
 
-- [ ] **Step 6: Best-effort back-test — locate a real old-path run**
+- [ ] **Step 6: Back-test — harvest the confirmed real synth turn**
 
-Search `~/.claude/projects/` for a session transcript containing a `review-gh-pr` end-to-end run with a deep opus synth turn. Use Grep for `claude-opus-4-8` in `*.jsonl` under likely project dirs, then feed the file text through `find_old_path_synth_turn`. If found: record the synth turn's `output_tokens` (the real depth **ceiling**) and re-run Step 5 passing it as `ceiling_output` (add a `--ceiling-output N` arg if convenient, or invoke `build_report` directly in a scratch script). If **not found**: this is the documented non-fatal precondition miss — the ceiling stays at the fallback multiple, and the missing whole-arm back-test is the primary residual risk. Either way, write the outcome into the findings.
+A real `review-gh-pr` opus synth turn is **confirmed present** on disk (located during planning), so this is a harvest, not a search. Feed this file through `find_old_path_synth_turn`:
+
+`~/.claude/projects/-Users-jodre11-Repos-haven-app-haven-payroll-jml-windows/84d696d4-6bf5-4f95-89bc-dd91adc092c3/subagents/workflows/wf_15cc40be-b9d/agent-a830feee2fbcff1b5.jsonl`
+
+Expected return: `usage.output == 25956`, `model == "claude-opus-4-8"` (the `StructuredOutput` synth turn — `verdict:REQUEST_CHANGES`, `rubricRowApplied:3`). Record `output_tokens: 25956` as the real depth **ceiling** and re-run the report passing it as `ceiling_output` (add a `--ceiling-output N` CLI arg, or call `build_report(trials, params, ceiling_output=25956)` in a scratch script). Note the bracket this opens: floor ≈ 1,700 (on-disk opus reuse) → ceiling 25,956 is a **~15× span** — a headline sensitivity finding for the write-up.
+
+If the file is unexpectedly absent at execution time (moved/pruned), fall back to `grep -rl 'review-synthesiser' ~/.claude/projects --include='*.jsonl'` to relocate an equivalent synth transcript; if none exists, the ceiling drops to the parameterised fallback multiple and the missing whole-arm back-test becomes the primary residual risk. Either way, write the outcome into the findings.
 
 - [ ] **Step 7: Write the findings document**
 

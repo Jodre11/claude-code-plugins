@@ -6,22 +6,27 @@ trials: 40 opus reuse, 40 sonnet housekeeper), params
 `tests/ab/lib/cost_model_params.json` (Bedrock rates from the claude-api skill).
 **Spec:** `docs/superpowers/specs/2026-07-08-panel-review-cost-model-design.md`.
 
-This version addresses the three Important findings from the final branch review:
-I1 (wall-clock constants externalised to params), I2 (resample swept explicitly
-as p ∈ {0.0, 0.25, 1.0} with the resample term added to old-arm wall-clock),
-I3 (per-arm token split now returned by `compose_arm`).
+This version addresses the three Important findings from the final branch review
+plus the follow-up items raised during re-review: I1 (wall-clock constants
+externalised to params), I2 (resample swept explicitly as p ∈ {0.0, 0.25, 1.0}),
+I3 (per-arm token split now returned by `compose_arm`), and the M1 follow-up
+(the old-arm resample re-run now also re-runs Stage 1 on the wall-clock axis —
+see "Wall-clock" below). The engine also now dedupes the cross-check to one row
+per model.
 
 ## Self-validation (must pass before trusting the model)
 
-The `cross_check` list has one entry per trial (80 total). For this table, rows
-are deduped to one representative per model; all cross-check rows for a given
-model are numerically identical (only floating-point rounding noise at the
-sub-$10⁻¹⁵ level, well below the 5% tolerance).
+`build_report` now returns one `cross_check` row per model (previously one per
+trial — 80 near-identical rows carrying no extra signal). Each row keeps the
+representative rel_err plus the trial count and the rel_err min/max range, so a
+per-model divergence would still surface. For all 80 trials the per-model spread
+is floating-point rounding noise at the sub-$10⁻¹⁵ level, well below the 5%
+tolerance.
 
-| Model | recomputed (representative) | recorded (representative) | rel_err | verdict |
-|---|---|---|---|---|
-| claude-opus-4-8 | $0.607635 | $0.607635 | 1.8e-16 | ok |
-| claude-sonnet-4-6 | $0.270995 | $0.270995 | 0.0e+00 | ok |
+| Model | trials | recomputed (rep) | recorded (rep) | rel_err (rep) | rel_err max | verdict |
+|---|---|---|---|---|---|---|
+| claude-opus-4-8 | 40 | $0.607635 | $0.607635 | 1.8e-16 | 1.8e-16 | ok |
+| claude-sonnet-4-6 | 40 | $0.270995 | $0.270995 | 0.0e+00 | 3.6e-16 | ok |
 
 Both models reproduce Bedrock-recorded costs to within floating-point precision
 (rel_err ≪ 0.1%). Price rows are validated.
@@ -40,30 +45,33 @@ for its token counts.
 The table below shows `median` diff size, `med` depth, `shared-warm` cache mode
 at each of the three resample points p ∈ {0.0, 0.25, 1.0}. Panel costs are
 invariant across p (panels have no boundary gate); old costs increase with p.
-Wall-clock for old now includes the resample factor: `wall = base × (1 + p)`.
+Old-arm wall-clock now includes the resample factor **and** the Stage-1 re-run
+that the gate triggers (M1): `wall = base + p·(stage1_wall + base)`, where
+`base = cross + opus_synth`.
 
-**Important nuance on p=0:** The prior version of this doc baked p=0.25 into
+**Important nuance on p=0:** The original doc baked p=0.25 into
 every old-arm USD figure. At p=0 the old arm costs $5.88 (not $7.35), so the
 panel USD advantage is smaller: −$1.20 for panel-3 and −$0.46 for panel-5 at
 p=0. The advantage widens as p rises — reaching −$7.08 / −$6.34 at p=1.0. The
 true p=0 advantage is reported honestly here.
 
-Similarly for wall-clock: the prior model omitted the resample factor from the
-old arm entirely (asymmetry I2). At p=0 old wall_s = 139.3 s (same as before,
-since the factor is ×1.0), but at p=0.25 it rises to 174.2 s and at p=1.0 to
-278.7 s. Panel wall_s stays fixed at 132.2 s across all p.
+Similarly for wall-clock: at p=0 old wall_s = 139.3 s (the resample factor is
+zero), rising to 179.9 s at p=0.25 and 301.5 s at p=1.0. The M1 fix adds the
+Stage-1 re-run's wall to the resample addend, so these p>0 figures are slightly
+higher than the pre-M1 model (which omitted Stage-1 from the re-run). Panel
+wall_s stays fixed at 132.2 s across all p.
 
 | diff | p | arm | USD | delta\_USD | wall\_s | delta\_wall\_s | verdict |
 |---|---|---|---|---|---|---|---|
 | median | 0.00 | old | $5.8792 | ±0 | 139.3 s | ±0 | SURVIVE |
 | median | 0.00 | panel-3 | $4.6768 | −$1.2024 | 132.2 s | −7.2 s | SURVIVE |
 | median | 0.00 | panel-5 | $5.4173 | −$0.4619 | 132.2 s | −7.2 s | SURVIVE |
-| median | 0.25 | old | $7.3490 | ±0 | 174.2 s | ±0 | SURVIVE |
-| median | 0.25 | panel-3 | $4.6768 | −$2.6722 | 132.2 s | −42.0 s | SURVIVE |
-| median | 0.25 | panel-5 | $5.4173 | −$1.9316 | 132.2 s | −42.0 s | SURVIVE |
-| median | 1.00 | old | $11.7583 | ±0 | 278.7 s | ±0 | SURVIVE |
-| median | 1.00 | panel-3 | $4.6768 | −$7.0816 | 132.2 s | −146.5 s | SURVIVE |
-| median | 1.00 | panel-5 | $5.4173 | −$6.3410 | 132.2 s | −146.5 s | SURVIVE |
+| median | 0.25 | old | $7.3490 | ±0 | 179.9 s | ±0 | SURVIVE |
+| median | 0.25 | panel-3 | $4.6768 | −$2.6722 | 132.2 s | −47.7 s | SURVIVE |
+| median | 0.25 | panel-5 | $5.4173 | −$1.9316 | 132.2 s | −47.7 s | SURVIVE |
+| median | 1.00 | old | $11.7583 | ±0 | 301.5 s | ±0 | SURVIVE |
+| median | 1.00 | panel-3 | $4.6768 | −$7.0816 | 132.2 s | −169.3 s | SURVIVE |
+| median | 1.00 | panel-5 | $5.4173 | −$6.3410 | 132.2 s | −169.3 s | SURVIVE |
 
 Panel arms are cheaper on USD **and** faster on wall-clock than old across all
 three resample points at median diff / med depth. The USD advantage grows with
@@ -74,13 +82,13 @@ penalises only the old arm.
 (large diff, high depth, no cache sharing) panel-5 costs $8.83 vs old.
 At p=0 old is $6.47 — panel-5 is dearer on USD (+$2.36) but 7.2 s faster on
 wall-clock. Not dominated → SURVIVE. At p=0.25 old rises to $8.09 — panel-5
-is +$0.75 on USD but still 64 s faster. Not dominated → SURVIVE. At p=1.0 old
+is +$0.75 on USD but still 69.7 s faster. Not dominated → SURVIVE. At p=1.0 old
 is $12.94 — panel-5 at $8.83 is cheaper → SURVIVE. Verdict is SURVIVE at every
-resample point, including the p=0 case that was not visible in the prior model.
+resample point, including the p=0 case that was not visible in the original model.
 
 ## Wall-clock is now parameterised
 
-Three knobs were externalised to `params["wall_clock"]` to allow the A/B stage
+Four knobs were externalised to `params["wall_clock"]` to allow the A/B stage
 to retune them from measured values:
 
 - `cross_secs` (30.0 s): the cross fan-out critical path duration.
@@ -91,18 +99,31 @@ to retune them from measured values:
   turn is longer and compute-bound).
 - `writer_stage1_duration_multiple` (1.0): scales the Stage-1 duration for the
   sonnet writer turn (currently proxied 1:1 with the Stage-1 representative).
+- `stage1_wall_duration_multiple` (1.0): scales the Stage-1 representative
+  duration for the Stage-1 wall time added to the old-arm resample re-run (M1).
+  Stage-1 specialists fan out in parallel, so a re-run adds ~one representative
+  turn's wall, not the full turn count — hence a 1× multiple of one turn.
 
-These defaults reproduce the prior model's numbers at p=0 exactly (the old
-wall_clock asymmetry is now a feature of the p=0 row, not a hidden assumption).
+These defaults reproduce the original model's USD numbers at p=0 exactly.
 
-**Honesty disclosure:** The panel wall-clock advantage at p=0 (−7.2 s across
+**M1 fix (resample wall-clock now includes the Stage-1 re-run):** The original
+model added the resample re-run to the old arm's USD (which re-runs Stage 1 +
+cross + synth) but omitted Stage 1 from the corresponding wall-clock re-run —
+so old wall-clock was under-counted at p>0, i.e. old looked *faster* than it
+should, which was conservative against the panel. This is now fixed: the
+old-arm wall at p>0 includes `p·(stage1_wall + base)`, matching the USD term's
+structure. The p=0 rows are unchanged; only p>0 old-arm wall figures rise
+(e.g. median/med at p=0.25: 174.2 s → 179.9 s), which *strengthens* the panel
+case rather than weakening it.
+
+**Remaining honesty note:** The panel wall-clock advantage at p=0 (−7.2 s across
 all diff sizes) is the `writer − cross` delta: `writer_secs − cross_secs`.
 With the current proxy values (`writer ≈ 22.9 s`, `cross = 30.0 s`), this
 gives −7.1 s — a depth-independent constant under the current proxy. The actual
 advantage may differ if live opus synth turns are substantially longer than the
 Stage-1 proxy implies (a deeper synth ceiling → larger `opus_secs` term, but
 this affects both old and panel equally). The A/B stage should measure
-`per_turn_secs["cross"]` and `per_turn_secs["writer"]` directly.
+`per_turn_secs["cross"]`, `["writer"]`, and `["stage1_wall"]` directly.
 
 ## Resample sensitivity
 

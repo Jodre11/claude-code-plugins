@@ -211,17 +211,22 @@ def compose_arm(arm_name, params, prices, diff_tokens, depth_output,
 # --- wall clock + verdict ---------------------------------------------------
 
 def wall_clock(arm_name, params, depth_output, per_turn_secs, p_gate=None):
-    """Predicted critical-path seconds for the middle stage (Stage 1 common,
-    excluded throughout — including the resample re-run). old = cross fan-out
-    THEN serial opus synth, times a (1 + p_gate) resample factor for the
-    boundary gate. panel = one parallel opus turn THEN a short sonnet writer
-    (N panelists concurrent; resample does not apply to panels)."""
+    """Predicted critical-path seconds for the FIRST pass of the middle stage,
+    plus a probabilistic resample re-run for the old arm. Stage 1's first pass
+    is common to all arms and excluded; but when the old-arm boundary gate
+    fires it re-runs Stage 1 too, so the resample addend includes Stage 1's
+    (parallel) wall time — `per_turn_secs["stage1_wall"]`. old first pass =
+    cross fan-out THEN serial opus synth; resample re-run = stage1_wall + cross
+    + synth, added with probability p_gate. panel = one parallel opus turn THEN
+    a short sonnet writer (N panelists concurrent; resample does not apply to
+    panels)."""
     opus_secs = (depth_output / 1000.0) * per_turn_secs["opus_per_1k_output"]
     if p_gate is None:
         p_gate = params["resample"]["p_gate_fires"]
     if arm_name == "old":
         base = per_turn_secs["cross"] + opus_secs
-        return base + p_gate * base
+        rerun = per_turn_secs["stage1_wall"] + base
+        return base + p_gate * rerun
     if arm_name.startswith("panel-"):
         return opus_secs + per_turn_secs["writer"]
     raise ValueError(f"unknown arm: {arm_name}")
@@ -257,7 +262,8 @@ def build_report(trials, params, ceiling_output=None):
     dur_s = per_turn["duration_ms"] / 1000.0
     secs = {"cross": wc["cross_secs"],
             "opus_per_1k_output": dur_s / wc["opus_per_1k_output_divisor"],
-            "writer": dur_s * wc["writer_stage1_duration_multiple"]}
+            "writer": dur_s * wc["writer_stage1_duration_multiple"],
+            "stage1_wall": dur_s * wc["stage1_wall_duration_multiple"]}
     arms = ["old", "panel-3", "panel-5"]
     resample_points = sorted(set(params["resample"]["bracket"]
                                  + [params["resample"]["p_gate_fires"]]))
@@ -290,9 +296,23 @@ def build_report(trials, params, ceiling_output=None):
                             "verdict": verdict,
                         })
 
-    cross = []
+    # Cross-check deduped to one row per model: every trial of a given model
+    # prices identically, so ~N near-identical rows carry no extra signal. Keep
+    # a representative row plus the trial count and the rel_err range, so a
+    # per-model divergence (should never happen) is still surfaced.
+    by_model = {}
     for t in trials:
-        cross.append({"model": t["model"], **cross_check(t, prices[t["model"]])})
+        by_model.setdefault(t["model"], []).append(cross_check(t, prices[t["model"]]))
+    cross = []
+    for model in sorted(by_model):
+        checks = by_model[model]
+        rel_errs = [c["rel_err"] for c in checks]
+        rep = checks[0]
+        cross.append({"model": model, "trials": len(checks),
+                      "recomputed": rep["recomputed"], "recorded": rep["recorded"],
+                      "rel_err": rep["rel_err"],
+                      "rel_err_min": min(rel_errs), "rel_err_max": max(rel_errs),
+                      "ok": all(c["ok"] for c in checks)})
 
     fragile = [a for a in arms if a != "old" and len(verdicts_by_arm[a]) > 1]
     return {

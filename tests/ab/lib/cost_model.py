@@ -59,12 +59,13 @@ def parse_trial(stream_text):
 
 
 def load_runs(runs_dir):
-    """Walk runs_dir for **/trial-*/stream.jsonl; return parsed trials."""
+    """Walk runs_dir for **/stream.jsonl; return parsed trials."""
     trials = []
     pattern = os.path.join(runs_dir, "**", "stream.jsonl")
     for path in sorted(glob.glob(pattern, recursive=True)):
         try:
-            text = open(path, encoding="utf-8").read()
+            with open(path, encoding="utf-8") as f:
+                text = f.read()
             if text.strip():
                 trials.append(parse_trial(text))
         except (ValueError, KeyError, json.JSONDecodeError):

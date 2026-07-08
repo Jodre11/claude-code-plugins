@@ -246,3 +246,35 @@ class ReportTest(unittest.TestCase):
         parsed = json.loads(buf.getvalue())
         self.assertIn("rows", parsed)
         self.assertIn("cross_check", parsed)
+
+
+class SynthHarvestTest(unittest.TestCase):
+    def test_finds_deepest_opus_turn_from_streaming_chunks(self):
+        # Real transcripts have NO result record; usage is at message.usage,
+        # repeated per streaming chunk. Take the max output_tokens.
+        text = "\n".join([
+            json.dumps({"type": "assistant", "message": {"model": "claude-opus-4-8",
+                "usage": {"input_tokens": 2, "output_tokens": 9603,
+                          "cache_read_input_tokens": 74158, "cache_creation_input_tokens": 2830}}}),
+            json.dumps({"type": "assistant", "message": {"model": "claude-opus-4-8",
+                "usage": {"input_tokens": 2, "output_tokens": 25956,
+                          "cache_read_input_tokens": 76988, "cache_creation_input_tokens": 561}}}),
+            json.dumps({"type": "user", "message": {"role": "user"}}),
+        ])
+        turn = cost_model.find_old_path_synth_turn(text)
+        self.assertIsNotNone(turn)
+        self.assertEqual(turn["model"], "claude-opus-4-8")
+        self.assertEqual(turn["usage"]["output"], 25956)   # max chunk, not first
+        self.assertEqual(turn["usage"]["cache_read"], 76988)
+
+    def test_ignores_non_opus_assistant_records(self):
+        text = "\n".join([
+            json.dumps({"type": "assistant", "message": {"model": "claude-sonnet-4-6",
+                "usage": {"input_tokens": 5, "output_tokens": 40000,
+                          "cache_read_input_tokens": 0, "cache_creation_input_tokens": 0}}}),
+        ])
+        self.assertIsNone(cost_model.find_old_path_synth_turn(text))
+
+    def test_returns_none_without_any_usage(self):
+        text = json.dumps({"type": "assistant", "message": {"model": "claude-opus-4-8"}})
+        self.assertIsNone(cost_model.find_old_path_synth_turn(text))

@@ -297,5 +297,46 @@ def main(argv=None):
     return 0
 
 
+def find_old_path_synth_turn(transcript_text):
+    """Return the deepest opus turn in a session transcript, or None.
+
+    Session transcripts (~/.claude/projects/**/*.jsonl) carry NO {type:"result"}
+    record — token usage is on each {type:"assistant"} record at message.usage,
+    emitted once per streaming chunk. The synth turn is the claude-opus-4-8
+    assistant record with the largest output_tokens (the final accumulated
+    chunk). Returns the same normalised usage keys parse_trial produces (input/
+    output/cache_read/cache_creation) so downstream pricing is uniform; no
+    recorded_cost_usd (transcripts don't carry costUSD). Used to set the
+    panel-depth ceiling and the old-arm back-test.
+    """
+    best = None
+    for line in transcript_text.splitlines():
+        if not line.strip():
+            continue
+        try:
+            rec = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if rec.get("type") != "assistant":
+            continue
+        msg = rec.get("message", {})
+        if not str(msg.get("model", "")).startswith("claude-opus-4-8"):
+            continue
+        u = msg.get("usage")
+        if not u or "output_tokens" not in u:
+            continue
+        if best is None or u["output_tokens"] > best["usage"]["output"]:
+            best = {
+                "model": msg["model"],
+                "usage": {
+                    "input": u.get("input_tokens", 0),
+                    "output": u["output_tokens"],
+                    "cache_read": u.get("cache_read_input_tokens", 0),
+                    "cache_creation": u.get("cache_creation_input_tokens", 0),
+                },
+            }
+    return best
+
+
 if __name__ == "__main__":
     sys.exit(main())

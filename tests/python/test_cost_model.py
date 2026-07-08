@@ -194,3 +194,11 @@ class WallClockAndVerdictTest(unittest.TestCase):
     def test_classify_survive_when_cheaper_on_wall_clock(self):
         # dearer tokens, but faster wall-clock -> not dominated -> SURVIVE
         self.assertEqual(cost_model.classify(200, 60, old_usd=100, old_wall_s=80), "SURVIVE")
+
+    def test_wall_clock_unknown_arm_raises(self):
+        with self.assertRaises(ValueError):
+            cost_model.wall_clock("legacy", self.params, 4000, self.secs)
+
+    def test_classify_survive_when_cheaper_but_slower(self):
+        # cheaper tokens, slower wall-clock -> not dominated -> SURVIVE
+        self.assertEqual(cost_model.classify(50, 100, old_usd=100, old_wall_s=80), "SURVIVE")

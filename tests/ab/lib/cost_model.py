@@ -175,7 +175,7 @@ def compose_arm(arm_name, params, prices, diff_tokens, depth_output,
 
 # --- wall clock + verdict ---------------------------------------------------
 
-def wall_clock(arm_name, params, depth_output, per_turn_secs):
+def wall_clock(arm_name, _params, depth_output, per_turn_secs):
     """Predicted critical-path seconds for the middle stage (Stage 1 common,
     excluded). old = parallel cross fan-out THEN serial opus-max synth long
     pole. panel = one parallel opus turn (N panelists concurrent) THEN a short

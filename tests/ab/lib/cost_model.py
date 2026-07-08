@@ -71,3 +71,31 @@ def load_runs(runs_dir):
         except (ValueError, KeyError, json.JSONDecodeError):
             continue
     return trials
+
+
+# --- pricing ----------------------------------------------------------------
+
+def price_turn(usage, price_row):
+    """USD cost of one turn: element-wise token count x per-token price."""
+    channels = ("input", "output", "cache_read", "cache_creation")
+    out = {c: usage[c] * price_row[c] for c in channels}
+    out["total"] = sum(out[c] for c in channels)
+    return out
+
+
+def cross_check(trial, price_row, rel_tol=0.05):
+    """Recompute a trial's cost from tokens x price; compare to recorded USD.
+
+    The recorded modelUsage.costUSD is Bedrock-priced, so this is an
+    INDEPENDENT validation of the price row — provided the price row is
+    sourced independently (from the claude-api skill), never back-filled
+    from the recorded cost. A rel_err above rel_tol means the price row is
+    wrong or stale (e.g. a list-rate change, or a cache-TTL band mismatch
+    if a 5m-TTL trial appears — see the Task 1 cache-TTL guard).
+    """
+    recomputed = price_turn(trial["usage"], price_row)["total"]
+    recorded = trial["recorded_cost_usd"]
+    if not recorded:
+        return {"recomputed": recomputed, "recorded": recorded, "rel_err": float("inf"), "ok": False}
+    rel_err = abs(recomputed - recorded) / recorded
+    return {"recomputed": recomputed, "recorded": recorded, "rel_err": rel_err, "ok": rel_err <= rel_tol}

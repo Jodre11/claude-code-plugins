@@ -99,3 +99,75 @@ def cross_check(trial, price_row, rel_tol=0.05):
         return {"recomputed": recomputed, "recorded": recorded, "rel_err": float("inf"), "ok": False}
     rel_err = abs(recomputed - recorded) / recorded
     return {"recomputed": recomputed, "recorded": recorded, "rel_err": rel_err, "ok": rel_err <= rel_tol}
+
+
+# --- composition ------------------------------------------------------------
+
+def depth_bracket(trials, params, ceiling_output=None):
+    """Panel per-turn output-token bracket: floor from on-disk opus turns,
+    ceiling from a harvested deep synth turn (if given) else a fallback
+    multiple of the floor."""
+    opus_outputs = [t["usage"]["output"] for t in trials
+                    if t["model"].startswith("claude-opus-4-8")]
+    floor = max(opus_outputs) if opus_outputs else 0.0
+    if ceiling_output is None:
+        ceiling_output = floor * params["ceiling_fallback_multiple"]
+    return {"floor": float(floor), "ceiling": float(ceiling_output)}
+
+
+def panel_input_cost(n, prefix_tokens, suffix_tokens, price_row, cache_mode):
+    """Input-side USD for N panelists sharing a prefix.
+
+    shared-warm: prefix cached once (creation) then read (N-1) times, plus N
+    small suffixes at full input price.
+    no-share:    every panelist pays full input price for prefix + suffix.
+    """
+    if cache_mode == "no-share":
+        return n * (prefix_tokens + suffix_tokens) * price_row["input"]
+    if cache_mode == "shared-warm":
+        creation = prefix_tokens * price_row["cache_creation"]
+        reads = (n - 1) * prefix_tokens * price_row["cache_read"]
+        suffixes = n * suffix_tokens * price_row["input"]
+        return creation + reads + suffixes
+    raise ValueError(f"unknown cache_mode: {cache_mode}")
+
+
+def compose_arm(arm_name, params, prices, diff_tokens, depth_output,
+                cache_mode, per_turn_costs):
+    """Per-arm total tokens + USD for a given diff size, depth, cache mode.
+
+    Stage 1 is common to all arms and costed from a representative real
+    Stage-1 turn (per_turn_costs['stage1']['total']) x the Stage-1 turn count.
+    """
+    tc = params["turn_counts"]
+    stage1_turns = tc["stage1_core_sonnet"] + tc["stage1_conditional"]
+    stage1_usd = stage1_turns * per_turn_costs["stage1"]["total"]
+
+    if arm_name == "old":
+        cross_usd = tc["cross_sonnet"] * per_turn_costs["stage1"]["total"]
+        synth_usd = price_turn(
+            {"input": diff_tokens, "output": depth_output,
+             "cache_read": 0, "cache_creation": 0},
+            prices["claude-opus-4-8"])["total"]
+        middle_usd = cross_usd + synth_usd
+        # Resample is a probabilistic addend: with probability p_gate_fires the
+        # boundary gate fires and re-runs Stage-1 + cross + synth once more.
+        p = params["resample"]["p_gate_fires"]
+        middle_usd += p * (stage1_usd + cross_usd + synth_usd)
+    elif arm_name.startswith("panel-"):
+        n = int(arm_name.split("-")[1])
+        prefix = diff_tokens + params["concern_brief_tokens"]
+        panel_input = panel_input_cost(n, prefix, suffix_tokens=0,
+                                       price_row=prices["claude-opus-4-8"],
+                                       cache_mode=cache_mode)
+        panel_output = n * depth_output * prices["claude-opus-4-8"]["output"]
+        writer_usd = price_turn(
+            {"input": diff_tokens, "output": 3000, "cache_read": 0, "cache_creation": 0},
+            prices["claude-sonnet-4-6"])["total"]
+        middle_usd = panel_input + panel_output + writer_usd
+    else:
+        raise ValueError(f"unknown arm: {arm_name}")
+
+    return {"usd": stage1_usd + middle_usd,
+            "stage1_usd": stage1_usd,
+            "middle_usd": middle_usd}

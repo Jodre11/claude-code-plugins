@@ -111,3 +111,57 @@ class CrossCheckOnFixturesTest(unittest.TestCase):
         self.assertTrue(res["ok"],
                         f"sonnet rel_err {res['rel_err']:.3f}; recomputed "
                         f"{res['recomputed']:.5f} vs recorded {res['recorded']:.5f}")
+
+
+class CompositionTest(unittest.TestCase):
+    def setUp(self):
+        self.params = json.loads(PARAMS_PATH.read_text(encoding="utf-8"))
+        self.prices = self.params["prices"]
+
+    def test_depth_bracket_floor_from_opus_trials(self):
+        trials = [
+            {"model": "claude-opus-4-8", "usage": {"output": 1700}},
+            {"model": "claude-opus-4-8", "usage": {"output": 2500}},
+            {"model": "claude-sonnet-4-6", "usage": {"output": 9000}},
+        ]
+        br = cost_model.depth_bracket(trials, self.params)
+        self.assertEqual(br["floor"], 2500)  # max opus output, sonnet ignored
+        self.assertEqual(br["ceiling"], 2500 * self.params["ceiling_fallback_multiple"])
+
+    def test_depth_bracket_uses_explicit_ceiling(self):
+        trials = [{"model": "claude-opus-4-8", "usage": {"output": 2000}}]
+        br = cost_model.depth_bracket(trials, self.params, ceiling_output=20000)
+        self.assertEqual(br["ceiling"], 20000)
+
+    def test_no_share_costs_n_times_full_input(self):
+        row = {"input": 0.00001, "output": 0, "cache_read": 0, "cache_creation": 0}
+        no_share = cost_model.panel_input_cost(3, prefix_tokens=1000, suffix_tokens=0,
+                                               price_row=row, cache_mode="no-share")
+        # 3 panelists x 1000 full-price input tokens
+        self.assertAlmostEqual(no_share, 3 * 1000 * 0.00001)
+
+    def test_shared_warm_is_cheaper_than_no_share(self):
+        row = {"input": 0.00001, "output": 0, "cache_read": 0.000001, "cache_creation": 0.0000125}
+        shared = cost_model.panel_input_cost(3, 1000, 0, row, "shared-warm")
+        no_share = cost_model.panel_input_cost(3, 1000, 0, row, "no-share")
+        self.assertLess(shared, no_share)
+
+    def test_compose_arm_panel3_scales_with_n(self):
+        # With trivial Stage-1 costs, panel-5 must exceed panel-3.
+        per_turn = {"stage1": cost_model.price_turn(
+            {"input": 0, "output": 0, "cache_read": 0, "cache_creation": 0}, self.prices["claude-sonnet-4-6"])}
+        a3 = cost_model.compose_arm("panel-3", self.params, self.prices, diff_tokens=20000,
+                                    depth_output=5000, cache_mode="no-share", per_turn_costs=per_turn)
+        a5 = cost_model.compose_arm("panel-5", self.params, self.prices, diff_tokens=20000,
+                                    depth_output=5000, cache_mode="no-share", per_turn_costs=per_turn)
+        self.assertGreater(a5["usd"], a3["usd"])
+
+    def test_old_arm_includes_probabilistic_resample(self):
+        per_turn = {"stage1": cost_model.price_turn(
+            {"input": 10, "output": 10, "cache_read": 0, "cache_creation": 0},
+            self.prices["claude-sonnet-4-6"])}
+        p0 = {**self.params, "resample": {**self.params["resample"], "p_gate_fires": 0.0}}
+        p1 = {**self.params, "resample": {**self.params["resample"], "p_gate_fires": 1.0}}
+        a0 = cost_model.compose_arm("old", p0, self.prices, 20000, 5000, "no-share", per_turn)
+        a1 = cost_model.compose_arm("old", p1, self.prices, 20000, 5000, "no-share", per_turn)
+        self.assertGreater(a1["usd"], a0["usd"])  # p=1 dearer than p=0

@@ -29,6 +29,11 @@
     "p_gate_fires": 0.25,
     "bracket": [0.0, 1.0]
   },
+  "wall_clock": {
+    "cross_secs": 30.0,
+    "opus_per_1k_output_divisor": 3.0,
+    "writer_stage1_duration_multiple": 1.0
+  },
   "panel_n": [3, 5],
   "cache_sharing_modes": ["shared-warm", "no-share"],
   "concern_brief_tokens": 2000,

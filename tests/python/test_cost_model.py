@@ -1,5 +1,4 @@
 import json
-import os
 import pathlib
 import sys
 import unittest
@@ -149,7 +148,8 @@ class CompositionTest(unittest.TestCase):
     def test_compose_arm_panel3_scales_with_n(self):
         # With trivial Stage-1 costs, panel-5 must exceed panel-3.
         per_turn = {"stage1": cost_model.price_turn(
-            {"input": 0, "output": 0, "cache_read": 0, "cache_creation": 0}, self.prices["claude-sonnet-4-6"])}
+            {"input": 0, "output": 0, "cache_read": 0, "cache_creation": 0}, self.prices["claude-sonnet-4-6"]),
+            "usage": {"input": 0, "output": 0, "cache_read": 0, "cache_creation": 0}}
         a3 = cost_model.compose_arm("panel-3", self.params, self.prices, diff_tokens=20000,
                                     depth_output=5000, cache_mode="no-share", per_turn_costs=per_turn)
         a5 = cost_model.compose_arm("panel-5", self.params, self.prices, diff_tokens=20000,
@@ -159,12 +159,25 @@ class CompositionTest(unittest.TestCase):
     def test_old_arm_includes_probabilistic_resample(self):
         per_turn = {"stage1": cost_model.price_turn(
             {"input": 10, "output": 10, "cache_read": 0, "cache_creation": 0},
-            self.prices["claude-sonnet-4-6"])}
+            self.prices["claude-sonnet-4-6"]),
+            "usage": {"input": 10, "output": 10, "cache_read": 0, "cache_creation": 0}}
         p0 = {**self.params, "resample": {**self.params["resample"], "p_gate_fires": 0.0}}
         p1 = {**self.params, "resample": {**self.params["resample"], "p_gate_fires": 1.0}}
         a0 = cost_model.compose_arm("old", p0, self.prices, 20000, 5000, "no-share", per_turn)
         a1 = cost_model.compose_arm("old", p1, self.prices, 20000, 5000, "no-share", per_turn)
         self.assertGreater(a1["usd"], a0["usd"])  # p=1 dearer than p=0
+
+    def test_compose_arm_returns_token_split(self):
+        per_turn = {"stage1": cost_model.price_turn(
+            {"input": 5, "output": 5, "cache_read": 0, "cache_creation": 0}, self.prices["claude-sonnet-4-6"]),
+            "usage": {"input": 5, "output": 5, "cache_read": 0, "cache_creation": 0}}
+        a3 = cost_model.compose_arm("panel-3", self.params, self.prices, 20000, 5000,
+                                    "no-share", per_turn)
+        for ch in ("input", "output", "cache_read", "cache_creation"):
+            self.assertIn(ch, a3["tokens"])
+        a5 = cost_model.compose_arm("panel-5", self.params, self.prices, 20000, 5000,
+                                    "no-share", per_turn)
+        self.assertGreater(a5["tokens"]["output"], a3["tokens"]["output"])
 
 
 class WallClockAndVerdictTest(unittest.TestCase):
@@ -173,10 +186,14 @@ class WallClockAndVerdictTest(unittest.TestCase):
         self.secs = {"cross": 30.0, "opus_per_1k_output": 12.0, "writer": 20.0}
 
     def test_old_wall_clock_includes_serial_cross_and_synth(self):
-        w = cost_model.wall_clock("old", self.params, depth_output=4000, per_turn_secs=self.secs)
-        # 8 cross serial-after-stage1 is modelled parallel (max), synth serial:
-        # cross fan-out (30) + synth (4 * 12 = 48) = 78
-        self.assertAlmostEqual(w, 30.0 + 48.0)
+        # p_gate=0 -> no resample: cross(30) + synth(4*12=48) = 78
+        w0 = cost_model.wall_clock("old", self.params, depth_output=4000,
+                                   per_turn_secs=self.secs, p_gate=0.0)
+        self.assertAlmostEqual(w0, 78.0)
+        # p_gate=1 -> gate always re-fires: 78 * 2 = 156
+        w1 = cost_model.wall_clock("old", self.params, depth_output=4000,
+                                   per_turn_secs=self.secs, p_gate=1.0)
+        self.assertAlmostEqual(w1, 156.0)
 
     def test_panel_wall_clock_is_parallel_then_writer(self):
         w = cost_model.wall_clock("panel-3", self.params, depth_output=4000, per_turn_secs=self.secs)
@@ -235,6 +252,16 @@ class ReportTest(unittest.TestCase):
     def test_main_returns_1_when_no_trials(self):
         rc = cost_model.main(["--params", str(PARAMS_PATH), "--runs", str(REPO / "tests" / "fixtures" / "cost-model-empty-does-not-exist")])
         self.assertEqual(rc, 1)
+
+    def test_report_sweeps_resample_points(self):
+        rep = cost_model.build_report(self.trials, self.params)
+        self.assertEqual(rep["resample_points"], [0.0, 0.25, 1.0])
+        ps = {r["resample_p"] for r in rep["rows"]}
+        self.assertEqual(ps, {0.0, 0.25, 1.0})
+        # Fixture data has a shallow depth bracket (floor=1700, ceiling=6800 via fallback),
+        # so panel-5 at large/no-share is dearer+slower at p=0 and correctly flagged fragile.
+        # Real runs (floor=2786, ceiling=25956) produce no fragile arms — see findings doc.
+        self.assertIsInstance(rep["sensitivity"]["fragile_arms"], list)
 
     def test_main_json_output_is_serialisable(self):
         import io

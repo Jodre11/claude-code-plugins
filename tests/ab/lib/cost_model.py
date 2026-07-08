@@ -103,6 +103,19 @@ def cross_check(trial, price_row, rel_tol=0.05):
 
 # --- composition ------------------------------------------------------------
 
+_CHANNELS = ("input", "output", "cache_read", "cache_creation")
+
+
+def _scale_usage(usage, factor):
+    """Scale a per-channel token dict by a scalar."""
+    return {c: usage[c] * factor for c in _CHANNELS}
+
+
+def _add_usage(a, b):
+    """Element-wise sum of two per-channel token dicts."""
+    return {c: a[c] + b[c] for c in _CHANNELS}
+
+
 def depth_bracket(trials, params, ceiling_output=None):
     """Panel per-turn output-token bracket: floor from on-disk opus turns,
     ceiling from a harvested deep synth turn (if given) else a fallback
@@ -133,57 +146,82 @@ def panel_input_cost(n, prefix_tokens, suffix_tokens, price_row, cache_mode):
 
 
 def compose_arm(arm_name, params, prices, diff_tokens, depth_output,
-                cache_mode, per_turn_costs):
-    """Per-arm total tokens + USD for a given diff size, depth, cache mode.
+                cache_mode, per_turn_costs, p_gate=None):
+    """Per-arm USD + token split for a diff size, depth, cache mode, resample p.
 
-    Stage 1 is common to all arms and costed from a representative real
-    Stage-1 turn (per_turn_costs['stage1']['total']) x the Stage-1 turn count.
+    Stage 1 is common to all arms, costed from a representative real Stage-1
+    turn. Returns {usd, stage1_usd, middle_usd, tokens}, where tokens is the
+    per-channel (input/output/cache_read/cache_creation) total for the arm.
+    p_gate defaults to params["resample"]["p_gate_fires"] when not given; it is
+    the probability the old-arm boundary gate fires and re-runs the pipeline.
     """
     tc = params["turn_counts"]
     stage1_turns = tc["stage1_core_sonnet"] + tc["stage1_conditional"]
     stage1_usd = stage1_turns * per_turn_costs["stage1"]["total"]
+    st = per_turn_costs["usage"]
+    stage1_tokens = _scale_usage(st, stage1_turns)
+    if p_gate is None:
+        p_gate = params["resample"]["p_gate_fires"]
 
     if arm_name == "old":
         cross_usd = tc["cross_sonnet"] * per_turn_costs["stage1"]["total"]
-        synth_usd = price_turn(
-            {"input": diff_tokens, "output": depth_output,
-             "cache_read": 0, "cache_creation": 0},
-            prices["claude-opus-4-8"])["total"]
-        middle_usd = cross_usd + synth_usd
-        # Resample is a probabilistic addend: with probability p_gate_fires the
-        # boundary gate fires and re-runs Stage-1 + cross + synth once more.
-        p = params["resample"]["p_gate_fires"]
-        middle_usd += p * (stage1_usd + cross_usd + synth_usd)
+        cross_tokens = _scale_usage(st, tc["cross_sonnet"])
+        synth_usage = {"input": diff_tokens, "output": depth_output,
+                       "cache_read": 0, "cache_creation": 0}
+        synth_usd = price_turn(synth_usage, prices["claude-opus-4-8"])["total"]
+        base_usd = cross_usd + synth_usd
+        base_tokens = _add_usage(cross_tokens, synth_usage)
+        # Boundary gate re-runs Stage-1 + cross + synth with probability p_gate.
+        middle_usd = base_usd + p_gate * (stage1_usd + base_usd)
+        resample_tokens = _scale_usage(_add_usage(stage1_tokens, base_tokens), p_gate)
+        middle_tokens = _add_usage(base_tokens, resample_tokens)
     elif arm_name.startswith("panel-"):
         n = int(arm_name.split("-")[1])
         prefix = diff_tokens + params["concern_brief_tokens"]
         panel_input = panel_input_cost(n, prefix, suffix_tokens=0,
                                        price_row=prices["claude-opus-4-8"],
                                        cache_mode=cache_mode)
+        if cache_mode == "no-share":
+            panel_in_tokens = {"input": n * prefix, "output": 0,
+                               "cache_read": 0, "cache_creation": 0}
+        elif cache_mode == "shared-warm":
+            panel_in_tokens = {"input": 0, "output": 0,
+                               "cache_read": (n - 1) * prefix,
+                               "cache_creation": prefix}
+        else:
+            raise ValueError(f"unknown cache_mode: {cache_mode}")
         panel_output = n * depth_output * prices["claude-opus-4-8"]["output"]
-        writer_usd = price_turn(
-            {"input": diff_tokens, "output": 3000, "cache_read": 0, "cache_creation": 0},
-            prices["claude-sonnet-4-6"])["total"]
+        writer_usage = {"input": diff_tokens, "output": 3000,
+                        "cache_read": 0, "cache_creation": 0}
+        writer_usd = price_turn(writer_usage, prices["claude-sonnet-4-6"])["total"]
         middle_usd = panel_input + panel_output + writer_usd
+        panel_out_tokens = {"input": 0, "output": n * depth_output,
+                            "cache_read": 0, "cache_creation": 0}
+        middle_tokens = _add_usage(_add_usage(panel_in_tokens, panel_out_tokens),
+                                   writer_usage)
     else:
         raise ValueError(f"unknown arm: {arm_name}")
 
     return {"usd": stage1_usd + middle_usd,
             "stage1_usd": stage1_usd,
-            "middle_usd": middle_usd}
+            "middle_usd": middle_usd,
+            "tokens": _add_usage(stage1_tokens, middle_tokens)}
 
 
 # --- wall clock + verdict ---------------------------------------------------
 
-def wall_clock(arm_name, _params, depth_output, per_turn_secs):
+def wall_clock(arm_name, params, depth_output, per_turn_secs, p_gate=None):
     """Predicted critical-path seconds for the middle stage (Stage 1 common,
-    excluded). old = parallel cross fan-out THEN serial opus-max synth long
-    pole. panel = one parallel opus turn (N panelists concurrent) THEN a short
-    sonnet writer. The structural win is dropping the serial cross stage from
-    ahead of a deep opus turn; per-turn opus depth may still be large."""
+    excluded throughout — including the resample re-run). old = cross fan-out
+    THEN serial opus synth, times a (1 + p_gate) resample factor for the
+    boundary gate. panel = one parallel opus turn THEN a short sonnet writer
+    (N panelists concurrent; resample does not apply to panels)."""
     opus_secs = (depth_output / 1000.0) * per_turn_secs["opus_per_1k_output"]
+    if p_gate is None:
+        p_gate = params["resample"]["p_gate_fires"]
     if arm_name == "old":
-        return per_turn_secs["cross"] + opus_secs
+        base = per_turn_secs["cross"] + opus_secs
+        return base + p_gate * base
     if arm_name.startswith("panel-"):
         return opus_secs + per_turn_secs["writer"]
     raise ValueError(f"unknown arm: {arm_name}")
@@ -200,10 +238,11 @@ def classify(arm_total_usd, arm_wall_s, old_usd, old_wall_s):
 # --- report + CLI -----------------------------------------------------------
 
 def _representative_stage1_turn(trials, prices):
-    """Pick a real sonnet turn as the Stage-1 per-turn cost proxy."""
+    """Pick a real sonnet turn as the Stage-1 per-turn cost + token proxy."""
     sonnet = [t for t in trials if t["model"] == "claude-sonnet-4-6"]
     chosen = sonnet[0] if sonnet else trials[0]
     return {"stage1": price_turn(chosen["usage"], prices[chosen["model"]]),
+            "usage": chosen["usage"],
             "duration_ms": chosen["duration_ms"]}
 
 
@@ -214,32 +253,42 @@ def build_report(trials, params, ceiling_output=None):
     depths = {"low": br["floor"],
               "med": (br["floor"] + br["ceiling"]) / 2.0,
               "high": br["ceiling"]}
-    secs = {"cross": 30.0,
-            "opus_per_1k_output": (per_turn["duration_ms"] / 1000.0) / 3.0,
-            "writer": per_turn["duration_ms"] / 1000.0}
+    wc = params["wall_clock"]
+    dur_s = per_turn["duration_ms"] / 1000.0
+    secs = {"cross": wc["cross_secs"],
+            "opus_per_1k_output": dur_s / wc["opus_per_1k_output_divisor"],
+            "writer": dur_s * wc["writer_stage1_duration_multiple"]}
     arms = ["old", "panel-3", "panel-5"]
+    resample_points = sorted(set(params["resample"]["bracket"]
+                                 + [params["resample"]["p_gate_fires"]]))
 
     rows = []
     verdicts_by_arm = {a: set() for a in arms}
     for size_name, diff_tokens in params["diff_sizes"].items():
         for depth_name, depth_out in depths.items():
             for cache in params["cache_sharing_modes"]:
-                totals = {}
-                walls = {}
-                for arm in arms:
-                    c = compose_arm(arm, params, prices, diff_tokens, depth_out, cache, per_turn)
-                    totals[arm] = c["usd"]
-                    walls[arm] = wall_clock(arm, params, depth_out, secs)
-                for arm in arms:
-                    verdict = classify(totals[arm], walls[arm], totals["old"], walls["old"])
-                    verdicts_by_arm[arm].add(verdict)
-                    rows.append({
-                        "diff_size": size_name, "depth": depth_name, "cache": cache,
-                        "arm": arm, "usd": totals[arm], "wall_s": walls[arm],
-                        "delta_usd": totals[arm] - totals["old"],
-                        "delta_wall_s": walls[arm] - walls["old"],
-                        "verdict": verdict,
-                    })
+                for p_gate in resample_points:
+                    totals, walls, toks = {}, {}, {}
+                    for arm in arms:
+                        c = compose_arm(arm, params, prices, diff_tokens,
+                                        depth_out, cache, per_turn, p_gate=p_gate)
+                        totals[arm] = c["usd"]
+                        toks[arm] = c["tokens"]
+                        walls[arm] = wall_clock(arm, params, depth_out, secs,
+                                                p_gate=p_gate)
+                    for arm in arms:
+                        verdict = classify(totals[arm], walls[arm],
+                                           totals["old"], walls["old"])
+                        verdicts_by_arm[arm].add(verdict)
+                        rows.append({
+                            "diff_size": size_name, "depth": depth_name,
+                            "cache": cache, "resample_p": p_gate, "arm": arm,
+                            "usd": totals[arm], "wall_s": walls[arm],
+                            "tokens": toks[arm],
+                            "delta_usd": totals[arm] - totals["old"],
+                            "delta_wall_s": walls[arm] - walls["old"],
+                            "verdict": verdict,
+                        })
 
     cross = []
     for t in trials:
@@ -248,6 +297,7 @@ def build_report(trials, params, ceiling_output=None):
     fragile = [a for a in arms if a != "old" and len(verdicts_by_arm[a]) > 1]
     return {
         "diff_sizes": params["diff_sizes"], "depth_bracket": br,
+        "resample_points": resample_points,
         "rows": rows, "cross_check": cross,
         "sensitivity": {"fragile_arms": fragile,
                         "verdicts_by_arm": {a: sorted(v) for a, v in verdicts_by_arm.items()}},
@@ -258,12 +308,15 @@ def _print_report(rep):
     print("Panel-review cost model — per-arm comparison\n")
     print(f"depth bracket (panel output tokens): floor={rep['depth_bracket']['floor']:.0f} "
           f"ceiling={rep['depth_bracket']['ceiling']:.0f}\n")
-    hdr = f"{'diff':<8}{'depth':<6}{'cache':<12}{'arm':<9}{'USD':>10}{'dUSD':>10}{'wall_s':>9}{'verdict':>10}"
+    hdr = (f"{'diff':<8}{'depth':<6}{'cache':<12}{'p':>5}{'arm':<9}"
+           f"{'USD':>10}{'dUSD':>10}{'wall_s':>9}{'verdict':>10}")
     print(hdr)
     print("-" * len(hdr))
     for r in rep["rows"]:
-        print(f"{r['diff_size']:<8}{r['depth']:<6}{r['cache']:<12}{r['arm']:<9}"
-              f"{r['usd']:>10.4f}{r['delta_usd']:>10.4f}{r['wall_s']:>9.1f}{r['verdict']:>10}")
+        print(f"{r['diff_size']:<8}{r['depth']:<6}{r['cache']:<12}"
+              f"{r['resample_p']:>5.2f}{r['arm']:<9}"
+              f"{r['usd']:>10.4f}{r['delta_usd']:>10.4f}"
+              f"{r['wall_s']:>9.1f}{r['verdict']:>10}")
     print("\ncross-check (recomputed vs recorded Bedrock cost):")
     for c in rep["cross_check"]:
         flag = "ok" if c["ok"] else "MISMATCH"

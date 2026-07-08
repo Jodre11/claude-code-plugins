@@ -259,9 +259,10 @@ class ReportTest(unittest.TestCase):
         ps = {r["resample_p"] for r in rep["rows"]}
         self.assertEqual(ps, {0.0, 0.25, 1.0})
         # Fixture data has a shallow depth bracket (floor=1700, ceiling=6800 via fallback),
-        # so panel-5 at large/no-share is dearer+slower at p=0 and correctly flagged fragile.
-        # Real runs (floor=2786, ceiling=25956) produce no fragile arms — see findings doc.
-        self.assertIsInstance(rep["sensitivity"]["fragile_arms"], list)
+        # so panel-5 at large/no-share is dearer AND slower at p=0 — a genuine KILL, which
+        # positively demonstrates the verdict axis can reach KILL (not just SURVIVE). Real
+        # runs (floor=2786, ceiling=25956) produce no fragile arms — see findings doc.
+        self.assertEqual(rep["sensitivity"]["fragile_arms"], ["panel-5"])
 
     def test_main_json_output_is_serialisable(self):
         import io

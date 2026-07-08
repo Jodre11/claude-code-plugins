@@ -10,6 +10,8 @@ sys.path.insert(0, str(REPO / "tests" / "ab" / "lib"))
 FIXTURES = REPO / "tests" / "fixtures" / "cost-model"
 PARAMS_PATH = REPO / "tests" / "ab" / "lib" / "cost_model_params.json"
 
+import cost_model  # noqa: E402
+
 
 class FixtureIntegrityTest(unittest.TestCase):
     def test_params_json_loads_and_has_price_rows(self):
@@ -31,3 +33,32 @@ class FixtureIntegrityTest(unittest.TestCase):
         for name in ("opus-reuse", "sonnet-housekeeper"):
             text = (FIXTURES / name / "stream.jsonl").read_text(encoding="utf-8")
             self.assertNotIn("application-inference-profile/", text)
+
+
+class ParseTrialTest(unittest.TestCase):
+    def _text(self, name):
+        return (FIXTURES / name / "stream.jsonl").read_text(encoding="utf-8")
+
+    def test_resolve_model_reads_plain_message_model(self):
+        recs = [json.loads(ln) for ln in self._text("opus-reuse").splitlines() if ln.strip()]
+        self.assertEqual(cost_model.resolve_model(recs), "claude-opus-4-8")
+
+    def test_resolve_model_raises_when_absent(self):
+        with self.assertRaises(ValueError):
+            cost_model.resolve_model([{"type": "result", "usage": {}}])
+
+    def test_parse_trial_extracts_usage_and_model(self):
+        t = cost_model.parse_trial(self._text("opus-reuse"))
+        self.assertEqual(t["model"], "claude-opus-4-8")
+        self.assertEqual(t["usage"]["input"], 12)
+        self.assertEqual(t["usage"]["output"], 1700)
+        self.assertEqual(t["usage"]["cache_read"], 271407)
+        self.assertEqual(t["usage"]["cache_creation"], 19227)
+        self.assertEqual(t["num_turns"], 6)
+        self.assertEqual(t["duration_ms"], 29000)
+        self.assertAlmostEqual(t["recorded_cost_usd"], 0.37053349999999996)
+
+    def test_load_runs_reads_fixture_dir(self):
+        trials = cost_model.load_runs(str(FIXTURES))
+        models = sorted(t["model"] for t in trials)
+        self.assertEqual(models, ["claude-opus-4-8", "claude-sonnet-4-6"])

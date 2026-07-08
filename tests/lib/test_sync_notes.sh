@@ -1027,7 +1027,7 @@ test_sync_verdict_rubric_inline_matches_canonical() {
         return
     fi
 
-    # review-synthesiser.md is the sole inlining consumer. SKILL.md (Step 6) no longer
+    # review-synthesiser.md is the sole inlining consumer. SKILL.md (Stage 6) no longer
     # inlines the rubric: the Workflow's synthesiser applies the rubric and review-core
     # builds the body, so the orchestrator's posting step consumes only bundle.verdict.
     local consumer
@@ -1118,30 +1118,30 @@ test_skill_md_step6_references_rubric_and_classes() {
     local cr
     cr=$(_cr_dir)
     if [[ ! -d "$cr" ]]; then
-        skip "SKILL.md Step 6 rubric and classes" "code-review-suite plugin not found"
+        skip "SKILL.md Stage 6 rubric and classes" "code-review-suite plugin not found"
         return
     fi
 
     local skill="$cr/skills/review-gh-pr/SKILL.md"
     if [[ ! -f "$skill" ]]; then
-        fail "SKILL.md Step 6 rubric and classes" "SKILL.md not found"
+        fail "SKILL.md Stage 6 rubric and classes" "SKILL.md not found"
         return
     fi
 
-    # Extract Step 6's body: from "## Step 6: Submit Review Verdict" to "## Step 7" or
+    # Extract Stage 6's body: from "## Stage 6: Submit Review Verdict" to "## Stage 7" or
     # end of file. All assertions below operate on this slice.
     local step6
-    step6=$(sed -n '/^## Step 6: Submit Review Verdict/,/^## Step 7/p' "$skill")
+    step6=$(sed -n '/^## Stage 6: Submit Review Verdict/,/^## Stage 7/p' "$skill")
 
     if [[ -z "$step6" ]]; then
-        fail "SKILL.md Step 6 rubric and classes: Step 6 section extracted" "Step 6 not found in SKILL.md"
+        fail "SKILL.md Stage 6 rubric and classes: Stage 6 section extracted" "Stage 6 not found in SKILL.md"
         return
     fi
 
-    # Assertions on Step 6's body, encoded as parallel arrays of
+    # Assertions on Stage 6's body, encoded as parallel arrays of
     # (sense, pattern, pass_label, fail_explanation) tuples. `sense` is `present` if the
     # pattern is required to appear or `absent` if it is forbidden (the legacy decision
-    # matrix). Since the Workflow is the only path, Step 6 consumes bundle.verdict directly:
+    # matrix). Since the Workflow is the only path, Stage 6 consumes bundle.verdict directly:
     # the rubric is no longer inlined here (review-core's synthesiser applies it) and Class D
     # output filtering is gone (review-core applies it). Only Classes A/B/C remain.
     local senses=(
@@ -1166,11 +1166,11 @@ test_skill_md_step6_references_rubric_and_classes() {
         "consumes bundle.verdict"
     )
     local explanations=(
-        "Step 6 still contains the legacy decision matrix ('| **APPROVE** | No comments are blockers …') — this lets the orchestrator pick a verdict on its own initiative, conflicting with synthesiser-as-sole-authority. Delete the matrix; the rubric replaces it."
-        "Step 6 must contain a heading '### Class A — …'. The three remaining classes (A: user-confirmation, B: PR-thread state, C: submission mechanics) document the orchestrator's full decision scope on the Workflow-only path — missing one means a class of orchestrator behaviour is undocumented and may drift toward judgement-driven action"
-        "Step 6 must contain a heading '### Class B — …'. The three remaining classes (A: user-confirmation, B: PR-thread state, C: submission mechanics) document the orchestrator's full decision scope on the Workflow-only path — missing one means a class of orchestrator behaviour is undocumented and may drift toward judgement-driven action"
-        "Step 6 must contain a heading '### Class C — …'. The three remaining classes (A: user-confirmation, B: PR-thread state, C: submission mechanics) document the orchestrator's full decision scope on the Workflow-only path — missing one means a class of orchestrator behaviour is undocumented and may drift toward judgement-driven action"
-        "Step 6 must read the verdict directly from the Workflow bundle (\$SYNTH_VERDICT = bundle.verdict) — on the Workflow-only path there is no synthesiser markdown to parse, so the orchestrator consumes bundle.verdict rather than re-deriving a verdict"
+        "Stage 6 still contains the legacy decision matrix ('| **APPROVE** | No comments are blockers …') — this lets the orchestrator pick a verdict on its own initiative, conflicting with synthesiser-as-sole-authority. Delete the matrix; the rubric replaces it."
+        "Stage 6 must contain a heading '### Class A — …'. The three remaining classes (A: user-confirmation, B: PR-thread state, C: submission mechanics) document the orchestrator's full decision scope on the Workflow-only path — missing one means a class of orchestrator behaviour is undocumented and may drift toward judgement-driven action"
+        "Stage 6 must contain a heading '### Class B — …'. The three remaining classes (A: user-confirmation, B: PR-thread state, C: submission mechanics) document the orchestrator's full decision scope on the Workflow-only path — missing one means a class of orchestrator behaviour is undocumented and may drift toward judgement-driven action"
+        "Stage 6 must contain a heading '### Class C — …'. The three remaining classes (A: user-confirmation, B: PR-thread state, C: submission mechanics) document the orchestrator's full decision scope on the Workflow-only path — missing one means a class of orchestrator behaviour is undocumented and may drift toward judgement-driven action"
+        "Stage 6 must read the verdict directly from the Workflow bundle (\$SYNTH_VERDICT = bundle.verdict) — on the Workflow-only path there is no synthesiser markdown to parse, so the orchestrator consumes bundle.verdict rather than re-deriving a verdict"
     )
     local i
     for ((i = 0; i < ${#senses[@]}; i++)); do
@@ -1183,9 +1183,9 @@ test_skill_md_step6_references_rubric_and_classes() {
 
         if [[ ${senses[i]} == present && $matched == yes ]] \
                 || [[ ${senses[i]} == absent && $matched == no ]]; then
-            pass "SKILL.md Step 6 rubric and classes: ${labels[i]}"
+            pass "SKILL.md Stage 6 rubric and classes: ${labels[i]}"
         else
-            fail "SKILL.md Step 6 rubric and classes: ${labels[i]}" "${explanations[i]}"
+            fail "SKILL.md Stage 6 rubric and classes: ${labels[i]}" "${explanations[i]}"
         fi
     done
 }

@@ -1,0 +1,46 @@
+{
+  "_note": "Per-token USD Bedrock prices, verified against recorded modelUsage.costUSD (see plan Task 3). Model keys are plain model tokens (scanner-safe), never ARNs. cache_creation = 1h TTL rate (2x input); corpus is all-1h. If any real trial shows usage.cache_creation.ephemeral_5m_input_tokens > 0, split into cache_creation_5m (1.25x input) + cache_creation_1h (2x input) per the cache-TTL guard.",
+  "prices": {
+    "claude-opus-4-8": {
+      "input": 0.000005,
+      "output": 0.000025,
+      "cache_read": 0.0000005,
+      "cache_creation": 0.00001
+    },
+    "claude-sonnet-4-6": {
+      "input": 0.000003,
+      "output": 0.000015,
+      "cache_read": 0.0000003,
+      "cache_creation": 0.000006
+    },
+    "claude-haiku-4-5": {
+      "input": 0.000001,
+      "output": 0.000005,
+      "cache_read": 0.0000001,
+      "cache_creation": 0.000002
+    }
+  },
+  "turn_counts": {
+    "stage1_core_sonnet": 8,
+    "stage1_conditional": 4,
+    "cross_sonnet": 8
+  },
+  "resample": {
+    "p_gate_fires": 0.25,
+    "bracket": [0.0, 1.0]
+  },
+  "wall_clock": {
+    "cross_secs": 30.0,
+    "opus_per_1k_output_divisor": 3.0,
+    "writer_stage1_duration_multiple": 1.0
+  },
+  "panel_n": [3, 5],
+  "cache_sharing_modes": ["shared-warm", "no-share"],
+  "concern_brief_tokens": 2000,
+  "ceiling_fallback_multiple": 4.0,
+  "diff_sizes": {
+    "small": 4000,
+    "median": 20000,
+    "large": 80000
+  }
+}

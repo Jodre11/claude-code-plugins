@@ -5,11 +5,11 @@ This file is the single source of truth for the PR review verdict rubric, the
 orchestrator's posting policy, and the body construction rules. Its content is
 inlined verbatim into both consumer files:
   - agents/review-synthesiser.md
-  - skills/review-gh-pr/SKILL.md (Step 6)
+  - skills/review-gh-pr/SKILL.md (Stage 6)
 
 WHY INLINED: same rationale as review-pipeline.md and ci-status-gate.md — agents
 skip file-path references and must see the rule in context. The synthesiser
-applies the rubric to compute the verdict; Step 6 of SKILL.md (the orchestrator)
+applies the rubric to compute the verdict; Stage 6 of SKILL.md (the orchestrator)
 applies the posting policy and body construction transforms.
 
 MAINTENANCE: Edit this file first, then propagate to both consumers. The test

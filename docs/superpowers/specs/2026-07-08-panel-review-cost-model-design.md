@@ -17,7 +17,7 @@ The proposed redesign (scoped in full during brainstorming, built in later stage
 the two expensive middle stages of `workflows/review-core.mjs`:
 
 - **Today:** ~7–8 **sonnet** cross-reviewers (heterogeneous per-domain Agree/Disagree/
-  Escalate) + **1 opus + ultrathink** synthesiser (`review-core.mjs:355,386` — `model: 'opus'`,
+  Escalate) + **1 opus + ultrathink** synthesiser (`review-core.mjs:355,390` — `model: 'opus'`,
   `stallMs: 600000`), plus a variance-resampling round 2 when the boundary gate fires.
 - **Proposed:** a panel of **N (3 or 5, odd) identical Principal-Engineer opus panelists**,
   each primed with a distilled amalgamated concern-set + the full diff + all Stage-1
@@ -45,9 +45,10 @@ intuition:
 - Added: N opus-high deep-reasoning turns on large prompts (concern-set + full diff + all findings).
 
 The result could be a saving, a wash, or an increase, depending on N and per-panelist reasoning
-depth. A robust **wall-clock** win is expected regardless (N panelists run in *parallel*, vs
-today's serial 2min+ opus-max synth long pole — the reason `stallMs` is 600000), but the token
-question needs answering before any build.
+depth. A **wall-clock** win is *expected* — the win is structural (dropping the serial ~7–8 sonnet
+cross fan-out from the critical path; the reason today's synth carries `stallMs: 600000`), not a
+claim that a deep opus panel turn is fast — but its magnitude is itself depth-dependent and the
+model must quantify it rather than assert it. The token question needs answering before any build.
 
 **Success bar (ranked, agreed during brainstorming):** a token saving is wanted; but if a token
 saving conflicts with wall-clock / quality / simplicity, the latter win. An arm that is dearer on
@@ -60,8 +61,9 @@ tokens — before committing build effort to any arm.**
 ## Goal
 
 A standalone cost-model analysis (a script plus a short findings write-up) that predicts
-per-arm token spend, wall-clock, and USD from data already on disk, and recommends go/no-go per
-arm against the ranked success bar.
+per-arm token spend, wall-clock, and USD from data already on disk, and classifies each arm as
+**kill** or **survive-to-A/B** against the ranked success bar (a cost model filters; it cannot
+recommend "go" — see decision semantics under What the model computes).
 
 This is an **analysis artifact, not a pipeline change.** It touches no agent, no workflow, no
 review behaviour.
@@ -70,11 +72,10 @@ review behaviour.
 
 - **No pipeline change.** The panel path, the flag, the Stage-3 writer, and the Step 7a
   instrumentation fix all belong to later stages, not this one.
-- **No new review runs.** The model reads existing on-disk harness data; it does not dispatch
-  agents or run reviews. (Grounding opus per-turn cost is done from pricing + a reasoning-depth
-  parameter, not by running opus.)
-- **No decision on N or panel model.** The model *informs* that choice by pricing candidate
-  arms; the actual production setting is resolved by the later A/B on real quality data.
+- **No new review runs.** The model reads existing on-disk data; it does not dispatch agents or
+  run reviews. Opus per-turn cost is grounded by harvesting the **real opus-max synth turn** from
+  an existing session transcript (`~/.claude/projects/**/*.jsonl`) — the same transcript the
+  back-test reads anyway — to anchor a reasoning-depth curve; no *new* opus turn is run.
 
 ## Data sources (verified present on disk)
 
@@ -84,9 +85,12 @@ review behaviour.
    `duration_api_ms`, and `total_cost_usd` per agent turn. Four run directories currently exist
    (housekeeper + reuse specialists).
    - **Caveat, load-bearing:** these runs are **per-agent, single-specialist** turns, and
-     **none are opus**. They ground *sonnet* and *haiku* per-turn costs from real data. The
-     **opus panelist** and the **opus-max synth** per-turn costs must be *estimated* (opus
-     pricing × a reasoning-depth parameter), because no opus ground-truth turn is on disk.
+     **none are opus**. They ground *sonnet* and *haiku* per-turn costs from real data, and their
+     recorded `total_cost_usd` doubles as an end-to-end check on the price×token engine for
+     non-opus turns (see Self-validation). No opus turn exists in *this* corpus — but the real
+     **opus-max synth** turn is recoverable from a session transcript (source 4), so the **opus
+     panelist** cost is an *anchored extrapolation* (a synth-anchored depth curve), not an
+     unanchored guess.
 
 2. **Architecture turn-counts** — from the verified pipeline map:
    - Stage 1 full run: 8 core sonnet agentic + up to ~4 conditional (haiku statics +
@@ -95,58 +99,110 @@ review behaviour.
    - Synth: 1 opus + ultrathink turn.
    - Resample (when boundary gate fires): +~7–8 sonnet specialists +~7–8 cross +1 opus synth.
 
-3. **Model pricing constants** — externalised (see Parameters), not inlined. Bedrock per-model
-   input/output/cache token prices for haiku / sonnet / opus.
+3. **Model pricing constants** — externalised (see Parameters), not inlined. **Bedrock** per-model
+   input / output / cache-read / cache-creation prices for haiku / sonnet / opus (pin which opus —
+   4.8 — and its Bedrock rate). Canonical arm cost = token-counts × this price block. Recorded
+   `total_cost_usd` in the harness data is only comparable if it was Bedrock-priced: token counts
+   transfer across providers, recorded USD does not — so never fold recorded USD into a recomputed
+   arm total (use it only as the engine cross-check in source 1's caveat).
+
+4. **Real opus-max synth turn** — one end-to-end old-path run's session transcript
+   (`~/.claude/projects/**/*.jsonl`) carries the actual opus synth `usage` (input / output-incl-
+   thinking / cache) and `duration_ms`. This both anchors the opus depth curve (source 1 caveat)
+   and is the back-test target (Self-validation). **Precondition:** the plan's first action must
+   confirm such a run is recoverable — Step 7a durable logging is known not to be firing, so this
+   is not guaranteed and it gates the whole self-validation approach.
 
 ## What the model computes
 
-For a representative diff size, compose per-turn costs into per-**arm** totals:
+Across a **sweep of representative diff sizes** (small / median / large, drawn from real
+`review-gh-pr` history where recoverable, else synthetic bands), compose per-turn costs into
+per-**arm** totals. Diff size is swept, not pinned to one PR, because the delta is *not* size-
+neutral: `old` ingests the diff across ~7–8 *sonnet* cross turns, the panel across 3–5 *opus*
+turns, and opus input is materially dearer — so the panel's input disadvantage grows with diff
+size and a single pinned size would hide that flip.
 
 | Arm | Composition |
 |---|---|
-| `old` | Stage 1 + ~7–8 sonnet cross + 1 opus-max synth (+ resample variant) |
-| `panel-3` | Stage 1 + 3 opus-high panel + 1 sonnet writer |
-| `panel-5` | Stage 1 + 5 opus-high panel + 1 sonnet writer |
+| `old` | Stage 1 + ~7–8 sonnet cross + 1 opus-max synth, with resample as a probabilistic addend (below) |
+| `panel-3` | Stage 1 + 3 opus-high panel (each ingesting brief + diff + all findings) + 1 sonnet writer |
+| `panel-5` | Stage 1 + 5 opus-high panel (each ingesting brief + diff + all findings) + 1 sonnet writer |
 
 Since Stage 1 is common to all arms, the model reports both **total** and **delta-from-old**
-(the middle-stage change is where all differences live).
+(the middle-stage change is where all differences live). The distilled concern-brief is a
+build-time, drift-guarded artifact (≈0 per-run generation cost), but its **token size is a
+first-class ×N opus-input addend** on the panel arms and must appear as a line item, not be
+absorbed silently. The `old` resample is **probabilistic**: model it as `P(gate fires) × resample
+cost`, or present `old` as an explicit `[no-resample … always-resample]` bracket — and require the
+kill/survive call to hold across that bracket.
 
-**Outputs, per arm:**
+**Outputs, per arm (per diff-size band):**
 
 - Predicted total tokens (input / output / cache split).
-- Predicted wall-clock, accounting for the structural difference: `old` has a serial opus-max
-  synth long pole after the cross fan-out; the panel arms have a parallel panel fan-out then a
-  short sonnet writer.
-- Predicted USD.
-- Delta vs `old`, and a **go/no-go recommendation** per arm against the ranked bar.
+- Predicted wall-clock. The panel win is **structural, not per-turn**: it removes the ~7–8 sonnet
+  cross fan-out from the critical path (`old` = cross fan-out → serial opus-max synth long pole;
+  panel = parallel opus fan-out → short sonnet writer). Because each opus-high panelist reasons on
+  a *larger* prompt than today's synth, the model must derive the panel long pole from the same
+  depth parameter and state honestly that at high depth a single parallel panel turn could be flat
+  or slower than the synth it replaces — the win is dropping the serial cross stage, not faster
+  deep reasoning.
+- Predicted USD (token-counts × the Bedrock price block).
+- Delta vs `old`, and a **kill / survive-to-A/B** classification per arm (see decision semantics).
 
-**Honesty requirements (the panel's reasoning depth is the one unknowable input):**
+**Decision semantics — the model filters, it does not "go":** a cost-only model cannot recommend
+"go", because quality and simplicity (which outrank tokens in the ranked bar) are not cost-
+observable. Its verdict space is exactly **KILL** (arm is dearer on *both* tokens and wall-clock —
+dominated, the bar's kill condition) or **SURVIVE-to-A/B** (not dominated — the later quality A/B
+decides it), plus a cost-attractiveness ranking among survivors.
 
-- Parameterise panel per-turn reasoning as low / medium / high reasoning-token assumptions and
-  report a **range**, not a point estimate.
-- **Sensitivity:** report how the go/no-go verdict flips across the depth assumptions. A "go"
-  that holds only at optimistic depth is flagged as fragile.
+**Honesty requirements — two co-equal unknowable inputs, not one:**
+
+- **Panel reasoning depth.** Parameterise panel per-turn reasoning (thinking + vote output) as
+  low / medium / high bands, anchored at the top by the harvested real synth turn (source 4) and
+  extrapolated *down* — noting the synth's output *overstates* a panelist's (the synth writes the
+  full report; a panelist only votes and may add findings — the sonnet writer writes the report).
+  Report a **range**, not a point estimate.
+- **Cross-panelist cache sharing.** The panel sends a large shared prefix (brief + full diff + all
+  findings) to N opus turns; whether parallel Bedrock dispatches share a warm cache is not
+  guaranteed and, at opus input rates, brackets between `1× cache-creation + (N−1)× cache-read`
+  and `N× full-price input` — a swing that can dominate the input side. Treat it as a first-class
+  ranged input with the same sensitivity treatment as depth.
+- **Sensitivity:** report how the kill/survive classification flips across *both* the depth and
+  cache-sharing assumptions (and across diff-size bands). A survive that holds only at optimistic
+  depth *and* optimistic cache sharing is flagged fragile.
 
 ## Model self-validation (how we trust it without running the panel)
 
-- **Back-test the known arm:** reconstruct the `old` path's predicted cost from per-turn data
-  and check it against at least one real end-to-end old-path run's actual total (from a CLI
-  session transcript, `~/.claude/projects/**/*.jsonl`). If the model cannot reproduce today's
-  known cost, it cannot be trusted to predict the panel's — this is a gating check on the model
-  itself.
+- **Precondition (gates everything below):** confirm at least one real end-to-end old-path run is
+  recoverable from a session transcript (`~/.claude/projects/**/*.jsonl`). Step 7a durable logging
+  is known not to be firing, so this is not guaranteed; if no such run exists the self-validation
+  gate cannot run, and that must be surfaced as the primary risk, ahead of any depth estimate.
+- **Back-test the known arm:** reconstruct the `old` path's predicted cost from per-turn data and
+  check it against that run's actual total. If the model cannot reproduce today's known cost it
+  cannot be trusted to predict the panel's. This same transcript yields the real opus-max synth
+  `usage` that anchors the opus depth curve (source 4) — the back-test and the opus anchor are the
+  same harvest.
+- **Engine cross-check (free):** the recorded `total_cost_usd` on the real sonnet / haiku harness
+  turns validates the price×token engine end-to-end for non-opus turns, independent of the opus
+  estimate. Use it; never mix recorded USD *into* a recomputed arm total.
 - **Sensitivity table** as above — the model must expose, not hide, its dependence on the depth
-  assumption.
+  *and* cache-sharing assumptions across the diff-size sweep.
 
 ## Parameters (externalised — no inlined magic constants)
 
 Per the standing lesson that models overlook tuning hooks, every knob lives in one config block
 the analysis reads, so the later A/B stage can re-run the model with *measured* depth:
 
-- Per-model token prices (haiku / sonnet / opus, input / output / cache-read / cache-creation).
-- Per-stage turn counts (Stage 1 core + conditionals, cross count, resample multiplier).
+- Per-model **Bedrock** token prices (haiku / sonnet / opus, input / output / cache-read /
+  cache-creation); opus pinned to 4.8.
+- Per-stage turn counts (Stage 1 core + conditionals, cross count).
+- Resample: `P(gate fires)` (or the `[no-resample … always-resample]` bracket).
 - Panel N candidates (`3`, `5`).
-- Panel reasoning-depth assumptions (low / med / high output-token bands).
-- Representative diff size / cache-hit assumptions.
+- Panel reasoning-depth bands (low / med / high thinking+output tokens), with the harvested synth
+  turn as the anchoring upper reference.
+- Cross-panelist cache-sharing bracket (shared-warm ↔ no-sharing).
+- Distilled concern-brief token size (the ×N opus-input addend).
+- Diff-size sweep set (small / median / large representative sizes).
 
 ## Deliverables
 
@@ -154,12 +210,12 @@ the analysis reads, so the later A/B stage can re-run the model with *measured* 
    per-arm comparison table). Placed under the suite's analysis/tooling area, not in the
    review path.
 2. A short findings write-up: the table, the back-test result, the sensitivity table, and a
-   go/no-go recommendation per arm.
+   kill / survive-to-A/B classification per arm.
 
 ## What happens after this stage
 
-- If **≥1 panel arm survives** go/no-go: proceed to the **panel-build + A/B** stage — its own
-  design. That stage builds the panel path behind a flag (the `--no-workflow` R1 rollback
+- If **≥1 panel arm survives** the kill filter: proceed to the **panel-build + A/B** stage — its
+  own design. That stage builds the panel path behind a flag (the `--no-workflow` R1 rollback
   pattern), fixes Step 7a durable logging as a prerequisite (which maps onto the existing
   per-cog instrumentation design, `2026-06-19-phase-efficacy-instrumentation-design.md`, for
   #63), and runs old-vs-new on the **same real PRs** — capturing tokens, wall-clock, verdict

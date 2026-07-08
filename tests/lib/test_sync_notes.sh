@@ -1128,10 +1128,10 @@ test_skill_md_step6_references_rubric_and_classes() {
         return
     fi
 
-    # Extract Step 6's body: from "## Step 6: Submit Review Verdict" to "## Step 7" or
+    # Extract Stage 6's body: from "## Stage 6: Submit Review Verdict" to "## Stage 7" or
     # end of file. All assertions below operate on this slice.
     local step6
-    step6=$(sed -n '/^## Step 6: Submit Review Verdict/,/^## Step 7/p' "$skill")
+    step6=$(sed -n '/^## Stage 6: Submit Review Verdict/,/^## Stage 7/p' "$skill")
 
     if [[ -z "$step6" ]]; then
         fail "SKILL.md Step 6 rubric and classes: Step 6 section extracted" "Step 6 not found in SKILL.md"

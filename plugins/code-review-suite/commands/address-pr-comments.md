@@ -57,8 +57,8 @@ gh api graphql -f query='
 ```
 
 <!-- Sync note: this query has two variants that must be kept in sync:
-     - skills/review-gh-pr/SKILL.md Step 1 GraphQL query — omits `isOutdated`, `isMinimized` on comment nodes, and `totalCount` on the `reviewThreads` edge; adds path and body on inner comments
-     - skills/review-gh-pr/SKILL.md Step 4 GraphQL query — omits path from inner comments (only needs resolution state and reply content)
+     - skills/review-gh-pr/SKILL.md Stage 1 GraphQL query — omits `isOutdated`, `isMinimized` on comment nodes, and `totalCount` on the `reviewThreads` edge; adds path and body on inner comments
+     - skills/review-gh-pr/SKILL.md Stage 4 GraphQL query — omits path from inner comments (only needs resolution state and reply content)
      When modifying the schema in any of these three locations, update the other two. -->
 
 - Collect **actionable threads** — keep a thread if ALL of the following are true:

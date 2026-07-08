@@ -231,3 +231,18 @@ class ReportTest(unittest.TestCase):
     def test_main_runs_on_fixtures(self):
         rc = cost_model.main(["--params", str(PARAMS_PATH), "--runs", str(FIXTURES)])
         self.assertEqual(rc, 0)
+
+    def test_main_returns_1_when_no_trials(self):
+        rc = cost_model.main(["--params", str(PARAMS_PATH), "--runs", str(REPO / "tests" / "fixtures" / "cost-model-empty-does-not-exist")])
+        self.assertEqual(rc, 1)
+
+    def test_main_json_output_is_serialisable(self):
+        import io
+        import contextlib
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            rc = cost_model.main(["--params", str(PARAMS_PATH), "--runs", str(FIXTURES), "--json"])
+        self.assertEqual(rc, 0)
+        parsed = json.loads(buf.getvalue())
+        self.assertIn("rows", parsed)
+        self.assertIn("cross_check", parsed)

@@ -195,3 +195,105 @@ def classify(arm_total_usd, arm_wall_s, old_usd, old_wall_s):
     if arm_total_usd > old_usd and arm_wall_s > old_wall_s:
         return "KILL"
     return "SURVIVE"
+
+
+# --- report + CLI -----------------------------------------------------------
+
+def _representative_stage1_turn(trials, prices):
+    """Pick a real sonnet turn as the Stage-1 per-turn cost proxy."""
+    sonnet = [t for t in trials if t["model"] == "claude-sonnet-4-6"]
+    chosen = sonnet[0] if sonnet else trials[0]
+    return {"stage1": price_turn(chosen["usage"], prices[chosen["model"]]),
+            "duration_ms": chosen["duration_ms"]}
+
+
+def build_report(trials, params, ceiling_output=None):
+    prices = params["prices"]
+    per_turn = _representative_stage1_turn(trials, prices)
+    br = depth_bracket(trials, params, ceiling_output)
+    depths = {"low": br["floor"],
+              "med": (br["floor"] + br["ceiling"]) / 2.0,
+              "high": br["ceiling"]}
+    secs = {"cross": 30.0,
+            "opus_per_1k_output": (per_turn["duration_ms"] / 1000.0) / 3.0,
+            "writer": per_turn["duration_ms"] / 1000.0}
+    arms = ["old", "panel-3", "panel-5"]
+
+    rows = []
+    verdicts_by_arm = {a: set() for a in arms}
+    for size_name, diff_tokens in params["diff_sizes"].items():
+        for depth_name, depth_out in depths.items():
+            for cache in params["cache_sharing_modes"]:
+                totals = {}
+                walls = {}
+                for arm in arms:
+                    c = compose_arm(arm, params, prices, diff_tokens, depth_out, cache, per_turn)
+                    totals[arm] = c["usd"]
+                    walls[arm] = wall_clock(arm, params, depth_out, secs)
+                for arm in arms:
+                    verdict = classify(totals[arm], walls[arm], totals["old"], walls["old"])
+                    verdicts_by_arm[arm].add(verdict)
+                    rows.append({
+                        "diff_size": size_name, "depth": depth_name, "cache": cache,
+                        "arm": arm, "usd": totals[arm], "wall_s": walls[arm],
+                        "delta_usd": totals[arm] - totals["old"],
+                        "delta_wall_s": walls[arm] - walls["old"],
+                        "verdict": verdict,
+                    })
+
+    cross = []
+    for t in trials:
+        cross.append({"model": t["model"], **cross_check(t, prices[t["model"]])})
+
+    fragile = [a for a in arms if a != "old" and len(verdicts_by_arm[a]) > 1]
+    return {
+        "diff_sizes": params["diff_sizes"], "depth_bracket": br,
+        "rows": rows, "cross_check": cross,
+        "sensitivity": {"fragile_arms": fragile,
+                        "verdicts_by_arm": {a: sorted(v) for a, v in verdicts_by_arm.items()}},
+    }
+
+
+def _print_report(rep):
+    print("Panel-review cost model — per-arm comparison\n")
+    print(f"depth bracket (panel output tokens): floor={rep['depth_bracket']['floor']:.0f} "
+          f"ceiling={rep['depth_bracket']['ceiling']:.0f}\n")
+    hdr = f"{'diff':<8}{'depth':<6}{'cache':<12}{'arm':<9}{'USD':>10}{'dUSD':>10}{'wall_s':>9}{'verdict':>10}"
+    print(hdr)
+    print("-" * len(hdr))
+    for r in rep["rows"]:
+        print(f"{r['diff_size']:<8}{r['depth']:<6}{r['cache']:<12}{r['arm']:<9}"
+              f"{r['usd']:>10.4f}{r['delta_usd']:>10.4f}{r['wall_s']:>9.1f}{r['verdict']:>10}")
+    print("\ncross-check (recomputed vs recorded Bedrock cost):")
+    for c in rep["cross_check"]:
+        flag = "ok" if c["ok"] else "MISMATCH"
+        print(f"  {c['model']:<20} rel_err={c['rel_err']:.3f} [{flag}]")
+    print(f"\nfragile arms (verdict flips across brackets): {rep['sensitivity']['fragile_arms']}")
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(prog="cost_model")
+    parser.add_argument("--params", required=True)
+    parser.add_argument("--runs", required=True)
+    parser.add_argument("--out", default=None)
+    parser.add_argument("--json", action="store_true")
+    args = parser.parse_args(argv)
+
+    params = json.loads(open(args.params, encoding="utf-8").read())
+    trials = load_runs(args.runs)
+    if not trials:
+        print(f"no trials found under {args.runs}", file=sys.stderr)
+        return 1
+    rep = build_report(trials, params)
+    if args.json:
+        text = json.dumps(rep, indent=2)
+        print(text)
+        if args.out:
+            open(args.out, "w", encoding="utf-8").write(text + "\n")
+    else:
+        _print_report(rep)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

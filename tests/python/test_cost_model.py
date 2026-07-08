@@ -202,3 +202,32 @@ class WallClockAndVerdictTest(unittest.TestCase):
     def test_classify_survive_when_cheaper_but_slower(self):
         # cheaper tokens, slower wall-clock -> not dominated -> SURVIVE
         self.assertEqual(cost_model.classify(50, 100, old_usd=100, old_wall_s=80), "SURVIVE")
+
+
+class ReportTest(unittest.TestCase):
+    def setUp(self):
+        self.params = json.loads(PARAMS_PATH.read_text(encoding="utf-8"))
+        self.trials = cost_model.load_runs(str(FIXTURES))
+
+    def test_build_report_covers_all_arms_and_diff_sizes(self):
+        rep = cost_model.build_report(self.trials, self.params)
+        self.assertEqual(set(rep["diff_sizes"]), {"small", "median", "large"})
+        for band in rep["rows"]:
+            self.assertIn(band["arm"], {"old", "panel-3", "panel-5"})
+            self.assertIn(band["verdict"], {"KILL", "SURVIVE"})
+
+    def test_report_has_cross_check_per_model(self):
+        rep = cost_model.build_report(self.trials, self.params)
+        models = {c["model"] for c in rep["cross_check"]}
+        self.assertIn("claude-opus-4-8", models)
+        self.assertIn("claude-sonnet-4-6", models)
+
+    def test_sensitivity_flags_verdict_flip(self):
+        rep = cost_model.build_report(self.trials, self.params)
+        # sensitivity["fragile_arms"] lists arms whose verdict is not constant
+        # across depth x cache brackets; type must be a list.
+        self.assertIsInstance(rep["sensitivity"]["fragile_arms"], list)
+
+    def test_main_runs_on_fixtures(self):
+        rc = cost_model.main(["--params", str(PARAMS_PATH), "--runs", str(FIXTURES)])
+        self.assertEqual(rc, 0)

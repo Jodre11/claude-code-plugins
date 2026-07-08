@@ -24,9 +24,10 @@ Both models reproduce Bedrock-recorded costs to within floating-point precision
 **Back-test (old-arm whole-run):** A real `review-gh-pr` opus-max synth turn on
 disk returned `output=25956`, `model=claude-opus-4-8`. Feeding its token counts
 (`input=2`, `output=25956`, `cache_read=76988`, `cache_creation=561`) through
-the pricing engine yields $0.6930 — consistent with the trial corpus total-cost
-range ($0.17–$0.61 per trial). The back-test confirms the engine prices a deep
-synth turn correctly.
+the pricing engine yields $0.6930 — above the reuse-arm trial range ($0.17–$0.61
+per trial), as expected for a synth turn whose output (~25,956 tokens) is roughly
+9× the deepest observed reuse turn. The back-test confirms the engine prices a
+deep synth turn to a plausible figure for its token counts.
 
 ## Per-arm comparison (delta vs old)
 
@@ -60,7 +61,9 @@ therefore not dominated and remains SURVIVE.
 
 - **Depth bracket used:** floor=2,786 tokens (on-disk opus reuse, max over 40
   trials), ceiling=25,956 tokens (confirmed harvested from a real review-gh-pr
-  opus synth turn). Ratio: **9.3×** span.
+  opus synth turn). Ratio: **9.3×** span (the plan estimated ~15× from the
+  fixture floor of ~1,700; the real floor over 40 opus trials is 2,786, yielding
+  9.3×).
 - **Cache sharing:** At median diff, med depth, the shared-warm vs no-share
   spread is $0.088 for panel-3 and $0.286 for panel-5. Cache mode is a minor
   sensitivity lever compared to depth.

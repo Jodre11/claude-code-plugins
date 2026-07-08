@@ -32,7 +32,8 @@
   "wall_clock": {
     "cross_secs": 30.0,
     "opus_per_1k_output_divisor": 3.0,
-    "writer_stage1_duration_multiple": 1.0
+    "writer_stage1_duration_multiple": 1.0,
+    "stage1_wall_duration_multiple": 1.0
   },
   "panel_n": [3, 5],
   "cache_sharing_modes": ["shared-warm", "no-share"],

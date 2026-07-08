@@ -24,8 +24,10 @@ class FixtureIntegrityTest(unittest.TestCase):
         for name in ("opus-reuse", "sonnet-housekeeper"):
             text = (FIXTURES / name / "stream.jsonl").read_text(encoding="utf-8")
             recs = [json.loads(ln) for ln in text.splitlines() if ln.strip()]
-            self.assertTrue(any(r.get("type") == "result" for r in recs))
-            self.assertTrue(any(r.get("type") == "assistant" for r in recs))
+            self.assertTrue(any(r.get("type") == "result" for r in recs),
+                            f"{name}: no result record in fixture")
+            self.assertTrue(any(r.get("type") == "assistant" for r in recs),
+                            f"{name}: no assistant record in fixture")
 
     def test_fixtures_contain_no_real_arn(self):
         # Scanner-safety guard: committed fixtures must not carry real ARNs.
@@ -87,6 +89,9 @@ class PriceEngineTest(unittest.TestCase):
         row = {"input": 0, "output": 0.0005, "cache_read": 0, "cache_creation": 0}  # 5x off
         res = cost_model.cross_check(trial, row)
         self.assertFalse(res["ok"])
+        # 5x price overstatement -> rel_err = 4.0, well above the 0.05 default tol;
+        # assert the magnitude so a regression in the tolerance calc is caught.
+        self.assertAlmostEqual(res["rel_err"], 4.0)
 
 
 class CrossCheckOnFixturesTest(unittest.TestCase):
@@ -183,17 +188,19 @@ class CompositionTest(unittest.TestCase):
 class WallClockAndVerdictTest(unittest.TestCase):
     def setUp(self):
         self.params = json.loads(PARAMS_PATH.read_text(encoding="utf-8"))
-        self.secs = {"cross": 30.0, "opus_per_1k_output": 12.0, "writer": 20.0}
+        self.secs = {"cross": 30.0, "opus_per_1k_output": 12.0, "writer": 20.0,
+                     "stage1_wall": 20.0}
 
     def test_old_wall_clock_includes_serial_cross_and_synth(self):
         # p_gate=0 -> no resample: cross(30) + synth(4*12=48) = 78
         w0 = cost_model.wall_clock("old", self.params, depth_output=4000,
                                    per_turn_secs=self.secs, p_gate=0.0)
         self.assertAlmostEqual(w0, 78.0)
-        # p_gate=1 -> gate always re-fires: 78 * 2 = 156
+        # p_gate=1 -> gate always re-fires; the re-run re-runs Stage 1 too:
+        # base(78) + 1*(stage1_wall(20) + base(78)) = 176
         w1 = cost_model.wall_clock("old", self.params, depth_output=4000,
                                    per_turn_secs=self.secs, p_gate=1.0)
-        self.assertAlmostEqual(w1, 156.0)
+        self.assertAlmostEqual(w1, 176.0)
 
     def test_panel_wall_clock_is_parallel_then_writer(self):
         w = cost_model.wall_clock("panel-3", self.params, depth_output=4000, per_turn_secs=self.secs)

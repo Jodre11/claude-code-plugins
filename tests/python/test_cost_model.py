@@ -165,3 +165,32 @@ class CompositionTest(unittest.TestCase):
         a0 = cost_model.compose_arm("old", p0, self.prices, 20000, 5000, "no-share", per_turn)
         a1 = cost_model.compose_arm("old", p1, self.prices, 20000, 5000, "no-share", per_turn)
         self.assertGreater(a1["usd"], a0["usd"])  # p=1 dearer than p=0
+
+
+class WallClockAndVerdictTest(unittest.TestCase):
+    def setUp(self):
+        self.params = json.loads(PARAMS_PATH.read_text(encoding="utf-8"))
+        self.secs = {"cross": 30.0, "opus_per_1k_output": 12.0, "writer": 20.0}
+
+    def test_old_wall_clock_includes_serial_cross_and_synth(self):
+        w = cost_model.wall_clock("old", self.params, depth_output=4000, per_turn_secs=self.secs)
+        # 8 cross serial-after-stage1 is modelled parallel (max), synth serial:
+        # cross fan-out (30) + synth (4 * 12 = 48) = 78
+        self.assertAlmostEqual(w, 30.0 + 48.0)
+
+    def test_panel_wall_clock_is_parallel_then_writer(self):
+        w = cost_model.wall_clock("panel-3", self.params, depth_output=4000, per_turn_secs=self.secs)
+        # parallel panel (one turn: 4*12=48) + writer (20) = 68; N does not add serial time
+        self.assertAlmostEqual(w, 48.0 + 20.0)
+
+    def test_panel_wall_clock_ignores_n(self):
+        w3 = cost_model.wall_clock("panel-3", self.params, 4000, self.secs)
+        w5 = cost_model.wall_clock("panel-5", self.params, 4000, self.secs)
+        self.assertAlmostEqual(w3, w5)  # parallel: 5 panelists no slower than 3
+
+    def test_classify_kill_when_dearer_on_both(self):
+        self.assertEqual(cost_model.classify(200, 100, old_usd=100, old_wall_s=80), "KILL")
+
+    def test_classify_survive_when_cheaper_on_wall_clock(self):
+        # dearer tokens, but faster wall-clock -> not dominated -> SURVIVE
+        self.assertEqual(cost_model.classify(200, 60, old_usd=100, old_wall_s=80), "SURVIVE")

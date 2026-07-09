@@ -12,18 +12,23 @@ _pan_cr_dir() {
 
 # $1 args json, $2 specialists-map json (domain→findings), $3 panelists json (array),
 # $4 writer bodyText string (optional, defaults to a minimal valid body).
+# $5 synth envelope json (optional, defaults to null → classic path hits Category-C).
 _pan_run_core() {
-    local wf writerBody
+    local wf writerBody synthEnvJson
     wf="$(_pan_cr_dir)/workflows/review-core.mjs"
     writerBody="## Synthesiser Assessment\n> panel prose\n"
+    synthEnvJson=""
     [ "$#" -ge 4 ] && writerBody="$4"
-    WF="$wf" PAN_ARGS="$1" PAN_SPECIALISTS="$2" PAN_PANELISTS="$3" PAN_WRITER="$writerBody" node -e '
+    [ "$#" -ge 5 ] && synthEnvJson="$5"
+    WF="$wf" PAN_ARGS="$1" PAN_SPECIALISTS="$2" PAN_PANELISTS="$3" PAN_WRITER="$writerBody" PAN_SYNTH_ENV="$synthEnvJson" node -e '
         const fs = require("fs");
         const src = fs.readFileSync(process.env.WF, "utf8")
             .replace(/^export\s+const\s+meta/m, "const meta");
         const specialists = JSON.parse(process.env.PAN_SPECIALISTS);
         const panelists = JSON.parse(process.env.PAN_PANELISTS);
         const writerBody = process.env.PAN_WRITER;
+        const synthEnvRaw = process.env.PAN_SYNTH_ENV;
+        const synthEnv = synthEnvRaw ? JSON.parse(synthEnvRaw) : null;
         const agent = async (prompt, opts) => {
             const label = (opts && opts.label) || "";
             if (label === "panel-writer") return { bodyText: writerBody };
@@ -32,7 +37,7 @@ _pan_run_core() {
                 return panelists[i] === undefined ? null : panelists[i];
             }
             if (label.startsWith("cross-")) return { status: "ok", opinionsMarkdown: "", escalations: [] };
-            if (label === "review-synthesiser") return null;
+            if (label === "review-synthesiser") return synthEnv;
             return { status: "ok", findings: specialists[label] || [] };  // specialist dispatch
         };
         const parallel = (thunks) => Promise.all(thunks.map(t => t()));
@@ -220,5 +225,33 @@ test_panel_log_carries_cogs_and_meta() {
     assert_equals "3" "$(echo "$out" | jq '[.log.cogs[] | select(.phase=="panel")] | length')" "one panel cog per surviving panelist"
     assert_equals "panel" "$(echo "$out" | jq -r '.log.meta.orchestration_mode')" "log meta records orchestration_mode=panel"
     assert_equals "3" "$(echo "$out" | jq -r '.log.meta.panel_size')" "log meta records panel_size=3"
+}
+
+# orchestrationMode absent → classic path: inject a real APPROVE synth envelope so
+# finalizeBundle reaches buildLogPayload and the meta key is present. Proves default-
+# classic routing distinctly from a panel run (panel sets orchestration_mode="panel").
+test_absent_mode_takes_classic_path() {
+    local args specs synth_env out
+    local sha40="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    # Note: no orchestrationMode key at all.
+    args="{\"agentPrompt\":\"x\",\"flags\":{},\"route\":\"full\",\"selfReReview\":false,\"reviewMode\":\"pr\",\"base\":\"main\",\"headSha\":\"${sha40}\",\"emptyTreeMode\":false,\"pathScope\":\"\",\"tempDir\":\"/tmp/claude-test/x\",\"intentLedger\":\"\"}"
+    specs='{"correctness":[]}'
+    synth_env='{"verdict":"APPROVE","rubricRowApplied":0,"rubricReason":"","tiers":{"consensus":[],"synthesiser":[],"contested":[],"dismissed":[]},"bodyText":"## Synthesiser Assessment\n> all good\n"}'
+    out=$(_pan_run_core "$args" "$specs" "[]" "" "$synth_env")
+    assert_equals "classic" "$(echo "$out" | jq -r '.log.meta.orchestration_mode')" "absent mode → classic path (meta proves it)"
+    assert_equals "null" "$(echo "$out" | jq -r '.log.meta.panel_size')" "absent mode → panel_size null (not a panel run)"
+}
+
+# route lightweight ignores orchestrationMode=panel (panel only replaces the full middle).
+test_panel_mode_ignored_on_lightweight_route() {
+    local args out
+    local sha40="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    args="{\"agentPrompt\":\"x\",\"flags\":{},\"route\":\"lightweight\",\"selfReReview\":false,\"reviewMode\":\"pr\",\"base\":\"main\",\"headSha\":\"${sha40}\",\"emptyTreeMode\":false,\"pathScope\":\"\",\"tempDir\":\"/tmp/claude-test/x\",\"intentLedger\":\"\",\"orchestrationMode\":\"panel\",\"panelSize\":3,\"panelBrief\":\"BRIEF\"}"
+    # The lightweight mock: the code-analysis agent (label 'code-analysis') returns findings.
+    # _pan_run_core's mock returns specialists[label] for non-panel/cross labels, so
+    # 'code-analysis' → specialists["code-analysis"].
+    out=$(_pan_run_core "$args" '{"code-analysis":[{"file":"a.cs","line":1,"severity":"Suggestion","confidence":90,"description":"lw","suggested_fix":"f"}]}' "[]")
+    assert_equals "NONE" "$(echo "$out" | jq -r '.verdict')" "lightweight route → verdict NONE regardless of panel mode"
+    assert_equals "1" "$(echo "$out" | jq '.comments | length')" "lightweight route still posts its code-analysis finding"
 }
 

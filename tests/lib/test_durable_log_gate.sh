@@ -125,3 +125,65 @@ test_dlg_malformed_marker_inert() {
     assert_equals "" "$DLG_OUT" "durable-log-gate: malformed marker -> no block"
     rm -rf "$tmp_base" "$logs"
 }
+
+_dlg_cr_dir() { echo "$REPO_ROOT/plugins/code-review-suite"; }
+
+test_dlg_step36_present_both_sites() {
+    local cr missing f
+    cr=$(_dlg_cr_dir); missing=()
+    for f in "skills/review-gh-pr/SKILL.md" "commands/pre-review.md"; do
+        if ! grep -qF 'Step 3.6: Durable full log' "$cr/$f" 2>/dev/null; then
+            missing+=("$f")
+        fi
+    done
+    if [[ ${#missing[@]} -eq 0 ]]; then
+        pass "durable-log Step 3.6 heading present in both call sites"
+    else
+        fail "durable-log Step 3.6 heading present in both call sites" "missing in: ${missing[*]}"
+    fi
+}
+
+test_dlg_writer_invoked_both_sites() {
+    local cr missing f
+    cr=$(_dlg_cr_dir); missing=()
+    for f in "skills/review-gh-pr/SKILL.md" "commands/pre-review.md"; do
+        if ! grep -qF 'bin/durable-log-write' "$cr/$f" 2>/dev/null; then
+            missing+=("$f")
+        fi
+    done
+    if [[ ${#missing[@]} -eq 0 ]]; then
+        pass "durable-log-write invoked in both call sites"
+    else
+        fail "durable-log-write invoked in both call sites" "missing in: ${missing[*]}"
+    fi
+}
+
+test_dlg_breadcrumb_written_both_sites() {
+    local cr missing f
+    cr=$(_dlg_cr_dir); missing=()
+    for f in "skills/review-gh-pr/SKILL.md" "commands/pre-review.md"; do
+        if ! grep -qF 'durable-log-expected.json' "$cr/$f" 2>/dev/null; then
+            missing+=("$f")
+        fi
+    done
+    if [[ ${#missing[@]} -eq 0 ]]; then
+        pass "durable-log breadcrumb marker written in both call sites"
+    else
+        fail "durable-log breadcrumb marker written in both call sites" "missing in: ${missing[*]}"
+    fi
+}
+
+test_dlg_old_step7a_removed_both_sites() {
+    local cr present f
+    cr=$(_dlg_cr_dir); present=()
+    for f in "skills/review-gh-pr/SKILL.md" "commands/pre-review.md"; do
+        if grep -qF 'Step 7a: Durable full log' "$cr/$f" 2>/dev/null; then
+            present+=("$f")
+        fi
+    done
+    if [[ ${#present[@]} -eq 0 ]]; then
+        pass "old Step 7a heading removed from both call sites"
+    else
+        fail "old Step 7a heading removed from both call sites" "still present in: ${present[*]}"
+    fi
+}

@@ -253,11 +253,11 @@ test_host_documents_durable_log() {
         local path="$cr/$file"
         if grep -qF 'orchestration.full_log' "$path" \
            && grep -qF '.claude/code-review-suite/logs' "$path" \
-           && grep -qF 'plugin_sha' "$path"; then
+           && grep -qF 'PLUGIN_SHA' "$path"; then
             pass "host documents durable opt-in log: $file"
         else
             fail "host documents durable opt-in log: $file" \
-                "Step 7 must gate on orchestration.full_log (default off), write to ~/.claude/code-review-suite/logs, and stamp plugin_sha"
+                "Step 3.6 must gate on orchestration.full_log (default off), write to ~/.claude/code-review-suite/logs, and resolve PLUGIN_SHA"
             ok=0
         fi
     done

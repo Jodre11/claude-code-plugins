@@ -72,3 +72,49 @@ test_panel_unanimous_real_important_is_rc() {
     assert_equals "REQUEST_CHANGES" "$(echo "$out" | jq -r '.verdict')" "unanimous-real Important → RC (rubric row 3)"
     assert_equals "1" "$(echo "$out" | jq '.comments | length')" "the consensus finding posts as one comment"
 }
+
+# Split vote (2 real / 1 not_a_problem on N=3): real=2 >= ceil(6/3)=2 → consensus.
+# A Suggestion in consensus does not trigger RC → APPROVE.
+test_panel_split_majority_real_suggestion_approves() {
+    local specs pans out
+    specs='{"style":[{"file":"a.cs","line":3,"severity":"Suggestion","confidence":50,"description":"nit","suggested_fix":"tidy"}]}'
+    pans='[{"votes":[{"finding_id":0,"vote":"real","blocks_goal":false,"rationale":"r"}],"raised":[]},{"votes":[{"finding_id":0,"vote":"real","blocks_goal":false,"rationale":"r"}],"raised":[]},{"votes":[{"finding_id":0,"vote":"not_a_problem","blocks_goal":false,"rationale":"r"}],"raised":[]}]'
+    out=$(_pan_run_core "$(_pan_args 3)" "$specs" "$pans")
+    assert_equals "APPROVE" "$(echo "$out" | jq -r '.verdict')" "majority-real Suggestion → APPROVE (no blocking finding)"
+    # confidence 80 (real=2, not unanimous) ≥ 75 → posts under APPROVE.
+    assert_equals "1" "$(echo "$out" | jq '.comments | length')" "80-confidence consensus Suggestion posts under APPROVE"
+}
+
+# Contested (1 real / 1 minor / 1 not_a_problem on N=3): real=1 < 2, real+minor=2 > 1 →
+# contested tier. Contested findings are not consensus → not posted; verdict APPROVE.
+test_panel_contested_not_posted() {
+    local specs pans out
+    specs='{"correctness":[{"file":"a.cs","line":9,"severity":"Important","confidence":50,"description":"maybe","suggested_fix":"f"}]}'
+    pans='[{"votes":[{"finding_id":0,"vote":"real","blocks_goal":false,"rationale":"r"}],"raised":[]},{"votes":[{"finding_id":0,"vote":"minor","blocks_goal":false,"rationale":"r"}],"raised":[]},{"votes":[{"finding_id":0,"vote":"not_a_problem","blocks_goal":false,"rationale":"r"}],"raised":[]}]'
+    out=$(_pan_run_core "$(_pan_args 3)" "$specs" "$pans")
+    assert_equals "APPROVE" "$(echo "$out" | jq -r '.verdict')" "contested-only → APPROVE"
+    assert_equals "0" "$(echo "$out" | jq '.comments | length')" "contested finding is not posted (not consensus)"
+    assert_equals "contested" "$(echo "$out" | jq -r '.log.findings[0].tier')" "contested finding lands in contested tier"
+}
+
+# Dismissed (majority not_a_problem): 1 real / 2 not_a_problem on N=3 → dismissed.
+test_panel_dismissed_tier() {
+    local specs pans out
+    specs='{"correctness":[{"file":"a.cs","line":9,"severity":"Critical","confidence":50,"description":"false alarm","suggested_fix":"f"}]}'
+    pans='[{"votes":[{"finding_id":0,"vote":"real","blocks_goal":false,"rationale":"r"}],"raised":[]},{"votes":[{"finding_id":0,"vote":"not_a_problem","blocks_goal":false,"rationale":"r"}],"raised":[]},{"votes":[{"finding_id":0,"vote":"not_a_problem","blocks_goal":false,"rationale":"r"}],"raised":[]}]'
+    out=$(_pan_run_core "$(_pan_args 3)" "$specs" "$pans")
+    # A dismissed Critical must NOT drive RC (it is not in the consensus tier).
+    assert_equals "APPROVE" "$(echo "$out" | jq -r '.verdict')" "dismissed Critical does not trigger RC"
+    assert_equals "dismissed" "$(echo "$out" | jq -r '.log.findings[0].tier')" "majority not_a_problem → dismissed"
+}
+
+# N=5 supermajority: real=3 < ceil(10/3)=4 → NOT consensus (contested). Proves the
+# threshold scales with N (a bare majority on N=5 is not enough for consensus).
+test_panel_n5_bare_majority_is_contested() {
+    local specs pans out
+    specs='{"correctness":[{"file":"a.cs","line":9,"severity":"Important","confidence":50,"description":"split5","suggested_fix":"f"}]}'
+    pans='[{"votes":[{"finding_id":0,"vote":"real","blocks_goal":false,"rationale":"r"}],"raised":[]},{"votes":[{"finding_id":0,"vote":"real","blocks_goal":false,"rationale":"r"}],"raised":[]},{"votes":[{"finding_id":0,"vote":"real","blocks_goal":false,"rationale":"r"}],"raised":[]},{"votes":[{"finding_id":0,"vote":"not_a_problem","blocks_goal":false,"rationale":"r"}],"raised":[]},{"votes":[{"finding_id":0,"vote":"not_a_problem","blocks_goal":false,"rationale":"r"}],"raised":[]}]'
+    out=$(_pan_run_core "$(_pan_args 5)" "$specs" "$pans")
+    assert_equals "contested" "$(echo "$out" | jq -r '.log.findings[0].tier')" "N=5 real=3 < 4 → contested, not consensus"
+    assert_equals "APPROVE" "$(echo "$out" | jq -r '.verdict')" "N=5 bare-majority Important → APPROVE"
+}

@@ -211,3 +211,14 @@ test_panel_row1_needs_consensus_majority() {
     assert_equals "APPROVE" "$(echo "$out" | jq -r '.verdict')" "goal present but blocks_goal not a majority → APPROVE"
 }
 
+# The durable-log payload carries one panel cog per surviving panelist + the meta tags.
+test_panel_log_carries_cogs_and_meta() {
+    local specs pans out
+    specs='{"correctness":[{"file":"a.cs","line":10,"severity":"Important","confidence":50,"description":"b","suggested_fix":"f"}]}'
+    pans='[{"votes":[{"finding_id":0,"vote":"real","blocks_goal":false,"rationale":"r"}],"raised":[]},{"votes":[{"finding_id":0,"vote":"real","blocks_goal":false,"rationale":"r"}],"raised":[]},{"votes":[{"finding_id":0,"vote":"real","blocks_goal":false,"rationale":"r"}],"raised":[]}]'
+    out=$(_pan_run_core "$(_pan_args 3)" "$specs" "$pans")
+    assert_equals "3" "$(echo "$out" | jq '[.log.cogs[] | select(.phase=="panel")] | length')" "one panel cog per surviving panelist"
+    assert_equals "panel" "$(echo "$out" | jq -r '.log.meta.orchestration_mode')" "log meta records orchestration_mode=panel"
+    assert_equals "3" "$(echo "$out" | jq -r '.log.meta.panel_size')" "log meta records panel_size=3"
+}
+

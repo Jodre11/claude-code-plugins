@@ -188,6 +188,8 @@ const phaseLog = {
     head_sha: headSha,
     empty_tree_mode: emptyTreeMode,
     path_scope: pathScope || '',
+    orchestration_mode: orchestrationMode || 'classic',
+    panel_size: orchestrationMode === 'panel' ? (panelSize ?? 3) : null,
   },
   cogs: [],
 }
@@ -254,7 +256,7 @@ for (const [domain, fs] of Object.entries(findingsByDomain)) {
 // with an N-panelist vote + a deterministic writer. Returns the same sealed bundle.
 if (orchestrationMode === 'panel') {
     const flat = flattenFindings(findingsByDomain)
-    const panelists = await panelVote(flat, panelBrief, allSpecialists)
+    const panelists = await panelVote(flat, panelBrief, allSpecialists, phaseLog)
     return panelWrite(panelists, flat, phaseLog)
 }
 
@@ -692,7 +694,7 @@ function applyRubric(tiers, hasGoal) {
 // use), the flattened Stage-1 findings, which domains ran, and the intent ledger.
 // No agentType — the brief supplies the Principal-Engineer framing; the default
 // workflow subagent + model:'opus' is the panelist. Null/failed panelists are dropped.
-async function panelVote(flat, panelBrief, ranDomains) {
+async function panelVote(flat, panelBrief, ranDomains, phaseLog) {
     const n = panelSize ?? 3
     const fullDiffFile = tempDir ? `${tempDir.replace(/\/+$/, '')}/review-diff.patch` : ''
     const prompt =
@@ -712,7 +714,11 @@ async function panelVote(flat, panelBrief, ranDomains) {
             schema: PANEL_SCHEMA,
         }).then(out => (out ? { votes: out.votes ?? [], raised: out.raised ?? [] } : null)).catch(() => null)
     ))
-    return results.filter(Boolean)
+    const surviving = results.filter(Boolean)
+    for (const p of surviving) {
+        phaseLog.cogs.push({ phase: 'panel', output: { votes: p.votes, raised: p.raised } })
+    }
+    return surviving
 }
 
 // Stage 3: deterministic writer. Below quorum → reuse finalizeBundle's Category-C

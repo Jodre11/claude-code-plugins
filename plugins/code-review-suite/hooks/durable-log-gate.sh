@@ -16,7 +16,7 @@ LOGS_DIR="${DURABLE_LOG_DIR:-$HOME/.claude/code-review-suite/logs}"
 TMP_BASE="${DURABLE_LOG_TMP_BASE:-/tmp}"
 
 input="$(cat)"
-session_id="$(printf '%s' "$input" | jq -r '.session_id // ""')"
+session_id="$(printf '%s' "$input" | jq -r '.session_id // ""' 2>/dev/null || true)"
 [[ -n "$session_id" ]] || exit 0        # no session id -> cannot scope -> inert
 
 marker="$TMP_BASE/claude-$session_id/durable-log-expected.json"

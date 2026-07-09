@@ -99,3 +99,29 @@ test_dlg_no_session_id_inert() {
     assert_equals "0" "$DLG_RC" "durable-log-gate: missing session_id -> exit 0 (cannot scope)"
     assert_equals "" "$DLG_OUT" "durable-log-gate: missing session_id -> no block"
 }
+
+test_dlg_malformed_stdin_inert() {
+    local tmpf
+    tmpf=$(mktemp)
+    set +e
+    printf 'not json {' \
+        | bash "$(_dlg_hook)" > "$tmpf" 2>/dev/null
+    DLG_RC=$?
+    set -e
+    DLG_OUT="$(cat "$tmpf")"
+    rm -f "$tmpf"
+    assert_equals "0" "$DLG_RC" "durable-log-gate: malformed stdin -> exit 0 (inert, not crash)"
+    assert_equals "" "$DLG_OUT" "durable-log-gate: malformed stdin -> no block output"
+}
+
+test_dlg_malformed_marker_inert() {
+    local tmp_base logs mdir
+    tmp_base=$(mktemp -d); logs=$(mktemp -d)
+    mdir="$tmp_base/claude-sid-c"
+    mkdir -p "$mdir"
+    printf 'not-json' > "$mdir/durable-log-expected.json"
+    _dlg_run "sid-c" "$tmp_base" "$logs"
+    assert_equals "0" "$DLG_RC" "durable-log-gate: malformed marker -> exit 0 (treat as absent)"
+    assert_equals "" "$DLG_OUT" "durable-log-gate: malformed marker -> no block"
+    rm -rf "$tmp_base" "$logs"
+}

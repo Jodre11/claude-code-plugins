@@ -317,11 +317,20 @@ test_schema_documents_cog_payload() {
 test_both_hosts_document_cog_jsonl() {
     local cr file
     cr=$(_pe_cr_dir)
+    # JSONL format (meta/cog/finding/token rows) is now owned by bin/durable-log-write.
+    # Host prose delegates via the writer CLI; verify the writer binary emits meta and cog rows.
+    local writer="$cr/bin/durable-log-write"
+    if grep -qF 'type:"meta"' "$writer" && grep -qF 'type:"cog"' "$writer"; then
+        pass "host documents per-cog JSONL: writer binary"
+    else
+        fail "host documents per-cog JSONL: writer binary" "writer binary must emit type:meta and type:cog rows"
+    fi
+    # Both host call sites must invoke the writer.
     for file in skills/review-gh-pr/SKILL.md commands/pre-review.md; do
-        if grep -qF '"type":"meta"' "$cr/$file" && grep -qF 'empty_tree_mode' "$cr/$file" && grep -qF '"type":"cog"' "$cr/$file"; then
-            pass "host documents per-cog JSONL: $file"
+        if grep -qF 'bin/durable-log-write' "$cr/$file"; then
+            pass "host invokes durable-log-write: $file"
         else
-            fail "host documents per-cog JSONL: $file" "missing meta reconstruction keys or cog line in writer block"
+            fail "host invokes durable-log-write: $file" "host must invoke bin/durable-log-write (writer owns JSONL format)"
         fi
     done
 }

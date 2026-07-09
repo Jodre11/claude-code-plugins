@@ -1,0 +1,95 @@
+#!/usr/bin/env bash
+# durable-log-write — deterministic writer for the code-review-suite durable
+# full log. The host (SKILL.md / pre-review.md Step 3.6) resolves every value
+# and hands them over as flags; this script only validates and writes. Fragile
+# JSONL assembly is jq -c, never LLM-improvised prose — the same principle as
+# bin/review-worktree ("deterministic, unit-tested shell, not improvised prose").
+#
+# Usage:
+#   durable-log-write --repo-slug <owner-name> --ident <pr-N|branch-slug> \
+#       --sha <12-hex> --plugin-sha <sha|unknown> --payload <path> \
+#       [--tokens <path>] [--ts <iso8601>] [--out-dir <dir>]
+#
+# Writes (idempotent, latest-wins per sha):
+#   <out-dir>/<repo-slug>/<ident>-<sha>.md    provenance header + bodyText verbatim
+#   <out-dir>/<repo-slug>/<ident>-<sha>.jsonl meta, cog(s), finding(s), token rows
+# <out-dir> defaults to $HOME/.claude/code-review-suite/logs. --payload is
+# validated (must exist, be valid JSON, carry bodyText) — a bad payload is a hard
+# error, never a silent empty write. --tokens rows are best-effort: a malformed
+# line is skipped, never fatal.
+set -euo pipefail
+
+_die() {
+    echo "durable-log-write: $*" >&2
+    exit 1
+}
+
+repo_slug=""
+ident=""
+sha=""
+plugin_sha=""
+payload=""
+tokens=""
+ts=""
+out_dir=""
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --repo-slug)  repo_slug="${2:-}"; shift 2 ;;
+        --ident)      ident="${2:-}"; shift 2 ;;
+        --sha)        sha="${2:-}"; shift 2 ;;
+        --plugin-sha) plugin_sha="${2:-}"; shift 2 ;;
+        --payload)    payload="${2:-}"; shift 2 ;;
+        --tokens)     tokens="${2:-}"; shift 2 ;;
+        --ts)         ts="${2:-}"; shift 2 ;;
+        --out-dir)    out_dir="${2:-}"; shift 2 ;;
+        *)            _die "unknown arg: $1" ;;
+    esac
+done
+
+[[ -n "$repo_slug" && -n "$ident" && -n "$sha" && -n "$payload" ]] \
+    || _die "requires --repo-slug --ident --sha --payload"
+[[ -n "$plugin_sha" ]] || plugin_sha="unknown"
+[[ -n "$out_dir" ]] || out_dir="$HOME/.claude/code-review-suite/logs"
+[[ -n "$ts" ]] || ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+# Validate-or-die: payload must exist, parse as JSON, and carry bodyText.
+[[ -f "$payload" ]] || _die "payload not found: $payload"
+jq empty "$payload" 2>/dev/null || _die "payload is not valid JSON: $payload"
+jq -e 'has("bodyText")' "$payload" >/dev/null 2>&1 || _die "payload missing bodyText: $payload"
+
+dir="$out_dir/$repo_slug"
+mkdir -p "$dir"
+md="$dir/$ident-$sha.md"
+jsonl="$dir/$ident-$sha.jsonl"
+
+# Markdown: provenance header, then bodyText verbatim.
+printf '<!-- plugin_sha: %s | ts: %s -->\n' "$plugin_sha" "$ts" > "$md"
+jq -r '.bodyText' "$payload" >> "$md"
+
+# JSONL: meta -> cog(s) -> finding(s) -> token row(s). Every structured line is
+# emitted via jq -c so it is valid JSON regardless of quotes/newlines in text.
+: > "$jsonl"
+jq -c --arg ps "$plugin_sha" --arg t "$ts" \
+    '(.meta // {}) + {plugin_sha:$ps, ts:$t, type:"meta"}' "$payload" >> "$jsonl"
+jq -c '.cogs[]? | . + {type:"cog"}' "$payload" >> "$jsonl"
+jq -c '.findings[]? | . + {type:"finding"}' "$payload" >> "$jsonl"
+
+# Tokens: best-effort. Validate each line; skip (warn) a malformed row, never
+# abort. Guarded so set -euo pipefail cannot kill the script on a bad line.
+# NOTE: no producer of $CLAUDE_TEMP_DIR/tokens.jsonl was found in review-core.mjs
+# (the --tokens reference is inherited from the old Step 7a). Absent/empty is the
+# expected common case and handled below; if a producer is never wired, token
+# rows simply never land — out of scope for this reliability fix.
+if [[ -n "$tokens" && -s "$tokens" ]]; then
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        [[ -n "$line" ]] || continue
+        if printf '%s' "$line" | jq -e . >/dev/null 2>&1; then
+            printf '%s\n' "$line" >> "$jsonl"
+        else
+            echo "durable-log-write: skipping malformed token row" >&2
+        fi
+    done < "$tokens"
+fi
+
+exit 0

@@ -954,68 +954,50 @@ nothing — the worktree is not ours to remove.
 
 Present the synthesiser's formatted report to the user.
 
+**STOP — do not present the report yet. First complete Step 3.6 (Durable full log) below; the "present" instruction above must not execute until Step 3.6 has run (or been skipped because `full_log` is off).**
+
 **Optional Playwright verification:** If the ui-reviewer produced a "Findings Requiring Visual Verification" section AND the `playwright-cli` skill is available, verify those specific findings in the browser. Append verification results to the report.
 
-#### Step 7a: Durable full log (opt-in, default OFF)
+#### Step 3.6: Durable full log (opt-in, default OFF)
 
-The full unfiltered analytical record is a fine-tuning instrument with a finite
-useful life. It is **off by default**. Resolve `orchestration.full_log` from two config
-layers, first match wins: (1) the reviewed repo's `.claude/code-review.toml`, then
-(2) the user-level `~/.claude/code-review.toml`. Read each file the same way as
-`intent.doc_paths`; treat a missing/malformed file as not setting the key, and fall
-through to the next layer. If neither layer sets the key, the value is `false`. An
-explicit `false` in the repo-level file wins over a `true` in the user-level file (a
-repo can opt out). The user-level file is a per-machine override that never ships with
-the plugin, so consumers without it get `false`. Write the log ONLY when the resolved
-value is `true`. When off, skip this entire step — write nothing.
+The full unfiltered analytical record is a fine-tuning instrument with a finite useful life.
+Resolve `orchestration.full_log` from two config layers, first match wins: (1) the reviewed
+repo's `.claude/code-review.toml`, then (2) the user-level `~/.claude/code-review.toml`. Read
+each file the same way as `intent.doc_paths`; treat a missing/malformed file as not setting the
+key, and fall through. If neither layer sets the key, the value is `false`. An explicit `false`
+in the repo-level file wins over a `true` in the user-level file. If the resolved value is
+`false`, skip this entire step — write nothing (no breadcrumb, so the Stop-hook gate stays inert).
 
-When on, and when the bundle carries a `log` payload (`bundle.log`):
+When `true` **and** the bundle carries a `log` payload (`bundle.log`):
 
-1. Resolve the marketplace short-SHA (provenance). The plugin has no version field, so
-   the build identity is the marketplace commit:
+1. Resolve identity (all host-context): `<repo-slug>` = reviewed repo `owner/name` with `/`→`-`;
+   `<ident>` = the slugified current branch (`git rev-parse --abbrev-ref HEAD`, `/`→`-`); `<sha>`
+   = the first 12 characters of `$HEAD_SHA` (`$HEAD_SHA` is the validated 40-char sha — truncate
+   it here, e.g. `${HEAD_SHA:0:12}`). The same resolved `<repo-slug>`, `<ident>`, and 12-char
+   `<sha>` MUST be used for both the writer flags and the breadcrumb marker so the Stop-hook gate
+   self-matches. Resolve `$PLUGIN_SHA` =
+   `git -C "{plugin-marketplace-dir}" rev-parse --short HEAD` (use `unknown` if it fails). Stamp
+   `$LOG_TS` = `date -u +%Y-%m-%dT%H:%M:%SZ`.
+2. `Write` the `bundle.log` object to `$CLAUDE_TEMP_DIR/bundle-log.json`.
+3. `Write` the breadcrumb marker `$CLAUDE_TEMP_DIR/durable-log-expected.json` — this arms the
+   Stop-hook gate, so it MUST be written before the writer call and MUST carry exactly these keys
+   (the 12-char `<sha>`):
+
+   ```json
+   {"repo_slug":"<repo-slug>","ident":"<branch-slug>","sha":"<sha>","ts":"$LOG_TS"}
+   ```
+
+4. Run **one** command (the deterministic writer — never hand-assemble the JSONL in prose):
 
    ```bash
-   git -C "{plugin-marketplace-dir}" rev-parse --short HEAD
+   "${CLAUDE_PLUGIN_ROOT}"/bin/durable-log-write --repo-slug <repo-slug> --ident <branch-slug> --sha <sha> --plugin-sha $PLUGIN_SHA --payload $CLAUDE_TEMP_DIR/bundle-log.json --tokens $CLAUDE_TEMP_DIR/tokens.jsonl --ts $LOG_TS
    ```
 
-   Store as `$PLUGIN_SHA`. If the command fails, use `unknown`.
-
-2. Resolve the durable directory and filenames. `<repo-slug>` is the reviewed repo's
-   `owner/name` with `/` → `-`; `<pr-or-branch>` is the slugified branch name (run
-   `git rev-parse --abbrev-ref HEAD`); `<sha>` is the 12-char `$HEAD_SHA`:
-
-   ```bash
-   mkdir -p "$HOME/.claude/code-review-suite/logs/{repo-slug}"
-   ```
-
-3. Write the markdown record (verbatim full prose + provenance header) to
-   `$HOME/.claude/code-review-suite/logs/{repo-slug}/{pr-or-branch}-{sha}.md`. The first
-   line is the provenance comment, then `bundle.log.bodyText` verbatim:
-
-   ```
-   <!-- plugin_sha: $PLUGIN_SHA | ts: $LOG_TS -->
-   ```
-
-   `$LOG_TS` is the current UTC time in ISO-8601 (the host stamps it; e.g.
-   `date -u +%Y-%m-%dT%H:%M:%SZ`).
-
-4. Write the JSONL record to the sibling `.jsonl` file, one JSON object per line in this order:
-   the meta record (with diff-reconstruction keys), then one `cog` line per `bundle.log.cogs[]`
-   entry, then one line per `bundle.log.findings[]` entry, then the per-phase token rows the
-   orchestrator holds from `$CLAUDE_TEMP_DIR/tokens.jsonl`:
-
-   ```jsonl
-   {"type":"meta","plugin_sha":"$PLUGIN_SHA","ts":"$LOG_TS","base":"...","head_sha":"...","empty_tree_mode":false,"path_scope":""}
-   {"type":"cog","phase":"round1","domain":"correctness","output":{"findings":[]}}
-   ```
-
-   The `meta` line's `base`/`head_sha`/`empty_tree_mode`/`path_scope` come from
-   `bundle.log.meta`; emit one `{"type":"cog",...}` line per `bundle.log.cogs[]` entry verbatim.
-   When `bundle.log.cogs` is absent (lightweight path), write only meta + finding + phase rows.
-
-The durable log is NEVER posted to GitHub and NEVER committed — it is analysis exhaust
-that may contain finding text from private repos. Local mode posts nothing; the durable
-log is the only persisted artefact.
+The writer creates `$HOME/.claude/code-review-suite/logs/<repo-slug>/<branch-slug>-<sha>.{md,jsonl}`.
+The durable log is NEVER posted to GitHub and NEVER committed — it is analysis exhaust that may
+contain finding text from private repos. Writing the log here (before report presentation) is what
+makes it reliable; the `durable-log-gate` Stop hook blocks turn-end if the breadcrumb is armed but
+the log file is missing.
 
 **Presenting the bundle.** The `review-core` Workflow (Step 3.5) returned the sealed
 bundle `{ verdict, bodyText, comments }`. In local (pre-review) mode the bundle's

@@ -413,47 +413,53 @@ _dlg_write_marker() {
     echo "$mdir/durable-log-expected.json"
 }
 
-# Run the hook with a given session_id on stdin; echoes stdout, sets $DLG_RC.
+# Run the hook with a given session_id on stdin. Sets GLOBALS $DLG_RC and $DLG_OUT.
+# Called PLAINLY (never via $()) — a command-substitution subshell would set DLG_RC
+# only in the subshell, and set -u (from harness.sh) would then abort the first
+# assert_equals on the unbound variable. Capturing the hook's stdout to a temp file
+# keeps the exit code and the output in the caller's shell.
 _dlg_run() {
-    local sid="$1" tmp_base="$2" logs_dir="$3" ttl="${4:-360}" out
+    local sid="$1" tmp_base="$2" logs_dir="$3" ttl="${4:-360}" tmpf
+    tmpf=$(mktemp)
     set +e
-    out=$(printf '{"session_id":"%s","hook_event_name":"Stop"}' "$sid" \
+    printf '{"session_id":"%s","hook_event_name":"Stop"}' "$sid" \
         | DURABLE_LOG_TMP_BASE="$tmp_base" DURABLE_LOG_DIR="$logs_dir" \
-          DURABLE_LOG_GATE_TTL_MINUTES="$ttl" bash "$(_dlg_hook)")
+          DURABLE_LOG_GATE_TTL_MINUTES="$ttl" bash "$(_dlg_hook)" > "$tmpf" 2>/dev/null
     DLG_RC=$?
     set -e
-    printf '%s' "$out"
+    DLG_OUT="$(cat "$tmpf")"
+    rm -f "$tmpf"
 }
 
 test_dlg_no_breadcrumb_inert() {
-    local tmp_base logs out
+    local tmp_base logs
     tmp_base=$(mktemp -d); logs=$(mktemp -d)
-    out=$(_dlg_run "sid-none" "$tmp_base" "$logs")
+    _dlg_run "sid-none" "$tmp_base" "$logs"
     assert_equals "0" "$DLG_RC" "durable-log-gate: no breadcrumb -> exit 0"
-    assert_equals "" "$out" "durable-log-gate: no breadcrumb -> no block output"
+    assert_equals "" "$DLG_OUT" "durable-log-gate: no breadcrumb -> no block output"
     rm -rf "$tmp_base" "$logs"
 }
 
 test_dlg_breadcrumb_no_log_blocks() {
-    local tmp_base logs out
+    local tmp_base logs
     tmp_base=$(mktemp -d); logs=$(mktemp -d)
     _dlg_write_marker "$tmp_base" "sid-a" "o-r" "pr-1" "0123456789ab" >/dev/null
-    out=$(_dlg_run "sid-a" "$tmp_base" "$logs")
+    _dlg_run "sid-a" "$tmp_base" "$logs"
     assert_equals "0" "$DLG_RC" "durable-log-gate: block path still exits 0 (block via stdout JSON)"
-    assert_equals "block" "$(printf '%s' "$out" | jq -r '.decision')" \
+    assert_equals "block" "$(printf '%s' "$DLG_OUT" | jq -r '.decision')" \
         "durable-log-gate: breadcrumb present + log absent -> decision block"
     rm -rf "$tmp_base" "$logs"
 }
 
 test_dlg_breadcrumb_with_log_passes() {
-    local tmp_base logs out
+    local tmp_base logs
     tmp_base=$(mktemp -d); logs=$(mktemp -d)
     _dlg_write_marker "$tmp_base" "sid-a" "o-r" "pr-1" "0123456789ab" >/dev/null
     mkdir -p "$logs/o-r"
     printf 'x\n' > "$logs/o-r/pr-1-0123456789ab.md"
-    out=$(_dlg_run "sid-a" "$tmp_base" "$logs")
+    _dlg_run "sid-a" "$tmp_base" "$logs"
     assert_equals "0" "$DLG_RC" "durable-log-gate: log present -> exit 0"
-    assert_equals "" "$out" "durable-log-gate: log present -> no block (disarmed by log existence)"
+    assert_equals "" "$DLG_OUT" "durable-log-gate: log present -> no block (disarmed by log existence)"
     rm -rf "$tmp_base" "$logs"
 }
 
@@ -461,34 +467,40 @@ test_dlg_foreign_session_invisible() {
     # Marker exists for sid-a; hook runs as sid-b -> reconstructs sid-b's dir,
     # finds no marker -> inert. Proves session-scoping kills the cross-session
     # false-block landmine.
-    local tmp_base logs out
+    local tmp_base logs
     tmp_base=$(mktemp -d); logs=$(mktemp -d)
     _dlg_write_marker "$tmp_base" "sid-a" "o-r" "pr-1" "0123456789ab" >/dev/null
-    out=$(_dlg_run "sid-b" "$tmp_base" "$logs")
+    _dlg_run "sid-b" "$tmp_base" "$logs"
     assert_equals "0" "$DLG_RC" "durable-log-gate: foreign session's breadcrumb is invisible -> exit 0"
-    assert_equals "" "$out" "durable-log-gate: foreign session -> no block"
+    assert_equals "" "$DLG_OUT" "durable-log-gate: foreign session -> no block"
     rm -rf "$tmp_base" "$logs"
 }
 
 test_dlg_stale_breadcrumb_expires() {
-    local tmp_base logs marker out
+    local tmp_base logs marker
     tmp_base=$(mktemp -d); logs=$(mktemp -d)
     marker=$(_dlg_write_marker "$tmp_base" "sid-a" "o-r" "pr-1" "0123456789ab")
     # Age the marker 10 minutes; run with a 1-minute TTL -> treated as absent.
     touch -t "$(date -v-600S +%Y%m%d%H%M.%S 2>/dev/null || date -d '-600 seconds' +%Y%m%d%H%M.%S)" "$marker"
-    out=$(_dlg_run "sid-a" "$tmp_base" "$logs" 1)
+    _dlg_run "sid-a" "$tmp_base" "$logs" 1
     assert_equals "0" "$DLG_RC" "durable-log-gate: stale breadcrumb (past TTL) -> exit 0"
-    assert_equals "" "$out" "durable-log-gate: stale breadcrumb -> no block (self-expiry)"
+    assert_equals "" "$DLG_OUT" "durable-log-gate: stale breadcrumb -> no block (self-expiry)"
     rm -rf "$tmp_base" "$logs"
 }
 
 test_dlg_no_session_id_inert() {
-    local out
+    # No session_id key at all: run the hook directly (no _dlg_run, which requires
+    # a sid). Capture to a temp file so DLG_RC survives set -u — same subshell
+    # pitfall as _dlg_run.
+    local tmpf rc out
+    tmpf=$(mktemp)
     set +e
-    out=$(printf '{"hook_event_name":"Stop"}' | bash "$(_dlg_hook)")
-    DLG_RC=$?
+    printf '{"hook_event_name":"Stop"}' | bash "$(_dlg_hook)" > "$tmpf" 2>/dev/null
+    rc=$?
     set -e
-    assert_equals "0" "$DLG_RC" "durable-log-gate: missing session_id -> exit 0 (cannot scope)"
+    out="$(cat "$tmpf")"
+    rm -f "$tmpf"
+    assert_equals "0" "$rc" "durable-log-gate: missing session_id -> exit 0 (cannot scope)"
     assert_equals "" "$out" "durable-log-gate: missing session_id -> no block"
 }
 ```
@@ -888,3 +900,12 @@ fixture/test renamed to `nocogs` (the real lightweight route emits no `log`; the
 the finalize/recovery route); (5) `--tokens` documented as having no known producer and being
 best-effort, not a guaranteed input; (6) Task 2 Step 5 changed from a wholesale `hooks.json`
 replace to an Edit-insert of the `Stop` sibling.
+
+**5. Execution-time fix (Task 2, 2026-07-09):** the Task 2 implementer caught a structural bug in
+this plan's original `test_durable_log_gate.sh` template — `_dlg_run` set `DLG_RC=$?` but was
+called via `out=$(_dlg_run …)`, so the command-substitution subshell set `DLG_RC` only in the
+subshell; with `set -u` (from `harness.sh`) the first `assert_equals "$DLG_RC"` aborted on an
+unbound variable, so no assertion ever exercised the hook. Fixed structurally: `_dlg_run` now
+captures the hook's stdout to a temp file and sets globals `DLG_RC`/`DLG_OUT` in the caller's
+shell, and every test calls it plainly (never inside `$()`). `test_dlg_no_session_id_inert` got
+the same temp-file treatment. Template above is corrected.

@@ -630,10 +630,19 @@ function tallyVotes(panelists, flat) {
 }
 
 // Cluster raised findings across panelists by (file, line-window), reusing sameCluster.
-// corroboration = number of raises landing in the cluster. (Task 3 fills this in;
-// Task 1 stub keeps panelWrite total.)
+// corroboration = number of raises landing in the cluster. rep = the first raise seen.
+// NB: two raises by the SAME panelist into one cluster count as 2 — acceptable because
+// a panelist raises a given issue once; distinct-panelist counting is not worth the state.
 function clusterRaised(panelists) {
-    return []
+    const all = []
+    for (const p of panelists) for (const r of (p.raised ?? [])) all.push(r)
+    const clusters = []
+    for (const f of all) {
+        const hit = clusters.find(c => sameCluster(c.rep, f))
+        if (hit) hit.corroboration++
+        else clusters.push({ rep: f, corroboration: 1 })
+    }
+    return clusters
 }
 
 // Map vote spread + raise corroboration onto the four-tier envelope. Emits ALL four

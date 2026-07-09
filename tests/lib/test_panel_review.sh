@@ -118,3 +118,38 @@ test_panel_n5_bare_majority_is_contested() {
     assert_equals "contested" "$(echo "$out" | jq -r '.log.findings[0].tier')" "N=5 real=3 < 4 → contested, not consensus"
     assert_equals "APPROVE" "$(echo "$out" | jq -r '.verdict')" "N=5 bare-majority Important → APPROVE"
 }
+
+# A raised finding corroborated by 2 of 3 panelists (within ±3 lines) → consensus,
+# stamped domain "panel". Posted as a comment. Stage-1 findings all not_a_problem.
+test_panel_raised_majority_is_consensus() {
+    local specs pans out
+    specs='{"correctness":[]}'
+    pans='[{"votes":[],"raised":[{"file":"n.cs","line":20,"severity":"Important","confidence":40,"description":"missing null check","suggested_fix":"guard"}]},{"votes":[],"raised":[{"file":"n.cs","line":22,"severity":"Important","confidence":90,"description":"missing null check","suggested_fix":"guard"}]},{"votes":[],"raised":[]}]'
+    out=$(_pan_run_core "$(_pan_args 3)" "$specs" "$pans")
+    assert_equals "REQUEST_CHANGES" "$(echo "$out" | jq -r '.verdict')" "2-of-3 raised Important → consensus → RC row 3"
+    assert_equals "1" "$(echo "$out" | jq '[.log.findings[] | select(.domain=="panel")] | length')" "raised finding stamped domain panel"
+    # confidence overwritten from corroboration (80), NOT the panelist-supplied 40/90.
+    assert_equals "80" "$(echo "$out" | jq -r '[.log.findings[] | select(.domain=="panel")][0].confidence')" "raised confidence set from corroboration, not panelist value"
+}
+
+# A solo raise (1 of 3) → contested, confidence 40, not posted, verdict APPROVE.
+test_panel_solo_raise_is_low_contested() {
+    local specs pans out
+    specs='{"correctness":[]}'
+    pans='[{"votes":[],"raised":[{"file":"s.cs","line":5,"severity":"Important","confidence":88,"description":"solo concern","suggested_fix":"f"}]},{"votes":[],"raised":[]},{"votes":[],"raised":[]}]'
+    out=$(_pan_run_core "$(_pan_args 3)" "$specs" "$pans")
+    assert_equals "APPROVE" "$(echo "$out" | jq -r '.verdict')" "solo raise does not drive a verdict"
+    assert_equals "40" "$(echo "$out" | jq -r '[.log.findings[] | select(.domain=="panel")][0].confidence')" "solo raise → contested confidence 40"
+    assert_equals "0" "$(echo "$out" | jq '.comments | length')" "solo-raise contested finding not posted"
+}
+
+# Distant-line duplicates (line 5 vs line 99, same file) do NOT merge — two separate
+# solo clusters, not one corroborated cluster (the residual-risk-#2 conservative case).
+test_panel_distant_raises_do_not_merge() {
+    local specs pans out
+    specs='{"correctness":[]}'
+    pans='[{"votes":[],"raised":[{"file":"d.cs","line":5,"severity":"Suggestion","confidence":50,"description":"dup far","suggested_fix":"f"}]},{"votes":[],"raised":[{"file":"d.cs","line":99,"severity":"Suggestion","confidence":50,"description":"dup far","suggested_fix":"f"}]},{"votes":[],"raised":[]}]'
+    out=$(_pan_run_core "$(_pan_args 3)" "$specs" "$pans")
+    assert_equals "2" "$(echo "$out" | jq '[.log.findings[] | select(.domain=="panel")] | length')" "distant-line raises enter as two separate findings"
+}
+

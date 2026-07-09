@@ -1061,6 +1061,8 @@ Present the synthesiser's formatted report to the user.
 
 **Optional Playwright verification:** If the ui-reviewer produced a "Findings Requiring Visual Verification" section AND the `playwright-cli` skill is available, verify those specific findings in the browser. Append verification results to the report.
 
+**Before presenting the report to the user, complete Step 3.6 below.**
+
 #### Step 3.6: Durable full log (opt-in, default OFF)
 
 The full unfiltered analytical record is a fine-tuning instrument with a finite useful life.

@@ -328,9 +328,9 @@ test_both_hosts_document_cog_jsonl() {
     # Both host call sites must invoke the writer.
     for file in skills/review-gh-pr/SKILL.md commands/pre-review.md; do
         if grep -qF 'bin/durable-log-write' "$cr/$file"; then
-            pass "host documents per-cog JSONL: $file"
+            pass "host invokes durable-log-write: $file"
         else
-            fail "host documents per-cog JSONL: $file" "host must invoke bin/durable-log-write (writer owns JSONL format)"
+            fail "host invokes durable-log-write: $file" "host must invoke bin/durable-log-write (writer owns JSONL format)"
         fi
     done
 }

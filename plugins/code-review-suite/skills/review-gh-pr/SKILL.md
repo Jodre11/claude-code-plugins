@@ -1059,9 +1059,9 @@ nothing — the worktree is not ours to remove.
 
 Present the synthesiser's formatted report to the user.
 
-**Optional Playwright verification:** If the ui-reviewer produced a "Findings Requiring Visual Verification" section AND the `playwright-cli` skill is available, verify those specific findings in the browser. Append verification results to the report.
+**STOP — do not present the report yet. First complete Step 3.6 (Durable full log) below; the "present" instruction above must not execute until Step 3.6 has run (or been skipped because `full_log` is off).**
 
-**Before presenting the report to the user, complete Step 3.6 below.**
+**Optional Playwright verification:** If the ui-reviewer produced a "Findings Requiring Visual Verification" section AND the `playwright-cli` skill is available, verify those specific findings in the browser. Append verification results to the report.
 
 #### Step 3.6: Durable full log (opt-in, default OFF)
 
@@ -1077,8 +1077,9 @@ When `true` **and** the bundle carries a `log` payload (`bundle.log`):
 
 1. Resolve identity (all host-context): `<repo-slug>` = reviewed repo `owner/name` with `/`→`-`;
    `<ident>` = `pr-$ARGUMENTS`; `<sha>` = the first 12 characters of `$HEAD_SHA` (`$HEAD_SHA` is
-   the validated 40-char sha — truncate it here, e.g. `${HEAD_SHA:0:12}`). The same 12-char value
-   MUST be used for both the `--sha` flag and the breadcrumb marker so the gate self-matches.
+   the validated 40-char sha — truncate it here, e.g. `${HEAD_SHA:0:12}`). The same resolved
+   `<repo-slug>`, `<ident>`, and 12-char `<sha>` MUST be used for both the writer flags and the
+   breadcrumb marker so the Stop-hook gate self-matches.
    Resolve `$PLUGIN_SHA` =
    `git -C "{plugin-marketplace-dir}" rev-parse --short HEAD` (use `unknown` if it fails). Stamp
    `$LOG_TS` = `date -u +%Y-%m-%dT%H:%M:%SZ`.

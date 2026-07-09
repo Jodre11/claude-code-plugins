@@ -102,6 +102,12 @@ Stop hook (hooks.json):
 The hot path is unchanged; config resolution stays in prose (host-context, not fragile
 mechanics). The script assumes the decision is already made and just writes.
 
+The diagram shows the breadcrumb at `$CLAUDE_TEMP_DIR/bundle-log.json` for the *host's* write;
+the Stop hook cannot read `$CLAUDE_TEMP_DIR` (it is not exported to hook subprocesses), so the
+breadcrumb path/keying the hook actually uses is the session-scoped, disarmable, self-expiring
+contract specified as a **hard requirement** in Component 3 — not a literal
+`$CLAUDE_TEMP_DIR` read.
+
 ## Component 1 — `bin/durable-log-write`
 
 Shell executable, `chmod +x`, `#!/usr/bin/env bash`, `set -euo pipefail`, 4-space indent —
@@ -141,9 +147,17 @@ is not exported into Bash subprocesses).
    - one `cog` line per `payload.cogs[]` entry, verbatim, `type:"cog"`.
    - one `finding` line per `payload.findings[]` entry, `type:"finding"`.
    - the per-phase token rows from `--tokens` appended verbatim (skip if the file is absent
-     or empty).
+     or empty). **Token rows are best-effort:** a malformed line in `--tokens` is skipped
+     (warn to stderr), never fatal — unlike `--payload`, a junk `--tokens` file must not
+     `exit 1` or abort the write (mind `set -euo pipefail`: guard the per-line `jq` so a
+     parse failure doesn't kill the script).
    - `payload.cogs` absent (lightweight path) → meta + findings + tokens only.
 5. `exit 0`.
+
+**Overwrite semantics:** re-reviewing the same PR/branch at an unchanged head sha writes to
+the same `<ident>-<sha>.{md,jsonl}` pair, overwriting the prior pair. This is **intentional
+and idempotent** — the latest review of a given sha wins, and it keeps the disarm/gate logic
+simple (one canonical file per sha). A new commit yields a new sha and thus a new file.
 
 **Determinism / correctness win:** emitting the `.jsonl` via `jq -c` guarantees each line is
 valid JSON regardless of finding text containing quotes or newlines. The current prose
@@ -185,15 +199,42 @@ the hook must agree on a path the hook can find without that env var.
 
 **Breadcrumb:** the `bundle-log.json` the host Writes in step 1 is the breadcrumb — its
 existence means "a review produced a durable-log-eligible bundle this session", and its
-`meta.head_sha` names the expected log file. The hook needs to locate it; resolve this in the
-plan (candidate: the host writes the breadcrumb to a fixed, session-independent marker path
-the hook also knows, or the hook scans `${TMPDIR:-/tmp}/claude-*/bundle-log.json`). The
-breadcrumb path contract is a plan-level decision; the spec fixes only the *behaviour*.
+`meta.head_sha` names the expected log file. The hook needs to locate it without
+`CLAUDE_TEMP_DIR`.
+
+**HARD REQUIREMENT — the breadcrumb contract must be session-scoped, disarmable, and
+self-expiring.** A naïve `${TMPDIR:-/tmp}/claude-*/bundle-log.json` glob is a
+**cross-session false-block landmine** and is rejected as-is: session A runs a review, writes
+the breadcrumb, then dies (or the write errors) before the log is written; A's breadcrumb is
+now stranded in `/tmp/claude-A/`; later an unrelated session B ends a turn, its Stop hook
+globs the shared tree, finds A's breadcrumb with no matching log, and **blocks B on a review B
+never ran and cannot fix** — a permanent trap until someone hand-clears `/tmp`. The plan MUST
+therefore satisfy all three of:
+
+1. **Session-scoping** — the hook judges only *its own* session's breadcrumb, never another
+   session's. (The Stop hook payload carries the session id on stdin; the breadcrumb path or
+   its contents must key off the same id so a foreign breadcrumb is invisible.)
+2. **Disarm** — a successful `durable-log-write` (or an explicit skip when `full_log=false`)
+   removes/neutralises the breadcrumb so the very next turn-end is a clean no-op. The gate must
+   never fire twice for one write.
+3. **Self-expiry / bounded fallback** — a stranded breadcrumb from a crashed session can never
+   block indefinitely (e.g. ignore breadcrumbs older than a short TTL, and treat an
+   unreadable/foreign one as absent). A dead session must not be able to wedge a live one.
+
+The concrete path/keying mechanism is the plan-level decision; the spec fixes the *behaviour*
+and these three invariants as non-negotiable.
+
+**Sha-length reconciliation:** the durable filename uses the **12-char** sha, but
+`bundle.log.meta.head_sha` is the **full 40-char** sha (`review-core.mjs:144`). The hook's
+"does a log exist for this head_sha" check must compare on a normalised length (truncate
+`meta.head_sha` to 12, or match on prefix) — a naïve full-vs-12 string compare never matches
+and the gate would block on **every** review. Fix this explicitly in the hook.
 
 **Hook behaviour:**
 - No breadcrumb found → **no-op, exit 0** (the common case: every non-review turn is inert).
-- Breadcrumb found, and a durable log file exists matching its `meta.head_sha` under
-  `$HOME/.claude/code-review-suite/logs/**` → **pass, exit 0** (the write happened).
+- Breadcrumb found, and a durable log file exists matching its `meta.head_sha` (normalised to
+  the 12-char filename form) under `$HOME/.claude/code-review-suite/logs/**` → **pass, exit 0**
+  (the write happened).
 - Breadcrumb found, no matching durable log → **block** (non-zero / decision `block`) with a
   message instructing the host to run `bin/durable-log-write`. This makes a skip
   self-correcting: the model cannot cleanly end the turn having skipped the write.
@@ -219,14 +260,26 @@ Shell suite (`tests/lib/`, sourced by `tests/run.sh`), matching existing pattern
   (the correctness win over the prose version — this is the highest-value assertion).
 - `cogs` absent → meta + findings + tokens only (lightweight path).
 - `--tokens` file absent → no token rows, still exits 0.
+- **`--tokens` file present but containing a malformed line → the bad row is skipped, the
+  good rows still land, and the script still `exit 0`** (best-effort tokens; guards the
+  `set -euo pipefail` regression).
 - malformed / missing `--payload` → `exit 1`, nothing written.
 - `--ident pr-86` vs `--ident my-branch` → correct filenames.
 - writes under `--out-dir` (temp), never the real `$HOME` path, in tests.
 
 **Stop-hook tests (`tests/lib/test_durable_log_gate.sh`):**
-- breadcrumb present + matching log absent → hook blocks (non-zero / block decision).
-- breadcrumb present + matching log present → hook passes (exit 0).
+- breadcrumb present (own session) + matching log absent → hook blocks (non-zero / block
+  decision).
+- breadcrumb present + matching log present → hook passes (exit 0). Cover **sha-length
+  normalisation**: breadcrumb `meta.head_sha` is 40-char, log filename is 12-char — the
+  match must still succeed (guards the always-blocks regression).
 - no breadcrumb → hook inert (exit 0) — guards against false blocks on non-review turns.
+- **session-scoping: a breadcrumb belonging to a *different* session id → hook inert (exit
+  0)** — the cross-session false-block landmine must not fire.
+- **disarm: after a successful write the breadcrumb is neutralised, so a second consecutive
+  turn-end is a clean no-op** — the gate never fires twice for one write.
+- **self-expiry: a stranded breadcrumb older than the TTL → hook inert (exit 0)** — a dead
+  session cannot wedge a live one indefinitely.
 
 **Not automated:** the end-to-end live confirm — turn `full_log` on, run a real review,
 eyeball the `.md` + `.jsonl`. (Same organic step as the 2026-06-19 spec. Note the

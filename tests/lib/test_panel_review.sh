@@ -59,6 +59,14 @@ _pan_args() {
     echo "{\"agentPrompt\":\"x\",\"flags\":{},\"route\":\"full\",\"selfReReview\":false,\"reviewMode\":\"pr\",\"base\":\"main\",\"headSha\":\"${sha40}\",\"emptyTreeMode\":false,\"pathScope\":\"\",\"tempDir\":\"/tmp/claude-test/x\",\"intentLedger\":\"\",\"orchestrationMode\":\"panel\",\"panelSize\":${n},\"panelBrief\":\"BRIEF\"}"
 }
 
+# args with a goal-bearing intent ledger (matches the /(^|\n)\s*goal:\s*\S/ detector).
+_pan_args_goal() {
+    local n="${1:-3}"
+    local sha40="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    local ledger="Intent ledger:\ngoal: ship the widget end to end.\nnon_goals: none\nsource: pr_body\n"
+    echo "{\"agentPrompt\":\"x\",\"flags\":{},\"route\":\"full\",\"selfReReview\":false,\"reviewMode\":\"pr\",\"base\":\"main\",\"headSha\":\"${sha40}\",\"emptyTreeMode\":false,\"pathScope\":\"\",\"tempDir\":\"/tmp/claude-test/x\",\"intentLedger\":\"${ledger}\",\"orchestrationMode\":\"panel\",\"panelSize\":${n},\"panelBrief\":\"BRIEF\"}"
+}
+
 # One Important consensus finding, unanimously voted real by 3 panelists → RC via rubric row 3.
 test_panel_unanimous_real_important_is_rc() {
     local specs pans out
@@ -151,5 +159,34 @@ test_panel_distant_raises_do_not_merge() {
     pans='[{"votes":[],"raised":[{"file":"d.cs","line":5,"severity":"Suggestion","confidence":50,"description":"dup far","suggested_fix":"f"}]},{"votes":[],"raised":[{"file":"d.cs","line":99,"severity":"Suggestion","confidence":50,"description":"dup far","suggested_fix":"f"}]},{"votes":[],"raised":[]}]'
     out=$(_pan_run_core "$(_pan_args 3)" "$specs" "$pans")
     assert_equals "2" "$(echo "$out" | jq '[.log.findings[] | select(.domain=="panel")] | length')" "distant-line raises enter as two separate findings"
+}
+
+# Row 1 fires: goal present + a consensus finding blocks_goal by majority (2 of 3).
+# The finding is only a Suggestion (rows 2/3 would NOT fire) → proves row 1 drove it.
+test_panel_row1_fires_on_goal_block() {
+    local specs pans out
+    specs='{"style":[{"file":"a.cs","line":3,"severity":"Suggestion","confidence":50,"description":"incomplete feature","suggested_fix":"finish it"}]}'
+    pans='[{"votes":[{"finding_id":0,"vote":"real","blocks_goal":true,"rationale":"r"}],"raised":[]},{"votes":[{"finding_id":0,"vote":"real","blocks_goal":true,"rationale":"r"}],"raised":[]},{"votes":[{"finding_id":0,"vote":"real","blocks_goal":false,"rationale":"r"}],"raised":[]}]'
+    out=$(_pan_run_core "$(_pan_args_goal 3)" "$specs" "$pans")
+    assert_equals "REQUEST_CHANGES" "$(echo "$out" | jq -r '.verdict')" "row 1 fires: goal + majority blocks_goal → RC on a mere Suggestion"
+}
+
+# Row 1 does NOT fire when the ledger has no goal, even with unanimous blocks_goal
+# votes — a Suggestion alone → APPROVE. Proves hasGoal gates row 1.
+test_panel_row1_inert_without_goal() {
+    local specs pans out
+    specs='{"style":[{"file":"a.cs","line":3,"severity":"Suggestion","confidence":50,"description":"incomplete feature","suggested_fix":"finish it"}]}'
+    pans='[{"votes":[{"finding_id":0,"vote":"real","blocks_goal":true,"rationale":"r"}],"raised":[]},{"votes":[{"finding_id":0,"vote":"real","blocks_goal":true,"rationale":"r"}],"raised":[]},{"votes":[{"finding_id":0,"vote":"real","blocks_goal":true,"rationale":"r"}],"raised":[]}]'
+    out=$(_pan_run_core "$(_pan_args 3)" "$specs" "$pans")
+    assert_equals "APPROVE" "$(echo "$out" | jq -r '.verdict')" "no goal in ledger → row 1 inert → APPROVE"
+}
+
+# blocks_goal without a consensus majority (1 of 3) → row 1 does not fire.
+test_panel_row1_needs_consensus_majority() {
+    local specs pans out
+    specs='{"style":[{"file":"a.cs","line":3,"severity":"Suggestion","confidence":50,"description":"incomplete feature","suggested_fix":"finish it"}]}'
+    pans='[{"votes":[{"finding_id":0,"vote":"real","blocks_goal":true,"rationale":"r"}],"raised":[]},{"votes":[{"finding_id":0,"vote":"real","blocks_goal":false,"rationale":"r"}],"raised":[]},{"votes":[{"finding_id":0,"vote":"real","blocks_goal":false,"rationale":"r"}],"raised":[]}]'
+    out=$(_pan_run_core "$(_pan_args_goal 3)" "$specs" "$pans")
+    assert_equals "APPROVE" "$(echo "$out" | jq -r '.verdict')" "goal present but blocks_goal not a majority → APPROVE"
 }
 

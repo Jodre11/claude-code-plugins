@@ -181,6 +181,27 @@ test_panel_row1_inert_without_goal() {
     assert_equals "APPROVE" "$(echo "$out" | jq -r '.verdict')" "no goal in ledger → row 1 inert → APPROVE"
 }
 
+# Only 1 of 3 panelists returns (the harness returns null for indices past the array).
+# 1 < floor(3/2)+1 = 2 → below quorum → degraded bundle (verdict NONE, no comments).
+test_panel_below_quorum_degrades() {
+    local specs pans out
+    specs='{"correctness":[{"file":"a.cs","line":10,"severity":"Critical","confidence":50,"description":"bug","suggested_fix":"f"}]}'
+    pans='[{"votes":[{"finding_id":0,"vote":"real","blocks_goal":false,"rationale":"r"}],"raised":[]}]'
+    out=$(_pan_run_core "$(_pan_args 3)" "$specs" "$pans")
+    assert_equals "NONE" "$(echo "$out" | jq -r '.verdict')" "below quorum → verdict NONE (no false verdict)"
+    assert_equals "0" "$(echo "$out" | jq '.comments | length')" "below quorum → no comments posted"
+}
+
+# Exactly quorum (2 of 3) → NOT degraded; a unanimous-among-survivors Critical → RC.
+test_panel_exact_quorum_proceeds() {
+    local specs pans out
+    specs='{"correctness":[{"file":"a.cs","line":10,"severity":"Critical","confidence":50,"description":"bug","suggested_fix":"f"}]}'
+    pans='[{"votes":[{"finding_id":0,"vote":"real","blocks_goal":false,"rationale":"r"}],"raised":[]},{"votes":[{"finding_id":0,"vote":"real","blocks_goal":false,"rationale":"r"}],"raised":[]}]'
+    out=$(_pan_run_core "$(_pan_args 3)" "$specs" "$pans")
+    # real=2 of s=2 survivors; superT=ceil(4/3)=2 → consensus Critical → RC row 2.
+    assert_equals "REQUEST_CHANGES" "$(echo "$out" | jq -r '.verdict')" "exact quorum proceeds: consensus Critical → RC"
+}
+
 # blocks_goal without a consensus majority (1 of 3) → row 1 does not fire.
 test_panel_row1_needs_consensus_majority() {
     local specs pans out

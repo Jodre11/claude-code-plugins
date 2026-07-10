@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+# Origin-pinned base SHA regression guards (spec 2026-07-10-origin-pinned-base-sha).
+# The pipeline body is byte-synced across three files; these guards assert the new
+# base-pin prose landed in the CANONICAL (includes/review-pipeline.md) and, for the
+# read-only path, in includes/specialist-context.md. The existing pipeline-inline sync
+# test enforces propagation to SKILL.md and pre-review.md.
+
+test_base_pin_phase_minus05_pins_baserefoid() {
+    local cr="$REPO_ROOT/plugins/code-review-suite"
+    if [[ ! -d "$cr" ]]; then
+        skip "base pin Phase -0.5" "code-review-suite plugin not found"
+        return
+    fi
+    local canonical="$cr/includes/review-pipeline.md"
+    # Scope to the Phase -0.5 section so §2a's later baseRefOid addition cannot false-pass this.
+    local phase
+    phase=$(sed -n '/^## Phase -0.5: Ephemeral worktree$/,/^## Phase 0: Intent Ledger$/p' "$canonical")
+    if grep -qF 'baseRefOid' <<<"$phase" && grep -qF 'BASE_PINNED = true' <<<"$phase"; then
+        pass "base pin Phase -0.5: canonical resolves baseRefOid and sets \$BASE_PINNED"
+    else
+        fail "base pin Phase -0.5: canonical resolves baseRefOid and sets \$BASE_PINNED" \
+            "review-pipeline.md Phase -0.5 (owned-worktree path) must resolve the PR baseRefOid and set \$BASE_PINNED = true so the base diff endpoint is an origin-pinned SHA"
+    fi
+}

@@ -79,6 +79,24 @@ Resolve the mode below, first match wins:
      `gh pr view "$ARGUMENTS" --repo "$OWNER_REPO" --json headRefOid -q .headRefOid`.
      Validate it matches `^[0-9a-f]{40}$`; if not, report
      `Phase -0.5 halt: could not resolve PR head SHA` and stop.
+   - Resolve `$BASE_REF` (the base branch name) from
+     `gh pr view "$ARGUMENTS" --repo "$OWNER_REPO" --json baseRefName -q .baseRefName`,
+     and `$EXPECTED_BASE_SHA` from
+     `gh pr view "$ARGUMENTS" --repo "$OWNER_REPO" --json baseRefOid -q .baseRefOid`.
+     Validate `$EXPECTED_BASE_SHA` matches `^[0-9a-f]{40}$`; if not, report
+     `Phase -0.5 halt: could not resolve PR base SHA` and stop.
+   - Fetch the base objects into the shared object store, then pin the base as a SHA.
+     A plain fetch writes only objects, `FETCH_HEAD`, and the remote-tracking ref — it
+     never touches the working tree, `HEAD`, the local branch refs, or any worktree
+     checkout, so it is side-effect-free for everything the review analyses:
+
+     ```bash
+     git -C "$REPO_DIR" fetch origin "$BASE_REF"
+     ```
+
+     Then set `$BASE = $EXPECTED_BASE_SHA`, `$EMPTY_TREE_MODE = false` (a live PR base is
+     never the empty tree), and `$BASE_PINNED = true` for the rest of the pipeline.
+     `$BASE_REF` is used ONLY as the fetch refspec — never fed to `git diff`.
    - Resolve `$RESOLVED_TEMP_DIR` (the concrete `/tmp/claude-<session-id>/`
      path — see Step 2.9) now, before the call. Pass it as the 4th argument so
      the worktree lands under a session-temp path the Bash guard permits;
@@ -96,8 +114,8 @@ Resolve the mode below, first match wins:
      set `$WORKTREE_OWNED = true`, and pin `$HEAD_SHA = $EXPECTED_HEAD_SHA` for
      the rest of the pipeline.
 
-Announce `> Phase -0.5: reviewing in worktree $REPO_DIR at $HEAD_SHA` on the
-owned path, or `> Phase -0.5: worktree skipped ($WORKTREE_OWNED reason)`
+Announce `> Phase -0.5: reviewing in worktree $REPO_DIR at $HEAD_SHA (base pinned to $BASE)`
+on the owned path, or `> Phase -0.5: worktree skipped ($WORKTREE_OWNED reason)`
 otherwise, and continue to Phase 0.
 
 ## Phase 0: Intent Ledger

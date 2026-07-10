@@ -110,12 +110,22 @@ class FindingDeltaTest(unittest.TestCase):
 
 
 class NoiseDominatedTest(unittest.TestCase):
-    def test_noise_dominated_when_within_lt_cross(self):
-        # both arms flip verdicts internally (stability 0.5) but agree pairwise more.
+    def test_noise_dominated_true_when_arms_indistinguishable(self):
+        # classic and panel both always APPROVE → gap = 1.0-1.0 = 0.0 < 0.1 → True
         with tempfile.TemporaryDirectory() as d:
             pr = pathlib.Path(d) / "pr-x"
             for arm in ("classic", "panel"):
                 _write_trial(pr / arm, 1, "APPROVE", [])
-                _write_trial(pr / arm, 2, "REQUEST_CHANGES", [])
+                _write_trial(pr / arm, 2, "APPROVE", [])
             out = differential.per_pr_differential(str(pr))
-            self.assertIn("noise_dominated", out)
+            self.assertIs(out["noise_dominated"], True)
+
+    def test_noise_dominated_false_when_arms_clearly_differ(self):
+        # classic always APPROVE, panel always REQUEST_CHANGES → gap = 1.0-0.0 = 1.0 ≥ 0.1 → False
+        with tempfile.TemporaryDirectory() as d:
+            pr = pathlib.Path(d) / "pr-y"
+            for trial in (1, 2):
+                _write_trial(pr / "classic", trial, "APPROVE", [])
+                _write_trial(pr / "panel", trial, "REQUEST_CHANGES", [])
+            out = differential.per_pr_differential(str(pr))
+            self.assertIs(out["noise_dominated"], False)

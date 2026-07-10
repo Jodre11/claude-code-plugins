@@ -13,6 +13,9 @@ import json
 import os
 
 _VERDICT_ORDER = ("APPROVE", "REQUEST_CHANGES", "INCONCLUSIVE")
+# Minimum gap between within-arm noise floor and cross-arm agreement to consider the
+# arms discriminable. If the gap is below this, the differential is noise-dominated.
+_NOISE_GAP_EPSILON = 0.1
 
 
 def _read_jsonl(path):
@@ -151,7 +154,7 @@ def per_pr_differential(pr_dir):
         "within_arm_stability": stab,
         "cross_arm_agreement": agreement,
         "finding_delta": delta,
-        "noise_dominated": stab < agreement["pairwise_rate"],
+        "noise_dominated": (stab - agreement["pairwise_rate"]) < _NOISE_GAP_EPSILON,
         "contradiction": None,          # filled by ranking_unblind once rankings exist
     }
 

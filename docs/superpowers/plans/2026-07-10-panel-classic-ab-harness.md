@@ -856,9 +856,10 @@ git commit -m "feat(ab): differential verdict agreement (within/cross-arm)"
   - `per_pr_differential(pr_dir) -> dict` — loads `classic/` and `panel/`, returns verdict agreement + finding delta
     + the two flags:
     - `"contradiction"`: placeholder here (needs ranking) — emitted as `None`; `ranking_unblind` fills it.
-    - `"noise_dominated"`: True iff `min(within_arm_stability(classic), within_arm_stability(panel))` <
-      `cross_arm_agreement.pairwise_rate` (arms differ from themselves more than from each other → cannot
-      discriminate).
+    - `"noise_dominated"`: True iff `(min_within - pairwise_rate) < 0.1` — the gap between the within-arm
+      noise floor and cross-arm agreement is too small to discriminate the arms (they agree cross-arm about
+      as much as each agrees with itself). Uses module constant `_NOISE_GAP_EPSILON = 0.1`. (Corrected from
+      the original dead-code predicate `stab < pairwise_rate`, which was always False by proof.)
   - `build_differential(run_dir) -> dict` — walks every `<pr-slug>/` under run_dir, returns
     `{"prs": {<pr-slug>: per_pr_differential}, ...}`. CLI: `differential.py --run-dir <dir> [--out <path>]`.
 
@@ -921,16 +922,31 @@ class FindingDeltaTest(unittest.TestCase):
 
 
 class NoiseDominatedTest(unittest.TestCase):
-    def test_noise_dominated_when_within_lt_cross(self):
-        # both arms flip verdicts internally (stability 0.5) but agree pairwise more.
+    def test_noise_dominated_true_when_arms_indistinguishable(self):
+        # classic and panel both always APPROVE → gap = 0.0 < 0.1 → True
         with tempfile.TemporaryDirectory() as d:
             pr = pathlib.Path(d) / "pr-x"
             for arm in ("classic", "panel"):
                 _write_trial(pr / arm, 1, "APPROVE", [])
-                _write_trial(pr / arm, 2, "REQUEST_CHANGES", [])
+                _write_trial(pr / arm, 2, "APPROVE", [])
             out = differential.per_pr_differential(str(pr))
-            self.assertIn("noise_dominated", out)
+            self.assertIs(out["noise_dominated"], True)
+
+    def test_noise_dominated_false_when_arms_clearly_differ(self):
+        # classic all-APPROVE, panel all-REQUEST_CHANGES → gap = 1.0 ≥ 0.1 → False
+        with tempfile.TemporaryDirectory() as d:
+            pr = pathlib.Path(d) / "pr-y"
+            for trial in (1, 2):
+                _write_trial(pr / "classic", trial, "APPROVE", [])
+                _write_trial(pr / "panel", trial, "REQUEST_CHANGES", [])
+            out = differential.per_pr_differential(str(pr))
+            self.assertIs(out["noise_dominated"], False)
 ```
+
+> **Design note:** the original predicate `stab < agreement["pairwise_rate"]` was dead code —
+> `pairwise_rate <= min_within` always by proof, so the condition was never True. The corrected
+> predicate uses the gap `(min_within - pairwise_rate) < _NOISE_GAP_EPSILON` (threshold 0.1).
+> Tests strengthened from key-presence (`assertIn`) to value-asserting (`assertIs True/False`).
 
 - [ ] **Step 2: Run to verify it fails**
 
@@ -1012,7 +1028,7 @@ def per_pr_differential(pr_dir):
         "within_arm_stability": stab,
         "cross_arm_agreement": agreement,
         "finding_delta": delta,
-        "noise_dominated": stab < agreement["pairwise_rate"],
+        "noise_dominated": (stab - agreement["pairwise_rate"]) < _NOISE_GAP_EPSILON,
         "contradiction": None,          # filled by ranking_unblind once rankings exist
     }
 

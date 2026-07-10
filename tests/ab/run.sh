@@ -507,6 +507,21 @@ _ab_orch_launch_trial() {
     local stream_jsonl="$trial_dir/stream.jsonl" stdout="$trial_dir/stdout.log"
     local stderr="$trial_dir/stderr.log" timing="$trial_dir/timing.json"
     local start_iso; start_iso=$(date -u +'%Y-%m-%dT%H:%M:%SZ'); local start=$SECONDS
+
+    # Heartbeat: emit elapsed-time updates to stderr every 60s while the trial
+    # runs, so a long orchestration trial is observable. Mirrors the sibling
+    # launch_run_per_agent_trial. Killed in a trap when the trial returns or the
+    # harness is interrupted.
+    (
+        hb_elapsed=0
+        while sleep 60; do
+            hb_elapsed=$((hb_elapsed + 60))
+            echo "[$(date +'%H:%M:%S')] $(basename "$trial_dir"): still running (${hb_elapsed}s elapsed)" >&2
+        done
+    ) &
+    local hb_pid=$!
+    trap 'kill -TERM "$hb_pid" 2>/dev/null; wait "$hb_pid" 2>/dev/null || true' RETURN
+
     local rc=0
     CLAUDE_CODE_SUBPROCESS_ENV_SCRUB=0 \
     "$timeout_bin" --foreground --signal=TERM --kill-after=30 "$timeout_seconds" \
@@ -514,6 +529,11 @@ _ab_orch_launch_trial() {
             --output-format stream-json --verbose \
             --exclude-dynamic-system-prompt-sections "$prompt" \
         > "$stream_jsonl" 2> "$stderr" || rc=$?
+
+    kill -TERM "$hb_pid" 2>/dev/null || true
+    wait "$hb_pid" 2>/dev/null || true
+    trap - RETURN
+
     launch_jq_reduce_stream_jsonl "$stream_jsonl" "$stdout"
     local elapsed=$((SECONDS - start)); local timed_out=false
     [[ "$rc" == "124" ]] && timed_out=true
@@ -548,7 +568,22 @@ _ab_orch_pilot_gate() {
     local run_dir="$1"
     local log="$run_dir/pilot-gate.log"
     local diff_json="$run_dir/differential.json"
-    python3 "$SCRIPT_DIR/lib/differential.py" --run-dir "$run_dir" --out "$diff_json" >/dev/null
+
+    # differential.py can throw (e.g. malformed harvested JSONL in json.loads).
+    # Capture its rc rather than letting set -e abort the gate before it logs —
+    # the gate's contract is to ALWAYS record the path taken to pilot-gate.log.
+    local diff_rc=0
+    python3 "$SCRIPT_DIR/lib/differential.py" --run-dir "$run_dir" --out "$diff_json" >/dev/null 2>&1 \
+        || diff_rc=$?
+    if [[ "$diff_rc" != "0" ]]; then
+        {
+            echo "HARD-STOP"
+            echo "reason: differential.py failed (exit $diff_rc) — likely malformed harvested JSONL"
+            echo "action: maintainer review harvested durable-log.jsonl files before Phase B"
+        } > "$log"
+        cat "$log" >&2
+        return 0
+    fi
 
     local min_stab; min_stab=$(jq -r '[.prs[].within_arm_stability] | min // 0' "$diff_json")
     local harvest_misses; harvest_misses=$(find "$run_dir" -name HARVEST_MISS | wc -l | tr -d ' ')

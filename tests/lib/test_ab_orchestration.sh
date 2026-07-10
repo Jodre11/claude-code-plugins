@@ -169,3 +169,37 @@ test_orch_pilot_gate_auto_proceeds_on_stable_low_variance() {
     fi
     rm -rf "$tmp"
 }
+
+test_orch_pilot_gate_hard_stops_when_differential_fails() {
+    local tmp run
+    tmp=$(mktemp -d); run="$tmp/run"
+    # Malformed durable-log.jsonl → differential.py's json.loads throws → non-zero
+    # exit. The gate must still write a HARD-STOP log (its always-log guarantee),
+    # not abort silently under set -e.
+    #
+    # The subshell runs `set -euo pipefail` WITHOUT a trailing `|| true` on the
+    # gate call — bash disables set -e for a command on the left of `||`, which
+    # would mask the very abort this test reproduces. We guard the harness with
+    # an outer `set +e`/`set -e` around the subshell's exit-code capture instead.
+    local arm i
+    for arm in classic panel; do
+        for i in 1 2 3; do
+            local td; td=$(printf '%s/pr-1/%s/trial-%03d' "$run" "$arm" "$i"); mkdir -p "$td"
+            printf 'REQUEST_CHANGES\n' > "$td/verdict.txt"
+            printf '{not valid json\n' > "$td/durable-log.jsonl"
+        done
+    done
+    set +e
+    ( set -euo pipefail
+      _AB_RUN_DIR="$run"; source "$REPO_ROOT/tests/ab/run.sh" 2>/dev/null || true
+      _ab_orch_pilot_gate "$run" ) 2>/dev/null
+    set -e
+    if [[ -f "$run/pilot-gate.log" ]] && grep -q 'HARD-STOP' "$run/pilot-gate.log" \
+        && grep -qi 'differential' "$run/pilot-gate.log"; then
+        pass "orch: pilot gate writes HARD-STOP log when differential.py fails"
+    else
+        fail "orch: pilot gate writes HARD-STOP log when differential.py fails" \
+            "$(cat "$run/pilot-gate.log" 2>&1 || echo 'pilot-gate.log missing')"
+    fi
+    rm -rf "$tmp"
+}

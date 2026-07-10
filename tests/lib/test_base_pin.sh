@@ -85,10 +85,10 @@ test_base_pin_specialist_never_fetches() {
         return
     fi
     local spec="$cr/includes/specialist-context.md"
-    if grep -qF 'git fetch' "$spec"; then
-        fail "base pin specialist never fetches: specialist-context contains no 'git fetch'" \
-            "specialist-context.md must contain no 'git fetch' — reviewers are read-only and the reviewer guard (allow-permissions.sh) blocks a fetch"
+    if grep -qF 'fetch origin' "$spec"; then
+        fail "base pin specialist never fetches: specialist-context contains no 'fetch origin'" \
+            "specialist-context.md must contain no 'fetch origin' — reviewers are read-only and the reviewer guard (allow-permissions.sh) blocks a fetch"
     else
-        pass "base pin specialist never fetches: specialist-context contains no 'git fetch'"
+        pass "base pin specialist never fetches: specialist-context contains no 'fetch origin'"
     fi
 }

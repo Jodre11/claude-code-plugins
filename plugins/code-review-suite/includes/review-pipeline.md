@@ -878,6 +878,23 @@ still triggers the launch-approval prompt; that prompt is inherent to dynamic wo
 and is NOT suppressed by scriptPath. Silence it via auto permission mode (records
 user-level consent once) or by answering "don't ask again" for this script per-project:
 
+**Resolve panel orchestration (default classic).** Resolve `orchestration.review_mode` and
+`orchestration.panel_size` from two config layers, first match wins, exactly as `full_log`
+resolves (Step 3.6): (1) the reviewed repo's `.claude/code-review.toml`, then (2) the
+user-level `~/.claude/code-review.toml`. Treat a missing/malformed file as not setting the
+key. If neither layer sets `review_mode`, `$ORCHESTRATION_MODE = classic`; otherwise it is
+the resolved `"classic"` or `"panel"`. If neither sets `panel_size`, `$PANEL_SIZE = 3`.
+
+**Validate `panel_size`.** When `$ORCHESTRATION_MODE = panel`, if `$PANEL_SIZE` is even or
+`< 3`, halt with: `> Panel review requires an odd panel_size >= 3 (got <value>).` Do not
+silently round.
+
+**Read the concern brief.** Set `$PANEL_BRIEF` to the verbatim contents of
+`includes/panel-concern-brief.md` (resolve its path the same way `$REVIEW_CORE_PATH` is
+resolved, replacing `workflows/review-core.mjs` with `includes/panel-concern-brief.md`).
+When `$ORCHESTRATION_MODE = classic`, `$PANEL_BRIEF` may be the empty string — the workflow
+ignores it on the classic path.
+
 ```
 workflow({scriptPath: $REVIEW_CORE_PATH}, {
     agentPrompt: $AGENT_PROMPT,
@@ -889,7 +906,8 @@ workflow({scriptPath: $REVIEW_CORE_PATH}, {
     reviewMode: $REVIEW_MODE,
     base: $BASE, headSha: $HEAD_SHA, emptyTreeMode: $EMPTY_TREE_MODE,
     pathScope: $PATH_SCOPE, tempDir: $RESOLVED_TEMP_DIR,
-    intentLedger: $INTENT_LEDGER, repoDir: $REPO_DIR
+    intentLedger: $INTENT_LEDGER, repoDir: $REPO_DIR,
+    orchestrationMode: $ORCHESTRATION_MODE, panelSize: $PANEL_SIZE, panelBrief: $PANEL_BRIEF
 })
 ```
 

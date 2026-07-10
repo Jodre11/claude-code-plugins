@@ -320,6 +320,15 @@ test_no_disclosure_when_nothing_suppressed() {
     assert_not_matches "below the posting threshold" "$body" "no disclosure line when nothing is suppressed"
 }
 
+test_classic_log_meta_records_classic_mode() {
+    local args env out
+    args=$(_op_args)
+    env='{"verdict":"APPROVE","rubricRowApplied":4,"rubricReason":"clean","tiers":{"consensus":[],"synthesiser":[],"contested":[],"dismissed":[]},"bodyText":"## Synthesiser Assessment\n> clean\n"}'
+    out=$(_op_run_core "$args" "$env")
+    assert_equals "classic" "$(echo "$out" | jq -r '.log.meta.orchestration_mode')" "classic path records orchestration_mode=classic"
+    assert_equals "null" "$(echo "$out" | jq -r '.log.meta.panel_size')" "classic path records panel_size=null"
+}
+
 test_end_to_end_pr80_shape() {
     local args env out body
     args=$(_op_args)

@@ -201,6 +201,98 @@ When the decay-warner reports a depends_on path has changed (e.g.
 A generalised refresh subcommand is deferred — the workflow is rare and
 manual review is load-bearing.
 
+## Orchestration mode (panel-vs-classic A/B)
+
+Orchestration mode runs the **full** `/review-gh-pr` orchestrator against a
+corpus of merged PRs, comparing the `classic` and `panel` review arms. Unlike
+end-to-end mode, no tracked files are mutated: the arm is selected by a
+**temporary user-level `~/.claude/code-review.toml`** `[orchestration]` block,
+backed up and restored on every exit path (a failed restore writes
+`MANUAL_REVERT_REQUIRED` into the run dir). Model and effort are the production
+session defaults — the only difference between arms is the TOML toggle, so both
+run exactly as a real review would.
+
+### Usage
+
+```
+tests/ab/run.sh --mode orchestration --corpus <corpus.yaml> \
+    --arms "classic panel:5" --trials <n> --phase <pilot|full> \
+    [--panel-size <n>] [--timeout-seconds <n>]
+```
+
+Example — pilot phase, 2 trials per arm:
+
+```
+tests/ab/run.sh --mode orchestration \
+    --corpus tests/ab/corpus/panel-ab-pilot/corpus.yaml \
+    --arms "classic panel:5" --trials 2 --phase pilot
+```
+
+### Arm-spec syntax
+
+`--arms` is a space-separated list of arm specs. Each is either `classic` or
+`panel[:<size>]`:
+
+- `classic` — classic single-reviewer orchestration.
+- `panel` — panel review at the default panel size (`--panel-size`, default 3).
+- `panel:5` — panel review with an explicit panel size of 5 (overrides
+  `--panel-size` for that arm).
+
+### corpus.yaml schema
+
+Recorded at phase start (copied verbatim into the run dir):
+
+```yaml
+phase: pilot          # pilot | full
+prs:
+  - url: https://github.com/Jodre11/claude-code-plugins/pull/88
+    head_sha: a757f69000000000000000000000000000000000  # 40-hex, pinned
+    stratum: "large-diff/request-changes/hard"           # selection stratum label
+```
+
+Each corpus PR **must be MERGED** (preflight hard-fails otherwise) so the
+§B.1 no-post safety guarantee holds. The operator must also confirm, when
+selecting each SHA, that the PR's repo sets no repo-level `[orchestration]`
+key — a repo-level override would win over the harness's user-level temp toggle
+(recorded as a warning, not enforced).
+
+### The TOML toggle
+
+For each arm the harness writes `~/.claude/code-review.toml`:
+
+```toml
+[orchestration]
+review_mode = "panel"   # or "classic"
+panel_size  = 5
+full_log    = true      # forced on — the durable log is the data source
+```
+
+Any pre-existing `code-review.toml` is backed up to `*.ab-backup` and restored
+byte-for-byte after the arm's trials complete.
+
+### Output layout (orchestration mode)
+
+```
+tests/ab/runs/<timestamp>-orchestration-<phase>/
+  corpus.yaml                          # verbatim copy of the input corpus
+  <owner>-<repo>-pr-<N>/               # one per corpus PR
+    classic/
+      trial-001/
+        stdout.log                     # reconstructed from stream.jsonl
+        stderr.log
+        stream.jsonl                   # --output-format stream-json trace
+        timing.json
+        verdict.txt                    # APPROVE | REQUEST_CHANGES | INCONCLUSIVE
+        durable-log.jsonl              # harvested orchestration durable log
+        durable-log.md                 # harvested durable-log markdown (if present)
+        HARVEST_MISS                    # sentinel when the durable log was absent
+      trial-002/
+      ...
+    panel/
+      trial-001/
+      ...
+```
+
 ### Per-agent configs
 
 Schema:

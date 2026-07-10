@@ -82,6 +82,30 @@ test_orch_harvest_missing_jsonl_returns_nonzero() {
     rm -rf "$tmp"
 }
 
+test_orch_dispatcher_scaffolds_run_dir_and_records_corpus() {
+    local tmp corpus
+    tmp=$(mktemp -d); corpus="$tmp/corpus.yaml"
+    cat > "$corpus" <<'YAML'
+phase: pilot
+prs:
+  - url: https://github.com/Jodre11/claude-code-plugins/pull/88
+    head_sha: a757f69000000000000000000000000000000000
+    stratum: large/rc/hard
+YAML
+    local out
+    out=$(_AB_ORCH_DRYRUN=1 CLAUDE_TEMP_DIR="$tmp" \
+        bash "$REPO_ROOT/tests/ab/run.sh" --mode orchestration --corpus "$corpus" \
+        --arms "classic panel:5" --trials 2 --phase pilot 2>&1 || true)
+    # Dry-run prints the resolved run dir on the last "Run dir:" line.
+    local run_dir; run_dir=$(printf '%s\n' "$out" | sed -n 's/.*Run dir:[[:space:]]*//p' | tail -1)
+    if [[ -n "$run_dir" && -f "$run_dir/corpus.yaml" ]]; then
+        pass "orch: dispatcher scaffolds run dir + copies corpus.yaml"
+    else
+        fail "orch: dispatcher scaffolds run dir + copies corpus.yaml" "$out"
+    fi
+    rm -rf "$tmp"
+}
+
 test_orch_harvest_no_md_still_succeeds() {
     local tmp logs trial rc
     tmp=$(mktemp -d); logs="$tmp/logs"; trial="$tmp/trial"

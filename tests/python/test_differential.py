@@ -52,3 +52,70 @@ class VerdictAgreementTest(unittest.TestCase):
             agg = differential.cross_arm_agreement(ra, rb)
             self.assertFalse(agg["modal_match"])  # classic RC vs panel modal APPROVE/RC tie→first
             self.assertAlmostEqual(agg["pairwise_rate"], 0.5)  # 2 of 4 pairs agree
+
+
+class FindingMatchTest(unittest.TestCase):
+    def _f(self, file="a.py", line=10, domain="correctness", tier="consensus", conf=90):
+        return {"file": file, "line": line, "domain": domain, "tier": tier,
+                "confidence": conf, "severity": "Important", "description": "whatever"}
+
+    def test_match_within_line_proximity(self):
+        self.assertTrue(differential.findings_match(self._f(line=10), self._f(line=13)))
+        self.assertFalse(differential.findings_match(self._f(line=10), self._f(line=20)))
+
+    def test_match_requires_same_domain_and_file(self):
+        self.assertFalse(differential.findings_match(self._f(domain="security"), self._f(domain="style")))
+        self.assertFalse(differential.findings_match(self._f(file="a.py"), self._f(file="b.py")))
+
+    def test_match_never_uses_description(self):
+        a = self._f(); b = self._f()
+        b["description"] = "totally different words"
+        self.assertTrue(differential.findings_match(a, b))  # identical position/domain → match
+
+    def test_high_value_is_consensus_or_conf_ge_80(self):
+        self.assertTrue(differential.high_value(self._f(tier="dismissed", conf=85)))
+        self.assertTrue(differential.high_value(self._f(tier="consensus", conf=10)))
+        self.assertFalse(differential.high_value(self._f(tier="contested", conf=50)))
+
+
+class FindingDeltaTest(unittest.TestCase):
+    def _run(self, findings):
+        return {"verdict": "REQUEST_CHANGES", "findings": findings, "meta": {}}
+
+    def _f(self, **kw):
+        base = {"file": "a.py", "line": 10, "domain": "correctness",
+                "tier": "consensus", "confidence": 90, "severity": "Important"}
+        base.update(kw)
+        return base
+
+    def test_dropped_high_value_finding_flagged(self):
+        classic = [self._run([self._f()]), self._run([self._f()]), self._run([self._f()])]
+        panel = [self._run([]), self._run([]), self._run([])]
+        delta = differential.finding_delta(classic, panel)
+        self.assertEqual(len(delta["dropped"]), 1)
+        self.assertEqual(len(delta["retained"]), 0)
+
+    def test_retained_finding_not_dropped(self):
+        classic = [self._run([self._f()])] * 3
+        panel = [self._run([self._f(line=12)])] * 3   # within proximity → retained
+        delta = differential.finding_delta(classic, panel)
+        self.assertEqual(len(delta["retained"]), 1)
+        self.assertEqual(len(delta["dropped"]), 0)
+
+    def test_added_finding_surfaced(self):
+        classic = [self._run([])] * 3
+        panel = [self._run([self._f(domain="security", file="x.py")])] * 3
+        delta = differential.finding_delta(classic, panel)
+        self.assertEqual(len(delta["added"]), 1)
+
+
+class NoiseDominatedTest(unittest.TestCase):
+    def test_noise_dominated_when_within_lt_cross(self):
+        # both arms flip verdicts internally (stability 0.5) but agree pairwise more.
+        with tempfile.TemporaryDirectory() as d:
+            pr = pathlib.Path(d) / "pr-x"
+            for arm in ("classic", "panel"):
+                _write_trial(pr / arm, 1, "APPROVE", [])
+                _write_trial(pr / arm, 2, "REQUEST_CHANGES", [])
+            out = differential.per_pr_differential(str(pr))
+            self.assertIn("noise_dominated", out)

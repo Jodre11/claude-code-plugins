@@ -25,7 +25,8 @@ _AB_ULTRATHINK_SYNC_SITES=(
 _AB_MUTATED_FILES=()
 
 # Run-directory marker location. Set by run.sh before installing the trap.
-_AB_RUN_DIR=""
+# Preserve any value already set in the environment (e.g. when sourced by tests).
+_AB_RUN_DIR="${_AB_RUN_DIR:-}"
 
 # Strip the literal `ultrathink\n\n` prefix from the synthesiser dispatch
 # prompt in a single file. Matches the substring `prompt: "ultrathink\n\n`

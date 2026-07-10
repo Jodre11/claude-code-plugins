@@ -128,3 +128,44 @@ test_orch_harvest_no_md_still_succeeds() {
     fi
     rm -rf "$tmp"
 }
+
+test_orch_criteria_mirrored_to_durable_location() {
+    local tmp run anchor
+    tmp=$(mktemp -d); run="$tmp/run"; mkdir -p "$run"
+    printf 'catches real bugs > low FP\n' > "$run/criteria.md"
+    ( set -euo pipefail
+      _AB_RUN_DIR="$run"
+      HOME="$tmp/home"; mkdir -p "$HOME"
+      source "$REPO_ROOT/tests/ab/run.sh" 2>/dev/null || true
+      _ab_orch_capture_criteria pilot 20260710T000000Z )
+    anchor="$tmp/home/.claude/code-review-suite/ab-criteria/20260710T000000Z-pilot-criteria.md"
+    if [[ -f "$anchor" ]]; then
+        pass "orch: criteria mirrored to durable anchor location"
+    else
+        fail "orch: criteria mirrored to durable anchor location" "missing $anchor"
+    fi
+    rm -rf "$tmp"
+}
+
+test_orch_pilot_gate_auto_proceeds_on_stable_low_variance() {
+    local tmp run
+    tmp=$(mktemp -d); run="$tmp/run"
+    # two arms, all runs agree → stability 1.0, no HARVEST_MISS.
+    local arm i
+    for arm in classic panel; do
+        for i in 1 2 3; do
+            local td; td=$(printf '%s/pr-1/%s/trial-%03d' "$run" "$arm" "$i"); mkdir -p "$td"
+            printf 'REQUEST_CHANGES\n' > "$td/verdict.txt"
+            printf '{"type":"meta","orchestration_mode":"%s"}\n' "$arm" > "$td/durable-log.jsonl"
+        done
+    done
+    ( set -euo pipefail
+      _AB_RUN_DIR="$run"; source "$REPO_ROOT/tests/ab/run.sh" 2>/dev/null || true
+      _ab_orch_pilot_gate "$run" )
+    if grep -q 'AUTO-PROCEED' "$run/pilot-gate.log"; then
+        pass "orch: pilot gate auto-proceeds on stable low-variance pilot"
+    else
+        fail "orch: pilot gate auto-proceeds on stable low-variance pilot" "$(cat "$run/pilot-gate.log" 2>&1)"
+    fi
+    rm -rf "$tmp"
+}

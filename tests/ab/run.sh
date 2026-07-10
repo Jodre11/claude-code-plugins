@@ -428,17 +428,17 @@ _ab_run_orchestration() {
     mkdir -p "$_AB_RUN_DIR"
     cp "$corpus_yaml" "$_AB_RUN_DIR/corpus.yaml"
 
-    # Pre-registration criteria: prompt is manual; the tool copies the file if the
-    # operator placed it at $_AB_RUN_DIR/criteria.md OR $CLAUDE_TEMP_DIR/criteria.md,
-    # then mirrors it to the durable honesty-anchor location (survives run-dir prune).
-    _ab_orch_capture_criteria "$phase" "$timestamp"
-
     echo "==> orchestration A/B: phase=$phase arms='$arms_spec' trials=$trials" >&2
     echo "    Run dir: $_AB_RUN_DIR" >&2
 
     if [[ "${_AB_ORCH_DRYRUN:-0}" == "1" ]]; then
         return 0    # test hook: scaffold only, no Bedrock
     fi
+
+    # Pre-registration criteria: the operator places criteria.md at $_AB_RUN_DIR/criteria.md
+    # or $CLAUDE_TEMP_DIR/criteria.md BEFORE any run; this call refuses to proceed without it
+    # and mirrors it to the durable honesty-anchor location (survives run-dir prune).
+    _ab_orch_capture_criteria "$phase" "$timestamp"
 
     launch_preflight_environment
     local timeout_bin; timeout_bin=$(launch_resolve_timeout_binary)
@@ -487,6 +487,10 @@ _ab_run_orchestration() {
         done
     done
 
+    if [[ "$phase" == "pilot" ]]; then
+        _ab_orch_pilot_gate "$_AB_RUN_DIR"
+    fi
+
     echo "Run complete: $_AB_RUN_DIR" >&2
 }
 
@@ -519,13 +523,52 @@ _ab_orch_launch_trial() {
     return "$rc"
 }
 
-# Pre-registration criteria capture. TASK-8 STUB: the durable honesty-anchor
-# copy body is Task 8's work. For now this is a safe no-op — the dry-run test
-# reaches the "Run dir:" print without depending on a criteria file, and a real
-# run proceeds without one. Task 8 fills the copy/mirror logic here.
 _ab_orch_capture_criteria() {
     local phase="$1" timestamp="$2"
-    : # TASK 8: copy criteria.md from run dir / CLAUDE_TEMP_DIR + mirror to durable anchor
+    local src=""
+    if [[ -f "$_AB_RUN_DIR/criteria.md" ]]; then
+        src="$_AB_RUN_DIR/criteria.md"
+    elif [[ -n "${CLAUDE_TEMP_DIR:-}" && -f "$CLAUDE_TEMP_DIR/criteria.md" ]]; then
+        src="$CLAUDE_TEMP_DIR/criteria.md"
+        cp "$src" "$_AB_RUN_DIR/criteria.md"
+    fi
+    if [[ -z "$src" ]]; then
+        echo "orchestration: NO pre-registration criteria.md found." >&2
+        echo "  Write your 'what is a better review' criteria to $_AB_RUN_DIR/criteria.md" >&2
+        echo "  BEFORE any run — it is the timestamped honesty anchor. Refusing to proceed." >&2
+        exit 1
+    fi
+    # Mirror to a durable location outside the run dir (survives scratch prune).
+    local anchor_dir="$HOME/.claude/code-review-suite/ab-criteria"
+    mkdir -p "$anchor_dir"
+    cp "$_AB_RUN_DIR/criteria.md" "$anchor_dir/${timestamp}-${phase}-criteria.md"
+}
+
+_ab_orch_pilot_gate() {
+    local run_dir="$1"
+    local log="$run_dir/pilot-gate.log"
+    local diff_json="$run_dir/differential.json"
+    python3 "$SCRIPT_DIR/lib/differential.py" --run-dir "$run_dir" --out "$diff_json" >/dev/null
+
+    local min_stab; min_stab=$(jq -r '[.prs[].within_arm_stability] | min // 0' "$diff_json")
+    local harvest_misses; harvest_misses=$(find "$run_dir" -name HARVEST_MISS | wc -l | tr -d ' ')
+
+    # bash has no float compare; use awk. Threshold 0.8.
+    local stable; stable=$(awk -v s="$min_stab" 'BEGIN{print (s>=0.8)?"1":"0"}')
+    if [[ "$stable" == "1" && "$harvest_misses" == "0" ]]; then
+        {
+            echo "AUTO-PROCEED"
+            echo "reason: min within-arm stability=$min_stab (>=0.8), harvest_misses=0"
+            echo "next: size Phase B N from observed variance (higher noise -> more runs/arm)"
+        } > "$log"
+    else
+        {
+            echo "HARD-STOP"
+            echo "reason: min within-arm stability=$min_stab (need >=0.8), harvest_misses=$harvest_misses"
+            echo "action: maintainer review before Phase B — check blinding held + harvest complete"
+        } > "$log"
+    fi
+    cat "$log" >&2
 }
 
 _ab_orch_preflight_merged() {
@@ -752,4 +795,6 @@ _ab_emit_completion_summary() {
     echo "Run complete: ${succeeded}/${trials} trials, ${timeouts} timeouts, mean ${mean_wall}s. Output: $_AB_RUN_DIR" >&2
 }
 
-main "$@"
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+    main "$@"
+fi

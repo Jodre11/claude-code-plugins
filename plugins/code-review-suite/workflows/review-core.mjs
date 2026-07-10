@@ -478,7 +478,11 @@ function finalizeBundle(envelope, reviewMode, phaseLog) {
     // against a malformed/absent recovered envelope.
     if (!envelope || !envelope.tiers) {
         log('finalize: envelope null or missing tiers — returning empty bundle')
-        return { verdict: 'NONE', bodyText: '(synthesiser produced no usable output)', comments: [] }
+        // Preserve any captured per-cog corpus (e.g. surviving panelists on the panel
+        // below-quorum degrade). buildLogPayload tolerates a null envelope: findings is []
+        // but meta + cogs still emit, so the durable log doesn't discard real work.
+        const logPayload = buildLogPayload(envelope, phaseLog)
+        return { verdict: 'NONE', bodyText: '(synthesiser produced no usable output)', comments: [], log: logPayload }
     }
 
     // Local mode: no verdict, no GitHub filter — return the prose plus the durable
@@ -771,13 +775,19 @@ function isPosted(finding, verdict) {
 // acted on to produce the verdict. APPROVE drives nothing. Under
 // REQUEST_CHANGES: consensus Critical (any confidence) or Important >= 70, plus
 // any finding whose positional [#N] token appears in rubricReason (covers the
-// goal-block row 1). consensusIndexToken is meaningful ONLY for the consensus
+// synthesiser goal-block). consensusIndexToken is meaningful ONLY for the consensus
 // tier — only consensus findings can be verdict-relevant under the current
 // rubric, and [#N] tokens in rubricReason reference consensus findings by
 // synthesiser contract. It is the finding's 1-based [#N] within tiers.consensus.
-function isVerdictRelevant(finding, tier, verdict, rubricReason, consensusIndexToken) {
+// rubricRowApplied gates the panel goal-block: panel row 1 sets rubricReason to
+// 'goal not achieved (panel majority)' (no [#N] token), so the blocking finding
+// is identified structurally — a consensus finding carrying blocks_goal — rather
+// than by string match. Raised consensus findings carry no blocks_goal, so === true
+// correctly excludes them; only VOTED consensus findings can have driven row 1.
+function isVerdictRelevant(finding, tier, verdict, rubricReason, consensusIndexToken, rubricRowApplied) {
     if (verdict !== 'REQUEST_CHANGES') return false
     if (tier === 'consensus') {
+        if (rubricRowApplied === 1 && finding.blocks_goal === true) return true
         if (finding.severity === 'Critical') return true
         if (finding.severity === 'Important' && (finding.confidence ?? 0) >= 70) return true
         if (consensusIndexToken && rubricReason && rubricReason.includes(`[#${consensusIndexToken}]`)) return true
@@ -914,9 +924,12 @@ function buildFreshnessSection(bodyText) {
 // Flatten all four tiers into one record-per-finding array for the JSONL log.
 // verdict_relevant is computed per the rubric (Task 2). domain is attached by
 // review-core elsewhere for escalations; default to the tier name when absent.
+// Tolerates a null/degraded envelope (Category-C guard, below-quorum panel): findings
+// is then [] but the per-cog corpus below is still emitted, so captured work survives.
 function buildLogPayload(envelope, phaseLog) {
-  const reason = envelope.rubricReason || ''
-  const tiers = envelope.tiers || {}
+  const env = envelope || {}
+  const reason = env.rubricReason || ''
+  const tiers = env.tiers || {}
   const findings = []
   for (const tier of ['consensus', 'synthesiser', 'contested', 'dismissed']) {
     const arr = tiers[tier] ?? []
@@ -930,11 +943,11 @@ function buildLogPayload(envelope, phaseLog) {
         line: f.line ?? 0,
         description: f.description,
         suggested_fix: f.suggested_fix || '',
-        verdict_relevant: isVerdictRelevant(f, tier, envelope.verdict, reason, i + 1),
+        verdict_relevant: isVerdictRelevant(f, tier, env.verdict, reason, i + 1, env.rubricRowApplied),
       })
     })
   }
-  const payload = { bodyText: envelope.bodyText, findings }
+  const payload = { bodyText: env.bodyText || '', findings }
   // Per-cog corpus (additive). Omitted entirely when no phaseLog was threaded
   // (lightweight path, or callers that don't capture) — keeps the back-compat shape.
   if (phaseLog && (phaseLog.meta || phaseLog.cogs)) {

@@ -176,6 +176,29 @@ test_panel_row1_fires_on_goal_block() {
     assert_equals "REQUEST_CHANGES" "$(echo "$out" | jq -r '.verdict')" "row 1 fires: goal + majority blocks_goal → RC on a mere Suggestion"
 }
 
+# Row 1 fires on a mere Suggestion → the durable log must flag that Suggestion
+# verdict_relevant. Regression guard for follow-up #1: rubricReason carries no [#N]
+# token, so the pre-fix isVerdictRelevant flagged NOTHING for a goal-driven RC.
+test_panel_row1_finding_is_verdict_relevant() {
+    local specs pans out
+    specs='{"style":[{"file":"a.cs","line":3,"severity":"Suggestion","confidence":50,"description":"incomplete feature","suggested_fix":"finish it"}]}'
+    pans='[{"votes":[{"finding_id":0,"vote":"real","blocks_goal":true,"rationale":"r"}],"raised":[]},{"votes":[{"finding_id":0,"vote":"real","blocks_goal":true,"rationale":"r"}],"raised":[]},{"votes":[{"finding_id":0,"vote":"real","blocks_goal":false,"rationale":"r"}],"raised":[]}]'
+    out=$(_pan_run_core "$(_pan_args_goal 3)" "$specs" "$pans")
+    assert_equals "1" "$(echo "$out" | jq '[.log.findings[] | select(.verdict_relevant==true)] | length')" "row 1 RC flags exactly the blocking consensus finding verdict_relevant"
+    assert_equals "consensus" "$(echo "$out" | jq -r '[.log.findings[] | select(.verdict_relevant==true)][0].tier')" "the verdict-relevant finding is the consensus blocks_goal one"
+}
+
+# APPROVE (row 4) must flag NOTHING verdict_relevant, even with a lone blocks_goal vote.
+# Guards contract A against over-flagging: the row gate, not blocks_goal alone, decides.
+test_panel_approve_flags_nothing_verdict_relevant() {
+    local specs pans out
+    specs='{"style":[{"file":"a.cs","line":3,"severity":"Suggestion","confidence":50,"description":"incomplete feature","suggested_fix":"finish it"}]}'
+    pans='[{"votes":[{"finding_id":0,"vote":"real","blocks_goal":true,"rationale":"r"}],"raised":[]},{"votes":[{"finding_id":0,"vote":"real","blocks_goal":false,"rationale":"r"}],"raised":[]},{"votes":[{"finding_id":0,"vote":"real","blocks_goal":false,"rationale":"r"}],"raised":[]}]'
+    out=$(_pan_run_core "$(_pan_args_goal 3)" "$specs" "$pans")
+    assert_equals "APPROVE" "$(echo "$out" | jq -r '.verdict')" "1-of-3 blocks_goal → row 1 inert → APPROVE"
+    assert_equals "0" "$(echo "$out" | jq '[.log.findings[] | select(.verdict_relevant==true)] | length')" "APPROVE flags nothing verdict_relevant despite a lone blocks_goal"
+}
+
 # Row 1 does NOT fire when the ledger has no goal, even with unanimous blocks_goal
 # votes — a Suggestion alone → APPROVE. Proves hasGoal gates row 1.
 test_panel_row1_inert_without_goal() {
@@ -195,6 +218,10 @@ test_panel_below_quorum_degrades() {
     out=$(_pan_run_core "$(_pan_args 3)" "$specs" "$pans")
     assert_equals "NONE" "$(echo "$out" | jq -r '.verdict')" "below quorum → verdict NONE (no false verdict)"
     assert_equals "0" "$(echo "$out" | jq '.comments | length')" "below quorum → no comments posted"
+    # Follow-up #2: the Category-C degrade must still carry the captured log (cogs + meta),
+    # not silently discard the surviving panelist's work. One panel cog survived (1 of 3).
+    assert_equals "1" "$(echo "$out" | jq '[.log.cogs[] | select(.phase=="panel")] | length')" "below quorum still logs the surviving panel cog"
+    assert_equals "panel" "$(echo "$out" | jq -r '.log.meta.orchestration_mode')" "below quorum log meta records orchestration_mode=panel"
 }
 
 # Exactly quorum (2 of 3) → NOT degraded; a unanimous-among-survivors Critical → RC.

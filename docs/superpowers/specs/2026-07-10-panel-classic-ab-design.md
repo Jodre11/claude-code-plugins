@@ -207,7 +207,10 @@ can identify the arm, the ranking is worthless. The packet generator therefore:
 down what "better review" means to them (e.g. "catches real bugs > low false-positive rate >
 concise prose"). The tool stores this criteria file **timestamped ahead of unblinding**. The
 per-PR ranking reasons are later checked against it; a divergence between stated criteria and
-actual rankings is flagged.
+actual rankings is flagged. Because this file is the honesty anchor, it must survive
+run-dir cleanup: it is written under the run dir for provenance *and* copied to a durable
+location, so a pruned scratch tree cannot destroy the one artefact whose value is that it was
+fixed before unblinding and can be produced later as evidence.
 
 **Workflow, per contested PR:** (1) reports A and B shown side by side, unlabelled; (2)
 maintainer records A-better / B-better / tie plus a one-line reason; (3) only after all PRs are
@@ -218,7 +221,11 @@ differential, then applying the decision rule.
 
 **Phase A — pilot (2–3 PRs × 3 runs/arm, ≈ $60–110).** Purpose: measure the within-arm noise
 floor and shake down the whole pipeline (harness, arm toggle, durable-log harvest, blinding,
-ranking) end-to-end before committing full-sweep spend. Three exit checks:
+ranking) end-to-end before committing full-sweep spend. Pilot corpus is stratified on
+**diff-size × verdict-outcome only** (three axes will not fit the pilot budget), but **at least
+one pilot PR must be deliberately "hard"** — multi-finding, multiple domains touched — so the
+pilot exercises the arm-divergence path rather than measuring noise on two near-empty reviews.
+Three exit checks:
 
 1. **Variance floor** — is within-arm verdict/finding variance low enough that cross-arm
    differences are detectable? (Numeric; auto-checkable.)
@@ -236,9 +243,11 @@ auto-proceed is auditable after the fact. Phase B corpus size N is derived from 
 observed variance (higher noise → more runs/arm).
 
 **Phase B — full sweep (corpus + N sized from Phase A).** Hand-picked merged PRs spanning
-small / median / large diff and a mix of known APPROVE / REQUEST_CHANGES outcomes. Run both
-arms, harvest, differential, blind-rank, apply the decision rule → flip / don't-flip
-recommendation, closing #63 and #65.
+small / median / large diff and a mix of known APPROVE / REQUEST_CHANGES outcomes, with
+**finding-density and domain coverage (security / correctness / mechanical) as soft desiderata**
+the concrete SHA list should try to span — desiderata, not hard gates, since exhaustive
+stratification would balloon the corpus. Run both arms, harvest, differential, blind-rank, apply
+the decision rule → flip / don't-flip recommendation, closing #63 and #65.
 
 ## Components (each independently testable)
 
@@ -282,13 +291,32 @@ Per the standing repo rule, the plan runs the freshness / dependency / GitHub-Ac
 check during planning and proposes any stale-dependency work as a **separate small PR landing
 first**, kept out of this feature PR.
 
+## Corpus selection procedure (method fixed now; SHAs chosen at phase start)
+
+The concrete merged-PR list (which repos, which SHAs) is **deliberately not pinned in this
+spec** — it depends on N (Phase-A-derived) and on knowing what a real report looks like (the
+arm-tell capture below), so pinning SHAs now would be a throwaway pick. Instead, the *procedure*
+is fixed on record and applied at phase start (same discipline as pre-registering the decision
+rule — fix the method before seeing the data):
+
+1. Candidate PRs must be **merged** (rides the §B.1 no-post safety).
+2. Confirm the candidate repo does **not** set `orchestration.*` at the repo layer (which would
+   win over the user-level temp toggle); if it does, disqualify the PR or neutralise the
+   repo-level key with its own backup/restore.
+3. Stratify per the phase: Phase A on diff-size × verdict with ≥1 hard PR; Phase B additionally
+   spanning finding-density and domain (security / correctness / mechanical) as soft desiderata.
+4. Record the chosen SHA list in the run dir at phase start, before any run dispatches.
+
 ## Open questions deferred to planning
 
-- **Exact arm-tell normalisation rules** — must be derived against real sample `bodyText` from
-  both arms, not guessed. First planning action: capture one classic and one panel report and
-  diff their structure.
-- **Where the pre-registration criteria file and rankings live** — under the run dir
-  (`tests/ab/runs/<ts>-orchestration-<phase>/`) vs a dedicated `rankings/` tree. Leaning run-dir
-  for provenance co-location.
-- **Corpus PR selection specifics** — the concrete merged-PR list (which repos, which SHAs)
-  spanning the diff-size and verdict-outcome mix, chosen at Phase A / Phase B start.
+- **Exact arm-tell normalisation rules** — genuinely data-blocked; must be derived against real
+  sample `bodyText` from both arms, not guessed. First planning action: capture one classic and
+  one panel report and diff their structure.
+
+**Resolved during spec review (2026-07-10):**
+
+- *Where the ranking artefacts live* → **under the run dir** (`tests/ab/runs/<ts>-orchestration-<phase>/`)
+  for provenance co-location, with the pre-registration criteria file additionally copied to a
+  durable location so scratch cleanup cannot destroy the honesty anchor (see "Blind ranking").
+- *Corpus PR selection* → the **procedure** is fixed now (above); concrete SHAs are chosen at
+  Phase A / Phase B start.

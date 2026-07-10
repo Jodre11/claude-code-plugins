@@ -184,6 +184,24 @@ Resolve the mode below, first match wins:
      `gh pr view "$ARGUMENTS" --repo "$OWNER_REPO" --json headRefOid -q .headRefOid`.
      Validate it matches `^[0-9a-f]{40}$`; if not, report
      `Phase -0.5 halt: could not resolve PR head SHA` and stop.
+   - Resolve `$BASE_REF` (the base branch name) from
+     `gh pr view "$ARGUMENTS" --repo "$OWNER_REPO" --json baseRefName -q .baseRefName`,
+     and `$EXPECTED_BASE_SHA` from
+     `gh pr view "$ARGUMENTS" --repo "$OWNER_REPO" --json baseRefOid -q .baseRefOid`.
+     Validate `$EXPECTED_BASE_SHA` matches `^[0-9a-f]{40}$`; if not, report
+     `Phase -0.5 halt: could not resolve PR base SHA` and stop.
+   - Fetch the base objects into the shared object store, then pin the base as a SHA.
+     A plain fetch writes only objects, `FETCH_HEAD`, and the remote-tracking ref — it
+     never touches the working tree, `HEAD`, the local branch refs, or any worktree
+     checkout, so it is side-effect-free for everything the review analyses:
+
+     ```bash
+     git -C "$REPO_DIR" fetch origin "$BASE_REF"
+     ```
+
+     Then set `$BASE = $EXPECTED_BASE_SHA`, `$EMPTY_TREE_MODE = false` (a live PR base is
+     never the empty tree), and `$BASE_PINNED = true` for the rest of the pipeline.
+     `$BASE_REF` is used ONLY as the fetch refspec — never fed to `git diff`.
    - Resolve `$RESOLVED_TEMP_DIR` (the concrete `/tmp/claude-<session-id>/`
      path — see Step 2.9) now, before the call. Pass it as the 4th argument so
      the worktree lands under a session-temp path the Bash guard permits;
@@ -201,8 +219,8 @@ Resolve the mode below, first match wins:
      set `$WORKTREE_OWNED = true`, and pin `$HEAD_SHA = $EXPECTED_HEAD_SHA` for
      the rest of the pipeline.
 
-Announce `> Phase -0.5: reviewing in worktree $REPO_DIR at $HEAD_SHA` on the
-owned path, or `> Phase -0.5: worktree skipped ($WORKTREE_OWNED reason)`
+Announce `> Phase -0.5: reviewing in worktree $REPO_DIR at $HEAD_SHA (base pinned to $BASE)`
+on the owned path, or `> Phase -0.5: worktree skipped ($WORKTREE_OWNED reason)`
 otherwise, and continue to Phase 0.
 
 ## Phase 0: Intent Ledger
@@ -753,6 +771,13 @@ and stop the pipeline cleanly. Do not proceed to Step 1.
 
 This duplicates the logic in `includes/specialist-context.md` "Determine base branch" intentionally — the pipeline orchestrator must resolve `$BASE` before dispatching specialists. Specialists also resolve `$BASE` independently so they work standalone. Step 1 items 1–5 here must match `specialist-context.md` items 1–5. Changes to any of these locations must be mirrored in the others; see also `agents/review-synthesiser.md` Context Gathering which has a parallel (but prompt-extracted) version.
 
+**If `$BASE_PINNED` is already `true`** (Phase -0.5 pinned the origin base SHA on the
+plugin-owned-worktree path), `$BASE` is a validated 40-hex SHA and `$EMPTY_TREE_MODE` is
+already `false`. Do NOT re-resolve the base: skip items 1–4 and the `Store as $BASE` block
+below — re-running item 2 (`gh pr view --json baseRefName`) would overwrite the pinned SHA
+with a bare branch name — and continue at item 5 (`Path scope:` extraction). Otherwise
+resolve the base now:
+
 Try these in order:
 1. If `$ARGUMENTS` is provided and non-empty, extract the base branch from it. If a `Base branch: <ref>` line is present, extract the ref after the colon. Otherwise, treat the entire value of `$ARGUMENTS` as a bare branch name.
 2. `gh pr view --json baseRefName -q .baseRefName 2>/dev/null` — use if a PR already exists
@@ -764,6 +789,29 @@ Store as `$BASE`. If `$BASE` is exactly `EMPTY_TREE`, resolve it by running `git
 Validate that `$BASE` matches `^[a-zA-Z0-9/_.\-]+$` — if it does not, report "Invalid base branch ref: $BASE" and stop.
 
 **Diff syntax:** When `$EMPTY_TREE_MODE` is true, the empty tree SHA has no commit history and three-dot diff (`...`) cannot compute a merge base. Use two-arg `git diff $BASE $HEAD_SHA` instead of `git diff "$BASE"..."$HEAD_SHA"` for ALL diff commands throughout the pipeline. When `$EMPTY_TREE_MODE` is false, continue using three-dot syntax as normal.
+
+**Origin-pin the base (PR mode, orchestrator only).** If `$BASE_PINNED` is not `true`,
+`$REVIEW_MODE` is `pr`, and `$EMPTY_TREE_MODE` is `false`, then Phase -0.5's pin was skipped
+(the `--no-worktree` or external-worktree path) but a live PR base exists and `$BASE` is
+currently a bare branch name. Pin it to the origin SHA:
+
+- Resolve `$BASE_REF` from
+  `gh pr view "$ARGUMENTS" --repo "$OWNER_REPO" --json baseRefName -q .baseRefName`, and
+  `$EXPECTED_BASE_SHA` from
+  `gh pr view "$ARGUMENTS" --repo "$OWNER_REPO" --json baseRefOid -q .baseRefOid`. Validate
+  `$EXPECTED_BASE_SHA` matches `^[0-9a-f]{40}$`; if not, report
+  `Step 1 halt: could not resolve PR base SHA` and stop.
+- Fetch base objects only — never touches the working tree, `HEAD`, or local branch refs:
+
+  ```bash
+  git -C "$REPO_DIR" fetch origin "$BASE_REF"
+  ```
+
+  Then set `$BASE = $EXPECTED_BASE_SHA` and `$BASE_PINNED = true`. `$BASE_REF` is the fetch
+  refspec only — never fed to `git diff`.
+
+This step runs in the main session (the orchestrator carries no `agent_type`), so the fetch
+is permitted. Announce `> Step 1: base pinned to $BASE (origin baseRefOid)`.
 
 5. If a `Path scope: <pathspec>` line is present in `$ARGUMENTS`, extract the pathspec after the colon and store as `$PATH_SCOPE`. If not present, leave `$PATH_SCOPE` empty. Validate that `$PATH_SCOPE` matches `^[a-zA-Z0-9/_.\-*]+$` — if it does not, report "Invalid path scope: $PATH_SCOPE" and stop. Additionally, if `$PATH_SCOPE` contains `..` as a substring, report "Invalid path scope (directory traversal): $PATH_SCOPE" and stop. When `$PATH_SCOPE` is set, append `-- "$PATH_SCOPE"` after all flags in every `git diff` command throughout the pipeline (use the diff syntax determined by `$EMPTY_TREE_MODE`). The quotes prevent shell glob expansion of `*` before git receives the pathspec. This restricts the review to the specified subdirectory.
 

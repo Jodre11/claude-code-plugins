@@ -55,6 +55,24 @@ Validate that `$BASE` matches `^[a-zA-Z0-9/_.\-]+$` — if it does not, report "
 
 **Diff syntax:** When `$EMPTY_TREE_MODE` is true, use two-arg `git diff $BASE $HEAD_SHA` instead of `git diff "$BASE"..."$HEAD_SHA"` for ALL diff commands. When false, use three-dot syntax as normal.
 
+**Origin-pin the base when standalone (PR, read-only).** The orchestrator normally passes a
+pinned 40-hex SHA in the `Base branch:` line — when it does, items 1–4 already stored it and
+this step is a no-op. But when you are invoked directly against a live PR (no orchestrator),
+`$BASE` above is a bare branch name. Try to pin it to the origin SHA **without fetching** —
+you are a reviewer; fetching is a read-only-mandate violation and is blocked by the
+reviewer guard. Only when `$EMPTY_TREE_MODE` is `false`:
+
+- Read the base SHA: `gh pr view --json baseRefOid -q .baseRefOid 2>/dev/null` (a read —
+  permitted). Store as `$EXPECTED_BASE_SHA`.
+- If `$EXPECTED_BASE_SHA` matches `^[0-9a-f]{40}$` AND `git cat-file -e "$EXPECTED_BASE_SHA"
+  2>/dev/null` succeeds (the base commit is already in the local object store — normally
+  true; it is an ancestor of the head you were given), set `$BASE = $EXPECTED_BASE_SHA`.
+- Otherwise keep the bare `$BASE` and log a warning: `Base could not be origin-pinned (SHA
+  absent locally; fetching would violate the read-only mandate) — diffing against bare
+  "$BASE".`
+
+Never run a fetch here.
+
 5. If a `Path scope: <pathspec>` line is present in `$ARGUMENTS`, extract the pathspec after the colon and store as `$PATH_SCOPE`. If not present, leave `$PATH_SCOPE` empty. Validate that `$PATH_SCOPE` matches `^[a-zA-Z0-9/_.\-*]+$` — if it does not, report "Invalid path scope: $PATH_SCOPE" and stop. Additionally, if `$PATH_SCOPE` contains `..` as a substring, report "Invalid path scope (directory traversal): $PATH_SCOPE" and stop. When `$PATH_SCOPE` is set, append `-- "$PATH_SCOPE"` after all flags in every `git diff` command (use the diff syntax determined by `$EMPTY_TREE_MODE`). The quotes prevent shell glob expansion of `*` before git receives the pathspec.
 
 The `*` character is intentional: it is forwarded to `git diff -- <pathspec>` which interprets it via git pathspec semantics (`*` matches across directory boundaries; `**` is also recognised). The double-quotes around the value prevent shell glob expansion; git pathspec is the only consumer of the glob. A `Path scope: *` selects all files (intentional override behaviour).

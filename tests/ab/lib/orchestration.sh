@@ -116,6 +116,8 @@ orchestration_harvest() {
         return 1
     fi
     cp "$src_jsonl" "$trial_dir/durable-log.jsonl"
-    [[ -f "$src_md" ]] && cp "$src_md" "$trial_dir/durable-log.md"
+    if [[ -f "$src_md" ]]; then
+        cp "$src_md" "$trial_dir/durable-log.md"
+    fi
     return 0
 }

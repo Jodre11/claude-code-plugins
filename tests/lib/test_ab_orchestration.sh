@@ -81,3 +81,26 @@ test_orch_harvest_missing_jsonl_returns_nonzero() {
     assert_equals "1" "$rc" "orch: harvest returns 1 when jsonl missing"
     rm -rf "$tmp"
 }
+
+test_orch_harvest_no_md_still_succeeds() {
+    local tmp logs trial rc
+    tmp=$(mktemp -d); logs="$tmp/logs"; trial="$tmp/trial"
+    mkdir -p "$logs/o-r" "$trial"
+    printf '{"type":"meta"}\n' > "$logs/o-r/pr-88-0123456789ab.jsonl"
+    # no .md file
+    source "$(_orch_lib)"
+    orchestration_harvest "$trial" "$logs" "o-r" "pr-88" "0123456789abcdef0123456789abcdef01234567"
+    rc=$?
+    assert_equals "0" "$rc" "orch: harvest succeeds when md absent"
+    if [[ -f "$trial/durable-log.jsonl" ]]; then
+        pass "orch: harvest copies jsonl when md absent"
+    else
+        fail "orch: harvest copies jsonl when md absent" "durable-log.jsonl missing"
+    fi
+    if [[ ! -f "$trial/durable-log.md" ]]; then
+        pass "orch: harvest does not create md when md absent"
+    else
+        fail "orch: harvest does not create md when md absent" "durable-log.md unexpectedly present"
+    fi
+    rm -rf "$tmp"
+}

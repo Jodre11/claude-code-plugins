@@ -82,3 +82,40 @@ orchestration_install_restore_trap() {
     trap 'orchestration_restore_arm; exit 143' TERM
     trap 'orchestration_restore_arm; exit 129' HUP
 }
+
+# owner/name from a github PR URL, with '/'→'-' (matches the writer's <repo-slug>).
+orchestration_slug_from_url() {
+    local url="$1"
+    # .../<owner>/<name>/pull/<N>  → owner-name
+    local path="${url#*github.com/}"
+    local owner="${path%%/*}"; path="${path#*/}"
+    local name="${path%%/*}"
+    echo "${owner}-${name}"
+}
+
+orchestration_ident_from_url() {
+    local url="$1"
+    echo "pr-${url##*/}"
+}
+
+# Copy the durable log for one run into the trial dir. Returns 1 (writing nothing)
+# when the jsonl is absent, so the caller records a harvest-miss and presses on.
+orchestration_harvest() {
+    local trial_dir="$1"
+    local logs_root="$2"
+    local repo_slug="$3"
+    local ident="$4"
+    local head_sha="$5"
+
+    local sha12="${head_sha:0:12}"
+    local src_jsonl="$logs_root/$repo_slug/${ident}-${sha12}.jsonl"
+    local src_md="$logs_root/$repo_slug/${ident}-${sha12}.md"
+
+    if [[ ! -f "$src_jsonl" ]]; then
+        echo "orchestration_harvest: no durable log at $src_jsonl" >&2
+        return 1
+    fi
+    cp "$src_jsonl" "$trial_dir/durable-log.jsonl"
+    [[ -f "$src_md" ]] && cp "$src_md" "$trial_dir/durable-log.md"
+    return 0
+}

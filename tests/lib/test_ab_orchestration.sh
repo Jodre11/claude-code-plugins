@@ -46,3 +46,38 @@ test_orch_restore_reinstates_prior_file_byte_for_byte() {
     assert_equals "$before" "$after" "orch: restore reinstates prior file byte-for-byte"
     rm -rf "$tmp"
 }
+
+test_orch_slug_and_ident_from_url() {
+    local url="https://github.com/Jodre11/claude-code-plugins/pull/88"
+    source "$(_orch_lib)"
+    assert_equals "Jodre11-claude-code-plugins" "$(orchestration_slug_from_url "$url")" \
+        "orch: slug is owner-name"
+    assert_equals "pr-88" "$(orchestration_ident_from_url "$url")" "orch: ident is pr-N"
+}
+
+test_orch_harvest_locates_by_slug_ident_sha12() {
+    local tmp logs trial
+    tmp=$(mktemp -d); logs="$tmp/logs"; trial="$tmp/trial"
+    mkdir -p "$logs/o-r" "$trial"
+    printf '{"type":"meta","orchestration_mode":"panel"}\n{"type":"finding","tier":"consensus"}\n' \
+        > "$logs/o-r/pr-88-0123456789ab.jsonl"
+    printf '<!-- x -->\n## Review\n' > "$logs/o-r/pr-88-0123456789ab.md"
+    source "$(_orch_lib)"
+    orchestration_harvest "$trial" "$logs" "o-r" "pr-88" "0123456789abcdef0123456789abcdef01234567"
+    if [[ -f "$trial/durable-log.jsonl" && -f "$trial/durable-log.md" ]]; then
+        pass "orch: harvest copies jsonl+md by slug/ident/sha12"
+    else
+        fail "orch: harvest copies jsonl+md by slug/ident/sha12" "$(ls "$trial")"
+    fi
+    rm -rf "$tmp"
+}
+
+test_orch_harvest_missing_jsonl_returns_nonzero() {
+    local tmp logs trial rc
+    tmp=$(mktemp -d); logs="$tmp/logs"; trial="$tmp/trial"
+    mkdir -p "$logs/o-r" "$trial"
+    source "$(_orch_lib)"
+    set +e; orchestration_harvest "$trial" "$logs" "o-r" "pr-99" "abcabcabcabc000000000000000000000000abcd"; rc=$?; set -e
+    assert_equals "1" "$rc" "orch: harvest returns 1 when jsonl missing"
+    rm -rf "$tmp"
+}

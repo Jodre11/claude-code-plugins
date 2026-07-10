@@ -203,6 +203,24 @@ manual review is load-bearing.
 
 ## Orchestration mode (panel-vs-classic A/B)
 
+> **WARNING — arm-tell rules are ILLUSTRATIVE PLACEHOLDERS.**
+> `tests/ab/lib/arm_tells.json` holds the regex rules that blind the ranking packets by
+> normalising arm-tell phrases (words or headings that reveal whether a report came from
+> the classic or panel arm). The rules shipped in this file are FORMAT EXAMPLES ONLY —
+> they were not derived from real harness output. Running Phase-A ranking against these
+> placeholders can let genuine arm tells survive into the packets, silently leaking arm
+> identity into the human blind-ranking signal.
+>
+> **Before the first real Phase-A ranking, the operator MUST regenerate `arm_tells.json`
+> from a live capture:**
+> 1. Run the harness once per arm against a single merged PR (1 trial each) — see plan
+>    Task 6 Step 1 and the Phase execution steps below.
+> 2. Diff the two `durable-log.md` bodies: `diff <run-dir>/<pr-slug>/classic/trial-001/durable-log.md <run-dir>/<pr-slug>/panel/trial-001/durable-log.md`
+> 3. Identify structural arm tells (panel-specific section headings, literal
+>    "panel"/"panelist"/"consensus vote" wording, differing verdict-advisory phrasing).
+> 4. Replace `arm_tells.json` wholesale with the confirmed tells before calling
+>    `ranking_packet.py`.
+
 Orchestration mode runs the **full** `/review-gh-pr` orchestrator against a
 corpus of merged PRs, comparing the `classic` and `panel` review arms. Unlike
 end-to-end mode, no tracked files are mutated: the arm is selected by a

@@ -2,7 +2,9 @@
 """ranking_packet — blinded side-by-side ranking packets for the orchestration A/B.
 
 Pure-stdlib. Presents bodyText ONLY (never the JSONL meta), normalises arm tells
-against rules derived from real output (tests/ab/lib/arm_tells.json), and seals a
+against rules in tests/ab/lib/arm_tells.json — these rules SHOULD BE derived from a
+real live capture (Task 6 Step 1); the shipped file contains ILLUSTRATIVE PLACEHOLDERS
+that MUST be regenerated from a live capture before any real ranking run, and seals a
 per-PR arm→label(A/B) randomisation from a recorded seed. Refuses to build without a
 pre-registration criteria file present — blinding without a timestamped honesty
 anchor is worthless. NEVER calls an LLM.

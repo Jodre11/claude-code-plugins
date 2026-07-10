@@ -94,7 +94,11 @@ Announce the pinned base alongside the existing Phase -0.5 head announcement, e.
 **a) `$WORKTREE_OWNED = false` in PR mode** (`--no-worktree`, external worktree). Phase -0.5
 pinning is skipped, so Step 1 must pin instead: when `$BASE_PINNED` is not already set and a
 live PR exists, resolve `$BASE` from `baseRefOid` and `git fetch origin <baseRef>` — the same
-resolution, triggered in Step 1.
+resolution, triggered in Step 1. **This is orchestrator-only** — Step 1 runs in the main
+session (no `agent_type`), so the fetch is permitted. It must land in **pipeline-only prose,
+placed *after* the `Store as $BASE` line** — never inside the numbered items 1–4, which are
+byte-synced with `specialist-context.md` (see §2d) and therefore may not carry an
+orchestrator-only fetch a reviewer would be forbidden to run.
 
 **b) Local mode (`pre-review`).** No PR, no origin base to pin. Keep existing bare-name
 resolution. **The correct base for pre-review (local `main` vs `origin/main`) is an open
@@ -103,18 +107,45 @@ question, explicitly deferred — see Open Questions.**
 **c) EMPTY_TREE mode.** Untouched. When `$BASE = EMPTY_TREE` there is no origin base; two-arg
 diff stays as-is. Pin logic engages only when a real PR base exists.
 
-**d) The three mirrored resolvers.** Base resolution is deliberately duplicated across:
-- `includes/review-pipeline.md` Step 1 (and `SKILL.md:756`),
-- `includes/specialist-context.md:43` ("Determine base branch"),
-- `agents/review-synthesiser.md` Context Gathering.
+**d) The mirrored resolvers.** Base resolution is duplicated across three files, but only
+**two** independently *resolve* a base; the third is a pure prompt consumer:
+- `includes/review-pipeline.md` Step 1 (mirrored into `SKILL.md`, ~L752 "Step 1: Determine
+  base branch") — the **orchestrator** resolver.
+- `includes/specialist-context.md` "Determine base branch" (~L41) — the **standalone
+  specialist** resolver. Items 1–4 are byte-identical to the pipeline's, enforced by
+  `test_sync_base_branch_steps_match` (which extracts only items `[1-4]` between
+  `Try these in order:`/`1. If ...` and the `Store as` line — anything after `Store as $BASE`
+  is *not* byte-synced).
+- `agents/review-synthesiser.md` Context Gathering (~L55) — **not a resolver.** It extracts
+  the base *only* from the `Base branch:` prompt line (its own sync note at ~L51 records that
+  "the extraction mechanism differs"). It has no `gh pr view` branch to modify.
 
-The structural test suite enforces "items 1–5 match across these files." Changes:
-- **Orchestrator → specialists:** the orchestrator pins `$BASE` to the SHA and passes
-  `Base branch: $BASE` (now a SHA, `SKILL.md:922`) in the specialist prompt. Specialists
-  reading the prompt get the pinned SHA for free — their diff commands are unchanged.
-- **Standalone runs:** add the same `baseRefOid`-pin-and-fetch to the `gh pr view` branch
-  (item 2) in all three resolvers, so a standalone specialist/synthesiser against a live PR
-  is also origin-correct. The same new step lands in all three, preserving the invariant.
+Changes:
+- **Orchestrator → all subagents (the primary path):** the orchestrator pins `$BASE` to the
+  SHA (§1, or §2a on the `--no-worktree` path) and passes `Base branch: $BASE` (now a SHA,
+  `SKILL.md:922`) in the specialist and synthesiser prompts. Every subagent reading the prompt
+  gets the pinned SHA for free — their diff commands are unchanged, and the synthesiser needs
+  no change at all (it only ever consumes the prompt line). **In normal operation this is the
+  only path that matters** — subagents are always dispatched with a pinned `Base branch:`.
+- **Standalone specialist runs (degraded, read-only):** a specialist invoked directly against
+  a live PR (no orchestrator, no `Base branch:` SHA in its prompt) hits item 2
+  (`gh pr view --json baseRefName`). `gh pr view` is a **read** and is permitted for reviewers;
+  `git fetch` is **not** — `is_mutating_git` (`~/.claude/hooks/_lib.sh:77`) classifies `fetch`
+  as mutating and the read-only reviewer guard (`allow-permissions.sh:32-34`) denies it for
+  every `*-reviewer` / `code-analysis` / `review-synthesiser`. So the standalone path
+  **cannot fetch.** Instead, in `specialist-context.md` prose *after* the `Store as $BASE` line
+  (outside the byte-synced items 1–4): additionally read `baseRefOid`
+  (`gh pr view --json baseRefOid`), and **if that SHA is already present in the local object
+  store** (`git cat-file -e <oid>` succeeds — normally true, the base is an ancestor already
+  fetched), pin `$BASE` to it; **otherwise keep the bare `baseRefName` and log a warning** that
+  the base could not be origin-pinned (fetch would be a read-only-mandate violation). This is
+  strictly better than today's unconditional bare name, needs no fetch, and never touches the
+  byte-synced block.
+
+The net structural effect: the byte-synced items 1–4 are **unchanged**, so
+`test_sync_base_branch_steps_match` stays green without touching its matcher. The new logic
+lives entirely in pipeline-only prose (§2a) and specialist-only prose (this item), each after
+the `Store as $BASE` seam.
 
 ### 3. Diff syntax
 
@@ -124,10 +155,13 @@ merge-base.
 
 ## Testing
 
-- **Three-way sync invariant:** adding the same pin step to all three resolvers keeps
-  `tests/run.sh` green. Verify the sync-check regex still matches the new step; widen its
-  matcher if needed (this suite has caught real sync drift before —
-  see memory `project_structural_tests_handoff`).
+- **Byte-sync invariant stays green untouched:** the new pin logic lives *after* the
+  `Store as $BASE` seam in each file, so the items 1–4 that
+  `test_sync_base_branch_steps_match` compares are unchanged — the test passes with no matcher
+  change. This is deliberate: the orchestrator (fetch-capable) and the standalone specialist
+  (fetch-forbidden) need *different* prose after the seam, which the byte-synced block could
+  not express. (This suite has caught real sync drift before — see memory
+  `project_structural_tests_handoff`.)
 - **Regression guard (the specific defect):** assert that on the PR/owned-worktree path the
   base fed to `git diff` is a 40-hex SHA, not a bare name — Phase -0.5 pins `baseRefOid` and
   Step 2.2 consumes `$BASE` as a validated SHA.

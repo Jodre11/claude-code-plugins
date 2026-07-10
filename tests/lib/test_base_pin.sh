@@ -41,3 +41,22 @@ test_base_pin_step1_skips_when_pinned() {
             "Step 1 must guard on \$BASE_PINNED BEFORE 'Try these in order:' — otherwise item 2 (gh pr view --json baseRefName) overwrites the Phase -0.5 SHA pin with a bare branch name"
     fi
 }
+
+test_base_pin_step1_noworktree_fallback() {
+    local cr="$REPO_ROOT/plugins/code-review-suite"
+    if [[ ! -d "$cr" ]]; then
+        skip "base pin Step 1 fallback" "code-review-suite plugin not found"
+        return
+    fi
+    local canonical="$cr/includes/review-pipeline.md"
+    # The --no-worktree fallback lives AFTER "Store as" (outside byte-synced items 1-4) and
+    # before Step 2. It must pin baseRefOid and fetch (orchestrator-only, main session).
+    local tail
+    tail=$(sed -n '/^Store as /,/^### Step 2: Measure the diff/p' "$canonical")
+    if grep -qF 'baseRefOid' <<<"$tail" && grep -qF 'fetch origin' <<<"$tail"; then
+        pass "base pin Step 1 fallback: canonical pins baseRefOid + fetches on the --no-worktree path"
+    else
+        fail "base pin Step 1 fallback: canonical pins baseRefOid + fetches on the --no-worktree path" \
+            "Step 1 must, after 'Store as \$BASE', pin baseRefOid and 'git fetch origin' for the --no-worktree PR path (orchestrator-only, guarded by \$BASE_PINNED not true and \$REVIEW_MODE = pr)"
+    fi
+}

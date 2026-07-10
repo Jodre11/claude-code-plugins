@@ -790,6 +790,29 @@ Validate that `$BASE` matches `^[a-zA-Z0-9/_.\-]+$` — if it does not, report "
 
 **Diff syntax:** When `$EMPTY_TREE_MODE` is true, the empty tree SHA has no commit history and three-dot diff (`...`) cannot compute a merge base. Use two-arg `git diff $BASE $HEAD_SHA` instead of `git diff "$BASE"..."$HEAD_SHA"` for ALL diff commands throughout the pipeline. When `$EMPTY_TREE_MODE` is false, continue using three-dot syntax as normal.
 
+**Origin-pin the base (PR mode, orchestrator only).** If `$BASE_PINNED` is not `true`,
+`$REVIEW_MODE` is `pr`, and `$EMPTY_TREE_MODE` is `false`, then Phase -0.5's pin was skipped
+(the `--no-worktree` or external-worktree path) but a live PR base exists and `$BASE` is
+currently a bare branch name. Pin it to the origin SHA:
+
+- Resolve `$BASE_REF` from
+  `gh pr view "$ARGUMENTS" --repo "$OWNER_REPO" --json baseRefName -q .baseRefName`, and
+  `$EXPECTED_BASE_SHA` from
+  `gh pr view "$ARGUMENTS" --repo "$OWNER_REPO" --json baseRefOid -q .baseRefOid`. Validate
+  `$EXPECTED_BASE_SHA` matches `^[0-9a-f]{40}$`; if not, report
+  `Step 1 halt: could not resolve PR base SHA` and stop.
+- Fetch base objects only — never touches the working tree, `HEAD`, or local branch refs:
+
+  ```bash
+  git -C "$REPO_DIR" fetch origin "$BASE_REF"
+  ```
+
+  Then set `$BASE = $EXPECTED_BASE_SHA` and `$BASE_PINNED = true`. `$BASE_REF` is the fetch
+  refspec only — never fed to `git diff`.
+
+This step runs in the main session (the orchestrator carries no `agent_type`), so the fetch
+is permitted. Announce `> Step 1: base pinned to $BASE (origin baseRefOid)`.
+
 5. If a `Path scope: <pathspec>` line is present in `$ARGUMENTS`, extract the pathspec after the colon and store as `$PATH_SCOPE`. If not present, leave `$PATH_SCOPE` empty. Validate that `$PATH_SCOPE` matches `^[a-zA-Z0-9/_.\-*]+$` — if it does not, report "Invalid path scope: $PATH_SCOPE" and stop. Additionally, if `$PATH_SCOPE` contains `..` as a substring, report "Invalid path scope (directory traversal): $PATH_SCOPE" and stop. When `$PATH_SCOPE` is set, append `-- "$PATH_SCOPE"` after all flags in every `git diff` command throughout the pipeline (use the diff syntax determined by `$EMPTY_TREE_MODE`). The quotes prevent shell glob expansion of `*` before git receives the pathspec. This restricts the review to the specified subdirectory.
 
 The `*` character is intentional: it is forwarded to `git diff -- <pathspec>` which interprets it via git pathspec semantics (`*` matches across directory boundaries; `**` is also recognised). The double-quotes around the value prevent shell glob expansion; git pathspec is the only consumer of the glob. A `Path scope: *` selects all files (intentional override behaviour).

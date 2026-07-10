@@ -60,3 +60,35 @@ test_base_pin_step1_noworktree_fallback() {
             "Step 1 must, after 'Store as \$BASE', pin baseRefOid and 'git fetch origin' for the --no-worktree PR path (orchestrator-only, guarded by \$BASE_PINNED not true and \$REVIEW_MODE = pr)"
     fi
 }
+
+test_base_pin_specialist_readonly() {
+    local cr="$REPO_ROOT/plugins/code-review-suite"
+    if [[ ! -d "$cr" ]]; then
+        skip "base pin specialist read-only" "code-review-suite plugin not found"
+        return
+    fi
+    local spec="$cr/includes/specialist-context.md"
+    # Standalone specialists may pin baseRefOid ONLY if the SHA is already local (git cat-file
+    # -e). They must NEVER fetch (read-only mandate; the guard blocks it).
+    if grep -qF 'baseRefOid' "$spec" && grep -qF 'git cat-file -e' "$spec"; then
+        pass "base pin specialist read-only: specialist-context pins baseRefOid guarded by cat-file"
+    else
+        fail "base pin specialist read-only: specialist-context pins baseRefOid guarded by cat-file" \
+            "specialist-context.md must read baseRefOid and gate the pin on 'git cat-file -e' (SHA already in the local object store)"
+    fi
+}
+
+test_base_pin_specialist_never_fetches() {
+    local cr="$REPO_ROOT/plugins/code-review-suite"
+    if [[ ! -d "$cr" ]]; then
+        skip "base pin specialist never fetches" "code-review-suite plugin not found"
+        return
+    fi
+    local spec="$cr/includes/specialist-context.md"
+    if grep -qF 'git fetch' "$spec"; then
+        fail "base pin specialist never fetches: specialist-context contains no 'git fetch'" \
+            "specialist-context.md must contain no 'git fetch' — reviewers are read-only and the reviewer guard (allow-permissions.sh) blocks a fetch"
+    else
+        pass "base pin specialist never fetches: specialist-context contains no 'git fetch'"
+    fi
+}

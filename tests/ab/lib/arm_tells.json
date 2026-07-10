@@ -1,0 +1,4 @@
+[
+  {"pattern": "(?i)\\bpanel(ists?)?\\b", "replace": "reviewers"},
+  {"pattern": "(?i)\\bconsensus vote\\b", "replace": "consensus"}
+]

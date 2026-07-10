@@ -21,6 +21,8 @@ source "$SCRIPT_DIR/lib/agent_dispatch.sh"
 source "$SCRIPT_DIR/lib/fixture.sh"
 # shellcheck source=lib/agent_capture.sh
 source "$SCRIPT_DIR/lib/agent_capture.sh"
+# shellcheck source=lib/orchestration.sh
+source "$SCRIPT_DIR/lib/orchestration.sh"
 
 # Phase 1 hard-coded corpus PR. Phase 2 replaces this with corpus/<id>.yaml
 # loading.
@@ -70,6 +72,10 @@ main() {
     local corpus_id=""
     local faithfulness_check="false"
     local stream_json="false"
+    local _cli_mode=""
+    local arms=""
+    local phase=""
+    local panel_size="3"
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
@@ -78,6 +84,10 @@ main() {
             --name) experiment_name="$2"; shift 2 ;;
             --timeout-seconds) timeout_seconds="$2"; shift 2 ;;
             --corpus) corpus_id="$2"; shift 2 ;;
+            --mode) _cli_mode="$2"; shift 2 ;;
+            --arms) arms="$2"; shift 2 ;;
+            --phase) phase="$2"; shift 2 ;;
+            --panel-size) panel_size="$2"; shift 2 ;;
             --faithfulness-check) faithfulness_check="true"; shift ;;
             --stream-json) stream_json="true"; shift ;;
             --include-tag) shift 2 ;;  # reserved; no-op
@@ -87,7 +97,16 @@ main() {
         esac
     done
 
-    if [[ -z "$config_path" || -z "$trials" ]]; then
+    local mode="${_cli_mode:-${_AB_CONFIG_MODE:-end-to-end}}"
+
+    # Orchestration mode varies the arm via a temp user-level TOML, not a
+    # tracked agent-config frontmatter, so it needs neither --config nor
+    # config_load. The other modes still require a config path.
+    if [[ "$mode" != "orchestration" && -z "$config_path" ]]; then
+        usage >&2
+        exit 64
+    fi
+    if [[ -z "$trials" ]]; then
         usage >&2
         exit 64
     fi
@@ -96,9 +115,14 @@ main() {
         exit 64
     fi
 
-    config_load "$config_path"
+    if [[ "$mode" != "orchestration" ]]; then
+        config_load "$config_path"
+        # config_load may reset mode to the config-derived value; re-resolve so
+        # an explicit --mode still wins, then fall back to the config's mode.
+        mode="${_cli_mode:-${_AB_CONFIG_MODE:-end-to-end}}"
+    fi
 
-    case "${_AB_CONFIG_MODE:-end-to-end}" in
+    case "$mode" in
         end-to-end)
             _ab_run_end_to_end "$config_path" "$trials" "$experiment_name" "$timeout_seconds"
             ;;
@@ -108,6 +132,17 @@ main() {
                 exit 64
             fi
             _ab_run_per_agent "$config_path" "$trials" "$experiment_name" "$timeout_seconds" "$corpus_id" "$faithfulness_check" "$stream_json"
+            ;;
+        orchestration)
+            if [[ -z "$corpus_id" || -z "$arms" || -z "$phase" ]]; then
+                echo "run.sh: --corpus <corpus.yaml> --arms <spec> --phase <pilot|full> required for orchestration" >&2
+                exit 64
+            fi
+            _ab_run_orchestration "$corpus_id" "$arms" "$trials" "$phase" "$panel_size" "$timeout_seconds"
+            ;;
+        *)
+            echo "run.sh: unknown mode: $mode" >&2
+            exit 64
             ;;
     esac
 }
@@ -374,6 +409,187 @@ _ab_run_per_agent() {
 }
 
 # ---------------------------------------------------------------------------
+# Orchestration mode (Phase 2, spec §"Panel-vs-classic A/B"). Iterates the
+# corpus PRs × arms × trials, toggling the panel/classic arm via a temp
+# user-level code-review.toml, and harvests the durable orchestration log per
+# trial. Unlike the other modes, the arm difference is entirely in the TOML
+# toggle — model/effort are the production session defaults so both arms run
+# exactly as a real /review-gh-pr would.
+# ---------------------------------------------------------------------------
+_ab_run_orchestration() {
+    local corpus_yaml="$1" arms_spec="$2" trials="$3" phase="$4" default_panel="$5" timeout_seconds="$6"
+
+    _ab_preflight_marketplace_root
+    _ab_preflight_required_tools
+    [[ -f "$corpus_yaml" ]] || { echo "run.sh: corpus.yaml not found: $corpus_yaml" >&2; exit 1; }
+
+    local timestamp; timestamp=$(date -u +'%Y%m%dT%H%M%SZ')
+    _AB_RUN_DIR="$SCRIPT_DIR/runs/${timestamp}-orchestration-${phase}"
+    mkdir -p "$_AB_RUN_DIR"
+    cp "$corpus_yaml" "$_AB_RUN_DIR/corpus.yaml"
+
+    echo "==> orchestration A/B: phase=$phase arms='$arms_spec' trials=$trials" >&2
+    echo "    Run dir: $_AB_RUN_DIR" >&2
+
+    if [[ "${_AB_ORCH_DRYRUN:-0}" == "1" ]]; then
+        return 0    # test hook: scaffold only, no Bedrock
+    fi
+
+    # Pre-registration criteria: the operator places criteria.md at $_AB_RUN_DIR/criteria.md
+    # or $CLAUDE_TEMP_DIR/criteria.md BEFORE any run; this call refuses to proceed without it
+    # and mirrors it to the durable honesty-anchor location (survives run-dir prune).
+    _ab_orch_capture_criteria "$phase" "$timestamp"
+
+    launch_preflight_environment
+    local timeout_bin; timeout_bin=$(launch_resolve_timeout_binary)
+    local logs_root="$HOME/.claude/code-review-suite/logs"
+
+    # Iterate PRs from corpus.yaml.
+    local n_prs; n_prs=$(yq '.prs | length' "$_AB_RUN_DIR/corpus.yaml")
+    local pi
+    for ((pi = 0; pi < n_prs; pi++)); do
+        local url head_sha
+        url=$(yq -r ".prs[$pi].url" "$_AB_RUN_DIR/corpus.yaml")
+        head_sha=$(yq -r ".prs[$pi].head_sha" "$_AB_RUN_DIR/corpus.yaml")
+        local slug ident pr_slug
+        slug=$(orchestration_slug_from_url "$url")
+        ident=$(orchestration_ident_from_url "$url")
+        pr_slug="${slug}-${ident}"
+
+        _ab_orch_preflight_no_repo_override "$url"   # disqualify repo-level orchestration.* (spec step 2)
+        _ab_orch_preflight_merged "$url"             # confirm MERGED so §B.1 no-post holds
+
+        local arm_spec
+        for arm_spec in $arms_spec; do
+            local arm psize
+            arm="${arm_spec%%:*}"
+            psize="$default_panel"
+            [[ "$arm_spec" == *:* ]] && psize="${arm_spec#*:}"
+
+            orchestration_install_restore_trap
+            orchestration_apply_arm "$arm" "$psize" "$HOME/.claude/code-review.toml"
+
+            local prompt; prompt="$_AB_PREAMBLE"$'\n\n'"/review-gh-pr $url"
+            local i
+            for ((i = 1; i <= trials; i++)); do
+                local trial_dir; trial_dir=$(printf '%s/%s/%s/trial-%03d' "$_AB_RUN_DIR" "$pr_slug" "$arm" "$i")
+                mkdir -p "$trial_dir"
+                local rc=0
+                _ab_orch_launch_trial "$trial_dir" "$timeout_seconds" "$prompt" "$timeout_bin" || rc=$?
+                capture_parse_trial "$trial_dir" || true
+                orchestration_harvest "$trial_dir" "$logs_root" "$slug" "$ident" "$head_sha" \
+                    || : > "$trial_dir/HARVEST_MISS"
+                [[ "$i" -lt "$trials" ]] && sleep 5
+            done
+
+            orchestration_restore_arm
+            trap - EXIT INT TERM HUP
+        done
+    done
+
+    if [[ "$phase" == "pilot" ]]; then
+        _ab_orch_pilot_gate "$_AB_RUN_DIR"
+    fi
+
+    echo "Run complete: $_AB_RUN_DIR" >&2
+}
+
+# Thin orchestration trial launcher. Mirrors launch_run_trial but runs in
+# --output-format stream-json --verbose mode (the mechanism
+# launch_run_per_agent_trial uses): fd 1 is the JSONL trace, captured to
+# stream.jsonl, from which stdout.log is reconstructed via
+# launch_jq_reduce_stream_jsonl so the cost model has the stream and the
+# verdict parser has the text. Model/effort are intentionally NOT passed —
+# orchestration uses the production session defaults; the arm difference lives
+# entirely in the TOML toggle.
+_ab_orch_launch_trial() {
+    local trial_dir="$1" timeout_seconds="$2" prompt="$3" timeout_bin="$4"
+    local stream_jsonl="$trial_dir/stream.jsonl" stdout="$trial_dir/stdout.log"
+    local stderr="$trial_dir/stderr.log" timing="$trial_dir/timing.json"
+    local start_iso; start_iso=$(date -u +'%Y-%m-%dT%H:%M:%SZ'); local start=$SECONDS
+    local rc=0
+    CLAUDE_CODE_SUBPROCESS_ENV_SCRUB=0 \
+    "$timeout_bin" --foreground --signal=TERM --kill-after=30 "$timeout_seconds" \
+        command claude -p --permission-mode bypassPermissions \
+            --output-format stream-json --verbose \
+            --exclude-dynamic-system-prompt-sections "$prompt" \
+        > "$stream_jsonl" 2> "$stderr" || rc=$?
+    launch_jq_reduce_stream_jsonl "$stream_jsonl" "$stdout"
+    local elapsed=$((SECONDS - start)); local timed_out=false
+    [[ "$rc" == "124" ]] && timed_out=true
+    jq -n --arg s "$start_iso" --arg e "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" \
+        --argjson el "$elapsed" --argjson rc "$rc" --arg to "$timed_out" \
+        '{start:$s,end:$e,wall_clock_seconds:$el,exit_code:$rc,timed_out:($to=="true")}' > "$timing"
+    return "$rc"
+}
+
+_ab_orch_capture_criteria() {
+    local phase="$1" timestamp="$2"
+    local src=""
+    if [[ -f "$_AB_RUN_DIR/criteria.md" ]]; then
+        src="$_AB_RUN_DIR/criteria.md"
+    elif [[ -n "${CLAUDE_TEMP_DIR:-}" && -f "$CLAUDE_TEMP_DIR/criteria.md" ]]; then
+        src="$CLAUDE_TEMP_DIR/criteria.md"
+        cp "$src" "$_AB_RUN_DIR/criteria.md"
+    fi
+    if [[ -z "$src" ]]; then
+        echo "orchestration: NO pre-registration criteria.md found." >&2
+        echo "  Write your 'what is a better review' criteria to $_AB_RUN_DIR/criteria.md" >&2
+        echo "  BEFORE any run — it is the timestamped honesty anchor. Refusing to proceed." >&2
+        exit 1
+    fi
+    # Mirror to a durable location outside the run dir (survives scratch prune).
+    local anchor_dir="$HOME/.claude/code-review-suite/ab-criteria"
+    mkdir -p "$anchor_dir"
+    cp "$_AB_RUN_DIR/criteria.md" "$anchor_dir/${timestamp}-${phase}-criteria.md"
+}
+
+_ab_orch_pilot_gate() {
+    local run_dir="$1"
+    local log="$run_dir/pilot-gate.log"
+    local diff_json="$run_dir/differential.json"
+    python3 "$SCRIPT_DIR/lib/differential.py" --run-dir "$run_dir" --out "$diff_json" >/dev/null
+
+    local min_stab; min_stab=$(jq -r '[.prs[].within_arm_stability] | min // 0' "$diff_json")
+    local harvest_misses; harvest_misses=$(find "$run_dir" -name HARVEST_MISS | wc -l | tr -d ' ')
+
+    # bash has no float compare; use awk. Threshold 0.8.
+    local stable; stable=$(awk -v s="$min_stab" 'BEGIN{print (s>=0.8)?"1":"0"}')
+    if [[ "$stable" == "1" && "$harvest_misses" == "0" ]]; then
+        {
+            echo "AUTO-PROCEED"
+            echo "reason: min within-arm stability=$min_stab (>=0.8), harvest_misses=0"
+            echo "next: size Phase B N from observed variance (higher noise -> more runs/arm)"
+        } > "$log"
+    else
+        {
+            echo "HARD-STOP"
+            echo "reason: min within-arm stability=$min_stab (need >=0.8), harvest_misses=$harvest_misses"
+            echo "action: maintainer review before Phase B — check blinding held + harvest complete"
+        } > "$log"
+    fi
+    cat "$log" >&2
+}
+
+_ab_orch_preflight_merged() {
+    local url="$1" state
+    state=$(gh pr view "$url" --json state -q .state 2>/dev/null || echo UNKNOWN)
+    if [[ "$state" != "MERGED" ]]; then
+        echo "orchestration: corpus PR not MERGED ($state) — §B.1 no-post safety not guaranteed: $url" >&2
+        exit 1
+    fi
+}
+
+_ab_orch_preflight_no_repo_override() {
+    local url="$1"
+    # A repo-level .claude/code-review.toml [orchestration] key would win over our
+    # user-level temp toggle (SKILL.md:1035-1040). We cannot cheaply inspect the
+    # remote repo's working tree here, so this is a RECORDED WARNING the operator
+    # must clear when selecting the SHA (spec step 2). Log it; do not hard-fail.
+    echo "orchestration: confirm $url's repo sets no [orchestration] key at repo layer (spec corpus step 2)" >&2
+}
+
+# ---------------------------------------------------------------------------
 # Preflight helpers (shared by both modes).
 # ---------------------------------------------------------------------------
 _ab_preflight_marketplace_root() {
@@ -579,4 +795,6 @@ _ab_emit_completion_summary() {
     echo "Run complete: ${succeeded}/${trials} trials, ${timeouts} timeouts, mean ${mean_wall}s. Output: $_AB_RUN_DIR" >&2
 }
 
-main "$@"
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+    main "$@"
+fi

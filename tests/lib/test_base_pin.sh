@@ -22,3 +22,22 @@ test_base_pin_phase_minus05_pins_baserefoid() {
             "review-pipeline.md Phase -0.5 (owned-worktree path) must resolve the PR baseRefOid and set \$BASE_PINNED = true so the base diff endpoint is an origin-pinned SHA"
     fi
 }
+
+test_base_pin_step1_skips_when_pinned() {
+    local cr="$REPO_ROOT/plugins/code-review-suite"
+    if [[ ! -d "$cr" ]]; then
+        skip "base pin Step 1 guard" "code-review-suite plugin not found"
+        return
+    fi
+    local canonical="$cr/includes/review-pipeline.md"
+    # The guard must sit BEFORE "Try these in order:" so it never enters the byte-synced
+    # items 1-4. Extract Step 1's head (heading -> "Try these in order:") and assert it.
+    local head
+    head=$(sed -n '/^### Step 1: Determine base branch$/,/^Try these in order:$/p' "$canonical")
+    if grep -qF 'BASE_PINNED' <<<"$head" && grep -qiF 'skip items 1' <<<"$head"; then
+        pass "base pin Step 1 guard: canonical skips re-resolution when \$BASE_PINNED is true"
+    else
+        fail "base pin Step 1 guard: canonical skips re-resolution when \$BASE_PINNED is true" \
+            "Step 1 must guard on \$BASE_PINNED BEFORE 'Try these in order:' — otherwise item 2 (gh pr view --json baseRefName) overwrites the Phase -0.5 SHA pin with a bare branch name"
+    fi
+}

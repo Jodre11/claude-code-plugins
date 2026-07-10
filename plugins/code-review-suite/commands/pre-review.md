@@ -666,6 +666,13 @@ and stop the pipeline cleanly. Do not proceed to Step 1.
 
 This duplicates the logic in `includes/specialist-context.md` "Determine base branch" intentionally — the pipeline orchestrator must resolve `$BASE` before dispatching specialists. Specialists also resolve `$BASE` independently so they work standalone. Step 1 items 1–5 here must match `specialist-context.md` items 1–5. Changes to any of these locations must be mirrored in the others; see also `agents/review-synthesiser.md` Context Gathering which has a parallel (but prompt-extracted) version.
 
+**If `$BASE_PINNED` is already `true`** (Phase -0.5 pinned the origin base SHA on the
+plugin-owned-worktree path), `$BASE` is a validated 40-hex SHA and `$EMPTY_TREE_MODE` is
+already `false`. Do NOT re-resolve the base: skip items 1–4 and the `Store as $BASE` block
+below — re-running item 2 (`gh pr view --json baseRefName`) would overwrite the pinned SHA
+with a bare branch name — and continue at item 5 (`Path scope:` extraction). Otherwise
+resolve the base now:
+
 Try these in order:
 1. If `$ARGUMENTS` is provided and non-empty, extract the base branch from it. If a `Base branch: <ref>` line is present, extract the ref after the colon. Otherwise, treat the entire value of `$ARGUMENTS` as a bare branch name.
 2. `gh pr view --json baseRefName -q .baseRefName 2>/dev/null` — use if a PR already exists

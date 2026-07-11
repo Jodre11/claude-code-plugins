@@ -347,6 +347,10 @@ Before review, please add a paragraph at the top of the PR body explaining what 
 (This is a structural check — no AI was used to evaluate the body's quality. Any narrative paragraph that meets the bar will let the review proceed.)
 ```
 
+**Under `$ANALYSIS_ONLY = true`:** do not post. Print the canned body above to stdout,
+prefixed with `> Phase 0 halt (analysis-only, not posted): no narrative description`, and
+stop the pipeline cleanly. Skip the duplicate-check and the `gh pr review` submission below.
+
 Before posting, fetch the most recent review by the current user:
 
 ```

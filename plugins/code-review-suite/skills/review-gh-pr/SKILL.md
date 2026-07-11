@@ -759,6 +759,10 @@ trivial-mode — they can re-invoke with `--force` if they want the full pipelin
 
 **Mode `pr`:**
 
+**Under `$ANALYSIS_ONLY = true`, do not post.** Render the mini-review to stdout exactly as
+the `local` mode below (body + each inline comment prefixed with `file:line —`, plus the
+verdict line `> Verdict (analysis-only, not submitted): <VERDICT>`), then stop cleanly.
+
 For each inline comment, post via:
 
 ```bash
@@ -1272,6 +1276,10 @@ Compare against Stage 1 data:
 If the plan changes materially, present the updated findings table to the user before proceeding.
 
 ## Stage 5: Add Inline Comments
+
+**Under `$ANALYSIS_ONLY = true`, skip this stage entirely.** Do not call `gh api
+.../comments`. The inline comments are rendered to stdout at Stage 6 (see "Analysis-only
+— render, do not post"), not posted here.
 
 Iterate `bundle.comments[]` — each entry carries `path` plus either `line`/`side`
 (line-level) or `subjectType: "file"` (file-level). The Workflow already line-filtered

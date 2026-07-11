@@ -1472,6 +1472,54 @@ test_housekeeping_trigger_mirrors_engine_scope() {
     fi
 }
 
+test_analysis_only_stage5_skips_posting() {
+    local cr
+    cr=$(_cr_dir)
+    if [[ ! -d "$cr" ]]; then
+        skip "analysis-only Stage 5 skips posting" "code-review-suite plugin not found"
+        return
+    fi
+
+    local skill="$cr/skills/review-gh-pr/SKILL.md"
+    if [[ ! -f "$skill" ]]; then
+        fail "analysis-only Stage 5: SKILL.md present" "missing: $skill"
+        return
+    fi
+
+    # Slice Stage 5 so the assertion cannot be satisfied by text elsewhere in the file.
+    local stage5
+    stage5=$(sed -n '/^## Stage 5: Add Inline Comments/,/^## Stage 6:/p' "$skill")
+
+    if grep -qF 'Under `$ANALYSIS_ONLY = true`, skip this stage entirely' <<<"$stage5"; then
+        pass "analysis-only Stage 5: carries skip-posting guard"
+    else
+        fail "analysis-only Stage 5: carries skip-posting guard" \
+            "Stage 5 must open with 'Under \`\$ANALYSIS_ONLY = true\`, skip this stage entirely' — without it an analysis_only run posts inline comments to GitHub before ever reaching Stage 6's suppression clause"
+    fi
+}
+
+test_analysis_only_trivial_pr_no_post() {
+    local cr
+    cr=$(_cr_dir)
+    if [[ ! -d "$cr" ]]; then
+        skip "analysis-only trivial-mode pr no-post" "code-review-suite plugin not found"
+        return
+    fi
+
+    local canonical="$cr/includes/review-pipeline.md"
+    if [[ ! -f "$canonical" ]]; then
+        fail "analysis-only trivial-mode pr no-post: canonical present" "missing: $canonical"
+        return
+    fi
+
+    if grep -qF 'Under `$ANALYSIS_ONLY = true`, do not post' "$canonical"; then
+        pass "analysis-only trivial-mode pr no-post: canonical carries Phase 0.7.9 guard"
+    else
+        fail "analysis-only trivial-mode pr no-post: canonical carries Phase 0.7.9 guard" \
+            "review-pipeline.md Phase 0.7.9 pr-mode block must carry 'Under \`\$ANALYSIS_ONLY = true\`, do not post' so an analysis_only run skips the trivial-mode inline POST and verdict submission"
+    fi
+}
+
 test_sync_agent_hazard_severity_basis() {
     local cr
     cr=$(_cr_dir)

@@ -633,6 +633,10 @@ trivial-mode — they can re-invoke with `--force` if they want the full pipelin
 
 **Mode `pr`:**
 
+**Under `$ANALYSIS_ONLY = true`, do not post.** Render the mini-review to stdout exactly as
+the `local` mode below (body + each inline comment prefixed with `file:line —`, plus the
+verdict line `> Verdict (analysis-only, not submitted): <VERDICT>`), then stop cleanly.
+
 For each inline comment, post via:
 
 ```bash

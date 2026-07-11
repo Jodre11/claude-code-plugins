@@ -1414,6 +1414,22 @@ is no synthesiser markdown to parse. The bundle drives the rest of Stage 6:
   `subjectType: "file"`. Then submit `bundle.bodyText` as the `gh pr review --input -`
   body, using the review flag chosen from `$FINAL_VERDICT`.
 
+### Analysis-only — render, do not post
+
+**Under `$ANALYSIS_ONLY = true`, this stage posts nothing to GitHub.** Skip Class A
+(user-confirmation), Class B (PR-thread state), and Class C (submission mechanics) in their
+entirety. Do NOT call `gh pr review`, `gh api .../comments`, or present any confirmation
+prompt. Instead, render the sealed bundle to stdout:
+
+- Print `bundle.bodyText` (the constructed review body).
+- Print the verdict line: `> Verdict (analysis-only, not submitted): $SYNTH_VERDICT`.
+- Print each `bundle.comments[i]` as a plain block — a `path:line (side)` header (or
+  `path (file)` for a file-level entry) followed by the comment body — so the full comment
+  set is visible without being posted.
+
+Then stop cleanly. The Class B `CLOSED`/`MERGED` refusal is moot here — analysis-only never
+posts regardless of PR state.
+
 ### Class A — User confirmation flow
 
 Class A renders one of two confirmation prompts based purely on `$SYNTH_VERDICT`

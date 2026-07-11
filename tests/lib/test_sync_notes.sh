@@ -1250,6 +1250,39 @@ test_analysis_only_phase04_suppress_present_in_canonical() {
     fi
 }
 
+test_analysis_only_stage6_render_not_post() {
+    local cr
+    cr=$(_cr_dir)
+    if [[ ! -d "$cr" ]]; then
+        skip "analysis-only Stage 6 render-not-post" "code-review-suite plugin not found"
+        return
+    fi
+
+    local skill="$cr/skills/review-gh-pr/SKILL.md"
+    if [[ ! -f "$skill" ]]; then
+        fail "analysis-only Stage 6: SKILL.md present" "missing: $skill"
+        return
+    fi
+
+    # Slice Stage 6 so the assertions can't be satisfied by text elsewhere.
+    local step6
+    step6=$(sed -n '/^## Stage 6: Submit Review Verdict/,/^## Stage 7/p' "$skill")
+
+    if grep -qF 'Analysis-only — render, do not post' <<<"$step6"; then
+        pass "analysis-only Stage 6: carries the render-not-post subsection"
+    else
+        fail "analysis-only Stage 6: carries the render-not-post subsection" \
+            "Stage 6 must carry an 'Analysis-only — render, do not post' subsection that, under \$ANALYSIS_ONLY = true, skips Classes A/B/C and renders the bundle to stdout — otherwise analysis-only submits the verdict and inline comments to GitHub"
+    fi
+
+    if grep -qF 'Verdict (analysis-only, not submitted)' <<<"$step6"; then
+        pass "analysis-only Stage 6: renders the verdict line to stdout"
+    else
+        fail "analysis-only Stage 6: renders the verdict line to stdout" \
+            "the analysis-only render path must print '> Verdict (analysis-only, not submitted): \$SYNTH_VERDICT' so the verdict is visible without being submitted"
+    fi
+}
+
 test_sync_phase_055_local_branch_freshness_check() {
     # Phase 0.55 protects the pipeline from measuring a stale diff: if the local HEAD
     # is behind the PR's remote head, the review analyses an outdated tree and ships

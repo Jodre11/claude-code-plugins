@@ -1190,6 +1190,40 @@ test_skill_md_step6_references_rubric_and_classes() {
     done
 }
 
+test_analysis_only_stage1_resolve_and_no_short_circuit() {
+    local cr
+    cr=$(_cr_dir)
+    if [[ ! -d "$cr" ]]; then
+        skip "analysis-only Stage 1 resolve + no-short-circuit" "code-review-suite plugin not found"
+        return
+    fi
+
+    local skill="$cr/skills/review-gh-pr/SKILL.md"
+    if [[ ! -f "$skill" ]]; then
+        fail "analysis-only Stage 1: SKILL.md present" "missing: $skill"
+        return
+    fi
+
+    # Extract Stage 1's body (from its heading to Stage 2) so the assertions can't
+    # be satisfied by matching text elsewhere in the file.
+    local stage1
+    stage1=$(sed -n '/^## Stage 1: Gather PR Information/,/^## Stage 2:/p' "$skill")
+
+    if grep -qF 'Resolve `orchestration.analysis_only`' <<<"$stage1"; then
+        pass "analysis-only Stage 1: resolves orchestration.analysis_only"
+    else
+        fail "analysis-only Stage 1: resolves orchestration.analysis_only" \
+            "Stage 1 must resolve \$ANALYSIS_ONLY from orchestration.analysis_only (two-layer, default false) before any PR-state decision — the anti-short-circuit and Stage 6 suppression both depend on the variable being bound here"
+    fi
+
+    if grep -qF 'Do not short-circuit on PR state under analysis-only' <<<"$stage1"; then
+        pass "analysis-only Stage 1: forbids the MERGED/CLOSED short-circuit"
+    else
+        fail "analysis-only Stage 1: forbids the MERGED/CLOSED short-circuit" \
+            "Stage 1 must carry the explicit 'Do not short-circuit on PR state under analysis-only' instruction — without it the model rationalises a halt on a merged PR before dispatching any specialist (the root-cause failure this mode fixes)"
+    fi
+}
+
 test_sync_phase_055_local_branch_freshness_check() {
     # Phase 0.55 protects the pipeline from measuring a stale diff: if the local HEAD
     # is behind the PR's remote head, the review analyses an outdated tree and ships

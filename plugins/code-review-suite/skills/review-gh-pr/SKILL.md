@@ -56,6 +56,27 @@ If `pageInfo.hasNextPage` is true, paginate using `after: "{endCursor}"` until a
 
 Follow the `gh --jq` guidance in `includes/gh-jq-pitfalls.md`.
 
+### Analysis-only mode
+
+**Resolve `orchestration.analysis_only`.** Resolve from two config layers, first match wins,
+exactly as `full_log` resolves (Step 3.6): (1) the reviewed repo's `.claude/code-review.toml`,
+then (2) the user-level `~/.claude/code-review.toml`. Treat a missing/malformed file as not
+setting the key. If neither layer sets `analysis_only`, `$ANALYSIS_ONLY = false`; otherwise it
+is the resolved boolean. An explicit `false` in the repo-level file wins over a `true` in the
+user-level file.
+
+`$ANALYSIS_ONLY = true` runs the **full** review pipeline to completion but renders the report
+to stdout instead of posting to GitHub (see Phase 0.4 and Stage 6). It exists so a
+retrospective analysis can run against a `CLOSED`/`MERGED` PR — the report is never submitted,
+so a non-open state is expected and valid.
+
+**Do not short-circuit on PR state under analysis-only.** When `$ANALYSIS_ONLY = true`, a
+`state` of `CLOSED` or `MERGED` in the PR data above MUST NOT halt the pipeline: proceed
+through every stage to synthesis exactly as for an open PR. Do not reason that "a merged PR has
+no actionable target" or that "any verdict would be refused" — under analysis-only the verdict
+is rendered to stdout, not submitted. State-based posting refusal still applies at Stage 6,
+where it belongs.
+
 ### Detect self-re-review
 
 Determine the current GitHub user, then check for prior reviews. Run these two commands **sequentially** — the second depends on the output of the first:

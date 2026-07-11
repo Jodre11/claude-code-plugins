@@ -1190,6 +1190,99 @@ test_skill_md_step6_references_rubric_and_classes() {
     done
 }
 
+test_analysis_only_stage1_resolve_and_no_short_circuit() {
+    local cr
+    cr=$(_cr_dir)
+    if [[ ! -d "$cr" ]]; then
+        skip "analysis-only Stage 1 resolve + no-short-circuit" "code-review-suite plugin not found"
+        return
+    fi
+
+    local skill="$cr/skills/review-gh-pr/SKILL.md"
+    if [[ ! -f "$skill" ]]; then
+        fail "analysis-only Stage 1: SKILL.md present" "missing: $skill"
+        return
+    fi
+
+    # Extract Stage 1's body (from its heading to Stage 2) so the assertions can't
+    # be satisfied by matching text elsewhere in the file.
+    local stage1
+    stage1=$(sed -n '/^## Stage 1: Gather PR Information/,/^## Stage 2:/p' "$skill")
+
+    if grep -qF 'Resolve `orchestration.analysis_only`' <<<"$stage1"; then
+        pass "analysis-only Stage 1: resolves orchestration.analysis_only"
+    else
+        fail "analysis-only Stage 1: resolves orchestration.analysis_only" \
+            "Stage 1 must resolve \$ANALYSIS_ONLY from orchestration.analysis_only (two-layer, default false) before any PR-state decision — the anti-short-circuit and Stage 6 suppression both depend on the variable being bound here"
+    fi
+
+    if grep -qF 'Do not short-circuit on PR state under analysis-only' <<<"$stage1"; then
+        pass "analysis-only Stage 1: forbids the MERGED/CLOSED short-circuit"
+    else
+        fail "analysis-only Stage 1: forbids the MERGED/CLOSED short-circuit" \
+            "Stage 1 must carry the explicit 'Do not short-circuit on PR state under analysis-only' instruction — without it the model rationalises a halt on a merged PR before dispatching any specialist (the root-cause failure this mode fixes)"
+    fi
+}
+
+test_analysis_only_phase04_suppress_present_in_canonical() {
+    # The existing pipeline-inline sync test enforces byte-identity across the three
+    # copies, but a *unanimous* deletion would keep them identical and pass. This
+    # presence check on the canonical is belt-and-braces: it fails if the analysis-only
+    # Phase 0.4 suppression clause is removed from all three at once.
+    local cr
+    cr=$(_cr_dir)
+    if [[ ! -d "$cr" ]]; then
+        skip "analysis-only Phase 0.4 suppression" "code-review-suite plugin not found"
+        return
+    fi
+
+    local canonical="$cr/includes/review-pipeline.md"
+    if [[ ! -f "$canonical" ]]; then
+        fail "analysis-only Phase 0.4 suppression: canonical present" "missing: $canonical"
+        return
+    fi
+
+    if grep -qF 'Phase 0 halt (analysis-only, not posted)' "$canonical"; then
+        pass "analysis-only Phase 0.4 suppression: canonical carries the render-not-post clause"
+    else
+        fail "analysis-only Phase 0.4 suppression: canonical carries the render-not-post clause" \
+            "review-pipeline.md Phase 0.4 pr-mode block must, under \$ANALYSIS_ONLY = true, render the halt notice to stdout ('Phase 0 halt (analysis-only, not posted)') instead of posting a REQUEST_CHANGES review — otherwise analysis-only still writes to GitHub on a narrative-less PR"
+    fi
+}
+
+test_analysis_only_stage6_render_not_post() {
+    local cr
+    cr=$(_cr_dir)
+    if [[ ! -d "$cr" ]]; then
+        skip "analysis-only Stage 6 render-not-post" "code-review-suite plugin not found"
+        return
+    fi
+
+    local skill="$cr/skills/review-gh-pr/SKILL.md"
+    if [[ ! -f "$skill" ]]; then
+        fail "analysis-only Stage 6: SKILL.md present" "missing: $skill"
+        return
+    fi
+
+    # Slice Stage 6 so the assertions can't be satisfied by text elsewhere.
+    local step6
+    step6=$(sed -n '/^## Stage 6: Submit Review Verdict/,/^## Stage 7/p' "$skill")
+
+    if grep -qF 'Analysis-only — render, do not post' <<<"$step6"; then
+        pass "analysis-only Stage 6: carries the render-not-post subsection"
+    else
+        fail "analysis-only Stage 6: carries the render-not-post subsection" \
+            "Stage 6 must carry an 'Analysis-only — render, do not post' subsection that, under \$ANALYSIS_ONLY = true, skips Classes A/B/C and renders the bundle to stdout — otherwise analysis-only submits the verdict and inline comments to GitHub"
+    fi
+
+    if grep -qF 'Verdict (analysis-only, not submitted)' <<<"$step6"; then
+        pass "analysis-only Stage 6: renders the verdict line to stdout"
+    else
+        fail "analysis-only Stage 6: renders the verdict line to stdout" \
+            "the analysis-only render path must print '> Verdict (analysis-only, not submitted): \$SYNTH_VERDICT' so the verdict is visible without being submitted"
+    fi
+}
+
 test_sync_phase_055_local_branch_freshness_check() {
     # Phase 0.55 protects the pipeline from measuring a stale diff: if the local HEAD
     # is behind the PR's remote head, the review analyses an outdated tree and ships
@@ -1376,6 +1469,54 @@ test_housekeeping_trigger_mirrors_engine_scope() {
     else
         fail "housekeeping trigger mirrors engine scope: Dockerfile detection present in prose and engine" \
             "trigger bullet must name 'Dockerfile' and engine must define _is_dockerfile"
+    fi
+}
+
+test_analysis_only_stage5_skips_posting() {
+    local cr
+    cr=$(_cr_dir)
+    if [[ ! -d "$cr" ]]; then
+        skip "analysis-only Stage 5 skips posting" "code-review-suite plugin not found"
+        return
+    fi
+
+    local skill="$cr/skills/review-gh-pr/SKILL.md"
+    if [[ ! -f "$skill" ]]; then
+        fail "analysis-only Stage 5: SKILL.md present" "missing: $skill"
+        return
+    fi
+
+    # Slice Stage 5 so the assertion cannot be satisfied by text elsewhere in the file.
+    local stage5
+    stage5=$(sed -n '/^## Stage 5: Add Inline Comments/,/^## Stage 6:/p' "$skill")
+
+    if grep -qF 'Under `$ANALYSIS_ONLY = true`, skip this stage entirely' <<<"$stage5"; then
+        pass "analysis-only Stage 5: carries skip-posting guard"
+    else
+        fail "analysis-only Stage 5: carries skip-posting guard" \
+            "Stage 5 must open with 'Under \`\$ANALYSIS_ONLY = true\`, skip this stage entirely' — without it an analysis_only run posts inline comments to GitHub before ever reaching Stage 6's suppression clause"
+    fi
+}
+
+test_analysis_only_trivial_pr_no_post() {
+    local cr
+    cr=$(_cr_dir)
+    if [[ ! -d "$cr" ]]; then
+        skip "analysis-only trivial-mode pr no-post" "code-review-suite plugin not found"
+        return
+    fi
+
+    local canonical="$cr/includes/review-pipeline.md"
+    if [[ ! -f "$canonical" ]]; then
+        fail "analysis-only trivial-mode pr no-post: canonical present" "missing: $canonical"
+        return
+    fi
+
+    if grep -qF 'Under `$ANALYSIS_ONLY = true`, do not post' "$canonical"; then
+        pass "analysis-only trivial-mode pr no-post: canonical carries Phase 0.7.9 guard"
+    else
+        fail "analysis-only trivial-mode pr no-post: canonical carries Phase 0.7.9 guard" \
+            "review-pipeline.md Phase 0.7.9 pr-mode block must carry 'Under \`\$ANALYSIS_ONLY = true\`, do not post' so an analysis_only run skips the trivial-mode inline POST and verdict submission"
     fi
 }
 

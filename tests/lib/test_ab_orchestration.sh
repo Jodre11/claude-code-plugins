@@ -10,10 +10,10 @@ test_orch_apply_writes_expected_toml() {
       _AB_RUN_DIR="$tmp"; source "$(_orch_lib)"
       orchestration_apply_arm panel 5 "$toml" )
     if grep -q 'review_mode = "panel"' "$toml" && grep -q 'panel_size = 5' "$toml" \
-        && grep -q 'full_log = true' "$toml"; then
-        pass "orch: apply writes review_mode/panel_size/full_log"
+        && grep -q 'full_log = true' "$toml" && grep -q 'analysis_only = true' "$toml"; then
+        pass "orch: apply writes review_mode/panel_size/full_log/analysis_only"
     else
-        fail "orch: apply writes review_mode/panel_size/full_log" "$(cat "$toml")"
+        fail "orch: apply writes review_mode/panel_size/full_log/analysis_only" "$(cat "$toml")"
     fi
     rm -rf "$tmp"
 }

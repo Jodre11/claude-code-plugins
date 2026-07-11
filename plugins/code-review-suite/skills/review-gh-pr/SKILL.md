@@ -56,6 +56,27 @@ If `pageInfo.hasNextPage` is true, paginate using `after: "{endCursor}"` until a
 
 Follow the `gh --jq` guidance in `includes/gh-jq-pitfalls.md`.
 
+### Analysis-only mode
+
+**Resolve `orchestration.analysis_only`.** Resolve from two config layers, first match wins,
+exactly as `full_log` resolves (Step 3.6): (1) the reviewed repo's `.claude/code-review.toml`,
+then (2) the user-level `~/.claude/code-review.toml`. Treat a missing/malformed file as not
+setting the key. If neither layer sets `analysis_only`, `$ANALYSIS_ONLY = false`; otherwise it
+is the resolved boolean. An explicit `false` in the repo-level file wins over a `true` in the
+user-level file.
+
+`$ANALYSIS_ONLY = true` runs the **full** review pipeline to completion but renders the report
+to stdout instead of posting to GitHub (see Phase 0.4 and Stage 6). It exists so a
+retrospective analysis can run against a `CLOSED`/`MERGED` PR — the report is never submitted,
+so a non-open state is expected and valid.
+
+**Do not short-circuit on PR state under analysis-only.** When `$ANALYSIS_ONLY = true`, a
+`state` of `CLOSED` or `MERGED` in the PR data above MUST NOT halt the pipeline: proceed
+through every stage to synthesis exactly as for an open PR. Do not reason that "a merged PR has
+no actionable target" or that "any verdict would be refused" — under analysis-only the verdict
+is rendered to stdout, not submitted. State-based posting refusal still applies at Stage 6,
+where it belongs.
+
 ### Detect self-re-review
 
 Determine the current GitHub user, then check for prior reviews. Run these two commands **sequentially** — the second depends on the output of the first:
@@ -325,6 +346,10 @@ Before review, please add a paragraph at the top of the PR body explaining what 
 
 (This is a structural check — no AI was used to evaluate the body's quality. Any narrative paragraph that meets the bar will let the review proceed.)
 ```
+
+**Under `$ANALYSIS_ONLY = true`:** do not post. Print the canned body above to stdout,
+prefixed with `> Phase 0 halt (analysis-only, not posted): no narrative description`, and
+stop the pipeline cleanly. Skip the duplicate-check and the `gh pr review` submission below.
 
 Before posting, fetch the most recent review by the current user:
 
@@ -733,6 +758,10 @@ trivial-mode — they can re-invoke with `--force` if they want the full pipelin
 ### 0.7.9 Post the mini-review
 
 **Mode `pr`:**
+
+**Under `$ANALYSIS_ONLY = true`, do not post.** Render the mini-review to stdout exactly as
+the `local` mode below (body + each inline comment prefixed with `file:line —`, plus the
+verdict line `> Verdict (analysis-only, not submitted): <VERDICT>`), then stop cleanly.
 
 For each inline comment, post via:
 
@@ -1248,6 +1277,10 @@ If the plan changes materially, present the updated findings table to the user b
 
 ## Stage 5: Add Inline Comments
 
+**Under `$ANALYSIS_ONLY = true`, skip this stage entirely.** Do not call `gh api
+.../comments`. The inline comments are rendered to stdout at Stage 6 (see "Analysis-only
+— render, do not post"), not posted here.
+
 Iterate `bundle.comments[]` — each entry carries `path` plus either `line`/`side`
 (line-level) or `subjectType: "file"` (file-level). The Workflow already line-filtered
 and rendered every entry, so post them as-is; do not re-filter against any changed-line
@@ -1388,6 +1421,22 @@ is no synthesiser markdown to parse. The bundle drives the rest of Stage 6:
   **file-level** comment (`subject_type=file`, no line/side) when the entry has
   `subjectType: "file"`. Then submit `bundle.bodyText` as the `gh pr review --input -`
   body, using the review flag chosen from `$FINAL_VERDICT`.
+
+### Analysis-only — render, do not post
+
+**Under `$ANALYSIS_ONLY = true`, this stage posts nothing to GitHub.** Skip Class A
+(user-confirmation), Class B (PR-thread state), and Class C (submission mechanics) in their
+entirety. Do NOT call `gh pr review`, `gh api .../comments`, or present any confirmation
+prompt. Instead, render the sealed bundle to stdout:
+
+- Print `bundle.bodyText` (the constructed review body).
+- Print the verdict line: `> Verdict (analysis-only, not submitted): $SYNTH_VERDICT`.
+- Print each `bundle.comments[i]` as a plain block — a `path:line (side)` header (or
+  `path (file)` for a file-level entry) followed by the comment body — so the full comment
+  set is visible without being posted.
+
+Then stop cleanly. The Class B `CLOSED`/`MERGED` refusal is moot here — analysis-only never
+posts regardless of PR state.
 
 ### Class A — User confirmation flow
 

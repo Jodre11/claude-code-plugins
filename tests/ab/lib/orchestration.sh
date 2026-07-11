@@ -35,13 +35,16 @@ orchestration_apply_arm() {
         _AB_ORCH_HAD_PRIOR="false"
     fi
 
-    # full_log=true is forced on for the whole experiment — the durable log is the
-    # data source. panel_size is written even for classic (the workflow ignores it).
+    # full_log=true and analysis_only=true are forced on for the whole experiment — the
+    # durable log is the data source, and analysis_only runs the full pipeline but renders
+    # to stdout instead of posting (the merged-PR corpus would otherwise short-circuit).
+    # panel_size is written even for classic (the workflow ignores it).
     cat > "$toml_path" <<EOF
 [orchestration]
 review_mode = "$arm"
 panel_size = $panel_size
 full_log = true
+analysis_only = true
 EOF
 }
 

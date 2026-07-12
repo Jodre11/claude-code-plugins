@@ -452,15 +452,15 @@ _ab_run_orchestration() {
 
     launch_preflight_environment
     local timeout_bin; timeout_bin=$(launch_resolve_timeout_binary)
-    local logs_root="$HOME/.claude/code-review-suite/logs"
 
     # Iterate PRs from corpus.yaml.
     local n_prs; n_prs=$(yq '.prs | length' "$_AB_RUN_DIR/corpus.yaml")
     local pi
     for ((pi = 0; pi < n_prs; pi++)); do
-        local url head_sha
+        # head_sha is recorded in corpus.yaml for provenance but no longer consumed
+        # here: harvest is journal-based (per-session), not on-disk (keyed by sha).
+        local url
         url=$(yq -r ".prs[$pi].url" "$_AB_RUN_DIR/corpus.yaml")
-        head_sha=$(yq -r ".prs[$pi].head_sha" "$_AB_RUN_DIR/corpus.yaml")
         local slug ident pr_slug
         slug=$(orchestration_slug_from_url "$url")
         ident=$(orchestration_ident_from_url "$url")
@@ -487,12 +487,13 @@ _ab_run_orchestration() {
                 local rc=0
                 _ab_orch_launch_trial "$trial_dir" "$timeout_seconds" "$prompt" "$timeout_bin" || rc=$?
                 capture_parse_trial "$trial_dir" || true
-                # Prefer the on-disk durable log (orchestrator Step 3.6). Under
-                # `claude -p` that write never fires (issues #94/#95), so fall back to
-                # harvesting review-core's output directly from its Workflow journal.
-                # Only a genuine miss on BOTH paths records HARVEST_MISS.
-                orchestration_harvest "$trial_dir" "$logs_root" "$slug" "$ident" "$head_sha" \
-                    || orchestration_harvest_journal "$trial_dir" "$HOME/.claude/projects" \
+                # Harvest review-core's output from its Workflow journal (issues
+                # #94/#95). We deliberately do NOT consult the on-disk Step 3.6 log:
+                # it never gets written under `claude -p`, and worse, a stale log from
+                # a prior run is keyed only by repo/ident/sha (not arm/run), so it would
+                # drop the wrong arm's report into this trial. The journal is per-session
+                # and therefore per-arm-per-trial — the only contamination-safe source.
+                orchestration_harvest_journal "$trial_dir" "$HOME/.claude/projects" \
                     || : > "$trial_dir/HARVEST_MISS"
                 [[ "$i" -lt "$trials" ]] && sleep 5
             done
@@ -509,52 +510,92 @@ _ab_run_orchestration() {
     echo "Run complete: $_AB_RUN_DIR" >&2
 }
 
-# Thin orchestration trial launcher. Mirrors launch_run_trial but runs in
-# --output-format stream-json --verbose mode (the mechanism
-# launch_run_per_agent_trial uses): fd 1 is the JSONL trace, captured to
-# stream.jsonl, from which stdout.log is reconstructed via
-# launch_jq_reduce_stream_jsonl so the cost model has the stream and the
-# verdict parser has the text. Model/effort are intentionally NOT passed —
-# orchestration uses the production session defaults; the arm difference lives
-# entirely in the TOML toggle.
+# Thin orchestration trial launcher. Runs in --output-format stream-json --verbose
+# mode: fd 1 is the JSONL trace, captured to stream.jsonl, from which stdout.log is
+# reconstructed via launch_jq_reduce_stream_jsonl so the cost model has the stream and
+# the verdict parser has the text. Model/effort are intentionally NOT passed —
+# orchestration uses the production session defaults; the arm difference lives entirely
+# in the TOML toggle.
+#
+# Watch-the-journal teardown (issues #94/#95): the orchestrator's own exit is an
+# unreliable signal under `claude -p` — it either ends its turn BEFORE review-core's
+# background Workflow finishes synthesis (harvest miss) or polls PAST completion until
+# the timeout (wastes ~30+ min/arm and still never writes the log). The data we need is
+# review-core's synthesiser result, which lands in its Workflow journal the moment synth
+# completes, regardless of what the orchestrator does. So we launch claude in the
+# BACKGROUND and poll that journal; the instant a synthesiser bodyText result appears we
+# tear the trial down and harvest. `timeout` remains the hard upper bound for the case
+# where synthesis never lands (real stall). This makes capture both correct (never grabs
+# a stale/other-arm on-disk log) and fast (arm cost ≈ review duration, not the timeout).
 _ab_orch_launch_trial() {
     local trial_dir="$1" timeout_seconds="$2" prompt="$3" timeout_bin="$4"
     local stream_jsonl="$trial_dir/stream.jsonl" stdout="$trial_dir/stdout.log"
     local stderr="$trial_dir/stderr.log" timing="$trial_dir/timing.json"
     local start_iso; start_iso=$(date -u +'%Y-%m-%dT%H:%M:%SZ'); local start=$SECONDS
+    local projects_root="$HOME/.claude/projects"
 
-    # Heartbeat: emit elapsed-time updates to stderr every 60s while the trial
-    # runs, so a long orchestration trial is observable. Mirrors the sibling
-    # launch_run_per_agent_trial. Killed in a trap when the trial returns or the
-    # harness is interrupted.
-    (
-        hb_elapsed=0
-        while sleep 60; do
-            hb_elapsed=$((hb_elapsed + 60))
-            echo "[$(date +'%H:%M:%S')] $(basename "$trial_dir"): still running (${hb_elapsed}s elapsed)" >&2
-        done
-    ) &
-    local hb_pid=$!
-    trap 'kill -TERM "$hb_pid" 2>/dev/null; wait "$hb_pid" 2>/dev/null || true' RETURN
-
-    local rc=0
+    # Launch in the background so the harness can watch the journal while it runs.
+    # `timeout` still bounds the worst case (synthesis never lands). Killing the
+    # `timeout` process forwards TERM to claude, which tears down its Workflow agents.
     CLAUDE_CODE_SUBPROCESS_ENV_SCRUB=0 \
     "$timeout_bin" --foreground --signal=TERM --kill-after=30 "$timeout_seconds" \
         command claude -p --permission-mode bypassPermissions \
             --output-format stream-json --verbose \
             --exclude-dynamic-system-prompt-sections "$prompt" \
-        > "$stream_jsonl" 2> "$stderr" || rc=$?
+        > "$stream_jsonl" 2> "$stderr" &
+    local claude_pid=$!
+    # Interrupt safety: tear down the background CLI if the harness itself is killed.
+    trap 'kill -TERM "$claude_pid" 2>/dev/null; wait "$claude_pid" 2>/dev/null || true' RETURN
 
-    kill -TERM "$hb_pid" 2>/dev/null || true
-    wait "$hb_pid" 2>/dev/null || true
+    # Watch loop: resolve the trial's session -> its review-core journal, then poll for
+    # a synthesiser result. Tear the trial down the instant synth completes.
+    local synth_detected=false teardown_reason=""
+    local waited=0 poll=15
+    local session_id="" journal=""
+    while :; do
+        if ! kill -0 "$claude_pid" 2>/dev/null; then
+            # Process ended on its own (self-exit or timeout kill) before we detected
+            # synth. rc is resolved below; harvest still tries the journal.
+            teardown_reason="process_exit"
+            break
+        fi
+        if [[ -z "$journal" ]]; then
+            session_id=$(orchestration_session_id_from_stream "$stream_jsonl" 2>/dev/null || true)
+            if [[ -n "$session_id" ]]; then
+                journal=$(orchestration_locate_journal "$session_id" "$projects_root" 2>/dev/null || true)
+            fi
+        fi
+        if [[ -n "$journal" ]] && orchestration_journal_has_synth "$journal"; then
+            synth_detected=true
+            teardown_reason="synth_complete"
+            kill -TERM "$claude_pid" 2>/dev/null || true
+            break
+        fi
+        sleep "$poll"
+        waited=$((waited + poll))
+        if (( waited % 60 == 0 )); then
+            echo "[$(date +'%H:%M:%S')] $(basename "$trial_dir"): still running (${waited}s elapsed${session_id:+, session $session_id})" >&2
+        fi
+    done
+
+    local rc=0
+    wait "$claude_pid" 2>/dev/null || rc=$?
     trap - RETURN
 
     launch_jq_reduce_stream_jsonl "$stream_jsonl" "$stdout"
     local elapsed=$((SECONDS - start)); local timed_out=false
-    [[ "$rc" == "124" ]] && timed_out=true
+    # 124 = timeout binary tripped; 143 = our own TERM after synth (expected, not a
+    # failure). Only a genuine timeout with no synth detected is a real timeout.
+    [[ "$rc" == "124" && "$synth_detected" != "true" ]] && timed_out=true
     jq -n --arg s "$start_iso" --arg e "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" \
         --argjson el "$elapsed" --argjson rc "$rc" --arg to "$timed_out" \
-        '{start:$s,end:$e,wall_clock_seconds:$el,exit_code:$rc,timed_out:($to=="true")}' > "$timing"
+        --arg sd "$synth_detected" --arg tr "$teardown_reason" \
+        '{start:$s,end:$e,wall_clock_seconds:$el,exit_code:$rc,timed_out:($to=="true"),synth_detected:($sd=="true"),teardown_reason:$tr}' > "$timing"
+    # Success from the harness's point of view = we got what we came for. Report 0 when
+    # synth was detected even though we TERM'd the CLI (rc 143); otherwise pass rc through.
+    if [[ "$synth_detected" == "true" ]]; then
+        return 0
+    fi
     return "$rc"
 }
 

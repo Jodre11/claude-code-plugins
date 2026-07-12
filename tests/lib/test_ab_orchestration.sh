@@ -87,10 +87,18 @@ test_orch_harvest_missing_jsonl_returns_nonzero() {
 
 # Build a fake trial dir + a projects-root wf journal for a given session id.
 # $4 (optional) = the synthesiser bodyText; omit to simulate a torn-down-pre-synth run.
+# $5 (optional) = "system-only" to write a stream carrying session_id ONLY on system
+# events (no terminal result event) — the timed-out/killed `claude -p` shape.
 _orch_make_journal_fixture() {
-    local projects_root="$1" session_id="$2" trial="$3" body="${4:-}"
+    local projects_root="$1" session_id="$2" trial="$3" body="${4:-}" stream_shape="${5:-with-result}"
     mkdir -p "$trial"
-    printf '{"type":"result","session_id":"%s"}\n' "$session_id" > "$trial/stream.jsonl"
+    if [[ "$stream_shape" == "system-only" ]]; then
+        printf '{"type":"system","subtype":"init","session_id":"%s"}\n{"type":"assistant","session_id":"%s"}\n' \
+            "$session_id" "$session_id" > "$trial/stream.jsonl"
+    else
+        printf '{"type":"system","subtype":"init","session_id":"%s"}\n{"type":"result","session_id":"%s"}\n' \
+            "$session_id" "$session_id" > "$trial/stream.jsonl"
+    fi
     local wf="$projects_root/some-cwd-slug/$session_id/subagents/workflows/wf_deadbeef-000"
     mkdir -p "$wf"
     {
@@ -100,6 +108,66 @@ _orch_make_journal_fixture() {
             jq -cn --arg b "$body" '{type:"result",result:{bodyText:$b}}'
         fi
     } > "$wf/journal.jsonl"
+}
+
+test_orch_session_id_reads_from_any_event() {
+    local tmp proj trial sid
+    tmp=$(mktemp -d); proj="$tmp/projects"; trial="$tmp/trial"
+    # system-only stream = timed-out `claude -p` (no terminal result event). The old
+    # result-only reader returned nothing here and fell through to a stale on-disk log.
+    _orch_make_journal_fixture "$proj" "sess-timeout" "$trial" "x" "system-only"
+    source "$(_orch_lib)"
+    sid=$(orchestration_session_id_from_stream "$trial/stream.jsonl" || true)
+    assert_equals "sess-timeout" "$sid" "orch: session id resolves from system event when result absent"
+    rm -rf "$tmp"
+}
+
+test_orch_locate_journal_finds_wf_by_session() {
+    local tmp proj trial found
+    tmp=$(mktemp -d); proj="$tmp/projects"; trial="$tmp/trial"
+    _orch_make_journal_fixture "$proj" "sess-loc" "$trial" "x"
+    source "$(_orch_lib)"
+    found=$(orchestration_locate_journal "sess-loc" "$proj" || true)
+    if [[ -n "$found" && -f "$found" ]]; then
+        pass "orch: locate_journal finds the wf journal by session id"
+    else
+        fail "orch: locate_journal finds the wf journal by session id" "got '$found'"
+    fi
+    rm -rf "$tmp"
+}
+
+test_orch_journal_has_synth_predicate() {
+    local tmp proj trial_yes trial_no rc_yes rc_no jy jn
+    tmp=$(mktemp -d); proj="$tmp/projects"
+    trial_yes="$tmp/y"; trial_no="$tmp/n"
+    _orch_make_journal_fixture "$proj" "sess-yes" "$trial_yes" "## Report"
+    _orch_make_journal_fixture "$proj" "sess-no"  "$trial_no"           # no bodyText
+    source "$(_orch_lib)"
+    jy=$(orchestration_locate_journal "sess-yes" "$proj")
+    jn=$(orchestration_locate_journal "sess-no" "$proj")
+    set +e; orchestration_journal_has_synth "$jy"; rc_yes=$?; orchestration_journal_has_synth "$jn"; rc_no=$?; set -e
+    if [[ "$rc_yes" == "0" && "$rc_no" != "0" ]]; then
+        pass "orch: journal_has_synth true iff a synthesiser bodyText result exists"
+    else
+        fail "orch: journal_has_synth predicate" "rc_yes=$rc_yes rc_no=$rc_no"
+    fi
+    rm -rf "$tmp"
+}
+
+test_orch_harvest_journal_survives_timeout_stream() {
+    local tmp proj trial rc
+    tmp=$(mktemp -d); proj="$tmp/projects"; trial="$tmp/trial"
+    # Timed-out stream (system-only) BUT synth landed in the journal — the harvester
+    # must still recover it via the any-event session-id reader.
+    _orch_make_journal_fixture "$proj" "sess-to" "$trial" "## Recovered report" "system-only"
+    source "$(_orch_lib)"
+    set +e; orchestration_harvest_journal "$trial" "$proj"; rc=$?; set -e
+    if [[ "$rc" == "0" ]] && grep -q 'Recovered report' "$trial/durable-log.md"; then
+        pass "orch: journal harvest recovers report even when stream is timeout-shaped"
+    else
+        fail "orch: journal harvest timeout-stream recovery" "rc=$rc"
+    fi
+    rm -rf "$tmp"
 }
 
 test_orch_harvest_journal_extracts_synth_bodytext() {

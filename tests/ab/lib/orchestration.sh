@@ -101,24 +101,63 @@ orchestration_ident_from_url() {
     echo "pr-${url##*/}"
 }
 
-# Harvest review-core's output straight from its Workflow journal, bypassing the
-# orchestrator's post-Workflow Step 3.6 durable-log write (which never runs under
-# `claude -p` — see issues #94/#95: the review-core Workflow is dispatched to the
-# background and its completion notification has no next turn to land in, so the
-# orchestrator's tail never executes and no on-disk log is written).
+# --- Journal harvest (issues #94/#95) --------------------------------------
 #
-# The Workflow tool journals every agent() return value under
+# Under `claude -p` the orchestrator's post-Workflow Step 3.6 durable-log write
+# never runs: review-core is dispatched as a background Workflow whose completion
+# notification has no next turn to land in, so the orchestrator either exits before
+# synthesis or polls past it until the timeout — either way it writes nothing to
+# disk, and its own exit is an unreliable signal. review-core itself writes nothing
+# (it returns the bundle to the host). But the Workflow tool journals every agent()
+# return value under
 #   <projects_root>/<session_id>/subagents/workflows/wf_*/journal.jsonl
-# There is exactly one wf_* journal per trial session. The synthesiser's result is
-# the sole entry whose `.result` object carries `bodyText` — that IS the rendered
-# review report (what a human ranks and what arm-tell derivation diffs). We also copy
-# the whole journal as durable-log.jsonl for the fuller per-cog corpus (specialist
-# findings + panel votes).
-#
-# session_id comes from the trial's own stream.jsonl `type=="result"` event.
-# Returns 1 (writing nothing) when the session can't be resolved or the journal holds
-# no synthesiser bodyText (e.g. the trial was torn down mid-synthesis), so the caller
-# records a harvest-miss and presses on.
+# with exactly one wf_* journal per trial session, and the synthesiser's result is
+# the sole entry whose `.result` carries `bodyText` — the rendered review report.
+# So the harness harvests review-core's output straight from that journal and does
+# NOT depend on the orchestrator finishing. The harness watch-loop (see
+# _ab_orch_launch_trial) also uses these helpers to detect synth-complete and tear
+# the trial down early rather than burning the full timeout.
+
+# Resolve the trial's session id from its stream.jsonl. Reads session_id from ANY
+# event (system/assistant/user/result), not just the terminal `result` event — a
+# timed-out or killed `claude -p` never emits the result event, but every other
+# event still carries the session id.
+orchestration_session_id_from_stream() {
+    local stream="$1"
+    [[ -f "$stream" ]] || return 1
+    local sid
+    sid=$(jq -r '.session_id // empty' "$stream" 2>/dev/null | grep -m1 .)
+    [[ -n "$sid" ]] || return 1
+    printf '%s' "$sid"
+}
+
+# Locate the single wf_* review-core journal for a session id. Globs across all
+# project dirs (the projects-root subdir is the cwd-slug, not the session id).
+orchestration_locate_journal() {
+    local session_id="$1"
+    local projects_root="${2:-$HOME/.claude/projects}"
+    local cand
+    for cand in "$projects_root"/*/"$session_id"/subagents/workflows/wf_*/journal.jsonl; do
+        [[ -f "$cand" ]] || continue
+        printf '%s' "$cand"
+        return 0
+    done
+    return 1
+}
+
+# Predicate: does this journal already hold a synthesiser result (a `.result` with
+# bodyText)? Used by the watch-loop to know review-core is done. 0 = present.
+orchestration_journal_has_synth() {
+    local journal="$1"
+    [[ -f "$journal" ]] || return 1
+    jq -e 'select(.type=="result") | select(.result | type=="object" and has("bodyText"))' \
+        "$journal" >/dev/null 2>&1
+}
+
+# Harvest the synthesiser report + full journal into the trial dir. Returns 1
+# (writing nothing) when the session can't be resolved, the journal is absent, or it
+# holds no synthesiser bodyText (torn down mid-synthesis), so the caller records a
+# harvest-miss and presses on.
 orchestration_harvest_journal() {
     local trial_dir="$1"
     local projects_root="${2:-$HOME/.claude/projects}"
@@ -127,27 +166,13 @@ orchestration_harvest_journal() {
     [[ -f "$stream" ]] || { echo "orchestration_harvest_journal: no stream.jsonl in $trial_dir" >&2; return 1; }
 
     local session_id
-    session_id=$(jq -r 'select(.type=="result") | .session_id // empty' "$stream" 2>/dev/null | tail -1)
-    if [[ -z "$session_id" ]]; then
-        echo "orchestration_harvest_journal: no session_id in $stream" >&2
-        return 1
-    fi
+    session_id=$(orchestration_session_id_from_stream "$stream") || {
+        echo "orchestration_harvest_journal: no session_id in $stream" >&2; return 1; }
 
-    # One wf_* journal per session; glob across all project dirs (the projects-root
-    # subdir is the cwd-slug, not the session id).
-    local journal=""
-    local cand
-    for cand in "$projects_root"/*/"$session_id"/subagents/workflows/wf_*/journal.jsonl; do
-        [[ -f "$cand" ]] || continue
-        journal="$cand"
-        break
-    done
-    if [[ -z "$journal" ]]; then
-        echo "orchestration_harvest_journal: no wf journal for session $session_id" >&2
-        return 1
-    fi
+    local journal
+    journal=$(orchestration_locate_journal "$session_id" "$projects_root") || {
+        echo "orchestration_harvest_journal: no wf journal for session $session_id" >&2; return 1; }
 
-    # The synthesiser result is the one whose .result carries bodyText.
     local body
     body=$(jq -r 'select(.type=="result") | select(.result | type=="object" and has("bodyText")) | .result.bodyText' "$journal" 2>/dev/null | head -c 10000000)
     if [[ -z "$body" ]]; then

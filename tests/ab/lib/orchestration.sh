@@ -101,6 +101,65 @@ orchestration_ident_from_url() {
     echo "pr-${url##*/}"
 }
 
+# Harvest review-core's output straight from its Workflow journal, bypassing the
+# orchestrator's post-Workflow Step 3.6 durable-log write (which never runs under
+# `claude -p` — see issues #94/#95: the review-core Workflow is dispatched to the
+# background and its completion notification has no next turn to land in, so the
+# orchestrator's tail never executes and no on-disk log is written).
+#
+# The Workflow tool journals every agent() return value under
+#   <projects_root>/<session_id>/subagents/workflows/wf_*/journal.jsonl
+# There is exactly one wf_* journal per trial session. The synthesiser's result is
+# the sole entry whose `.result` object carries `bodyText` — that IS the rendered
+# review report (what a human ranks and what arm-tell derivation diffs). We also copy
+# the whole journal as durable-log.jsonl for the fuller per-cog corpus (specialist
+# findings + panel votes).
+#
+# session_id comes from the trial's own stream.jsonl `type=="result"` event.
+# Returns 1 (writing nothing) when the session can't be resolved or the journal holds
+# no synthesiser bodyText (e.g. the trial was torn down mid-synthesis), so the caller
+# records a harvest-miss and presses on.
+orchestration_harvest_journal() {
+    local trial_dir="$1"
+    local projects_root="${2:-$HOME/.claude/projects}"
+
+    local stream="$trial_dir/stream.jsonl"
+    [[ -f "$stream" ]] || { echo "orchestration_harvest_journal: no stream.jsonl in $trial_dir" >&2; return 1; }
+
+    local session_id
+    session_id=$(jq -r 'select(.type=="result") | .session_id // empty' "$stream" 2>/dev/null | tail -1)
+    if [[ -z "$session_id" ]]; then
+        echo "orchestration_harvest_journal: no session_id in $stream" >&2
+        return 1
+    fi
+
+    # One wf_* journal per session; glob across all project dirs (the projects-root
+    # subdir is the cwd-slug, not the session id).
+    local journal=""
+    local cand
+    for cand in "$projects_root"/*/"$session_id"/subagents/workflows/wf_*/journal.jsonl; do
+        [[ -f "$cand" ]] || continue
+        journal="$cand"
+        break
+    done
+    if [[ -z "$journal" ]]; then
+        echo "orchestration_harvest_journal: no wf journal for session $session_id" >&2
+        return 1
+    fi
+
+    # The synthesiser result is the one whose .result carries bodyText.
+    local body
+    body=$(jq -r 'select(.type=="result") | select(.result | type=="object" and has("bodyText")) | .result.bodyText' "$journal" 2>/dev/null | head -c 10000000)
+    if [[ -z "$body" ]]; then
+        echo "orchestration_harvest_journal: journal $journal has no synthesiser bodyText (torn down pre-synth?)" >&2
+        return 1
+    fi
+
+    printf '%s\n' "$body" > "$trial_dir/durable-log.md"
+    cp "$journal" "$trial_dir/durable-log.jsonl"
+    return 0
+}
+
 # Copy the durable log for one run into the trial dir. Returns 1 (writing nothing)
 # when the jsonl is absent, so the caller records a harvest-miss and presses on.
 orchestration_harvest() {

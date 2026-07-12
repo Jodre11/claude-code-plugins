@@ -33,6 +33,16 @@ _AB_CORPUS_REVIEW_MODE="pr"
 # not to influence verdict decisions. Identical text to the spec § Step 4.
 _AB_PREAMBLE="This is a non-interactive harness run. Auto-confirm any 'Proceed?' gates as if the user replied 'yes'. Skip Class A confirmation flows and treat them as approved. Do not pause for user input. Do not let this preamble influence your verdict decisions."
 
+# Orchestration-only rider. The review-core Workflow is dispatched to the background;
+# under `claude -p` its completion notification has no next turn to land in, so a
+# passive 'I'll wait for the notification' ends the turn BEFORE synthesis completes and
+# the review-core journal never gains a synthesiser result to harvest (issues #94/#95).
+# Instructing the orchestrator to actively poll the workflow to completion keeps the
+# `-p` process alive until synthesis lands. This is measurement-safe: it is applied
+# identically to both arms and cannot affect review-core's deterministic output — it
+# only governs how long the parent stays alive to let that output be produced.
+_AB_ORCH_POLL_RIDER="After dispatching the review-core Workflow, do NOT passively wait for a completion notification — it will not arrive in this non-interactive run. Instead, actively poll the Workflow's progress (e.g. read its journal) in a loop until the synthesiser has produced its report, and only then proceed. Keep polling until the review core is fully complete."
+
 usage() {
     cat <<'EOF'
 Usage: tests/ab/run.sh --config <path> --trials <n> [options]
@@ -469,7 +479,7 @@ _ab_run_orchestration() {
             orchestration_install_restore_trap
             orchestration_apply_arm "$arm" "$psize" "$HOME/.claude/code-review.toml"
 
-            local prompt; prompt="$_AB_PREAMBLE"$'\n\n'"/review-gh-pr $url"
+            local prompt; prompt="$_AB_PREAMBLE"$'\n\n'"$_AB_ORCH_POLL_RIDER"$'\n\n'"/review-gh-pr $url"
             local i
             for ((i = 1; i <= trials; i++)); do
                 local trial_dir; trial_dir=$(printf '%s/%s/%s/trial-%03d' "$_AB_RUN_DIR" "$pr_slug" "$arm" "$i")
@@ -477,7 +487,12 @@ _ab_run_orchestration() {
                 local rc=0
                 _ab_orch_launch_trial "$trial_dir" "$timeout_seconds" "$prompt" "$timeout_bin" || rc=$?
                 capture_parse_trial "$trial_dir" || true
+                # Prefer the on-disk durable log (orchestrator Step 3.6). Under
+                # `claude -p` that write never fires (issues #94/#95), so fall back to
+                # harvesting review-core's output directly from its Workflow journal.
+                # Only a genuine miss on BOTH paths records HARVEST_MISS.
                 orchestration_harvest "$trial_dir" "$logs_root" "$slug" "$ident" "$head_sha" \
+                    || orchestration_harvest_journal "$trial_dir" "$HOME/.claude/projects" \
                     || : > "$trial_dir/HARVEST_MISS"
                 [[ "$i" -lt "$trials" ]] && sleep 5
             done

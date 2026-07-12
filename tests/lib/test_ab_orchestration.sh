@@ -82,6 +82,68 @@ test_orch_harvest_missing_jsonl_returns_nonzero() {
     rm -rf "$tmp"
 }
 
+# --- journal-harvest fallback (issues #94/#95: Step 3.6 never runs under `claude -p`,
+# so the durable log is harvested straight from review-core's Workflow journal) ---
+
+# Build a fake trial dir + a projects-root wf journal for a given session id.
+# $4 (optional) = the synthesiser bodyText; omit to simulate a torn-down-pre-synth run.
+_orch_make_journal_fixture() {
+    local projects_root="$1" session_id="$2" trial="$3" body="${4:-}"
+    mkdir -p "$trial"
+    printf '{"type":"result","session_id":"%s"}\n' "$session_id" > "$trial/stream.jsonl"
+    local wf="$projects_root/some-cwd-slug/$session_id/subagents/workflows/wf_deadbeef-000"
+    mkdir -p "$wf"
+    {
+        printf '{"type":"result","result":{"findings":[],"status":"ok"}}\n'
+        printf '{"type":"result","result":{"raised":[],"votes":[]}}\n'
+        if [[ -n "$body" ]]; then
+            jq -cn --arg b "$body" '{type:"result",result:{bodyText:$b}}'
+        fi
+    } > "$wf/journal.jsonl"
+}
+
+test_orch_harvest_journal_extracts_synth_bodytext() {
+    local tmp proj trial rc
+    tmp=$(mktemp -d); proj="$tmp/projects"; trial="$tmp/trial"
+    _orch_make_journal_fixture "$proj" "sess-aaaa" "$trial" "## Review Summary
+A real multi-finding report."
+    source "$(_orch_lib)"
+    set +e; orchestration_harvest_journal "$trial" "$proj"; rc=$?; set -e
+    if [[ "$rc" == "0" ]] && grep -q 'Review Summary' "$trial/durable-log.md" \
+        && [[ -f "$trial/durable-log.jsonl" ]]; then
+        pass "orch: journal harvest extracts synth bodyText to durable-log.md + copies jsonl"
+    else
+        fail "orch: journal harvest extracts synth bodyText" "rc=$rc; $(ls "$trial" 2>&1)"
+    fi
+    rm -rf "$tmp"
+}
+
+test_orch_harvest_journal_misses_when_pre_synth() {
+    local tmp proj trial rc
+    tmp=$(mktemp -d); proj="$tmp/projects"; trial="$tmp/trial"
+    # No bodyText → torn down before synthesis.
+    _orch_make_journal_fixture "$proj" "sess-bbbb" "$trial"
+    source "$(_orch_lib)"
+    set +e; orchestration_harvest_journal "$trial" "$proj"; rc=$?; set -e
+    if [[ "$rc" == "1" && ! -f "$trial/durable-log.md" ]]; then
+        pass "orch: journal harvest returns 1 (no durable-log) when synth absent"
+    else
+        fail "orch: journal harvest pre-synth miss" "rc=$rc; md exists: $([[ -f "$trial/durable-log.md" ]] && echo yes || echo no)"
+    fi
+    rm -rf "$tmp"
+}
+
+test_orch_harvest_journal_misses_when_no_session() {
+    local tmp proj trial rc
+    tmp=$(mktemp -d); proj="$tmp/projects"; trial="$tmp/trial"; mkdir -p "$trial"
+    # stream.jsonl with no result/session_id.
+    printf '{"type":"system"}\n' > "$trial/stream.jsonl"
+    source "$(_orch_lib)"
+    set +e; orchestration_harvest_journal "$trial" "$proj"; rc=$?; set -e
+    assert_equals "1" "$rc" "orch: journal harvest returns 1 when session_id unresolvable"
+    rm -rf "$tmp"
+}
+
 test_orch_dispatcher_scaffolds_run_dir_and_records_corpus() {
     local tmp corpus
     tmp=$(mktemp -d); corpus="$tmp/corpus.yaml"

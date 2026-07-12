@@ -217,6 +217,51 @@ maintainer records A-better / B-better / tie plus a one-line reason; (3) only af
 ranked does the tool **unblind**, joining rankings to arm labels and the mechanical
 differential, then applying the decision rule.
 
+### Findings from the live arm-tell capture (2026-07-12) — blinding is LEXICAL-only
+
+The Follow-up B capture (1 classic + 1 panel review of a real merged PR, harvested via the
+watch-the-journal harness) settled the "normalise arm tells" bullet above against real output,
+and the answer is only partial: **the regex normaliser can neutralise the *lexical* tells but
+NOT the *structural* ones, and the structural residue is not regex-fixable without destroying
+the content being ranked.**
+
+- **Lexical tells — neutralised.** `arm_tells.json` was rewritten wholesale from the capture
+  (7 rules); verified 0 residual `panel` / `panelist` / `cross-specialist` / `graduate` /
+  `66% … threshold` in either report after normalisation.
+- **Structural tells — NOT neutralisable.** Even after perfect lexical blinding the arms differ
+  in report *architecture*: classic emits three tiers (`## Consensus Findings` +
+  `## Synthesiser Findings` + `## Contested Findings`), `#### Finding #N — title [domains]`
+  headers, a `- **Synthesiser:**` note per finding, and an inline housekeeper finding; panel
+  emits only `## Contested Findings` ("reached no consensus"), `` **`file` line N** / Domain: x ``
+  headers, one prose assessment, and a dedicated `### Housekeeper` table. A ranker identifies the
+  arm from layout alone. Normalising this away would mean rewriting report structure — and some
+  of that structure *is* the signal (the panel's all-contested distribution is a real, measurable
+  property of the mode, not noise to be laundered).
+
+**Decision (maintainer, 2026-07-12): accept structural divergence as in-scope signal; blind
+LEXICALLY ONLY. Do NOT build a structural normaliser.** Rationale: a structural normaliser is an
+unaudited transform on the critical path of the sole quality signal — a new, harder-to-see class
+of drift (the same model-as-judge failure mode in another coat: *quis custodiet ipsos custodes*).
+Post-manipulating the reports to hide their shape would delete real evidence about how the modes
+differ. This concedes the blind is **partial**: it controls for *naming* bias but not
+*format-familiarity* bias (a ranker habituated to classic layout may read the familiar shape as
+more authoritative independent of content).
+
+**How the residual bias is held (not eliminated):**
+- The pre-registration `criteria.md` ranks on *substance* (real defects caught, false-positive
+  rate, defensible verdict, signal density, concision) — none of which is "which layout do I
+  recognise". Timestamped before unblinding; it is the honesty anchor exactly here.
+- **Sunk-cost / confirmation-bias pre-commitment.** Significant work is invested in this harness,
+  which creates pressure to see a clean or panel-favourable result. Recording this limitation
+  *before* unblinding is a pre-commitment device: the ranker cannot later rationalise the format
+  tell as immaterial, because it was named in advance as a known confound.
+- **Falsifiable check for the pilot gate's "blinding held" criterion (§Phase A check 2):** it is
+  now known that blinding does NOT fully hold structurally. The check is therefore reframed —
+  after unblinding, inspect whether the recorded one-line ranking reasons cite *format/structure*
+  ("cleaner layout", "better organised") rather than the pre-registered *content* axes. If
+  rankings cluster by format rather than by the criteria axes, the ranking is contaminated and
+  the result must be discarded regardless of which arm "won". Revisit at Phase B if this fires.
+
 ## Phased execution
 
 **Phase A — pilot (2–3 PRs × 3 runs/arm, ≈ $60–110).** Purpose: measure the within-arm noise

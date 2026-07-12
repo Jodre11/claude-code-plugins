@@ -1,4 +1,9 @@
 [
-  {"pattern": "(?i)\\bpanel(ists?)?\\b", "replace": "reviewers"},
-  {"pattern": "(?i)\\bconsensus vote\\b", "replace": "consensus"}
+  {"pattern": "(?i)\\bpanelists?\\b", "replace": "reviewers"},
+  {"pattern": "(?i)\\bthe panel\\b", "replace": "the review"},
+  {"pattern": "(?i)\\bpanel\\b", "replace": "review"},
+  {"pattern": "(?i)cross-specialist", "replace": "cross-reviewer"},
+  {"pattern": "(?i)cross-review opinions", "replace": "cross-reviewer opinions"},
+  {"pattern": "the 66 ?% cross-reviewer agreement threshold required to graduate", "replace": "the agreement threshold required to be elevated"},
+  {"pattern": "(?i)synthesiser-elevated findings", "replace": "elevated findings"}
 ]

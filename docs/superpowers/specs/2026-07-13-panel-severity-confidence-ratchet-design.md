@@ -96,10 +96,18 @@ Domains: `security`, `correctness`, `consistency`, `style`, `archaeology`, `reus
    `is_real: false` to cross below 70.
 2. **Severity → notch ratchet (symmetric).** Map severity to a level:
    `Suggestion = 1, Important = 2, Critical = 3`. Start at the specialist's level.
-   `upVotes` = panelists rating strictly higher than the specialist; `downVotes` = strictly
-   lower. `effectiveLevel = clamp(specialistLevel + (upVotes − downVotes) / N, 1, 3)`.
-   The notch size is `1/N`, so **unanimous agreement in one direction = exactly one full
-   level**. Upgrades are allowed and can promote a Suggestion into a blocking Important.
+   **Only `is_real: true` panelists vote on severity** — a panelist who called the finding
+   not-real abstains from the notch (a severity opinion on a finding you judged a false
+   positive is incoherent; realness is that panelist's honest signal, and it is already
+   counted by the confidence ratchet in step 1). `upVotes` = `is_real: true` panelists
+   rating strictly higher than the specialist; `downVotes` = `is_real: true` panelists
+   rating strictly lower. The divisor stays `N` (surviving panelists), **not** the
+   real-only count: abstentions shrink the achievable swing, so a finding half the panel
+   thinks is unreal cannot also be severity-upgraded by the other half to a full level.
+   `effectiveLevel = clamp(specialistLevel + (upVotes − downVotes) / N, 1, 3)`.
+   The notch size is `1/N`, so **unanimous (all-real) agreement in one direction = exactly
+   one full level**. Upgrades are allowed and can promote a Suggestion into a blocking
+   Important.
 3. **Block decision** (classic AND gate): the finding blocks iff
    `round(effectiveLevel) ≥ 2` (≥ Important) **AND** effective confidence `≥ 70`.
 
@@ -107,7 +115,10 @@ Domains: `security`, `correctness`, `consistency`, `style`, `archaeology`, `reus
    integer level for the gate, so it takes a **net majority** of directional votes to move
    a finding across a level boundary — a single dissent among 3 does not knock an Important
    down (`2 − 1/3 = 1.67 → rounds to 2`), but two of three does (`2 − 2/3 = 1.33 → 1`).
-   Half rounds toward the current level (conservative — no gratuitous movement).
+   Because `N` is a validated **odd** integer, `(upVotes − downVotes) / N` can never equal
+   exactly `0.5` (that needs `2·(up−down) = N`, impossible for odd `N`), so `effectiveLevel`
+   never lands on a half-integer and no tie-break rule is reachable — do **not** add a
+   `.5`-boundary test case, it would be dead. Standard nearest-integer rounding suffices.
 
 ### Track B — static-analysis findings
 
@@ -122,9 +133,13 @@ the step re-gauged for panel size:
    cross-review sources, where the step was 5 for 9 sources). Subtract one step per
    panelist voting `is_real: false` (or, equivalently, downgrade dissent). Clamp:
    `confidence = max(50, 100 − Σsteps)`. Never raised above 100.
-3. **Never dismissed.** Static findings land only in `consensus` or `contested`. A
+3. **Block decision.** Same AND gate as Track A, but with the locked severity: the finding
+   blocks iff the tool's **locked** severity is `≥ Important` **AND** the ratcheted
+   confidence is `≥ 70`. Only the confidence side moves under panel dissent; severity never
+   does.
+4. **Never dismissed.** Static findings land only in `consensus` or `contested`. A
    floor-50 finding with heavy dissent lands in `contested`, never `dismissed`.
-4. **Housekeeper** keeps its distinct delivery model (§10 housekeeper paragraph):
+5. **Housekeeper** keeps its distinct delivery model (§10 housekeeper paragraph):
    uniform `Suggestion`, rendered to the `## Dependency Freshness` table, not
    verdict-affecting, with the single sanctioned escalation break-out unchanged.
 
@@ -147,6 +162,14 @@ per-finding outcome:
 - Track B (static), blocks → **`consensus`**; otherwise → **`contested`** (never `dismissed`)
 - `synthesiser` tier remains `[]` in panel mode
 
+**`blocks_goal` is still tallied and stamped, unchanged.** `applyRubric` row 1
+(goal-not-achieved) reads `consensus.some(f => f.blocks_goal)` (`review-core.mjs:684`), so
+the rewritten `mapSpreadToTierConfidence` MUST keep counting the per-finding `blocks_goal`
+panel majority and stamp it onto each emitted finding, exactly as the current code does
+(`review-core.mjs:667`, `blocks_goal: tally.blocks_goal > s / 2`). The two-track ratchet
+changes only how *tier* and *confidence* are derived; the `blocks_goal` flag rides through
+untouched. Omitting it would silently disable rubric row 1.
+
 `applyRubric` is unchanged — it keeps acting on the `consensus` tier, which is now
 populated by the ratchet outcome rather than a near-impossible `real` supermajority.
 
@@ -167,15 +190,20 @@ A/B, not a schema constraint.
 ## Scope of change
 
 - `PANEL_SCHEMA` (`review-core.mjs:104`) — replace `vote` enum with `is_real` + `severity`.
-- `tallyVotes` (`:623`) — tally `is_real` counts and collect per-panelist severity opinions
-  instead of the vote enum.
+- `tallyVotes` (`:623`) — tally `is_real` counts, collect per-panelist severity opinions
+  (from `is_real: true` panelists only — non-real votes abstain from the severity notch),
+  and keep tallying `blocks_goal` unchanged.
 - `mapSpreadToTierConfidence` (`:658`) — replace the `real/minor/not_a_problem` tiering with
-  the two-track ratchet (source-tag dispatch, confidence + severity ratchets, tier mapping).
+  the two-track ratchet (source-tag dispatch, confidence + severity ratchets, tier mapping);
+  keep stamping the `blocks_goal` panel majority onto each finding so `applyRubric` row 1
+  still fires.
 - `includes/panel-concern-brief.md` — rewrite vote instructions to "two separate opinions,
   no maths"; state the `is_real` / `severity` split explicitly.
 - New unit tests (TDD, red→green): step sizing for N=3 and N=5; confidence-anchored
-  asymmetry (spec-100 needs unanimous, weaker falls to majority); severity notch rounding
-  at boundaries; static-analysis lock + floor-50 + never-dismissed; realness majority veto.
+  asymmetry (spec-100 needs unanimous, weaker falls to majority); severity notch semantics
+  (unanimous-real = one full level; `is_real: false` panelists abstain from the notch);
+  static-analysis lock + floor-50 + never-dismissed; realness majority veto; `blocks_goal`
+  still drives rubric row 1. **No `.5`-boundary rounding test** — unreachable for odd `N`.
 - `applyRubric` — unchanged.
 
 ## Out of scope / deferred

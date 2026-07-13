@@ -96,11 +96,12 @@ const SYNTH_SCHEMA = {
     },
 }
 
-// PANEL_SCHEMA — each opus panelist votes every Stage-1 finding and may raise new
-// cross-cutting findings. votes[].finding_id indexes the flattened Stage-1 list the
-// host built with flattenFindings. raised[] uses FINDING_SHAPE but drops `domain`
-// (review-core stamps a synthetic `panel` domain) — confidence is supplied but the
-// writer overwrites it from cluster corroboration.
+// PANEL_SCHEMA — each opus panelist votes every Stage-1 finding (split into is_real
+// epistemic judgment + severity opinion) and may raise new cross-cutting findings.
+// votes[].finding_id indexes the flattened Stage-1 list the host built with
+// flattenFindings. raised[] uses FINDING_SHAPE but drops `domain` (review-core stamps
+// a synthetic `panel` domain) — confidence is supplied but the writer overwrites it
+// from cluster corroboration.
 const PANEL_SCHEMA = {
     type: 'object',
     additionalProperties: false,
@@ -111,10 +112,11 @@ const PANEL_SCHEMA = {
             items: {
                 type: 'object',
                 additionalProperties: false,
-                required: ['finding_id', 'vote', 'blocks_goal', 'rationale'],
+                required: ['finding_id', 'is_real', 'severity', 'blocks_goal', 'rationale'],
                 properties: {
                     finding_id: { type: 'integer', minimum: 0, description: 'Index into the flattened Stage-1 finding list.' },
-                    vote: { enum: ['real', 'minor', 'not_a_problem'] },
+                    is_real: { type: 'boolean', description: 'True issue vs false positive — purely epistemic, independent of importance.' },
+                    severity: { enum: ['Critical', 'Important', 'Suggestion'], description: "The panelist's own honest severity opinion. Ignored for static-analysis findings (severity is locked)." },
                     blocks_goal: { type: 'boolean', description: 'True iff this finding shows the stated goal is not achieved. Always false when no goal is in scope.' },
                     rationale: { type: 'string' },
                 },

@@ -20,6 +20,29 @@ def _write_trial(arm_dir, n, verdict, findings, meta=None):
     return td
 
 
+def _write_trial_harvested(arm_dir, n, verdict, tiers):
+    """Write a trial in the real HARVESTED schema: verdict.txt (authoritative, written by
+    orchestration_harvest_journal) + durable-log.jsonl carrying the synthesiser Workflow
+    result record. `tiers` maps a tier name (consensus/synthesiser/contested/dismissed) to
+    its raw finding dicts (file/line/severity/confidence/description/suggested_fix — no tier
+    or domain field, exactly as the live journal emits)."""
+    td = arm_dir / f"trial-{n:03d}"
+    td.mkdir(parents=True)
+    (td / "verdict.txt").write_text(verdict + "\n", encoding="utf-8")
+    lines = [
+        json.dumps({"type": "result", "result": {"findings": [], "status": "ok"}}),
+        json.dumps({"type": "result", "result": {
+            "verdict": verdict,
+            "rubricRowApplied": 3,
+            "rubricReason": "whatever",
+            "bodyText": "## Report\n",
+            "tiers": {**{k: [] for k in ("consensus", "synthesiser", "contested", "dismissed")}, **tiers},
+        }}),
+    ]
+    (td / "durable-log.jsonl").write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return td
+
+
 class VerdictAgreementTest(unittest.TestCase):
     def test_within_arm_stability_all_agree(self):
         with tempfile.TemporaryDirectory() as d:
@@ -52,6 +75,67 @@ class VerdictAgreementTest(unittest.TestCase):
             agg = differential.cross_arm_agreement(ra, rb)
             self.assertFalse(agg["modal_match"])  # classic RC vs panel modal APPROVE/RC tie→first
             self.assertAlmostEqual(agg["pairwise_rate"], 0.5)  # 2 of 4 pairs agree
+
+
+class HarvestedSchemaTest(unittest.TestCase):
+    """load_arm must read the live harvested schema: verdict from verdict.txt and findings
+    from the synthesiser Workflow result record's tiers.*, NOT the obsolete
+    type:finding / type:meta records (which the current harvest no longer emits)."""
+
+    def _raw(self, file="a.cs", line=10, sev="Important", conf=72):
+        return {"file": file, "line": line, "severity": sev, "confidence": conf,
+                "description": "d", "suggested_fix": "f"}
+
+    def test_verdict_read_from_verdict_txt(self):
+        with tempfile.TemporaryDirectory() as d:
+            arm = pathlib.Path(d) / "classic"
+            _write_trial_harvested(arm, 1, "REQUEST_CHANGES", {"consensus": [self._raw()]})
+            runs = differential.load_arm(arm)
+            self.assertEqual(runs[0]["verdict"], "REQUEST_CHANGES")
+
+    def test_findings_extracted_from_all_tiers(self):
+        with tempfile.TemporaryDirectory() as d:
+            arm = pathlib.Path(d) / "classic"
+            _write_trial_harvested(arm, 1, "REQUEST_CHANGES", {
+                "consensus": [self._raw(file="a.cs", line=10)],
+                "synthesiser": [self._raw(file="b.cs", line=20)],
+            })
+            runs = differential.load_arm(arm)
+            self.assertEqual(len(runs[0]["findings"]), 2)
+
+    def test_tier_synthesised_from_tier_list_name(self):
+        with tempfile.TemporaryDirectory() as d:
+            arm = pathlib.Path(d) / "classic"
+            _write_trial_harvested(arm, 1, "REQUEST_CHANGES", {
+                "consensus": [self._raw(file="a.cs", line=10)],
+                "dismissed": [self._raw(file="b.cs", line=20)],
+            })
+            runs = differential.load_arm(arm)
+            tiers = {f["tier"] for f in runs[0]["findings"]}
+            self.assertEqual(tiers, {"consensus", "dismissed"})
+
+    def test_high_value_survives_extraction(self):
+        # A consensus finding is high-value regardless of confidence — proves the tier
+        # tag is wired through to high_value().
+        with tempfile.TemporaryDirectory() as d:
+            arm = pathlib.Path(d) / "classic"
+            _write_trial_harvested(arm, 1, "REQUEST_CHANGES",
+                                   {"consensus": [self._raw(conf=10)]})
+            runs = differential.load_arm(arm)
+            self.assertTrue(differential.high_value(runs[0]["findings"][0]))
+
+    def test_positional_match_on_extracted_findings(self):
+        # Findings carry no domain field; extraction defaults it uniformly so
+        # findings_match degrades to file + line-proximity (the honest positional match).
+        with tempfile.TemporaryDirectory() as d:
+            arm = pathlib.Path(d) / "classic"
+            _write_trial_harvested(arm, 1, "REQUEST_CHANGES",
+                                   {"consensus": [self._raw(file="a.cs", line=10)]})
+            _write_trial_harvested(arm, 2, "REQUEST_CHANGES",
+                                   {"consensus": [self._raw(file="a.cs", line=12)]})
+            runs = differential.load_arm(arm)
+            self.assertTrue(differential.findings_match(
+                runs[0]["findings"][0], runs[1]["findings"][0]))
 
 
 class FindingMatchTest(unittest.TestCase):

@@ -28,8 +28,43 @@ def _read_jsonl(path):
     return out
 
 
+# Tier lists carried on the synthesiser Workflow result record, in decreasing salience.
+_TIERS = ("consensus", "synthesiser", "contested", "dismissed")
+
+
+def _synth_result(records):
+    """The synthesiser's result record: the sole type=='result' whose .result carries the
+    rendered report (bodyText). Its .result.tiers holds the tiered finding sets."""
+    for rec in records:
+        if rec.get("type") != "result":
+            continue
+        res = rec.get("result")
+        if isinstance(res, dict) and "bodyText" in res:
+            return res
+    return None
+
+
+def _findings_from_tiers(res):
+    """Flatten .result.tiers.* into differential's finding shape. Live findings carry
+    file/line/severity/confidence/description/suggested_fix but NO tier or domain field:
+    tier is implied by which list holds the finding, and there is no per-finding domain.
+    We tag each with its tier list name and a uniform empty domain, so findings_match
+    degrades to file + line-proximity — the honest positional match for the synthesiser's
+    already-deduped findings."""
+    tiers = (res or {}).get("tiers") or {}
+    out = []
+    for tier in _TIERS:
+        for f in tiers.get(tier) or []:
+            out.append({**f, "tier": tier, "domain": f.get("domain", "")})
+    return out
+
+
 def load_arm(arm_dir):
-    """One entry per trial-*/ under arm_dir: {verdict, findings, meta}."""
+    """One entry per trial-*/ under arm_dir: {verdict, findings, meta}.
+
+    verdict comes from verdict.txt (authoritative — orchestration_harvest_journal writes
+    the synthesiser's real verdict there post-harvest). findings come from the harvested
+    durable-log.jsonl synthesiser result record's tiers.*."""
     runs = []
     for trial in sorted(glob.glob(os.path.join(arm_dir, "trial-*"))):
         verdict = "INCONCLUSIVE"
@@ -40,11 +75,10 @@ def load_arm(arm_dir):
         findings, meta = [], {}
         jpath = os.path.join(trial, "durable-log.jsonl")
         if os.path.isfile(jpath):
-            for rec in _read_jsonl(jpath):
-                if rec.get("type") == "finding":
-                    findings.append(rec)
-                elif rec.get("type") == "meta":
-                    meta = rec
+            res = _synth_result(_read_jsonl(jpath))
+            if res is not None:
+                findings = _findings_from_tiers(res)
+                meta = {k: v for k, v in res.items() if k != "tiers" and k != "bodyText"}
         runs.append({"verdict": verdict, "findings": findings, "meta": meta})
     return runs
 

@@ -358,7 +358,17 @@ test_panel_ratchet_row1_still_fires() {
 
 Wait — for row 1 the finding must be in the `consensus` tier (`applyRubric` reads `consensus.some(f => f.blocks_goal)`). A unanimous-real Suggestion with no confidence drop: confidence 100 ≥ 70 but roundedLevel=1 < 2 → NOT blocking → lands `contested`, not `consensus`. So row 1 would NOT fire. This mirrors the OLD behaviour: check `test_panel_row1_fires_on_goal_block` in the current suite — under the old code a majority-real finding hit `consensus` even as a Suggestion (real=3 ≥ superT=2). **The ratchet changes this**: a Suggestion no longer reaches consensus on realness alone. Confirm the intended semantics with the finding below before asserting.
 
-- [ ] **Step 2: Resolve the row-1/consensus-tier interaction.** This is a genuine design question the ratchet surfaces: under the old tiering, a majority-`real` finding of ANY severity landed in `consensus`, so a goal-blocking Suggestion could drive row 1. Under the new ratchet, only severity-≥-Important-AND-confidence-≥-70 findings reach `consensus` — a real-but-Suggestion finding lands in `contested`, so `applyRubric` row 1 (which scans only `consensus`) can no longer see it. **STOP and flag this to the reviewer/user**: either (a) row 1 should scan `consensus ∪ contested` for `blocks_goal` (preserves old behaviour — a goal-blocking finding blocks regardless of severity), or (b) accept that goal-blocking now requires the finding to independently clear the severity+confidence gate (stricter). The spec says "`applyRubric` unchanged" which implies (b), but that silently weakens row 1. Do not guess — get a decision, then write Test G to match. Record the decision inline in the plan and in the spec's tier-mapping section.
+- [x] **Step 2: Resolve the row-1/consensus-tier interaction. DECISION MADE (2026-07-13): option (a) — widen row 1.** Under the old tiering, a majority-`real` finding of ANY severity landed in `consensus`, so a goal-blocking Suggestion could drive row 1. Under the new ratchet, only severity-≥-Important-AND-confidence-≥-70 findings reach `consensus` — a real-but-Suggestion finding lands in `contested`. To preserve today's behaviour (a goal-blocking finding blocks regardless of severity), **`applyRubric` row 1 is widened to scan `consensus ∪ contested` for `blocks_goal`** (NOT `dismissed` — a majority-not-real finding is a false positive and its `blocks_goal` must not fire). This is the ONE deviation from the spec's "`applyRubric` unchanged" prose; it is intentional and must be recorded in the spec's tier-mapping section (Task 5 Step 5 / Task 7). Implement:
+
+```javascript
+    const consensus = tiers.consensus ?? []
+    const contested = tiers.contested ?? []
+    if (hasGoal && [...consensus, ...contested].some(f => f.blocks_goal)) {
+        return { verdict: 'REQUEST_CHANGES', rubricRowApplied: 1, rubricReason: 'goal not achieved (panel majority)' }
+    }
+```
+
+  Write Test G to assert `REQUEST_CHANGES` for the goal-blocking Suggestion (it lands in `contested`, row 1 now sees it). Rows 2/3 still scan `consensus` only — unchanged.
 
 - [ ] **Step 3: Write the N=5 scaling test** (independent of Step 2). Track A realness step at N=5 is ceil(31/5)=7; unanimous is_real:false on spec-100 Important → 100−5×7=65 < 70 → not blocking → dismissed.
 

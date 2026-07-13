@@ -1,7 +1,8 @@
 # Panel review — separate severity from realness, mechanical ratchet
 
 **Date:** 2026-07-13
-**Status:** design (awaiting review)
+**Status:** implemented
+**Implemented by:** `docs/superpowers/plans/2026-07-13-panel-severity-confidence-ratchet.md`
 **Supersedes fragments of:** `2026-07-09-panel-review-build-design.md`, `2026-07-10-panel-classic-ab-design.md`
 
 ## Problem

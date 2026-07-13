@@ -377,3 +377,56 @@ test_orch_pilot_gate_hard_stops_when_differential_fails() {
     fi
     rm -rf "$tmp"
 }
+
+test_orch_should_gate_fires_for_pilot_without_defer() {
+    local rc
+    ( set -euo pipefail
+      source "$REPO_ROOT/tests/ab/run.sh" 2>/dev/null || true
+      _ab_orch_should_gate pilot false )
+    rc=$?
+    assert_equals "0" "$rc" "orch: gate fires (rc 0) for pilot when defer_gate=false"
+}
+
+test_orch_should_gate_deferred_skips_for_pilot() {
+    local rc
+    set +e
+    ( set -euo pipefail
+      source "$REPO_ROOT/tests/ab/run.sh" 2>/dev/null || true
+      _ab_orch_should_gate pilot true )
+    rc=$?
+    set -e
+    assert_equals "1" "$rc" "orch: gate skips (rc 1) for pilot when defer_gate=true"
+}
+
+test_orch_should_gate_skips_for_full_phase() {
+    local rc
+    set +e
+    ( set -euo pipefail
+      source "$REPO_ROOT/tests/ab/run.sh" 2>/dev/null || true
+      _ab_orch_should_gate full false )
+    rc=$?
+    set -e
+    assert_equals "1" "$rc" "orch: gate never fires for non-pilot phase"
+}
+
+test_orch_defer_gate_flag_parses() {
+    local tmp corpus out run_dir
+    tmp=$(mktemp -d); corpus="$tmp/corpus.yaml"
+    cat > "$corpus" <<'YAML'
+phase: pilot
+prs:
+  - url: https://github.com/Jodre11/claude-code-plugins/pull/88
+    head_sha: a757f69000000000000000000000000000000000
+    stratum: large/rc/hard
+YAML
+    # --defer-gate must be accepted by arg-parse (no "unknown arg" exit 64).
+    out=$(_AB_ORCH_DRYRUN=1 CLAUDE_TEMP_DIR="$tmp" \
+        bash "$REPO_ROOT/tests/ab/run.sh" --mode orchestration --corpus "$corpus" \
+        --arms "panel" --trials 1 --phase pilot --defer-gate 2>&1 || true)
+    if printf '%s\n' "$out" | grep -q 'unknown arg'; then
+        fail "orch: --defer-gate flag parses" "$out"
+    else
+        pass "orch: --defer-gate flag parses"
+    fi
+    rm -rf "$tmp"
+}

@@ -66,6 +66,15 @@ Per-agent mode (--mode per-agent or config-derived):
   --include-tag <tag>       Reserved for sweep mode; not implemented in P2
   --exclude-tag <tag>       Reserved for sweep mode; not implemented in P2
 
+Orchestration mode (--mode orchestration):
+  --corpus <corpus.yaml>    Required: path to a corpus.yaml (see runs/*/corpus.yaml)
+  --arms <spec>             Required: space-separated arms, e.g. "classic panel:5"
+  --phase <pilot|full>      Required: pilot gates on within-arm stability
+  --panel-size <n>          Default panel size when an arm omits :N (default: 3)
+  --defer-gate              Skip the pilot gate for this launch (single-arm runs).
+                            The gate needs BOTH arms in one run dir; run it manually
+                            once classic/ and panel/ both populate the same dir.
+
 Common:
   -h, --help                Show this help
 
@@ -86,6 +95,7 @@ main() {
     local arms=""
     local phase=""
     local panel_size="3"
+    local defer_gate="false"
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
@@ -98,6 +108,7 @@ main() {
             --arms) arms="$2"; shift 2 ;;
             --phase) phase="$2"; shift 2 ;;
             --panel-size) panel_size="$2"; shift 2 ;;
+            --defer-gate) defer_gate="true"; shift ;;
             --faithfulness-check) faithfulness_check="true"; shift ;;
             --stream-json) stream_json="true"; shift ;;
             --include-tag) shift 2 ;;  # reserved; no-op
@@ -148,7 +159,7 @@ main() {
                 echo "run.sh: --corpus <corpus.yaml> --arms <spec> --phase <pilot|full> required for orchestration" >&2
                 exit 64
             fi
-            _ab_run_orchestration "$corpus_id" "$arms" "$trials" "$phase" "$panel_size" "$timeout_seconds"
+            _ab_run_orchestration "$corpus_id" "$arms" "$trials" "$phase" "$panel_size" "$timeout_seconds" "$defer_gate"
             ;;
         *)
             echo "run.sh: unknown mode: $mode" >&2
@@ -428,6 +439,7 @@ _ab_run_per_agent() {
 # ---------------------------------------------------------------------------
 _ab_run_orchestration() {
     local corpus_yaml="$1" arms_spec="$2" trials="$3" phase="$4" default_panel="$5" timeout_seconds="$6"
+    local defer_gate="${7:-false}"
 
     _ab_preflight_marketplace_root
     _ab_preflight_required_tools
@@ -503,11 +515,24 @@ _ab_run_orchestration() {
         done
     done
 
-    if [[ "$phase" == "pilot" ]]; then
+    if _ab_orch_should_gate "$phase" "$defer_gate"; then
         _ab_orch_pilot_gate "$_AB_RUN_DIR"
+    elif [[ "$phase" == "pilot" && "$defer_gate" == "true" ]]; then
+        echo "orchestration: --defer-gate set — pilot gate skipped. Run it manually once BOTH" >&2
+        echo "  arms populate this run dir: python3 $SCRIPT_DIR/lib/differential.py --run-dir $_AB_RUN_DIR" >&2
     fi
 
     echo "Run complete: $_AB_RUN_DIR" >&2
+}
+
+# Predicate: should the pilot gate fire at end of run? The gate computes
+# min(within_arm_stability) across arms, so a single-arm launch would trip on the
+# empty arm's min()=0. --defer-gate lets a single-arm launch skip it; the gate is
+# then run manually once both arms populate the SAME run dir. Returns 0 (fire) only
+# for a pilot phase without deferral; 1 (skip) otherwise.
+_ab_orch_should_gate() {
+    local phase="$1" defer_gate="${2:-false}"
+    [[ "$phase" == "pilot" && "$defer_gate" != "true" ]]
 }
 
 # Thin orchestration trial launcher. Runs in --output-format stream-json --verbose

@@ -187,12 +187,38 @@ orchestration_harvest_journal() {
     # record. capture.sh runs BEFORE harvest and parses the verdict from parent stdout,
     # but under `claude -p` the synth report never propagates there — so verdict.txt
     # holds only the INCONCLUSIVE placeholder. The journal result record is the true
-    # source. Leave verdict.txt untouched if the record carries no verdict (older
-    # journals) so we never clobber a good capture-time value with a null.
+    # source. Leave verdict.txt untouched if no verdict can be resolved (older journals
+    # / prose without a verdict line) so we never clobber a good capture-time value.
+    #
+    # CLASSIC journals .result.verdict directly (single synth agent() call). PANEL
+    # computes its verdict in JS (applyRubric) and never journals it — only the writer's
+    # bodyText prose carries it — so for panel we derive the verdict from that prose.
     local jverdict
     jverdict=$(jq -r 'select(.type=="result") | select(.result | type=="object" and has("bodyText") and has("verdict")) | .result.verdict' "$journal" 2>/dev/null | head -n1)
+    if [[ -z "$jverdict" || "$jverdict" == "null" ]]; then
+        jverdict=$(orchestration_verdict_from_prose "$body")
+    fi
     if [[ -n "$jverdict" && "$jverdict" != "null" ]]; then
         printf '%s\n' "$jverdict" > "$trial_dir/verdict.txt"
+    fi
+    return 0
+}
+
+# Derive a panel verdict from the writer's bodyText prose. The panel writer phrased the
+# verdict three ways across the pilot trials, so we try in decreasing specificity:
+#   1. "Verdict:" line — `## Verdict: APPROVE`, `Verdict: **REQUEST_CHANGES** — …`
+#   2. inline prose    — `the verdict is **APPROVE**`
+# `[*]*` absorbs optional markdown bold around the token. Prints the verdict (or nothing
+# when the prose carries none, so the caller leaves verdict.txt untouched).
+orchestration_verdict_from_prose() {
+    local body="$1"
+    if [[ "$body" =~ [Vv]erdict:[[:space:]]*[*]*(APPROVE|REQUEST_CHANGES) ]]; then
+        printf '%s' "${BASH_REMATCH[1]}"
+        return 0
+    fi
+    if [[ "$body" =~ verdict\ is[[:space:]]*[*]*(APPROVE|REQUEST_CHANGES) ]]; then
+        printf '%s' "${BASH_REMATCH[1]}"
+        return 0
     fi
     return 0
 }

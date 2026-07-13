@@ -723,11 +723,13 @@ function mapSpreadToTierConfidence(voteTallies, raisedClusters, s) {
 }
 
 // Apply the four verdict-rubric rows deterministically, first match wins. Row 1's
-// goal-achievement judgement comes from the blocks_goal panel vote (a consensus
-// finding with blocks_goal true), NOT from prose. hasGoal gates row 1.
+// goal-achievement judgement scans consensus ∪ contested for blocks_goal (a real-majority
+// Suggestion still blocks if the panel says so; dismissed findings are false positives and
+// must not fire). Rows 2/3 scan consensus only. hasGoal gates row 1.
 function applyRubric(tiers, hasGoal) {
     const consensus = tiers.consensus ?? []
-    if (hasGoal && consensus.some(f => f.blocks_goal)) {
+    const contested = tiers.contested ?? []
+    if (hasGoal && [...consensus, ...contested].some(f => f.blocks_goal)) {
         return { verdict: 'REQUEST_CHANGES', rubricRowApplied: 1, rubricReason: 'goal not achieved (panel majority)' }
     }
     if (consensus.some(f => f.severity === 'Critical')) {
@@ -822,18 +824,16 @@ function isPosted(finding, verdict) {
 // REQUEST_CHANGES: consensus Critical (any confidence) or Important >= 70, plus
 // any finding whose positional [#N] token appears in rubricReason (covers the
 // synthesiser goal-block). consensusIndexToken is meaningful ONLY for the consensus
-// tier — only consensus findings can be verdict-relevant under the current
-// rubric, and [#N] tokens in rubricReason reference consensus findings by
-// synthesiser contract. It is the finding's 1-based [#N] within tiers.consensus.
-// rubricRowApplied gates the panel goal-block: panel row 1 sets rubricReason to
+// tier. rubricRowApplied gates the panel goal-block: panel row 1 sets rubricReason to
 // 'goal not achieved (panel majority)' (no [#N] token), so the blocking finding
-// is identified structurally — a consensus finding carrying blocks_goal — rather
-// than by string match. Raised consensus findings carry no blocks_goal, so === true
-// correctly excludes them; only VOTED consensus findings can have driven row 1.
+// is identified structurally — a consensus OR contested finding carrying blocks_goal —
+// rather than by string match. Row 1 scans consensus ∪ contested; rows 2/3 are
+// consensus-only. Raised consensus findings carry no blocks_goal, so === true
+// correctly excludes them; only VOTED findings can have driven row 1.
 function isVerdictRelevant(finding, tier, verdict, rubricReason, consensusIndexToken, rubricRowApplied) {
     if (verdict !== 'REQUEST_CHANGES') return false
+    if (rubricRowApplied === 1 && (tier === 'consensus' || tier === 'contested') && finding.blocks_goal === true) return true
     if (tier === 'consensus') {
-        if (rubricRowApplied === 1 && finding.blocks_goal === true) return true
         if (finding.severity === 'Critical') return true
         if (finding.severity === 'Important' && (finding.confidence ?? 0) >= 70) return true
         if (consensusIndexToken && rubricReason && rubricReason.includes(`[#${consensusIndexToken}]`)) return true

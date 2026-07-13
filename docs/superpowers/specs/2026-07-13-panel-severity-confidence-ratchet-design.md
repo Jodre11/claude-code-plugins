@@ -162,16 +162,23 @@ per-finding outcome:
 - Track B (static), blocks → **`consensus`**; otherwise → **`contested`** (never `dismissed`)
 - `synthesiser` tier remains `[]` in panel mode
 
-**`blocks_goal` is still tallied and stamped, unchanged.** `applyRubric` row 1
-(goal-not-achieved) reads `consensus.some(f => f.blocks_goal)` (`review-core.mjs:684`), so
-the rewritten `mapSpreadToTierConfidence` MUST keep counting the per-finding `blocks_goal`
-panel majority and stamp it onto each emitted finding, exactly as the current code does
-(`review-core.mjs:667`, `blocks_goal: tally.blocks_goal > s / 2`). The two-track ratchet
-changes only how *tier* and *confidence* are derived; the `blocks_goal` flag rides through
-untouched. Omitting it would silently disable rubric row 1.
+**`blocks_goal` is still tallied and stamped, unchanged.** `mapSpreadToTierConfidence` MUST
+keep counting the per-finding `blocks_goal` panel majority and stamp it onto each emitted
+finding (`blocks_goal: tally.blocks_goal > s / 2`). The two-track ratchet changes only how
+*tier* and *confidence* are derived; the `blocks_goal` flag rides through untouched.
+Omitting it would silently disable rubric row 1.
 
-`applyRubric` is unchanged — it keeps acting on the `consensus` tier, which is now
-populated by the ratchet outcome rather than a near-impossible `real` supermajority.
+**`applyRubric` row 1 deviation (intentional).** Under the old tiering, a majority-`real`
+finding of any severity landed in `consensus`, so a goal-blocking Suggestion could drive
+row 1. Under the new ratchet, only severity-≥-Important-AND-confidence-≥-70 findings reach
+`consensus`; a real-but-Suggestion finding lands in `contested`. To preserve the intended
+semantics (a goal-blocking finding blocks regardless of severity), `applyRubric` row 1 is
+**widened to scan `consensus ∪ contested` for `blocks_goal`**. `dismissed` findings are
+excluded — a majority-not-real finding is a false positive and its `blocks_goal` must not
+fire. Rows 2 and 3 (Critical / Important ≥ 70) continue to scan `consensus` only.
+`isVerdictRelevant` is similarly widened: a `contested` finding with `blocks_goal === true`
+is marked `verdict_relevant` when `rubricRowApplied === 1`. This is the one intentional
+deviation from the spec's original "`applyRubric` unchanged" prose.
 
 ## `raised[]` (net-new panelist findings)
 
@@ -204,7 +211,7 @@ A/B, not a schema constraint.
   (unanimous-real = one full level; `is_real: false` panelists abstain from the notch);
   static-analysis lock + floor-50 + never-dismissed; realness majority veto; `blocks_goal`
   still drives rubric row 1. **No `.5`-boundary rounding test** — unreachable for odd `N`.
-- `applyRubric` — unchanged.
+- `applyRubric` — row 1 widened to scan `consensus ∪ contested` for `blocks_goal` (see tier-mapping section); rows 2/3 consensus-only; `isVerdictRelevant` widened to match.
 
 ## Out of scope / deferred
 

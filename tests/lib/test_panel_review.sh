@@ -378,3 +378,25 @@ test_panel_trackB_static_blocks_when_undissented() {
     assert_equals "REQUEST_CHANGES" "$(echo "$out" | jq -r '.verdict')" "undissented static Important (conf 100) → consensus → RC"
     assert_equals "consensus" "$(echo "$out" | jq -r '.log.findings[0].tier')" "undissented static → consensus"
 }
+
+# Test G — row 1 still fires after the ratchet: a goal-blocking Suggestion (conf 100,
+# 2-of-3 blocks_goal:true) lands in contested (Suggestion does not block), but widened
+# row 1 scans consensus ∪ contested for blocks_goal → RC.
+test_panel_ratchet_row1_still_fires() {
+    local specs pans out
+    specs='{"style":[{"file":"a.cs","line":3,"severity":"Suggestion","confidence":100,"description":"incomplete feature","suggested_fix":"finish it"}]}'
+    pans='[{"votes":[{"finding_id":0,"is_real":true,"severity":"Suggestion","blocks_goal":true,"rationale":"r"}],"raised":[]},{"votes":[{"finding_id":0,"is_real":true,"severity":"Suggestion","blocks_goal":true,"rationale":"r"}],"raised":[]},{"votes":[{"finding_id":0,"is_real":true,"severity":"Suggestion","blocks_goal":false,"rationale":"r"}],"raised":[]}]'
+    out=$(_pan_run_core "$(_pan_args_goal 3)" "$specs" "$pans")
+    assert_equals "REQUEST_CHANGES" "$(echo "$out" | jq -r '.verdict')" "goal + majority blocks_goal on a Suggestion → RC row 1 (blocks_goal survived ratchet)"
+}
+
+# N=5 scaling: Track A realness step=ceil(31/5)=7; unanimous is_real:false on spec-100
+# Important → conf=100-5×7=65 < 70 → not blocking → dismissed → APPROVE.
+test_panel_n5_realness_scaling() {
+    local specs pans out
+    specs='{"correctness":[{"file":"a.cs","line":9,"severity":"Important","confidence":100,"description":"n5 bug","suggested_fix":"f"}]}'
+    pans='[{"votes":[{"finding_id":0,"is_real":false,"severity":"Suggestion","blocks_goal":false,"rationale":"r"}],"raised":[]},{"votes":[{"finding_id":0,"is_real":false,"severity":"Suggestion","blocks_goal":false,"rationale":"r"}],"raised":[]},{"votes":[{"finding_id":0,"is_real":false,"severity":"Suggestion","blocks_goal":false,"rationale":"r"}],"raised":[]},{"votes":[{"finding_id":0,"is_real":false,"severity":"Suggestion","blocks_goal":false,"rationale":"r"}],"raised":[]},{"votes":[{"finding_id":0,"is_real":false,"severity":"Suggestion","blocks_goal":false,"rationale":"r"}],"raised":[]}]'
+    out=$(_pan_run_core "$(_pan_args 5)" "$specs" "$pans")
+    assert_equals "dismissed" "$(echo "$out" | jq -r '.log.findings[0].tier')" "N=5: 5×ceil(31/5)=35 drop → conf 65 < 70 → dismissed"
+    assert_equals "APPROVE" "$(echo "$out" | jq -r '.verdict')" "N=5 unanimous not-real → APPROVE"
+}

@@ -64,6 +64,20 @@ _pan_args() {
     echo "{\"agentPrompt\":\"x\",\"flags\":{},\"route\":\"full\",\"selfReReview\":false,\"reviewMode\":\"pr\",\"base\":\"main\",\"headSha\":\"${sha40}\",\"emptyTreeMode\":false,\"pathScope\":\"\",\"tempDir\":\"/tmp/claude-test/x\",\"intentLedger\":\"\",\"orchestrationMode\":\"panel\",\"panelSize\":${n},\"panelBrief\":\"BRIEF\"}"
 }
 
+# args with flags.js=true — enables the eslint specialist (Track B test E).
+_pan_args_js() {
+    local n="${1:-3}"
+    local sha40="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    echo "{\"agentPrompt\":\"x\",\"flags\":{\"js\":true},\"route\":\"full\",\"selfReReview\":false,\"reviewMode\":\"pr\",\"base\":\"main\",\"headSha\":\"${sha40}\",\"emptyTreeMode\":false,\"pathScope\":\"\",\"tempDir\":\"/tmp/claude-test/x\",\"intentLedger\":\"\",\"orchestrationMode\":\"panel\",\"panelSize\":${n},\"panelBrief\":\"BRIEF\"}"
+}
+
+# args with flags.iac=true — enables the trivy specialist (Track B test F).
+_pan_args_iac() {
+    local n="${1:-3}"
+    local sha40="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    echo "{\"agentPrompt\":\"x\",\"flags\":{\"iac\":true},\"route\":\"full\",\"selfReReview\":false,\"reviewMode\":\"pr\",\"base\":\"main\",\"headSha\":\"${sha40}\",\"emptyTreeMode\":false,\"pathScope\":\"\",\"tempDir\":\"/tmp/claude-test/x\",\"intentLedger\":\"\",\"orchestrationMode\":\"panel\",\"panelSize\":${n},\"panelBrief\":\"BRIEF\"}"
+}
+
 # args with a goal-bearing intent ledger (matches the /(^|\n)\s*goal:\s*\S/ detector).
 _pan_args_goal() {
     local n="${1:-3}"
@@ -76,7 +90,7 @@ _pan_args_goal() {
 # Ratchet: 0 is_real:false → conf=100≥70; effLevel=2 (all vote Important=spec) → blocks → consensus.
 test_panel_unanimous_real_important_is_rc() {
     local specs pans out
-    specs='{"correctness":[{"file":"a.cs","line":10,"severity":"Important","confidence":50,"description":"the bug","suggested_fix":"fix"}]}'
+    specs='{"correctness":[{"file":"a.cs","line":10,"severity":"Important","confidence":100,"description":"the bug","suggested_fix":"fix"}]}'
     pans='[{"votes":[{"finding_id":0,"is_real":true,"severity":"Important","blocks_goal":false,"rationale":"r"}],"raised":[]},{"votes":[{"finding_id":0,"is_real":true,"severity":"Important","blocks_goal":false,"rationale":"r"}],"raised":[]},{"votes":[{"finding_id":0,"is_real":true,"severity":"Important","blocks_goal":false,"rationale":"r"}],"raised":[]}]'
     out=$(_pan_run_core "$(_pan_args 3)" "$specs" "$pans")
     if ! echo "$out" | jq -e . >/dev/null 2>&1; then
@@ -104,7 +118,7 @@ test_panel_split_majority_real_suggestion_approves() {
 # effLevel=clamp(2+(0-1)/3,1,3)=1.667, round=2=Important → blocks → consensus → RC.
 test_panel_contested_not_posted() {
     local specs pans out
-    specs='{"correctness":[{"file":"a.cs","line":9,"severity":"Important","confidence":50,"description":"maybe","suggested_fix":"f"}]}'
+    specs='{"correctness":[{"file":"a.cs","line":9,"severity":"Important","confidence":100,"description":"maybe","suggested_fix":"f"}]}'
     pans='[{"votes":[{"finding_id":0,"is_real":true,"severity":"Important","blocks_goal":false,"rationale":"r"}],"raised":[]},{"votes":[{"finding_id":0,"is_real":true,"severity":"Suggestion","blocks_goal":false,"rationale":"r"}],"raised":[]},{"votes":[{"finding_id":0,"is_real":false,"severity":"Important","blocks_goal":false,"rationale":"r"}],"raised":[]}]'
     out=$(_pan_run_core "$(_pan_args 3)" "$specs" "$pans")
     assert_equals "REQUEST_CHANGES" "$(echo "$out" | jq -r '.verdict')" "Important effLevel rounds to Important, conf=89 → consensus → RC"
@@ -117,7 +131,7 @@ test_panel_contested_not_posted() {
 # Under the new ratchet conf=78 still clears the 70 threshold, so this is NOT dismissed.
 test_panel_dismissed_tier() {
     local specs pans out
-    specs='{"correctness":[{"file":"a.cs","line":9,"severity":"Critical","confidence":50,"description":"false alarm","suggested_fix":"f"}]}'
+    specs='{"correctness":[{"file":"a.cs","line":9,"severity":"Critical","confidence":100,"description":"false alarm","suggested_fix":"f"}]}'
     pans='[{"votes":[{"finding_id":0,"is_real":true,"severity":"Critical","blocks_goal":false,"rationale":"r"}],"raised":[]},{"votes":[{"finding_id":0,"is_real":false,"severity":"Critical","blocks_goal":false,"rationale":"r"}],"raised":[]},{"votes":[{"finding_id":0,"is_real":false,"severity":"Critical","blocks_goal":false,"rationale":"r"}],"raised":[]}]'
     out=$(_pan_run_core "$(_pan_args 3)" "$specs" "$pans")
     # Critical conf=78 (2 is_real:false, step=11) still blocks (78≥70) → consensus → RC.
@@ -129,7 +143,7 @@ test_panel_dismissed_tier() {
 # Ratchet: step=ceil(31/5)=7; 2 is_real:false → conf=100-14=86≥70; Important effLevel=2≥2 → blocks → consensus → RC.
 test_panel_n5_bare_majority_is_contested() {
     local specs pans out
-    specs='{"correctness":[{"file":"a.cs","line":9,"severity":"Important","confidence":50,"description":"split5","suggested_fix":"f"}]}'
+    specs='{"correctness":[{"file":"a.cs","line":9,"severity":"Important","confidence":100,"description":"split5","suggested_fix":"f"}]}'
     pans='[{"votes":[{"finding_id":0,"is_real":true,"severity":"Important","blocks_goal":false,"rationale":"r"}],"raised":[]},{"votes":[{"finding_id":0,"is_real":true,"severity":"Important","blocks_goal":false,"rationale":"r"}],"raised":[]},{"votes":[{"finding_id":0,"is_real":true,"severity":"Important","blocks_goal":false,"rationale":"r"}],"raised":[]},{"votes":[{"finding_id":0,"is_real":false,"severity":"Important","blocks_goal":false,"rationale":"r"}],"raised":[]},{"votes":[{"finding_id":0,"is_real":false,"severity":"Important","blocks_goal":false,"rationale":"r"}],"raised":[]}]'
     out=$(_pan_run_core "$(_pan_args 5)" "$specs" "$pans")
     assert_equals "consensus" "$(echo "$out" | jq -r '.log.findings[0].tier')" "N=5 Important conf=86 blocks → consensus"
@@ -232,7 +246,7 @@ test_panel_below_quorum_degrades() {
 # Exactly quorum (2 of 3) → NOT degraded; a unanimous-among-survivors Critical → RC.
 test_panel_exact_quorum_proceeds() {
     local specs pans out
-    specs='{"correctness":[{"file":"a.cs","line":10,"severity":"Critical","confidence":50,"description":"bug","suggested_fix":"f"}]}'
+    specs='{"correctness":[{"file":"a.cs","line":10,"severity":"Critical","confidence":100,"description":"bug","suggested_fix":"f"}]}'
     pans='[{"votes":[{"finding_id":0,"is_real":true,"severity":"Critical","blocks_goal":false,"rationale":"r"}],"raised":[]},{"votes":[{"finding_id":0,"is_real":true,"severity":"Critical","blocks_goal":false,"rationale":"r"}],"raised":[]}]'
     out=$(_pan_run_core "$(_pan_args 3)" "$specs" "$pans")
     # real=2 of s=2 survivors; superT=ceil(4/3)=2 → consensus Critical → RC row 2.
@@ -285,4 +299,82 @@ test_panel_mode_ignored_on_lightweight_route() {
     out=$(_pan_run_core "$args" '{"code-analysis":[{"file":"a.cs","line":1,"severity":"Suggestion","confidence":90,"description":"lw","suggested_fix":"f"}]}' "[]")
     assert_equals "NONE" "$(echo "$out" | jq -r '.verdict')" "lightweight route → verdict NONE regardless of panel mode"
     assert_equals "1" "$(echo "$out" | jq '.comments | length')" "lightweight route still posts its code-analysis finding"
+}
+
+# Task 4: Two-track ratchet tests (A-F)
+
+# Test A — Track A severity UPGRADE promotes a Suggestion to a blocking Important.
+# N=3, specialist Suggestion/100, all 3 vote is_real:true severity=Important.
+# sevVotes from real votes: all Important (level=2). specLevel=1. up=3, down=0.
+# effLevel=clamp(1+3/3,1,3)=2 → Important; no is_real:false → conf=100 ≥ 70 → blocks → consensus → RC.
+test_panel_trackA_severity_upgrade_blocks() {
+    local specs pans out
+    specs='{"style":[{"file":"a.cs","line":3,"severity":"Suggestion","confidence":100,"description":"nit that matters","suggested_fix":"f"}]}'
+    pans='[{"votes":[{"finding_id":0,"is_real":true,"severity":"Important","blocks_goal":false,"rationale":"r"}],"raised":[]},{"votes":[{"finding_id":0,"is_real":true,"severity":"Important","blocks_goal":false,"rationale":"r"}],"raised":[]},{"votes":[{"finding_id":0,"is_real":true,"severity":"Important","blocks_goal":false,"rationale":"r"}],"raised":[]}]'
+    out=$(_pan_run_core "$(_pan_args 3)" "$specs" "$pans")
+    assert_equals "REQUEST_CHANGES" "$(echo "$out" | jq -r '.verdict')" "unanimous severity upgrade Suggestion→Important blocks → RC"
+    assert_equals "consensus" "$(echo "$out" | jq -r '.log.findings[0].tier')" "upgraded finding lands in consensus"
+}
+
+# Test B — Track A realness ratchet: unanimous is_real:false drops a spec-100 Important below 70 → dismissed.
+# N=3, step=ceil(31/3)=11, 3×11=33, conf=100-33=67 < 70 → not blocking.
+# majority-not-real: 3/3 > 1/2 → dismissed → APPROVE.
+test_panel_trackA_realness_drops_below_gate() {
+    local specs pans out
+    specs='{"correctness":[{"file":"a.cs","line":9,"severity":"Important","confidence":100,"description":"maybe false","suggested_fix":"f"}]}'
+    pans='[{"votes":[{"finding_id":0,"is_real":false,"severity":"Suggestion","blocks_goal":false,"rationale":"r"}],"raised":[]},{"votes":[{"finding_id":0,"is_real":false,"severity":"Suggestion","blocks_goal":false,"rationale":"r"}],"raised":[]},{"votes":[{"finding_id":0,"is_real":false,"severity":"Suggestion","blocks_goal":false,"rationale":"r"}],"raised":[]}]'
+    out=$(_pan_run_core "$(_pan_args 3)" "$specs" "$pans")
+    assert_equals "APPROVE" "$(echo "$out" | jq -r '.verdict')" "unanimous is_real:false → confidence 67 < 70 → not blocking"
+    assert_equals "dismissed" "$(echo "$out" | jq -r '.log.findings[0].tier')" "majority is_real:false → dismissed"
+}
+
+# Test C — Track A single dissent still blocks.
+# N=3, spec-100 Important, 1 is_real:false → conf=100-11=89 ≥ 70.
+# sevVotes from 2 real votes: both Important (same level) → up=0, down=0 → effLevel=2 → Important → blocks → consensus → RC.
+test_panel_trackA_single_dissent_still_blocks() {
+    local specs pans out
+    specs='{"correctness":[{"file":"a.cs","line":9,"severity":"Important","confidence":100,"description":"solid bug","suggested_fix":"f"}]}'
+    pans='[{"votes":[{"finding_id":0,"is_real":true,"severity":"Important","blocks_goal":false,"rationale":"r"}],"raised":[]},{"votes":[{"finding_id":0,"is_real":true,"severity":"Important","blocks_goal":false,"rationale":"r"}],"raised":[]},{"votes":[{"finding_id":0,"is_real":false,"severity":"Suggestion","blocks_goal":false,"rationale":"r"}],"raised":[]}]'
+    out=$(_pan_run_core "$(_pan_args 3)" "$specs" "$pans")
+    assert_equals "REQUEST_CHANGES" "$(echo "$out" | jq -r '.verdict')" "spec-100 Important with 1 dissent → confidence 89 ≥ 70 → still blocks"
+}
+
+# Test D — Non-real panelists abstain from severity notch.
+# N=3, specialist Suggestion/100. 2 vote is_real:false (severity Critical — must be ignored).
+# 1 votes is_real:true severity=Critical. sevVotes=[Critical] only (from the 1 real vote).
+# up=1 (Critical > Suggestion), down=0. effLevel=clamp(1+1/3,1,3)=1.333, round=1 → Suggestion → not blocking.
+# is_real_false=2 > is_real_true=1 → majority not-real → dismissed → APPROVE.
+test_panel_trackA_nonreal_abstains_from_severity() {
+    local specs pans out
+    specs='{"style":[{"file":"a.cs","line":3,"severity":"Suggestion","confidence":100,"description":"nit","suggested_fix":"f"}]}'
+    pans='[{"votes":[{"finding_id":0,"is_real":false,"severity":"Critical","blocks_goal":false,"rationale":"r"}],"raised":[]},{"votes":[{"finding_id":0,"is_real":false,"severity":"Critical","blocks_goal":false,"rationale":"r"}],"raised":[]},{"votes":[{"finding_id":0,"is_real":true,"severity":"Critical","blocks_goal":false,"rationale":"r"}],"raised":[]}]'
+    out=$(_pan_run_core "$(_pan_args 3)" "$specs" "$pans")
+    assert_equals "APPROVE" "$(echo "$out" | jq -r '.verdict')" "non-real Critical votes abstain from notch → stays Suggestion, majority not-real → dismissed"
+    assert_equals "dismissed" "$(echo "$out" | jq -r '.log.findings[0].tier')" "majority is_real:false → dismissed regardless of their severity field"
+}
+
+# Test E — Track B static severity is LOCKED and never dismissed.
+# Domain eslint (in STATIC), specialist Important. All 3 vote is_real:false severity=Suggestion.
+# step=ceil(50/3)=17. conf=max(50, 100-3*17)=max(50,49)=50 < 70 → not blocking → contested (NOT dismissed).
+test_panel_trackB_static_locked_and_never_dismissed() {
+    local specs pans out
+    specs='{"eslint":[{"file":"a.js","line":2,"severity":"Important","confidence":100,"rule_id":"no-eval","description":"eval used","suggested_fix":"f"}]}'
+    pans='[{"votes":[{"finding_id":0,"is_real":false,"severity":"Suggestion","blocks_goal":false,"rationale":"r"}],"raised":[]},{"votes":[{"finding_id":0,"is_real":false,"severity":"Suggestion","blocks_goal":false,"rationale":"r"}],"raised":[]},{"votes":[{"finding_id":0,"is_real":false,"severity":"Suggestion","blocks_goal":false,"rationale":"r"}],"raised":[]}]'
+    out=$(_pan_run_core "$(_pan_args_js 3)" "$specs" "$pans")
+    assert_equals "APPROVE" "$(echo "$out" | jq -r '.verdict')" "static floor-50 confidence < 70 → not blocking"
+    assert_equals "contested" "$(echo "$out" | jq -r '.log.findings[0].tier')" "static finding with heavy dissent → contested, NEVER dismissed"
+    assert_equals "Important" "$(echo "$out" | jq -r '.log.findings[0].severity')" "static severity is locked — panel Suggestion votes ignored"
+    assert_equals "50" "$(echo "$out" | jq -r '.log.findings[0].confidence')" "static confidence clamps at floor 50"
+}
+
+# Test F — Track B static blocks when undissented.
+# Domain trivy (in STATIC), Important, all 3 is_real:true → no is_real:false → conf=100.
+# Severity locked Important ≥ 2, conf=100 ≥ 70 → blocks → consensus → RC.
+test_panel_trackB_static_blocks_when_undissented() {
+    local specs pans out
+    specs='{"trivy":[{"file":"main.tf","line":5,"severity":"Important","confidence":100,"rule_id":"AVD-AWS-0089","description":"public bucket","suggested_fix":"f"}]}'
+    pans='[{"votes":[{"finding_id":0,"is_real":true,"severity":"Important","blocks_goal":false,"rationale":"r"}],"raised":[]},{"votes":[{"finding_id":0,"is_real":true,"severity":"Important","blocks_goal":false,"rationale":"r"}],"raised":[]},{"votes":[{"finding_id":0,"is_real":true,"severity":"Important","blocks_goal":false,"rationale":"r"}],"raised":[]}]'
+    out=$(_pan_run_core "$(_pan_args_iac 3)" "$specs" "$pans")
+    assert_equals "REQUEST_CHANGES" "$(echo "$out" | jq -r '.verdict')" "undissented static Important (conf 100) → consensus → RC"
+    assert_equals "consensus" "$(echo "$out" | jq -r '.log.findings[0].tier')" "undissented static → consensus"
 }

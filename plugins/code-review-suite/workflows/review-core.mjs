@@ -662,22 +662,59 @@ function clusterRaised(panelists) {
 
 // Map vote spread + raise corroboration onto the four-tier envelope. Emits ALL four
 // keys; `synthesiser` is always [] in panel mode. Each voted finding carries a
-// numeric confidence and a boolean blocks_goal (panel majority). finding_id is dropped
-// (not a FINDING_SHAPE property); domain is retained for the log payload.
+// ratcheted numeric confidence, an effective (Track A) or locked (Track B) severity,
+// and a boolean blocks_goal (panel majority). finding_id is dropped (not a FINDING_SHAPE
+// property); domain is retained for the log payload.
+//
+// Track A (non-static): realness ratchet (step=ceil(31/s) per is_real:false vote)
+//   + symmetric severity notch from is_real:true panelist sevVotes.
+//   blocks iff roundedEffLevel >= Important AND confidence >= 70.
+//   majority-not-real → dismissed; otherwise non-blocking → contested.
+// Track B (static — STATIC.has(domain)): confidence-only ratchet (step=ceil(50/s),
+//   floor 50); severity locked to specialist value; blocks iff locked-sev >= Important
+//   AND conf >= 70; non-blocking → contested (NEVER dismissed).
 function mapSpreadToTierConfidence(voteTallies, raisedClusters, s) {
     const tiers = { consensus: [], synthesiser: [], contested: [], dismissed: [] }
-    const superT = Math.ceil((2 * s) / 3)
+    const SEV_TO_LEVEL = { Suggestion: 1, Important: 2, Critical: 3 }
+    const LEVEL_TO_SEV = { 1: 'Suggestion', 2: 'Important', 3: 'Critical' }
+    const majorityNotReal = t => t.is_real_false > t.is_real_true
+    const blocksGoal = t => t.blocks_goal > s / 2
     for (const { finding, tally } of voteTallies) {
         const { finding_id, ...rest } = finding
-        let tier, confidence
-        if (tally.real >= superT) { tier = 'consensus'; confidence = tally.real === s ? 90 : 80 }
-        else if (tally.real + tally.minor > tally.not_a_problem) { tier = 'contested'; confidence = 60 }
-        else { tier = 'dismissed'; confidence = 30 }
-        tiers[tier].push({ ...rest, confidence, blocks_goal: tally.blocks_goal > s / 2 })
+        const isStatic = STATIC.has(finding.domain)
+        let tier, confidence, severity
+
+        if (isStatic) {
+            // Track B — severity locked, confidence-only ratchet, floor 50, never dismissed.
+            const step = Math.ceil(50 / s)
+            confidence = Math.max(50, 100 - tally.is_real_false * step)
+            severity = finding.severity // locked
+            const blocks = SEV_TO_LEVEL[severity] >= 2 && confidence >= 70
+            tier = blocks ? 'consensus' : 'contested'
+        } else {
+            // Track A — realness→confidence ratchet + symmetric severity notch.
+            const step = Math.ceil(31 / s)
+            confidence = Math.max(0, (finding.confidence ?? 0) - tally.is_real_false * step)
+            const specLevel = SEV_TO_LEVEL[finding.severity] ?? 1
+            let up = 0, down = 0
+            for (const sv of tally.sevVotes) {
+                const lvl = SEV_TO_LEVEL[sv] ?? specLevel
+                if (lvl > specLevel) up++
+                else if (lvl < specLevel) down++
+            }
+            const effLevel = Math.min(3, Math.max(1, specLevel + (up - down) / s))
+            const roundedLevel = Math.round(effLevel)
+            severity = LEVEL_TO_SEV[roundedLevel]
+            const blocks = roundedLevel >= 2 && confidence >= 70
+            if (blocks) tier = 'consensus'
+            else if (majorityNotReal(tally)) tier = 'dismissed'
+            else tier = 'contested'
+        }
+        tiers[tier].push({ ...rest, severity, confidence, blocks_goal: blocksGoal(tally) })
     }
     for (const c of raisedClusters) {
         let tier, confidence
-        if (c.corroboration >= superT) { tier = 'consensus'; confidence = 80 }
+        if (c.corroboration >= Math.ceil((2 * s) / 3)) { tier = 'consensus'; confidence = 80 }
         else if (c.corroboration > 1) { tier = 'contested'; confidence = 60 }
         else { tier = 'contested'; confidence = 40 }
         tiers[tier].push({ ...c.rep, domain: 'panel', confidence })

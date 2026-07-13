@@ -230,6 +230,108 @@ test_orch_harvest_journal_leaves_verdict_when_journal_verdictless() {
     rm -rf "$tmp"
 }
 
+# --- panel-arm verdict recovery (task #10): panel journals ONLY the writer's bodyText
+# (no .result.verdict — verdict is computed in JS, never journaled). Harvest must derive
+# the verdict from the bodyText prose, handling all three phrasings the panel writer
+# emitted across the 3 pilot trials. ---
+
+# Build a panel-shaped journal fixture: the synth result carries bodyText BUT NO verdict
+# field; verdict must be recovered from the prose. $4 = the full bodyText prose.
+_orch_make_panel_journal_fixture() {
+    local projects_root="$1" session_id="$2" trial="$3" body="$4"
+    mkdir -p "$trial"
+    printf '{"type":"system","subtype":"init","session_id":"%s"}\n{"type":"result","session_id":"%s"}\n' \
+        "$session_id" "$session_id" > "$trial/stream.jsonl"
+    local wf="$projects_root/some-cwd-slug/$session_id/subagents/workflows/wf_deadbeef-000"
+    mkdir -p "$wf"
+    {
+        printf '{"type":"result","result":{"findings":[],"status":"ok"}}\n'
+        printf '{"type":"result","result":{"raised":[],"votes":[]}}\n'
+        jq -cn --arg b "$body" '{type:"result",result:{bodyText:$b}}'
+    } > "$wf/journal.jsonl"
+}
+
+test_orch_harvest_journal_derives_verdict_from_prose_heading() {
+    # t2 phrasing: "## Verdict: APPROVE"
+    local tmp proj trial rc
+    tmp=$(mktemp -d); proj="$tmp/projects"; trial="$tmp/trial"
+    _orch_make_panel_journal_fixture "$proj" "sess-panel-h" "$trial" \
+        "## Report
+
+## Verdict: APPROVE
+
+Everything looks good."
+    printf 'INCONCLUSIVE\n' > "$trial/verdict.txt"
+    source "$(_orch_lib)"
+    set +e; orchestration_harvest_journal "$trial" "$proj"; rc=$?; set -e
+    if [[ "$rc" == "0" ]] && [[ "$(cat "$trial/verdict.txt")" == "APPROVE" ]]; then
+        pass "orch: panel harvest derives APPROVE from '## Verdict:' heading"
+    else
+        fail "orch: panel harvest derives APPROVE from heading" \
+            "rc=$rc; verdict.txt='$(cat "$trial/verdict.txt" 2>&1)'"
+    fi
+    rm -rf "$tmp"
+}
+
+test_orch_harvest_journal_derives_verdict_from_bolded_emdash() {
+    # t3 phrasing: "Verdict: **REQUEST_CHANGES** — one consensus Important finding…"
+    local tmp proj trial rc
+    tmp=$(mktemp -d); proj="$tmp/projects"; trial="$tmp/trial"
+    _orch_make_panel_journal_fixture "$proj" "sess-panel-b" "$trial" \
+        "## Report
+
+Verdict: **REQUEST_CHANGES** — one consensus Important finding clears the gate."
+    printf 'INCONCLUSIVE\n' > "$trial/verdict.txt"
+    source "$(_orch_lib)"
+    set +e; orchestration_harvest_journal "$trial" "$proj"; rc=$?; set -e
+    if [[ "$rc" == "0" ]] && [[ "$(cat "$trial/verdict.txt")" == "REQUEST_CHANGES" ]]; then
+        pass "orch: panel harvest derives REQUEST_CHANGES from bolded em-dash prose"
+    else
+        fail "orch: panel harvest derives REQUEST_CHANGES from bolded prose" \
+            "rc=$rc; verdict.txt='$(cat "$trial/verdict.txt" 2>&1)'"
+    fi
+    rm -rf "$tmp"
+}
+
+test_orch_harvest_journal_derives_verdict_from_inline_prose() {
+    # t1 phrasing: "the verdict is **APPROVE**" (inline, no heading)
+    local tmp proj trial rc
+    tmp=$(mktemp -d); proj="$tmp/projects"; trial="$tmp/trial"
+    _orch_make_panel_journal_fixture "$proj" "sess-panel-i" "$trial" \
+        "## Report
+
+On balance the verdict is **APPROVE** for this change."
+    printf 'INCONCLUSIVE\n' > "$trial/verdict.txt"
+    source "$(_orch_lib)"
+    set +e; orchestration_harvest_journal "$trial" "$proj"; rc=$?; set -e
+    if [[ "$rc" == "0" ]] && [[ "$(cat "$trial/verdict.txt")" == "APPROVE" ]]; then
+        pass "orch: panel harvest derives APPROVE from inline 'the verdict is' prose"
+    else
+        fail "orch: panel harvest derives APPROVE from inline prose" \
+            "rc=$rc; verdict.txt='$(cat "$trial/verdict.txt" 2>&1)'"
+    fi
+    rm -rf "$tmp"
+}
+
+test_orch_harvest_journal_prefers_journal_verdict_over_prose() {
+    # When the record DOES carry .result.verdict (classic), that wins over any prose —
+    # the prose-derivation is a panel-only fallback, not a classic override.
+    local tmp proj trial rc
+    tmp=$(mktemp -d); proj="$tmp/projects"; trial="$tmp/trial"
+    _orch_make_journal_fixture "$proj" "sess-both" "$trial" \
+        "## Verdict: APPROVE (prose says approve)" "with-result" "REQUEST_CHANGES"
+    printf 'INCONCLUSIVE\n' > "$trial/verdict.txt"
+    source "$(_orch_lib)"
+    set +e; orchestration_harvest_journal "$trial" "$proj"; rc=$?; set -e
+    if [[ "$rc" == "0" ]] && [[ "$(cat "$trial/verdict.txt")" == "REQUEST_CHANGES" ]]; then
+        pass "orch: harvest prefers explicit journal verdict over conflicting prose"
+    else
+        fail "orch: harvest prefers journal verdict over prose" \
+            "rc=$rc; verdict.txt='$(cat "$trial/verdict.txt" 2>&1)'"
+    fi
+    rm -rf "$tmp"
+}
+
 test_orch_harvest_journal_misses_when_pre_synth() {
     local tmp proj trial rc
     tmp=$(mktemp -d); proj="$tmp/projects"; trial="$tmp/trial"

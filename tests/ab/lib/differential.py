@@ -34,7 +34,12 @@ _TIERS = ("consensus", "synthesiser", "contested", "dismissed")
 
 def _synth_result(records):
     """The synthesiser's result record: the sole type=='result' whose .result carries the
-    rendered report (bodyText). Its .result.tiers holds the tiered finding sets."""
+    rendered report (bodyText). Its .result.tiers holds the tiered finding sets.
+
+    CLASSIC only. The classic synth is a single agent() call returning {verdict, tiers,
+    bodyText} as one record. PANEL computes verdict + tiers in JS and journals only the
+    writer's bodyText (no tiers) plus each panelist's {votes, raised} — see
+    _panel_raised_records for that path."""
     for rec in records:
         if rec.get("type") != "result":
             continue
@@ -42,6 +47,35 @@ def _synth_result(records):
         if isinstance(res, dict) and "bodyText" in res:
             return res
     return None
+
+
+def _panel_raised_records(records):
+    """PANEL only. Return every type=='result' whose .result carries a `raised` list — one
+    per panelist. Panel never journals a tiers record, so cross-cutting findings must be
+    read from the panelists' raised[] instead. Classic emits no such record, so this is
+    empty for classic and the tiers path stays authoritative there."""
+    out = []
+    for rec in records:
+        if rec.get("type") != "result":
+            continue
+        res = rec.get("result")
+        if isinstance(res, dict) and isinstance(res.get("raised"), list):
+            out.append(res)
+    return out
+
+
+def _findings_from_raised(raised_records):
+    """Flatten panelists' raised[] into differential's finding shape. raised findings carry
+    file/line/severity/confidence/description/suggested_fix but no tier and no domain
+    (PANEL_SCHEMA drops domain; review-core stamps a synthetic `panel` domain downstream,
+    which the durable log does not carry). We tag a uniform 'panel' tier and empty domain so
+    findings_match degrades to file + line-proximity — the honest positional match, matching
+    the classic tiers path's treatment."""
+    out = []
+    for res in raised_records:
+        for f in res.get("raised") or []:
+            out.append({**f, "tier": f.get("tier", "panel"), "domain": f.get("domain", "")})
+    return out
 
 
 def _findings_from_tiers(res):
@@ -75,10 +109,17 @@ def load_arm(arm_dir):
         findings, meta = [], {}
         jpath = os.path.join(trial, "durable-log.jsonl")
         if os.path.isfile(jpath):
-            res = _synth_result(_read_jsonl(jpath))
-            if res is not None:
+            records = _read_jsonl(jpath)
+            res = _synth_result(records)
+            if res is not None and res.get("tiers") is not None:
+                # Classic: the synth record carries tiers — authoritative.
                 findings = _findings_from_tiers(res)
                 meta = {k: v for k, v in res.items() if k != "tiers" and k != "bodyText"}
+            else:
+                # Panel: no tiers record — read findings from the panelists' raised[].
+                findings = _findings_from_raised(_panel_raised_records(records))
+                if res is not None:
+                    meta = {k: v for k, v in res.items() if k != "bodyText"}
         runs.append({"verdict": verdict, "findings": findings, "meta": meta})
     return runs
 

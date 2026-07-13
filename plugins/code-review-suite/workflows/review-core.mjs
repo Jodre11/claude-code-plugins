@@ -96,11 +96,12 @@ const SYNTH_SCHEMA = {
     },
 }
 
-// PANEL_SCHEMA — each opus panelist votes every Stage-1 finding and may raise new
-// cross-cutting findings. votes[].finding_id indexes the flattened Stage-1 list the
-// host built with flattenFindings. raised[] uses FINDING_SHAPE but drops `domain`
-// (review-core stamps a synthetic `panel` domain) — confidence is supplied but the
-// writer overwrites it from cluster corroboration.
+// PANEL_SCHEMA — each opus panelist votes every Stage-1 finding (split into is_real
+// epistemic judgment + severity opinion) and may raise new cross-cutting findings.
+// votes[].finding_id indexes the flattened Stage-1 list the host built with
+// flattenFindings. raised[] uses FINDING_SHAPE but drops `domain` (review-core stamps
+// a synthetic `panel` domain) — confidence is supplied but the writer overwrites it
+// from cluster corroboration.
 const PANEL_SCHEMA = {
     type: 'object',
     additionalProperties: false,
@@ -111,10 +112,11 @@ const PANEL_SCHEMA = {
             items: {
                 type: 'object',
                 additionalProperties: false,
-                required: ['finding_id', 'vote', 'blocks_goal', 'rationale'],
+                required: ['finding_id', 'is_real', 'severity', 'blocks_goal', 'rationale'],
                 properties: {
                     finding_id: { type: 'integer', minimum: 0, description: 'Index into the flattened Stage-1 finding list.' },
-                    vote: { enum: ['real', 'minor', 'not_a_problem'] },
+                    is_real: { type: 'boolean', description: 'True issue vs false positive — purely epistemic, independent of importance.' },
+                    severity: { enum: ['Critical', 'Important', 'Suggestion'], description: "The panelist's own honest severity opinion. Ignored for static-analysis findings (severity is locked)." },
                     blocks_goal: { type: 'boolean', description: 'True iff this finding shows the stated goal is not achieved. Always false when no goal is in scope.' },
                     rationale: { type: 'string' },
                 },
@@ -619,16 +621,23 @@ function checkQuorum(survivingCount, n) {
     return survivingCount >= Math.floor(n / 2) + 1
 }
 
-// Count real/minor/not_a_problem/blocks_goal per Stage-1 finding across surviving panelists.
+// Aggregate the two independent axes per Stage-1 finding across surviving panelists.
+// is_real_true / is_real_false drive the realness→confidence ratchet; sevVotes (from
+// is_real:true panelists only) drive the severity notch; blocks_goal is the panel
+// majority feeding applyRubric row 1. A panelist who voted is_real:false abstains from
+// the severity notch (a severity opinion on a false positive is incoherent).
 function tallyVotes(panelists, flat) {
     return flat.map(f => {
-        const tally = { real: 0, minor: 0, not_a_problem: 0, blocks_goal: 0 }
+        const tally = { is_real_true: 0, is_real_false: 0, blocks_goal: 0, sevVotes: [] }
         for (const p of panelists) {
             const v = (p.votes ?? []).find(x => x.finding_id === f.finding_id)
             if (!v) continue
-            if (v.vote === 'real') tally.real++
-            else if (v.vote === 'minor') tally.minor++
-            else if (v.vote === 'not_a_problem') tally.not_a_problem++
+            if (v.is_real) {
+                tally.is_real_true++
+                tally.sevVotes.push(v.severity)
+            } else {
+                tally.is_real_false++
+            }
             if (v.blocks_goal) tally.blocks_goal++
         }
         return { finding: f, tally }
@@ -653,22 +662,59 @@ function clusterRaised(panelists) {
 
 // Map vote spread + raise corroboration onto the four-tier envelope. Emits ALL four
 // keys; `synthesiser` is always [] in panel mode. Each voted finding carries a
-// numeric confidence and a boolean blocks_goal (panel majority). finding_id is dropped
-// (not a FINDING_SHAPE property); domain is retained for the log payload.
+// ratcheted numeric confidence, an effective (Track A) or locked (Track B) severity,
+// and a boolean blocks_goal (panel majority). finding_id is dropped (not a FINDING_SHAPE
+// property); domain is retained for the log payload.
+//
+// Track A (non-static): realness ratchet (step=ceil(31/s) per is_real:false vote)
+//   + symmetric severity notch from is_real:true panelist sevVotes.
+//   blocks iff roundedEffLevel >= Important AND confidence >= 70.
+//   majority-not-real → dismissed; otherwise non-blocking → contested.
+// Track B (static — STATIC.has(domain)): confidence-only ratchet (step=ceil(50/s),
+//   floor 50); severity locked to specialist value; blocks iff locked-sev >= Important
+//   AND conf >= 70; non-blocking → contested (NEVER dismissed).
 function mapSpreadToTierConfidence(voteTallies, raisedClusters, s) {
     const tiers = { consensus: [], synthesiser: [], contested: [], dismissed: [] }
-    const superT = Math.ceil((2 * s) / 3)
+    const SEV_TO_LEVEL = { Suggestion: 1, Important: 2, Critical: 3 }
+    const LEVEL_TO_SEV = { 1: 'Suggestion', 2: 'Important', 3: 'Critical' }
+    const majorityNotReal = t => t.is_real_false > t.is_real_true
+    const blocksGoal = t => t.blocks_goal > s / 2
     for (const { finding, tally } of voteTallies) {
         const { finding_id, ...rest } = finding
-        let tier, confidence
-        if (tally.real >= superT) { tier = 'consensus'; confidence = tally.real === s ? 90 : 80 }
-        else if (tally.real + tally.minor > tally.not_a_problem) { tier = 'contested'; confidence = 60 }
-        else { tier = 'dismissed'; confidence = 30 }
-        tiers[tier].push({ ...rest, confidence, blocks_goal: tally.blocks_goal > s / 2 })
+        const isStatic = STATIC.has(finding.domain)
+        let tier, confidence, severity
+
+        if (isStatic) {
+            // Track B — severity locked, confidence-only ratchet, floor 50, never dismissed.
+            const step = Math.ceil(50 / s)
+            confidence = Math.max(50, 100 - tally.is_real_false * step)
+            severity = finding.severity // locked
+            const blocks = SEV_TO_LEVEL[severity] >= 2 && confidence >= 70
+            tier = blocks ? 'consensus' : 'contested'
+        } else {
+            // Track A — realness→confidence ratchet + symmetric severity notch.
+            const step = Math.ceil(31 / s)
+            confidence = Math.max(0, (finding.confidence ?? 0) - tally.is_real_false * step)
+            const specLevel = SEV_TO_LEVEL[finding.severity] ?? 1
+            let up = 0, down = 0
+            for (const sv of tally.sevVotes) {
+                const lvl = SEV_TO_LEVEL[sv] ?? specLevel
+                if (lvl > specLevel) up++
+                else if (lvl < specLevel) down++
+            }
+            const effLevel = Math.min(3, Math.max(1, specLevel + (up - down) / s))
+            const roundedLevel = Math.round(effLevel)
+            severity = LEVEL_TO_SEV[roundedLevel]
+            const blocks = roundedLevel >= 2 && confidence >= 70
+            if (blocks) tier = 'consensus'
+            else if (majorityNotReal(tally)) tier = 'dismissed'
+            else tier = 'contested'
+        }
+        tiers[tier].push({ ...rest, severity, confidence, blocks_goal: blocksGoal(tally) })
     }
     for (const c of raisedClusters) {
         let tier, confidence
-        if (c.corroboration >= superT) { tier = 'consensus'; confidence = 80 }
+        if (c.corroboration >= Math.ceil((2 * s) / 3)) { tier = 'consensus'; confidence = 80 }
         else if (c.corroboration > 1) { tier = 'contested'; confidence = 60 }
         else { tier = 'contested'; confidence = 40 }
         tiers[tier].push({ ...c.rep, domain: 'panel', confidence })
@@ -677,11 +723,13 @@ function mapSpreadToTierConfidence(voteTallies, raisedClusters, s) {
 }
 
 // Apply the four verdict-rubric rows deterministically, first match wins. Row 1's
-// goal-achievement judgement comes from the blocks_goal panel vote (a consensus
-// finding with blocks_goal true), NOT from prose. hasGoal gates row 1.
+// goal-achievement judgement scans consensus ∪ contested for blocks_goal (a real-majority
+// Suggestion still blocks if the panel says so; dismissed findings are false positives and
+// must not fire). Rows 2/3 scan consensus only. hasGoal gates row 1.
 function applyRubric(tiers, hasGoal) {
     const consensus = tiers.consensus ?? []
-    if (hasGoal && consensus.some(f => f.blocks_goal)) {
+    const contested = tiers.contested ?? []
+    if (hasGoal && [...consensus, ...contested].some(f => f.blocks_goal)) {
         return { verdict: 'REQUEST_CHANGES', rubricRowApplied: 1, rubricReason: 'goal not achieved (panel majority)' }
     }
     if (consensus.some(f => f.severity === 'Critical')) {
@@ -776,18 +824,16 @@ function isPosted(finding, verdict) {
 // REQUEST_CHANGES: consensus Critical (any confidence) or Important >= 70, plus
 // any finding whose positional [#N] token appears in rubricReason (covers the
 // synthesiser goal-block). consensusIndexToken is meaningful ONLY for the consensus
-// tier — only consensus findings can be verdict-relevant under the current
-// rubric, and [#N] tokens in rubricReason reference consensus findings by
-// synthesiser contract. It is the finding's 1-based [#N] within tiers.consensus.
-// rubricRowApplied gates the panel goal-block: panel row 1 sets rubricReason to
+// tier. rubricRowApplied gates the panel goal-block: panel row 1 sets rubricReason to
 // 'goal not achieved (panel majority)' (no [#N] token), so the blocking finding
-// is identified structurally — a consensus finding carrying blocks_goal — rather
-// than by string match. Raised consensus findings carry no blocks_goal, so === true
-// correctly excludes them; only VOTED consensus findings can have driven row 1.
+// is identified structurally — a consensus OR contested finding carrying blocks_goal —
+// rather than by string match. Row 1 scans consensus ∪ contested; rows 2/3 are
+// consensus-only. Raised consensus findings carry no blocks_goal, so === true
+// correctly excludes them; only VOTED findings can have driven row 1.
 function isVerdictRelevant(finding, tier, verdict, rubricReason, consensusIndexToken, rubricRowApplied) {
     if (verdict !== 'REQUEST_CHANGES') return false
+    if (rubricRowApplied === 1 && (tier === 'consensus' || tier === 'contested') && finding.blocks_goal === true) return true
     if (tier === 'consensus') {
-        if (rubricRowApplied === 1 && finding.blocks_goal === true) return true
         if (finding.severity === 'Critical') return true
         if (finding.severity === 'Important' && (finding.confidence ?? 0) >= 70) return true
         if (consensusIndexToken && rubricReason && rubricReason.includes(`[#${consensusIndexToken}]`)) return true

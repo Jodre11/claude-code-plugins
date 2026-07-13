@@ -621,16 +621,23 @@ function checkQuorum(survivingCount, n) {
     return survivingCount >= Math.floor(n / 2) + 1
 }
 
-// Count real/minor/not_a_problem/blocks_goal per Stage-1 finding across surviving panelists.
+// Aggregate the two independent axes per Stage-1 finding across surviving panelists.
+// is_real_true / is_real_false drive the realness→confidence ratchet; sevVotes (from
+// is_real:true panelists only) drive the severity notch; blocks_goal is the panel
+// majority feeding applyRubric row 1. A panelist who voted is_real:false abstains from
+// the severity notch (a severity opinion on a false positive is incoherent).
 function tallyVotes(panelists, flat) {
     return flat.map(f => {
-        const tally = { real: 0, minor: 0, not_a_problem: 0, blocks_goal: 0 }
+        const tally = { is_real_true: 0, is_real_false: 0, blocks_goal: 0, sevVotes: [] }
         for (const p of panelists) {
             const v = (p.votes ?? []).find(x => x.finding_id === f.finding_id)
             if (!v) continue
-            if (v.vote === 'real') tally.real++
-            else if (v.vote === 'minor') tally.minor++
-            else if (v.vote === 'not_a_problem') tally.not_a_problem++
+            if (v.is_real) {
+                tally.is_real_true++
+                tally.sevVotes.push(v.severity)
+            } else {
+                tally.is_real_false++
+            }
             if (v.blocks_goal) tally.blocks_goal++
         }
         return { finding: f, tally }

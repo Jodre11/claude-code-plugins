@@ -116,7 +116,7 @@ test_panel_split_majority_real_suggestion_approves() {
 # Mixed vote (1 is_real:true Important / 1 is_real:true Suggestion (was minor) / 1 is_real:false on N=3):
 # Ratchet: 1 is_real:false → conf=89≥70; is_real:true votes: Important (same) + Suggestion (down=1);
 # effLevel=clamp(2+(0-1)/3,1,3)=1.667, round=2=Important → blocks → consensus → RC.
-test_panel_contested_not_posted() {
+test_panel_mixed_severity_rounds_to_important_blocks() {
     local specs pans out
     specs='{"correctness":[{"file":"a.cs","line":9,"severity":"Important","confidence":100,"description":"maybe","suggested_fix":"f"}]}'
     pans='[{"votes":[{"finding_id":0,"is_real":true,"severity":"Important","blocks_goal":false,"rationale":"r"}],"raised":[]},{"votes":[{"finding_id":0,"is_real":true,"severity":"Suggestion","blocks_goal":false,"rationale":"r"}],"raised":[]},{"votes":[{"finding_id":0,"is_real":false,"severity":"Important","blocks_goal":false,"rationale":"r"}],"raised":[]}]'
@@ -129,7 +129,7 @@ test_panel_contested_not_posted() {
 # 1 is_real:true Critical / 2 is_real:false on N=3:
 # Ratchet: 2 is_real:false → conf=100-22=78≥70; Critical effLevel=3≥2 → blocks → consensus → RC.
 # Under the new ratchet conf=78 still clears the 70 threshold, so this is NOT dismissed.
-test_panel_dismissed_tier() {
+test_panel_critical_survives_two_dissents() {
     local specs pans out
     specs='{"correctness":[{"file":"a.cs","line":9,"severity":"Critical","confidence":100,"description":"false alarm","suggested_fix":"f"}]}'
     pans='[{"votes":[{"finding_id":0,"is_real":true,"severity":"Critical","blocks_goal":false,"rationale":"r"}],"raised":[]},{"votes":[{"finding_id":0,"is_real":false,"severity":"Critical","blocks_goal":false,"rationale":"r"}],"raised":[]},{"votes":[{"finding_id":0,"is_real":false,"severity":"Critical","blocks_goal":false,"rationale":"r"}],"raised":[]}]'
@@ -249,7 +249,7 @@ test_panel_exact_quorum_proceeds() {
     specs='{"correctness":[{"file":"a.cs","line":10,"severity":"Critical","confidence":100,"description":"bug","suggested_fix":"f"}]}'
     pans='[{"votes":[{"finding_id":0,"is_real":true,"severity":"Critical","blocks_goal":false,"rationale":"r"}],"raised":[]},{"votes":[{"finding_id":0,"is_real":true,"severity":"Critical","blocks_goal":false,"rationale":"r"}],"raised":[]}]'
     out=$(_pan_run_core "$(_pan_args 3)" "$specs" "$pans")
-    # real=2 of s=2 survivors; superT=ceil(4/3)=2 → consensus Critical → RC row 2.
+    # 2 is_real:true of s=2 survivors, 0 is_real:false → conf=100; Critical → consensus → RC row 2.
     assert_equals "REQUEST_CHANGES" "$(echo "$out" | jq -r '.verdict')" "exact quorum proceeds: consensus Critical → RC"
 }
 

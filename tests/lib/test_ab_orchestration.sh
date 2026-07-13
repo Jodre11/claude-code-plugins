@@ -89,8 +89,11 @@ test_orch_harvest_missing_jsonl_returns_nonzero() {
 # $4 (optional) = the synthesiser bodyText; omit to simulate a torn-down-pre-synth run.
 # $5 (optional) = "system-only" to write a stream carrying session_id ONLY on system
 # events (no terminal result event) — the timed-out/killed `claude -p` shape.
+# $6 (optional) = the synthesiser verdict (APPROVE|REQUEST_CHANGES|INCONCLUSIVE) carried
+# on the SAME synth result record as bodyText — mirrors the live schema. Omit to leave
+# the record verdict-less (older captures / pre-verdict journals).
 _orch_make_journal_fixture() {
-    local projects_root="$1" session_id="$2" trial="$3" body="${4:-}" stream_shape="${5:-with-result}"
+    local projects_root="$1" session_id="$2" trial="$3" body="${4:-}" stream_shape="${5:-with-result}" verdict="${6:-}"
     mkdir -p "$trial"
     if [[ "$stream_shape" == "system-only" ]]; then
         printf '{"type":"system","subtype":"init","session_id":"%s"}\n{"type":"assistant","session_id":"%s"}\n' \
@@ -105,7 +108,11 @@ _orch_make_journal_fixture() {
         printf '{"type":"result","result":{"findings":[],"status":"ok"}}\n'
         printf '{"type":"result","result":{"raised":[],"votes":[]}}\n'
         if [[ -n "$body" ]]; then
-            jq -cn --arg b "$body" '{type:"result",result:{bodyText:$b}}'
+            if [[ -n "$verdict" ]]; then
+                jq -cn --arg b "$body" --arg v "$verdict" '{type:"result",result:{verdict:$v,bodyText:$b}}'
+            else
+                jq -cn --arg b "$body" '{type:"result",result:{bodyText:$b}}'
+            fi
         fi
     } > "$wf/journal.jsonl"
 }
@@ -182,6 +189,43 @@ A real multi-finding report."
         pass "orch: journal harvest extracts synth bodyText to durable-log.md + copies jsonl"
     else
         fail "orch: journal harvest extracts synth bodyText" "rc=$rc; $(ls "$trial" 2>&1)"
+    fi
+    rm -rf "$tmp"
+}
+
+test_orch_harvest_journal_writes_authoritative_verdict() {
+    local tmp proj trial rc
+    tmp=$(mktemp -d); proj="$tmp/projects"; trial="$tmp/trial"
+    _orch_make_journal_fixture "$proj" "sess-verdict" "$trial" "## Report" "with-result" "REQUEST_CHANGES"
+    # capture.sh runs BEFORE harvest and, under `claude -p`, the synth report never
+    # reaches parent stdout — so verdict.txt gets the INCONCLUSIVE placeholder. Harvest
+    # must overwrite it with the authoritative verdict from the journal result record.
+    printf 'INCONCLUSIVE\n' > "$trial/verdict.txt"
+    source "$(_orch_lib)"
+    set +e; orchestration_harvest_journal "$trial" "$proj"; rc=$?; set -e
+    if [[ "$rc" == "0" ]] && [[ "$(cat "$trial/verdict.txt")" == "REQUEST_CHANGES" ]]; then
+        pass "orch: journal harvest overwrites verdict.txt with authoritative journal verdict"
+    else
+        fail "orch: journal harvest writes authoritative verdict" \
+            "rc=$rc; verdict.txt='$(cat "$trial/verdict.txt" 2>&1)'"
+    fi
+    rm -rf "$tmp"
+}
+
+test_orch_harvest_journal_leaves_verdict_when_journal_verdictless() {
+    local tmp proj trial rc
+    tmp=$(mktemp -d); proj="$tmp/projects"; trial="$tmp/trial"
+    # Older journals carry bodyText but no verdict field — harvest must not clobber the
+    # capture-time verdict.txt with an empty/garbage value.
+    _orch_make_journal_fixture "$proj" "sess-noverdict" "$trial" "## Report"
+    printf 'APPROVE\n' > "$trial/verdict.txt"
+    source "$(_orch_lib)"
+    set +e; orchestration_harvest_journal "$trial" "$proj"; rc=$?; set -e
+    if [[ "$rc" == "0" ]] && [[ "$(cat "$trial/verdict.txt")" == "APPROVE" ]]; then
+        pass "orch: journal harvest preserves verdict.txt when journal carries no verdict"
+    else
+        fail "orch: journal harvest preserves verdict when verdictless" \
+            "rc=$rc; verdict.txt='$(cat "$trial/verdict.txt" 2>&1)'"
     fi
     rm -rf "$tmp"
 }

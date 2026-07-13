@@ -10,6 +10,12 @@ set -euo pipefail
 #                              emitted to parent stdout (synthesiser's own
 #                              transcript does not propagate under -p)
 #   - verdict.txt            : APPROVE | REQUEST_CHANGES | INCONCLUSIVE
+#                              NOTE: under `claude -p` the synthesiser report never
+#                              reaches parent stdout, so the verdict parsed here is only
+#                              a placeholder (almost always INCONCLUSIVE). The AUTHORITATIVE
+#                              verdict is written post-harvest by
+#                              orchestration_harvest_journal, which overwrites this file
+#                              from the synth Workflow result record's .result.verdict.
 #   - report-stats.json      : char count, line count, finding count
 #
 # Phase 1 deliberately skips usage.json — the spec marks token-usage capture

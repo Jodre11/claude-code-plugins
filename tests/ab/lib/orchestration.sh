@@ -182,6 +182,18 @@ orchestration_harvest_journal() {
 
     printf '%s\n' "$body" > "$trial_dir/durable-log.md"
     cp "$journal" "$trial_dir/durable-log.jsonl"
+
+    # Overwrite verdict.txt with the authoritative verdict from the synthesiser result
+    # record. capture.sh runs BEFORE harvest and parses the verdict from parent stdout,
+    # but under `claude -p` the synth report never propagates there — so verdict.txt
+    # holds only the INCONCLUSIVE placeholder. The journal result record is the true
+    # source. Leave verdict.txt untouched if the record carries no verdict (older
+    # journals) so we never clobber a good capture-time value with a null.
+    local jverdict
+    jverdict=$(jq -r 'select(.type=="result") | select(.result | type=="object" and has("bodyText") and has("verdict")) | .result.verdict' "$journal" 2>/dev/null | head -n1)
+    if [[ -n "$jverdict" && "$jverdict" != "null" ]]; then
+        printf '%s\n' "$jverdict" > "$trial_dir/verdict.txt"
+    fi
     return 0
 }
 

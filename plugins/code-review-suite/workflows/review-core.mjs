@@ -96,38 +96,52 @@ const SYNTH_SCHEMA = {
     },
 }
 
+// RAISED_SHAPE — a panel-raised finding is a FINDING_SHAPE plus a required tractability
+// (the raiser's own fix-risk read). Panel-local: PANEL_SCHEMA is NOT in the finding-schema
+// parity set, so this does not touch the canonical schema.
+const RAISED_SHAPE = {
+  type: 'object',
+  additionalProperties: false,
+  required: [...FINDING_SHAPE.required, 'tractability'],
+  properties: {
+    ...FINDING_SHAPE.properties,
+    tractability: { enum: ['Mechanical', 'Bounded', 'Open-ended'], description: "The raiser's fix-risk read: Mechanical (obvious local diff), Bounded (understood but non-trivial), Open-ended (uncertain or risks deviating from intent)." },
+  },
+}
+
 // PANEL_SCHEMA — each opus panelist votes every Stage-1 finding (split into is_real
 // epistemic judgment + severity opinion) and may raise new cross-cutting findings.
 // votes[].finding_id indexes the flattened Stage-1 list the host built with
-// flattenFindings. raised[] uses FINDING_SHAPE but drops `domain` (review-core stamps
-// a synthetic `panel` domain) — confidence is supplied but the writer overwrites it
-// from cluster corroboration.
+// flattenFindings. raised[] uses RAISED_SHAPE (FINDING_SHAPE plus tractability) and
+// stamps domain `panel` via review-core. Confidence is supplied by raiser but is
+// overwritten from cluster corroboration.
 const PANEL_SCHEMA = {
-    type: 'object',
-    additionalProperties: false,
-    required: ['votes', 'raised'],
-    properties: {
-        votes: {
-            type: 'array',
-            items: {
-                type: 'object',
-                additionalProperties: false,
-                required: ['finding_id', 'is_real', 'severity', 'blocks_goal', 'rationale'],
-                properties: {
-                    finding_id: { type: 'integer', minimum: 0, description: 'Index into the flattened Stage-1 finding list.' },
-                    is_real: { type: 'boolean', description: 'True issue vs false positive — purely epistemic, independent of importance.' },
-                    severity: { enum: ['Critical', 'Important', 'Suggestion'], description: "The panelist's own honest severity opinion. Ignored for static-analysis findings (severity is locked)." },
-                    blocks_goal: { type: 'boolean', description: 'True iff this finding shows the stated goal is not achieved. Always false when no goal is in scope.' },
-                    rationale: { type: 'string' },
-                },
-            },
+  type: 'object',
+  additionalProperties: false,
+  required: ['votes', 'raised'],
+  properties: {
+    votes: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['finding_id', 'is_real', 'severity', 'tractability', 'blocks_goal', 'rationale'],
+        properties: {
+          finding_id: { type: 'integer', minimum: 0, description: 'Index into the flattened Stage-1 finding list.' },
+          is_real: { type: 'boolean', description: 'True issue vs false positive — purely epistemic, independent of importance.' },
+          severity: { enum: ['Critical', 'Important', 'Suggestion'], description: 'Impact if the issue manifested. Ignored for static-analysis findings (severity is locked).' },
+          tractability: { enum: ['Mechanical', 'Bounded', 'Open-ended'], description: 'How well-understood and contained the fix is. Mechanical=obvious local diff; Bounded=non-trivial but clear; Open-ended=uncertain or risks deviating from intent.' },
+          blocks_goal: { type: 'boolean', description: 'True iff this finding shows the stated goal is not achieved. Always false when no goal is in scope.' },
+          rationale: { type: 'string' },
         },
-        raised: {
-            type: 'array',
-            items: FINDING_SHAPE,
-            description: 'Net-new cross-cutting findings this panelist surfaced. Provenance (panel) is stamped by review-core.',
-        },
+      },
     },
+    raised: {
+      type: 'array',
+      items: RAISED_SHAPE,
+      description: 'Net-new cross-cutting findings this panelist surfaced. Provenance (panel) is stamped by review-core.',
+    },
+  },
 }
 
 // WRITER_SCHEMA — the sonnet writer's only model output is bodyText prose. The

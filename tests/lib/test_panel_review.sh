@@ -412,3 +412,24 @@ test_panel_brief_defines_impact_severity_and_tractability() {
     assert_matches "Bounded" "$(cat "$brief")" "brief defines Bounded tier"
     assert_matches "Open-ended" "$(cat "$brief")" "brief defines Open-ended tier"
 }
+
+# PANEL_SCHEMA.votes require tractability; PANEL_SCHEMA.raised items carry tractability.
+test_panel_schema_has_tractability() {
+    local wf result
+    wf="$(_pan_cr_dir)/workflows/review-core.mjs"
+    result=$(WF="$wf" node -e '
+        const fs = require("fs");
+        const wf = fs.readFileSync(process.env.WF, "utf8");
+        const cut = wf.indexOf("const resolvedArgs");
+        const prefix = wf.slice(0, cut).replace(/^export\s+const\s+meta/m, "const meta");
+        const { PANEL_SCHEMA } = new Function(prefix + "\nreturn { PANEL_SCHEMA };")();
+        const vote = PANEL_SCHEMA.properties.votes.items;
+        const raised = PANEL_SCHEMA.properties.raised.items;
+        const voteOk = vote.required.includes("tractability")
+            && vote.properties.tractability.enum.join(",") === "Mechanical,Bounded,Open-ended";
+        const raisedOk = !!raised.properties.tractability
+            && raised.properties.tractability.enum.join(",") === "Mechanical,Bounded,Open-ended";
+        console.log(voteOk && raisedOk ? "OK" : "MISMATCH vote=" + voteOk + " raised=" + raisedOk);
+    ' 2>&1)
+    assert_equals "OK" "$result" "PANEL_SCHEMA votes + raised carry the tractability enum"
+}

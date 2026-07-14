@@ -400,3 +400,15 @@ test_panel_n5_realness_scaling() {
     assert_equals "dismissed" "$(echo "$out" | jq -r '.log.findings[0].tier')" "N=5: 5×ceil(31/5)=35 drop → conf 65 < 70 → dismissed"
     assert_equals "APPROVE" "$(echo "$out" | jq -r '.verdict')" "N=5 unanimous not-real → APPROVE"
 }
+
+# The concern brief must define severity by impact-if-manifested and must define
+# the three tractability tiers by name, so panelists elicit the new axes.
+test_panel_brief_defines_impact_severity_and_tractability() {
+    local brief
+    brief="$REPO_ROOT/plugins/code-review-suite/includes/panel-concern-brief.md"
+    assert_matches "impact" "$(cat "$brief")" "brief anchors severity to impact"
+    assert_matches "Tractability" "$(cat "$brief")" "brief names the Tractability axis"
+    assert_matches "Mechanical" "$(cat "$brief")" "brief defines Mechanical tier"
+    assert_matches "Bounded" "$(cat "$brief")" "brief defines Bounded tier"
+    assert_matches "Open-ended" "$(cat "$brief")" "brief defines Open-ended tier"
+}

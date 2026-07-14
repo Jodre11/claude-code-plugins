@@ -635,20 +635,20 @@ function checkQuorum(survivingCount, n) {
     return survivingCount >= Math.floor(n / 2) + 1
 }
 
-// Aggregate the two independent axes per Stage-1 finding across surviving panelists.
-// is_real_true / is_real_false drive the realness→confidence ratchet; sevVotes (from
-// is_real:true panelists only) drive the severity notch; blocks_goal is the panel
-// majority feeding applyRubric row 1. A panelist who voted is_real:false abstains from
-// the severity notch (a severity opinion on a false positive is incoherent).
+// Aggregate the axes per Stage-1 finding across surviving panelists. Severity and
+// tractability opinions are collected ONLY from is_real:true panelists (an opinion on a
+// false positive is incoherent). Majority/scatter is computed downstream in
+// mapSpreadToTierConfidence, which has the survivor count s.
 function tallyVotes(panelists, flat) {
     return flat.map(f => {
-        const tally = { is_real_true: 0, is_real_false: 0, blocks_goal: 0, sevVotes: [] }
+        const tally = { is_real_true: 0, is_real_false: 0, blocks_goal: 0, sevVotes: [], tractVotes: [] }
         for (const p of panelists) {
             const v = (p.votes ?? []).find(x => x.finding_id === f.finding_id)
             if (!v) continue
             if (v.is_real) {
                 tally.is_real_true++
                 tally.sevVotes.push(v.severity)
+                if (v.tractability) tally.tractVotes.push(v.tractability)
             } else {
                 tally.is_real_false++
             }
@@ -674,72 +674,95 @@ function clusterRaised(panelists) {
     return clusters
 }
 
-// Map vote spread + raise corroboration onto the four-tier envelope. Emits ALL four
-// keys; `synthesiser` is always [] in panel mode. Each voted finding carries a
-// ratcheted numeric confidence, an effective (Track A) or locked (Track B) severity,
-// and a boolean blocks_goal (panel majority). finding_id is dropped (not a FINDING_SHAPE
-// property); domain is retained for the log payload.
+const TRACT_ORDER = { 'Mechanical': 1, 'Bounded': 2, 'Open-ended': 3 }
+const FLAG_TO_NUM = { high: 90, medium: 75, low: 50 }
+
+// Severity majority over the real votes. agreement: 'high' iff one value has ALL s
+// survivors, 'medium' iff a strict majority (> s/2), else scatter (value null).
+function majorityOf(values, s) {
+    const counts = {}
+    for (const v of values) counts[v] = (counts[v] ?? 0) + 1
+    let best = null, bestC = 0
+    for (const [k, c] of Object.entries(counts)) if (c > bestC) { best = k; bestC = c }
+    if (bestC === s) return { value: best, agreement: 'high' }
+    if (bestC > s / 2) return { value: best, agreement: 'medium' }
+    return { value: null, agreement: null }
+}
+
+// Tractability resolution: majority when one exists; on scatter, resolve to the MOST
+// cautious value present (disagreement = fix not understood → lean less-tractable).
+function resolveTractability(values, s) {
+    const m = majorityOf(values, s)
+    if (m.value) return { value: m.value, agreement: m.agreement }
+    let worst = 'Mechanical'
+    for (const v of values) if ((TRACT_ORDER[v] ?? 0) > TRACT_ORDER[worst]) worst = v
+    return { value: worst, agreement: 'low' }
+}
+
+// Map vote spread + raise corroboration onto the four-tier envelope. Emits ALL four keys;
+// `synthesiser` is always [] in panel mode. Confidence is now the discrete agreement flag
+// (severity axis); the numeric `confidence` is a back-compat shim (FLAG_TO_NUM) for the log
+// and classic-shared helpers. Routing/posting fields are added in Task 4.
 //
-// Track A (non-static): realness ratchet (step=ceil(31/s) per is_real:false vote)
-//   + symmetric severity notch from is_real:true panelist sevVotes.
-//   blocks iff roundedEffLevel >= Important AND confidence >= 70.
-//   majority-not-real → dismissed; otherwise non-blocking → contested.
-// Track B (static — STATIC.has(domain)): confidence-only ratchet (step=ceil(50/s),
-//   floor 50); severity locked to specialist value; blocks iff locked-sev >= Important
-//   AND conf >= 70; non-blocking → contested (NEVER dismissed).
+// Non-static: majority-not-real → dismissed; else severity majority governs — Critical/
+//   Important → consensus (blocking); Suggestion → contested (routing set later);
+//   scatter → contested + judgement_call.
+// Static (STATIC.has(domain)): severity locked, confidence_flag high, tractability Mechanical;
+//   blocks iff locked-sev >= Important → consensus; else contested (NEVER dismissed).
 function mapSpreadToTierConfidence(voteTallies, raisedClusters, s) {
     const tiers = { consensus: [], synthesiser: [], contested: [], dismissed: [] }
     const SEV_TO_LEVEL = { Suggestion: 1, Important: 2, Critical: 3 }
-    const LEVEL_TO_SEV = { 1: 'Suggestion', 2: 'Important', 3: 'Critical' }
-    const majorityNotReal = t => t.is_real_false > t.is_real_true
     const blocksGoal = t => t.blocks_goal > s / 2
     for (const { finding, tally } of voteTallies) {
         const { finding_id, ...rest } = finding
         const isStatic = STATIC.has(finding.domain)
-        let tier, confidence, severity
+        let tier, confidence_flag, severity, tractability, judgement_call = false
 
         if (isStatic) {
-            // Track B — severity locked, confidence-only ratchet, floor 50, never dismissed.
-            const step = Math.ceil(50 / s)
-            confidence = Math.max(50, 100 - tally.is_real_false * step)
-            severity = finding.severity // locked
-            const blocks = SEV_TO_LEVEL[severity] >= 2 && confidence >= 70
-            tier = blocks ? 'consensus' : 'contested'
+            severity = finding.severity           // locked
+            confidence_flag = 'high'
+            tractability = 'Mechanical'
+            tier = SEV_TO_LEVEL[severity] >= 2 ? 'consensus' : 'contested'
+        } else if (tally.is_real_false > tally.is_real_true) {
+            severity = finding.severity
+            confidence_flag = 'low'
+            tractability = resolveTractability(tally.tractVotes, s).value
+            tier = 'dismissed'
         } else {
-            // Track A — realness→confidence ratchet + symmetric severity notch.
-            const step = Math.ceil(31 / s)
-            confidence = Math.max(0, (finding.confidence ?? 0) - tally.is_real_false * step)
-            const specLevel = SEV_TO_LEVEL[finding.severity] ?? 1
-            let up = 0, down = 0
-            for (const sv of tally.sevVotes) {
-                const lvl = SEV_TO_LEVEL[sv] ?? specLevel
-                if (lvl > specLevel) up++
-                else if (lvl < specLevel) down++
+            const sevM = majorityOf(tally.sevVotes, s)
+            tractability = resolveTractability(tally.tractVotes, s).value
+            if (!sevM.value) {                    // severity scatter → judgement call
+                severity = finding.severity
+                confidence_flag = 'low'
+                judgement_call = true
+                tier = 'contested'
+            } else {
+                severity = sevM.value
+                confidence_flag = sevM.agreement
+                tier = SEV_TO_LEVEL[severity] >= 2 ? 'consensus' : 'contested'
             }
-            const effLevel = Math.min(3, Math.max(1, specLevel + (up - down) / s))
-            const roundedLevel = Math.round(effLevel)
-            severity = LEVEL_TO_SEV[roundedLevel]
-            const blocks = roundedLevel >= 2 && confidence >= 70
-            if (blocks) tier = 'consensus'
-            else if (majorityNotReal(tally)) tier = 'dismissed'
-            else tier = 'contested'
         }
-        tiers[tier].push({ ...rest, severity, confidence, blocks_goal: blocksGoal(tally) })
+        tiers[tier].push({
+            ...rest, severity, tractability, confidence_flag,
+            confidence: FLAG_TO_NUM[confidence_flag],
+            blocks_goal: blocksGoal(tally),
+            ...(judgement_call ? { judgement_call: true } : {}),
+        })
     }
     for (const c of raisedClusters) {
-        let tier, confidence
-        if (c.corroboration >= Math.ceil((2 * s) / 3)) { tier = 'consensus'; confidence = 80 }
-        else if (c.corroboration > 1) { tier = 'contested'; confidence = 60 }
-        else { tier = 'contested'; confidence = 40 }
-        tiers[tier].push({ ...c.rep, domain: 'panel', confidence })
+        let tier, confidence_flag
+        if (c.corroboration >= Math.ceil((2 * s) / 3)) { tier = 'consensus'; confidence_flag = 'high' }
+        else if (c.corroboration > 1) { tier = 'contested'; confidence_flag = 'medium' }
+        else { tier = 'contested'; confidence_flag = 'low' }
+        tiers[tier].push({ ...c.rep, domain: 'panel', confidence_flag, confidence: FLAG_TO_NUM[confidence_flag] })
     }
     return tiers
 }
 
-// Apply the four verdict-rubric rows deterministically, first match wins. Row 1's
-// goal-achievement judgement scans consensus ∪ contested for blocks_goal (a real-majority
-// Suggestion still blocks if the panel says so; dismissed findings are false positives and
-// must not fire). Rows 2/3 scan consensus only. hasGoal gates row 1.
+// Verdict rubric, first match wins. Row 1 (goal) scans consensus ∪ contested for blocks_goal
+// (hasGoal-gated). Rows 2/3 scan consensus only. Row 3 has NO confidence gate: a majority
+// Important (which is the only way a non-static Important reaches consensus) blocks — a
+// 2/1 majority still blocks, because difficulty/doubt must never excuse a real defect.
 function applyRubric(tiers, hasGoal) {
     const consensus = tiers.consensus ?? []
     const contested = tiers.contested ?? []
@@ -749,8 +772,8 @@ function applyRubric(tiers, hasGoal) {
     if (consensus.some(f => f.severity === 'Critical')) {
         return { verdict: 'REQUEST_CHANGES', rubricRowApplied: 2, rubricReason: 'consensus Critical' }
     }
-    if (consensus.some(f => f.severity === 'Important' && (f.confidence ?? 0) >= 70)) {
-        return { verdict: 'REQUEST_CHANGES', rubricRowApplied: 3, rubricReason: 'consensus Important >= 70' }
+    if (consensus.some(f => f.severity === 'Important')) {
+        return { verdict: 'REQUEST_CHANGES', rubricRowApplied: 3, rubricReason: 'consensus Important (majority)' }
     }
     return { verdict: 'APPROVE', rubricRowApplied: 4, rubricReason: 'no blocking findings' }
 }
@@ -817,7 +840,7 @@ async function panelWrite(panelists, flat, phaseLog) {
         schema: WRITER_SCHEMA,
     })
     const bodyText = (w && w.bodyText) ? w.bodyText : '(panel writer produced no prose)'
-    const envelope = { verdict, rubricRowApplied, rubricReason, tiers, bodyText }
+    const envelope = { verdict, rubricRowApplied, rubricReason, tiers, bodyText, panel: true }
     return finalizeBundle(envelope, reviewMode, phaseLog)
 }
 

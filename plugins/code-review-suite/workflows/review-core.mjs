@@ -515,15 +515,22 @@ function finalizeBundle(envelope, reviewMode, phaseLog) {
 
     const verdict = envelope.verdict  // APPROVE | REQUEST_CHANGES (synth never emits COMMENT)
     const consensus = envelope.tiers.consensus ?? []
+    const contested = envelope.tiers.contested ?? []
     const synthFindings = envelope.tiers.synthesiser ?? []
 
-    // Posted set = consensus + synthesiser, filtered by the verdict-driven rule.
-    const candidates = [...consensus, ...synthFindings]
-    const postedSet = candidates.filter(f => isPosted(f, verdict))
-    const suppressedCount = candidates.length - postedSet.length
+    // Panel: contested carries fix-now/optional/judgement-call findings routed via `posting`.
+    // Classic: contested is never posted, so only consensus + synth are candidates.
+    const candidates = envelope.panel
+        ? [...consensus, ...contested, ...synthFindings]
+        : [...consensus, ...synthFindings]
+    const commentSet = candidates.filter(f => isPosted(f, verdict))
+    const bodySet = envelope.panel
+        ? candidates.filter(f => f.posting === 'inline' || f.posting === 'body')
+        : commentSet
+    const suppressedCount = candidates.length - bodySet.length
 
-    const comments = renderComments(postedSet)
-    const bodyText = buildBody(envelope, postedSet, suppressedCount)
+    const comments = renderComments(commentSet)
+    const bodyText = buildBody(envelope, bodySet, suppressedCount)
     const logPayload = buildLogPayload(envelope, phaseLog)
 
     return { verdict, bodyText, comments, log: logPayload }
@@ -699,10 +706,30 @@ function resolveTractability(values, s) {
     return { value: worst, agreement: 'low' }
 }
 
+// Route a resolved finding below the verdict line. Returns { posting, recommendation,
+// annotation?, tierOverride? }. Blockers always post inline (fix-now) and gain a
+// do-not-dispatch annotation when Open-ended. Suggestions route by tractability:
+// Mechanical→inline fix-now, Bounded→body follow-up, Open-ended→drop (dismissed).
+function routeFinding({ severity, tractability, judgement_call, blocking }) {
+    if (blocking) {
+        const annotation = tractability === 'Open-ended'
+            ? 'open-ended remedy — do not dispatch a fix-agent; needs a designed change'
+            : undefined
+        return { posting: 'inline', recommendation: 'fix-now', ...(annotation ? { annotation } : {}) }
+    }
+    if (judgement_call) return { posting: 'body', recommendation: null }
+    if (severity === 'Suggestion') {
+        if (tractability === 'Mechanical') return { posting: 'inline', recommendation: 'fix-now' }
+        if (tractability === 'Bounded') return { posting: 'body', recommendation: 'follow-up' }
+        return { posting: 'drop', recommendation: null, dropped: true, tierOverride: 'dismissed' }
+    }
+    return { posting: 'body', recommendation: null }   // safety net (non-blocking, non-suggestion)
+}
+
 // Map vote spread + raise corroboration onto the four-tier envelope. Emits ALL four keys;
 // `synthesiser` is always [] in panel mode. Confidence is now the discrete agreement flag
 // (severity axis); the numeric `confidence` is a back-compat shim (FLAG_TO_NUM) for the log
-// and classic-shared helpers. Routing/posting fields are added in Task 4.
+// and classic-shared helpers.
 //
 // Non-static: majority-not-real → dismissed; else severity majority governs — Critical/
 //   Important → consensus (blocking); Suggestion → contested (routing set later);
@@ -742,19 +769,47 @@ function mapSpreadToTierConfidence(voteTallies, raisedClusters, s) {
                 tier = SEV_TO_LEVEL[severity] >= 2 ? 'consensus' : 'contested'
             }
         }
-        tiers[tier].push({
-            ...rest, severity, tractability, confidence_flag,
-            confidence: FLAG_TO_NUM[confidence_flag],
-            blocks_goal: blocksGoal(tally),
-            ...(judgement_call ? { judgement_call: true } : {}),
-        })
+        if (tier === 'dismissed') {
+            tiers[tier].push({
+                ...rest, severity, tractability, confidence_flag,
+                confidence: FLAG_TO_NUM[confidence_flag],
+                blocks_goal: blocksGoal(tally),
+                posting: 'drop',
+                recommendation: null,
+                ...(judgement_call ? { judgement_call: true } : {}),
+            })
+        } else {
+            const blocking = tier === 'consensus'
+            const route = routeFinding({ severity, tractability, judgement_call, blocking })
+            const destTier = route.tierOverride ?? tier
+            tiers[destTier].push({
+                ...rest, severity, tractability, confidence_flag,
+                confidence: FLAG_TO_NUM[confidence_flag],
+                blocks_goal: blocksGoal(tally),
+                posting: route.posting,
+                recommendation: route.recommendation,
+                ...(route.annotation ? { annotation: route.annotation } : {}),
+                ...(route.dropped ? { dropped: true } : {}),
+                ...(judgement_call ? { judgement_call: true } : {}),
+            })
+        }
     }
     for (const c of raisedClusters) {
-        let tier, confidence_flag
-        if (c.corroboration >= Math.ceil((2 * s) / 3)) { tier = 'consensus'; confidence_flag = 'high' }
-        else if (c.corroboration > 1) { tier = 'contested'; confidence_flag = 'medium' }
-        else { tier = 'contested'; confidence_flag = 'low' }
-        tiers[tier].push({ ...c.rep, domain: 'panel', confidence_flag, confidence: FLAG_TO_NUM[confidence_flag] })
+        let tier, confidence_flag, posting, recommendation
+        if (c.corroboration >= Math.ceil((2 * s) / 3)) {
+            tier = 'consensus'; confidence_flag = 'high'
+            posting = 'inline'; recommendation = 'fix-now'
+        } else if (c.corroboration > 1) {
+            tier = 'contested'; confidence_flag = 'medium'
+            posting = 'body'; recommendation = 'follow-up'
+        } else {
+            tier = 'contested'; confidence_flag = 'low'
+            posting = 'body'; recommendation = 'follow-up'
+        }
+        tiers[tier].push({
+            ...c.rep, domain: 'panel', confidence_flag, confidence: FLAG_TO_NUM[confidence_flag],
+            posting, recommendation,
+        })
     }
     return tiers
 }
@@ -848,10 +903,11 @@ async function panelWrite(panelists, flat, phaseLog) {
 // Pure string-operation helpers (no prose judgement parsing).
 // ---------------------------------------------------------------------------
 
-// Posted-set membership — the existing verdict-driven filter, extracted as a
-// named predicate so body + comments share one rule. REQUEST_CHANGES posts
-// everything; APPROVE posts confidence >= POST_THRESHOLD (75).
+// Posted-set membership. Panel findings carry an explicit `posting` field; respect it
+// directly (inline → posted, body/drop → not). Classic findings use the verdict-driven
+// rule: REQUEST_CHANGES posts everything; APPROVE posts confidence >= POST_THRESHOLD (75).
 function isPosted(finding, verdict) {
+    if (finding.posting) return finding.posting === 'inline'   // panel: explicit routing
     if (verdict === 'REQUEST_CHANGES') return true
     return (finding.confidence ?? 0) >= POST_THRESHOLD
 }
@@ -1025,6 +1081,9 @@ function buildLogPayload(envelope, phaseLog) {
         confidence_flag: f.confidence_flag ?? null,
         tractability: f.tractability ?? null,
         judgement_call: f.judgement_call ?? false,
+        recommendation: f.recommendation ?? null,
+        dropped: f.dropped ?? false,
+        annotation: f.annotation ?? null,
         file: f.file || '',
         line: f.line ?? 0,
         description: f.description,

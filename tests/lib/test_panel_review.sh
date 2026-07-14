@@ -388,6 +388,60 @@ test_panel_brief_defines_impact_severity_and_tractability() {
     assert_matches "Open-ended" "$(cat "$brief")" "brief defines Open-ended tier"
 }
 
+# Suggestion + Mechanical → fix-now, posted inline as one comment.
+test_panel_suggestion_mechanical_is_fix_now_inline() {
+    local specs pans out
+    specs='{"style":[{"file":"a.cs","line":3,"severity":"Suggestion","confidence":50,"description":"tidy this","suggested_fix":"rename"}]}'
+    pans='[{"votes":[{"finding_id":0,"is_real":true,"severity":"Suggestion","tractability":"Mechanical","blocks_goal":false,"rationale":"r"}],"raised":[]},{"votes":[{"finding_id":0,"is_real":true,"severity":"Suggestion","tractability":"Mechanical","blocks_goal":false,"rationale":"r"}],"raised":[]},{"votes":[{"finding_id":0,"is_real":true,"severity":"Suggestion","tractability":"Mechanical","blocks_goal":false,"rationale":"r"}],"raised":[]}]'
+    out=$(_pan_run_core "$(_pan_args 3)" "$specs" "$pans")
+    assert_equals "APPROVE" "$(echo "$out" | jq -r '.verdict')" "Suggestion never blocks → APPROVE"
+    assert_equals "1" "$(echo "$out" | jq '.comments | length')" "Suggestion+Mechanical posts inline (fix-now)"
+    assert_equals "fix-now" "$(echo "$out" | jq -r '.log.findings[0].recommendation')" "Suggestion+Mechanical → fix-now"
+}
+
+# Suggestion + Open-ended → DROPPED: no comment, recorded in dismissed with dropped:true.
+test_panel_suggestion_openended_is_dropped() {
+    local specs pans out
+    specs='{"style":[{"file":"a.cs","line":3,"severity":"Suggestion","confidence":50,"description":"big refactor idea","suggested_fix":"rethink module"}]}'
+    pans='[{"votes":[{"finding_id":0,"is_real":true,"severity":"Suggestion","tractability":"Open-ended","blocks_goal":false,"rationale":"r"}],"raised":[]},{"votes":[{"finding_id":0,"is_real":true,"severity":"Suggestion","tractability":"Open-ended","blocks_goal":false,"rationale":"r"}],"raised":[]},{"votes":[{"finding_id":0,"is_real":true,"severity":"Suggestion","tractability":"Open-ended","blocks_goal":false,"rationale":"r"}],"raised":[]}]'
+    out=$(_pan_run_core "$(_pan_args 3)" "$specs" "$pans")
+    assert_equals "0" "$(echo "$out" | jq '.comments | length')" "open-ended suggestion posts nothing"
+    assert_equals "true" "$(echo "$out" | jq -r '.log.findings[0].dropped')" "open-ended suggestion recorded dropped in log"
+    assert_equals "dismissed" "$(echo "$out" | jq -r '.log.findings[0].tier')" "dropped suggestion sits in dismissed tier"
+}
+
+# Suggestion + Bounded → body only (follow-up), no inline comment.
+test_panel_suggestion_bounded_is_body_only() {
+    local specs pans out
+    specs='{"style":[{"file":"a.cs","line":3,"severity":"Suggestion","confidence":50,"description":"worth a follow-up","suggested_fix":"later"}]}'
+    pans='[{"votes":[{"finding_id":0,"is_real":true,"severity":"Suggestion","tractability":"Bounded","blocks_goal":false,"rationale":"r"}],"raised":[]},{"votes":[{"finding_id":0,"is_real":true,"severity":"Suggestion","tractability":"Bounded","blocks_goal":false,"rationale":"r"}],"raised":[]},{"votes":[{"finding_id":0,"is_real":true,"severity":"Suggestion","tractability":"Bounded","blocks_goal":false,"rationale":"r"}],"raised":[]}]'
+    out=$(_pan_run_core "$(_pan_args 3)" "$specs" "$pans")
+    assert_equals "0" "$(echo "$out" | jq '.comments | length')" "bounded suggestion is not an inline comment"
+    assert_equals "follow-up" "$(echo "$out" | jq -r '.log.findings[0].recommendation')" "bounded suggestion → follow-up"
+}
+
+# Open-ended BLOCKER: still blocks (RC), posts inline, carries the do-not-dispatch annotation.
+test_panel_openended_blocker_annotated_still_blocks() {
+    local specs pans out
+    specs='{"security":[{"file":"api.cs","line":12,"severity":"Important","confidence":88,"description":"missing role gate","suggested_fix":"add policy"}]}'
+    pans='[{"votes":[{"finding_id":0,"is_real":true,"severity":"Important","tractability":"Open-ended","blocks_goal":false,"rationale":"r"}],"raised":[]},{"votes":[{"finding_id":0,"is_real":true,"severity":"Important","tractability":"Open-ended","blocks_goal":false,"rationale":"r"}],"raised":[]},{"votes":[{"finding_id":0,"is_real":true,"severity":"Important","tractability":"Open-ended","blocks_goal":false,"rationale":"r"}],"raised":[]}]'
+    out=$(_pan_run_core "$(_pan_args 3)" "$specs" "$pans")
+    assert_equals "REQUEST_CHANGES" "$(echo "$out" | jq -r '.verdict')" "open-ended Important still blocks"
+    assert_equals "1" "$(echo "$out" | jq '.comments | length')" "blocker posts inline"
+    assert_matches "do not dispatch" "$(echo "$out" | jq -r '.log.findings[0].annotation')" "open-ended blocker carries the do-not-dispatch annotation"
+}
+
+# Judgement call (severity scatter) → PR-body only, no inline comment.
+test_panel_judgement_call_is_body_only() {
+    local specs pans out
+    specs='{"correctness":[{"file":"a.cs","line":9,"severity":"Important","confidence":100,"description":"contested stakes","suggested_fix":"f"}]}'
+    pans='[{"votes":[{"finding_id":0,"is_real":true,"severity":"Critical","tractability":"Bounded","blocks_goal":false,"rationale":"r"}],"raised":[]},{"votes":[{"finding_id":0,"is_real":true,"severity":"Important","tractability":"Bounded","blocks_goal":false,"rationale":"r"}],"raised":[]},{"votes":[{"finding_id":0,"is_real":true,"severity":"Suggestion","tractability":"Bounded","blocks_goal":false,"rationale":"r"}],"raised":[]}]'
+    out=$(_pan_run_core "$(_pan_args 3)" "$specs" "$pans")
+    assert_equals "APPROVE" "$(echo "$out" | jq -r '.verdict')" "judgement call does not block"
+    assert_equals "0" "$(echo "$out" | jq '.comments | length')" "judgement call is not an inline comment"
+    assert_equals "true" "$(echo "$out" | jq -r '.log.findings[0].judgement_call')" "scatter finding flagged judgement_call"
+}
+
 # PANEL_SCHEMA.votes require tractability; PANEL_SCHEMA.raised items carry tractability.
 test_panel_schema_has_tractability() {
     local wf result

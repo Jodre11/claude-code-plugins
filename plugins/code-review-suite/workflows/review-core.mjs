@@ -917,7 +917,8 @@ function isPosted(finding, verdict) {
 
 // verdict_relevant — a log annotation: true iff this finding is what the rubric
 // acted on to produce the verdict. APPROVE drives nothing. Under
-// REQUEST_CHANGES: consensus Critical (any confidence) or Important >= 70, plus
+// REQUEST_CHANGES: consensus Critical or Important (any confidence — a consensus
+// Important is a severity majority and always blocks; no numeric gate), plus
 // any finding whose positional [#N] token appears in rubricReason (covers the
 // synthesiser goal-block). consensusIndexToken is meaningful ONLY for the consensus
 // tier. rubricRowApplied gates the panel goal-block: panel row 1 sets rubricReason to
@@ -1034,8 +1035,10 @@ function buildBody(envelope, postedSet, suppressedCount) {
     const parts = [headline]
     if (assessment) parts.push(assessment)
     if (index) parts.push(`### Findings\n\n${index}`)
-    // Sub-75 disclosure (spec §4): an APPROVE that suppressed findings must not look
-    // cleaner than the run was. Disclosure only — the findings are still not posted inline.
+    // Suppressed-count disclosure (spec §4): an APPROVE that held findings back must not
+    // look cleaner than the run was. Disclosure only — the findings are still not posted
+    // inline. Classic: sub-threshold (confidence-suppressed) findings. Panel: tractability-
+    // dropped open-ended suggestions pruned by routing, not confidence-suppressed.
     if (envelope.verdict === 'APPROVE' && suppressedCount > 0) {
         const msg = envelope.panel
             ? `${suppressedCount} finding(s) pruned (open-ended suggestions not surfaced).`

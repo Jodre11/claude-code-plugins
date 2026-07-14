@@ -408,6 +408,19 @@ test_panel_brief_defines_impact_severity_and_tractability() {
     assert_matches "Open-ended" "$(cat "$brief")" "brief defines Open-ended tier"
 }
 
+# A reachable defect that is deferred/tracked, or only coarsely mitigated, must NOT be
+# severity-discounted: severity is impact-if-manifested, decided before any plan or
+# partial control. Guards the PR #98 regression where panelists voted a reachable authZ
+# gap down to Suggestion citing the issue-#100 deferral + Entra audience restriction.
+test_panel_brief_forbids_deferral_and_mitigation_severity_discount() {
+    local brief
+    brief="$REPO_ROOT/plugins/code-review-suite/includes/panel-concern-brief.md"
+    assert_matches "deferred to a future ticket" "$(cat "$brief")" "brief: deferral does not lower severity"
+    assert_matches "does not lower it" "$(cat "$brief")" "brief: tracked defect keeps its severity"
+    assert_matches "reduces likelihood, not impact" "$(cat "$brief")" "brief: coarse mitigation is likelihood not impact"
+    assert_matches "same severity ladder" "$(cat "$brief")" "brief: raised findings use the same severity ladder"
+}
+
 # Suggestion + Mechanical → fix-now, posted inline as one comment.
 test_panel_suggestion_mechanical_is_fix_now_inline() {
     local specs pans out

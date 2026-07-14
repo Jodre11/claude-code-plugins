@@ -253,6 +253,9 @@ log(`dispatch: ${specialists.filter(s => s.out.status === 'ok').length}/${allSpe
 // Static-analysis specialists are EXCLUDED from RECEIVING cross-review, but their
 // findings ARE shown to every cross-reviewer (pipeline 5.2.3).
 const STATIC = new Set(['jbinspect', 'eslint', 'ruff', 'trivy', 'housekeeper'])
+// Panel verdict data tables — must live above the panel-path return (line ~276) to avoid TDZ.
+const TRACT_ORDER = { 'Mechanical': 1, 'Bounded': 2, 'Open-ended': 3 }
+const FLAG_TO_NUM = { high: 90, medium: 75, low: 50 }
 const crossDomains = allSpecialists.filter(d => !STATIC.has(d))
 
 // Boundary-gate tunable knobs (spec "Open knobs"). Bands are [lo, hi) on confidence.
@@ -674,9 +677,6 @@ function clusterRaised(panelists) {
     return clusters
 }
 
-const TRACT_ORDER = { 'Mechanical': 1, 'Bounded': 2, 'Open-ended': 3 }
-const FLAG_TO_NUM = { high: 90, medium: 75, low: 50 }
-
 // Severity majority over the real votes. agreement: 'high' iff one value has ALL s
 // survivors, 'medium' iff a strict majority (> s/2), else scatter (value null).
 function majorityOf(values, s) {
@@ -1022,6 +1022,9 @@ function buildLogPayload(envelope, phaseLog) {
         domain: f.domain || tier,
         severity: f.severity,
         confidence: f.confidence ?? 0,
+        confidence_flag: f.confidence_flag ?? null,
+        tractability: f.tractability ?? null,
+        judgement_call: f.judgement_call ?? false,
         file: f.file || '',
         line: f.line ?? 0,
         description: f.description,

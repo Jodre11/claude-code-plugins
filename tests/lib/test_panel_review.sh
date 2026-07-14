@@ -160,8 +160,8 @@ test_panel_raised_majority_is_consensus() {
     out=$(_pan_run_core "$(_pan_args 3)" "$specs" "$pans")
     assert_equals "REQUEST_CHANGES" "$(echo "$out" | jq -r '.verdict')" "2-of-3 raised Important → consensus → RC row 3"
     assert_equals "1" "$(echo "$out" | jq '[.log.findings[] | select(.domain=="panel")] | length')" "raised finding stamped domain panel"
-    # confidence overwritten from corroboration (80), NOT the panelist-supplied 40/90.
-    assert_equals "80" "$(echo "$out" | jq -r '[.log.findings[] | select(.domain=="panel")][0].confidence')" "raised confidence set from corroboration, not panelist value"
+    # confidence_flag set from corroboration (2-of-3 → high), NOT the panelist-supplied numbers.
+    assert_equals "high" "$(echo "$out" | jq -r '[.log.findings[] | select(.domain=="panel")][0].confidence_flag')" "raised confidence_flag set from corroboration, not panelist value"
 }
 
 # A solo raise (1 of 3) → contested, confidence 40, not posted, verdict APPROVE.
@@ -171,7 +171,7 @@ test_panel_solo_raise_is_low_contested() {
     pans='[{"votes":[],"raised":[{"file":"s.cs","line":5,"severity":"Important","confidence":88,"description":"solo concern","suggested_fix":"f"}]},{"votes":[],"raised":[]},{"votes":[],"raised":[]}]'
     out=$(_pan_run_core "$(_pan_args 3)" "$specs" "$pans")
     assert_equals "APPROVE" "$(echo "$out" | jq -r '.verdict')" "solo raise does not drive a verdict"
-    assert_equals "40" "$(echo "$out" | jq -r '[.log.findings[] | select(.domain=="panel")][0].confidence')" "solo raise → contested confidence 40"
+    assert_equals "low" "$(echo "$out" | jq -r '[.log.findings[] | select(.domain=="panel")][0].confidence_flag')" "solo raise → contested confidence_flag low"
     assert_equals "0" "$(echo "$out" | jq '.comments | length')" "solo-raise contested finding not posted"
 }
 

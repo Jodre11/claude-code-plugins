@@ -83,6 +83,15 @@ uncertainty and risk are not split, because uncertainty *is* the dominant source
 Panelists provide tractability for **every** finding they vote on, including net-new
 findings they raise themselves.
 
+**Raised findings have no majority.** A net-new finding is surfaced by one panelist and
+clustered by corroboration (`clusterRaised`), not voted across the panel — so the
+majority/scatter machinery below does not apply to it. A raise carries its raiser's own
+severity + tractability directly (confidence = corroboration flag, not agreement). Its
+severity still governs the verdict via the same rubric (a corroborated raised Important
+blocks); its tractability still routes/prunes via the same table (a raised Suggestion +
+Open-ended is dropped). The plan must wire raised findings through the routing table on
+their raiser-supplied axes rather than re-deriving them from a majority that does not exist.
+
 ### The verdict rubric — severity governs, bluntly
 
 Tractability does **not** touch the PR verdict. A hard-to-fix Important bug is *more* reason
@@ -146,10 +155,15 @@ things on each:
   The disagreement is itself evidence the fix is not well-understood; the pipeline can take
   the safer route without escalating to a human.
 
-Confidence only ever **de-escalates the action** (softens a block to a note, routes a
-fix-now to a ticket, moves toward Drop). It never promotes: a lone Critical among two
-Suggestions never blocks — it becomes a minority report. Nothing is ever silently dropped
-except the one explicitly-chosen cell (open-ended suggestions).
+Confidence only ever **de-escalates the action**, and only through the majority structure
+itself — never as an independent gate applied on top of a clean majority. A **2/1 majority
+Critical/Important blocks** (medium confidence); the confidence flag labels that block, it
+does not soften it — difficulty and doubt must never excuse a real defect (see the verdict
+rubric). De-escalation happens only where there is **no blocking majority**: a lone Critical
+among two Suggestions never blocks — it becomes a minority report; a severity scatter demotes
+to the judgement-call bin; a tractability scatter routes to the more cautious action. It
+never promotes. Nothing is ever silently dropped except the one explicitly-chosen cell
+(open-ended suggestions).
 
 ### Surfacing contract — inline vs PR-level
 
@@ -199,6 +213,24 @@ line:
     judgement-call bin (non-blocking, PR-level only).
   - Posting/`isPosted` + writer prompt — enforce the inline-vs-PR-level surfacing contract
     and the Drop rule.
+
+**Numeric-confidence consumers to migrate (the discrete flag touches more than the tally).**
+Confidence today is a 0–100 integer threaded through several sites; moving to a discrete
+high/med/low flag means each must be re-expressed against the flag, not left reading a stale
+number. The plan must account for all of them:
+
+- `isPosted` — the `POST_THRESHOLD` (75) numeric gate. Under the new surfacing contract,
+  postability is driven by severity + actionability (blocker / fix-now / follow-up), not a
+  confidence number; the threshold gate is removed or restated in flag terms.
+- `isVerdictRelevant` — its `>= 70` numeric checks become the discrete-flag equivalents,
+  consistent with the "2/1 majority still blocks" rule.
+- `renderCommentBody` — prints `confidence ${f.confidence}`; render the discrete flag (or
+  drop the parenthetical) rather than a bare number.
+- Raised-cluster tiering in `mapSpreadToTierConfidence` — the `80/60/40` literal assignments
+  map corroboration→flag; restate them as flags.
+- Any `finalizeBundle` / body-builder / log-payload read of `finding.confidence` as a
+  number — audit and migrate. The plan should grep `confidence` across `review-core.mjs`
+  and the writer/body includes to enumerate the full set before editing.
 
 ## Cruft this removes
 

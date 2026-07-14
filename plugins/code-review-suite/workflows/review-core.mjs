@@ -931,7 +931,7 @@ function isVerdictRelevant(finding, tier, verdict, rubricReason, consensusIndexT
     if (rubricRowApplied === 1 && (tier === 'consensus' || tier === 'contested') && finding.blocks_goal === true) return true
     if (tier === 'consensus') {
         if (finding.severity === 'Critical') return true
-        if (finding.severity === 'Important' && (finding.confidence ?? 0) >= 70) return true
+        if (finding.severity === 'Important') return true
         if (consensusIndexToken && rubricReason && rubricReason.includes(`[#${consensusIndexToken}]`)) return true
     }
     return false
@@ -939,7 +939,11 @@ function isVerdictRelevant(finding, tier, verdict, rubricReason, consensusIndexT
 
 // Render one finding into a GitHub inline-comment body.
 function renderCommentBody(f) {
-    let s = `**${f.severity}** (confidence ${f.confidence})\n\n${f.description}`
+    const conf = f.confidence_flag ? `confidence ${f.confidence_flag}` : `confidence ${f.confidence}`
+    let s = `**${f.severity}** (${conf})`
+    if (f.recommendation) s += ` — ${f.recommendation === 'fix-now' ? 'fix in this PR' : 'raise as a follow-up'}`
+    s += `\n\n${f.description}`
+    if (f.annotation) s += `\n\n_${f.annotation}_`
     if (f.suggested_fix) s += `\n\n**Suggested fix:** ${f.suggested_fix}`
     if (f.reference) s += `\n\n${f.reference}`
     return s
@@ -1033,7 +1037,10 @@ function buildBody(envelope, postedSet, suppressedCount) {
     // Sub-75 disclosure (spec §4): an APPROVE that suppressed findings must not look
     // cleaner than the run was. Disclosure only — the findings are still not posted inline.
     if (envelope.verdict === 'APPROVE' && suppressedCount > 0) {
-        parts.push(`${suppressedCount} finding(s) below the posting threshold — see synthesiser report.`)
+        const msg = envelope.panel
+            ? `${suppressedCount} finding(s) pruned (open-ended suggestions not surfaced).`
+            : `${suppressedCount} finding(s) below the posting threshold — see synthesiser report.`
+        parts.push(msg)
     }
     if (freshness) parts.push(freshness)
     return parts.join('\n\n')
@@ -1085,6 +1092,7 @@ function buildLogPayload(envelope, phaseLog) {
         tractability: f.tractability ?? null,
         judgement_call: f.judgement_call ?? false,
         recommendation: f.recommendation ?? null,
+        posting: f.posting ?? null,
         dropped: f.dropped ?? false,
         annotation: f.annotation ?? null,
         file: f.file || '',

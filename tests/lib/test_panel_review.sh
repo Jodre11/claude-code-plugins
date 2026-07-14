@@ -462,6 +462,29 @@ test_panel_judgement_call_is_body_only() {
     assert_equals "true" "$(echo "$out" | jq -r '.log.findings[0].judgement_call')" "scatter finding flagged judgement_call"
 }
 
+# The durable log carries the discrete confidence_flag, tractability, and recommendation
+# for a panel finding.
+test_panel_log_records_flag_and_tractability() {
+    local specs pans out
+    specs='{"correctness":[{"file":"a.cs","line":10,"severity":"Important","confidence":100,"description":"bug","suggested_fix":"f"}]}'
+    pans='[{"votes":[{"finding_id":0,"is_real":true,"severity":"Important","tractability":"Bounded","blocks_goal":false,"rationale":"r"}],"raised":[]},{"votes":[{"finding_id":0,"is_real":true,"severity":"Important","tractability":"Bounded","blocks_goal":false,"rationale":"r"}],"raised":[]},{"votes":[{"finding_id":0,"is_real":true,"severity":"Important","tractability":"Bounded","blocks_goal":false,"rationale":"r"}],"raised":[]}]'
+    out=$(_pan_run_core "$(_pan_args 3)" "$specs" "$pans")
+    assert_equals "high" "$(echo "$out" | jq -r '.log.findings[0].confidence_flag')" "log records confidence_flag"
+    assert_equals "Bounded" "$(echo "$out" | jq -r '.log.findings[0].tractability')" "log records tractability"
+    assert_equals "fix-now" "$(echo "$out" | jq -r '.log.findings[0].recommendation')" "log records recommendation"
+}
+
+# An inline panel comment body renders the discrete flag, not a bare number, plus the fix-now
+# recommendation.
+test_panel_comment_body_shows_flag() {
+    local specs pans out
+    specs='{"correctness":[{"file":"a.cs","line":10,"severity":"Important","confidence":100,"description":"bug","suggested_fix":"do x"}]}'
+    pans='[{"votes":[{"finding_id":0,"is_real":true,"severity":"Important","tractability":"Bounded","blocks_goal":false,"rationale":"r"}],"raised":[]},{"votes":[{"finding_id":0,"is_real":true,"severity":"Important","tractability":"Bounded","blocks_goal":false,"rationale":"r"}],"raised":[]},{"votes":[{"finding_id":0,"is_real":true,"severity":"Important","tractability":"Bounded","blocks_goal":false,"rationale":"r"}],"raised":[]}]'
+    out=$(_pan_run_core "$(_pan_args 3)" "$specs" "$pans")
+    assert_matches "confidence high" "$(echo "$out" | jq -r '.comments[0].body')" "comment body renders discrete flag"
+    assert_not_matches "confidence 90" "$(echo "$out" | jq -r '.comments[0].body')" "comment body does not print the shim number"
+}
+
 # PANEL_SCHEMA.votes require tractability; PANEL_SCHEMA.raised items carry tractability.
 test_panel_schema_has_tractability() {
     local wf result

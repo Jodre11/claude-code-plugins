@@ -96,12 +96,25 @@ const SYNTH_SCHEMA = {
     },
 }
 
+// RAISED_SHAPE — a panel-raised finding is a FINDING_SHAPE plus a required tractability
+// (the raiser's own fix-risk read). Panel-local: PANEL_SCHEMA is NOT in the finding-schema
+// parity set, so this does not touch the canonical schema.
+const RAISED_SHAPE = {
+    type: 'object',
+    additionalProperties: false,
+    required: [...FINDING_SHAPE.required, 'tractability'],
+    properties: {
+        ...FINDING_SHAPE.properties,
+        tractability: { enum: ['Mechanical', 'Bounded', 'Open-ended'], description: "The raiser's fix-risk read: Mechanical (obvious local diff), Bounded (understood but non-trivial), Open-ended (uncertain or risks deviating from intent)." },
+    },
+}
+
 // PANEL_SCHEMA — each opus panelist votes every Stage-1 finding (split into is_real
 // epistemic judgment + severity opinion) and may raise new cross-cutting findings.
 // votes[].finding_id indexes the flattened Stage-1 list the host built with
-// flattenFindings. raised[] uses FINDING_SHAPE but drops `domain` (review-core stamps
-// a synthetic `panel` domain) — confidence is supplied but the writer overwrites it
-// from cluster corroboration.
+// flattenFindings. raised[] uses RAISED_SHAPE (FINDING_SHAPE plus tractability) and
+// stamps domain `panel` via review-core. Confidence is supplied by raiser but is
+// overwritten from cluster corroboration.
 const PANEL_SCHEMA = {
     type: 'object',
     additionalProperties: false,
@@ -112,11 +125,12 @@ const PANEL_SCHEMA = {
             items: {
                 type: 'object',
                 additionalProperties: false,
-                required: ['finding_id', 'is_real', 'severity', 'blocks_goal', 'rationale'],
+                required: ['finding_id', 'is_real', 'severity', 'tractability', 'blocks_goal', 'rationale'],
                 properties: {
                     finding_id: { type: 'integer', minimum: 0, description: 'Index into the flattened Stage-1 finding list.' },
                     is_real: { type: 'boolean', description: 'True issue vs false positive — purely epistemic, independent of importance.' },
-                    severity: { enum: ['Critical', 'Important', 'Suggestion'], description: "The panelist's own honest severity opinion. Ignored for static-analysis findings (severity is locked)." },
+                    severity: { enum: ['Critical', 'Important', 'Suggestion'], description: 'Impact if the issue manifested. Ignored for static-analysis findings (severity is locked).' },
+                    tractability: { enum: ['Mechanical', 'Bounded', 'Open-ended'], description: 'How well-understood and contained the fix is. Mechanical=obvious local diff; Bounded=non-trivial but clear; Open-ended=uncertain or risks deviating from intent.' },
                     blocks_goal: { type: 'boolean', description: 'True iff this finding shows the stated goal is not achieved. Always false when no goal is in scope.' },
                     rationale: { type: 'string' },
                 },
@@ -124,7 +138,7 @@ const PANEL_SCHEMA = {
         },
         raised: {
             type: 'array',
-            items: FINDING_SHAPE,
+            items: RAISED_SHAPE,
             description: 'Net-new cross-cutting findings this panelist surfaced. Provenance (panel) is stamped by review-core.',
         },
     },
@@ -239,6 +253,9 @@ log(`dispatch: ${specialists.filter(s => s.out.status === 'ok').length}/${allSpe
 // Static-analysis specialists are EXCLUDED from RECEIVING cross-review, but their
 // findings ARE shown to every cross-reviewer (pipeline 5.2.3).
 const STATIC = new Set(['jbinspect', 'eslint', 'ruff', 'trivy', 'housekeeper'])
+// Panel verdict data tables — must live above the panel-path return (line ~276) to avoid TDZ.
+const TRACT_ORDER = { 'Mechanical': 1, 'Bounded': 2, 'Open-ended': 3 }
+const FLAG_TO_NUM = { high: 90, medium: 75, low: 50 }
 const crossDomains = allSpecialists.filter(d => !STATIC.has(d))
 
 // Boundary-gate tunable knobs (spec "Open knobs"). Bands are [lo, hi) on confidence.
@@ -498,15 +515,27 @@ function finalizeBundle(envelope, reviewMode, phaseLog) {
 
     const verdict = envelope.verdict  // APPROVE | REQUEST_CHANGES (synth never emits COMMENT)
     const consensus = envelope.tiers.consensus ?? []
+    const contested = envelope.tiers.contested ?? []
     const synthFindings = envelope.tiers.synthesiser ?? []
 
-    // Posted set = consensus + synthesiser, filtered by the verdict-driven rule.
-    const candidates = [...consensus, ...synthFindings]
-    const postedSet = candidates.filter(f => isPosted(f, verdict))
-    const suppressedCount = candidates.length - postedSet.length
+    // Panel: contested carries fix-now/optional/judgement-call findings routed via `posting`.
+    // Classic: contested is never posted, so only consensus + synth are candidates.
+    const candidates = envelope.panel
+        ? [...consensus, ...contested, ...synthFindings]
+        : [...consensus, ...synthFindings]
+    const commentSet = candidates.filter(f => isPosted(f, verdict))
+    const bodySet = envelope.panel
+        ? candidates.filter(f => f.posting === 'inline' || f.posting === 'body')
+        : commentSet
+    // Panel: open-ended Suggestions are routed to the dismissed tier (dropped:true) and never
+    // enter `candidates`. Count them separately so the APPROVE disclosure line can fire.
+    const droppedCount = envelope.panel
+        ? (envelope.tiers.dismissed ?? []).filter(f => f.dropped).length
+        : 0
+    const suppressedCount = (candidates.length - bodySet.length) + droppedCount
 
-    const comments = renderComments(postedSet)
-    const bodyText = buildBody(envelope, postedSet, suppressedCount)
+    const comments = renderComments(commentSet)
+    const bodyText = buildBody(envelope, bodySet, suppressedCount)
     const logPayload = buildLogPayload(envelope, phaseLog)
 
     return { verdict, bodyText, comments, log: logPayload }
@@ -621,20 +650,20 @@ function checkQuorum(survivingCount, n) {
     return survivingCount >= Math.floor(n / 2) + 1
 }
 
-// Aggregate the two independent axes per Stage-1 finding across surviving panelists.
-// is_real_true / is_real_false drive the realness→confidence ratchet; sevVotes (from
-// is_real:true panelists only) drive the severity notch; blocks_goal is the panel
-// majority feeding applyRubric row 1. A panelist who voted is_real:false abstains from
-// the severity notch (a severity opinion on a false positive is incoherent).
+// Aggregate the axes per Stage-1 finding across surviving panelists. Severity and
+// tractability opinions are collected ONLY from is_real:true panelists (an opinion on a
+// false positive is incoherent). Majority/scatter is computed downstream in
+// mapSpreadToTierConfidence, which has the survivor count s.
 function tallyVotes(panelists, flat) {
     return flat.map(f => {
-        const tally = { is_real_true: 0, is_real_false: 0, blocks_goal: 0, sevVotes: [] }
+        const tally = { is_real_true: 0, is_real_false: 0, blocks_goal: 0, sevVotes: [], tractVotes: [] }
         for (const p of panelists) {
             const v = (p.votes ?? []).find(x => x.finding_id === f.finding_id)
             if (!v) continue
             if (v.is_real) {
                 tally.is_real_true++
                 tally.sevVotes.push(v.severity)
+                if (v.tractability) tally.tractVotes.push(v.tractability)
             } else {
                 tally.is_real_false++
             }
@@ -660,72 +689,143 @@ function clusterRaised(panelists) {
     return clusters
 }
 
-// Map vote spread + raise corroboration onto the four-tier envelope. Emits ALL four
-// keys; `synthesiser` is always [] in panel mode. Each voted finding carries a
-// ratcheted numeric confidence, an effective (Track A) or locked (Track B) severity,
-// and a boolean blocks_goal (panel majority). finding_id is dropped (not a FINDING_SHAPE
-// property); domain is retained for the log payload.
+// Severity majority over the real votes. agreement: 'high' iff one value has ALL s
+// survivors, 'medium' iff a strict majority (> s/2), else scatter (value null).
+function majorityOf(values, s) {
+    const counts = {}
+    for (const v of values) counts[v] = (counts[v] ?? 0) + 1
+    let best = null, bestC = 0
+    for (const [k, c] of Object.entries(counts)) if (c > bestC) { best = k; bestC = c }
+    if (bestC === s) return { value: best, agreement: 'high' }
+    if (bestC > s / 2) return { value: best, agreement: 'medium' }
+    return { value: null, agreement: null }
+}
+
+// Tractability resolution: majority when one exists; on scatter, resolve to the MOST
+// cautious value present (disagreement = fix not understood → lean less-tractable).
+function resolveTractability(values, s) {
+    const m = majorityOf(values, s)
+    if (m.value) return { value: m.value, agreement: m.agreement }
+    let worst = 'Mechanical'
+    for (const v of values) if ((TRACT_ORDER[v] ?? 0) > TRACT_ORDER[worst]) worst = v
+    return { value: worst, agreement: 'low' }
+}
+
+// Route a resolved finding below the verdict line. Returns { posting, recommendation,
+// annotation?, tierOverride? }. Blockers always post inline (fix-now) and gain a
+// do-not-dispatch annotation when Open-ended. Suggestions route by tractability:
+// Mechanical→inline fix-now, Bounded→body follow-up, Open-ended→drop (dismissed).
+function routeFinding({ severity, tractability, judgement_call, blocking }) {
+    if (blocking) {
+        const annotation = tractability === 'Open-ended'
+            ? 'open-ended remedy — do not dispatch a fix-agent; needs a designed change'
+            : undefined
+        return { posting: 'inline', recommendation: 'fix-now', ...(annotation ? { annotation } : {}) }
+    }
+    if (judgement_call) return { posting: 'body', recommendation: null }
+    if (severity === 'Suggestion') {
+        if (tractability === 'Mechanical') return { posting: 'inline', recommendation: 'fix-now' }
+        if (tractability === 'Bounded') return { posting: 'body', recommendation: 'follow-up' }
+        return { posting: 'drop', recommendation: null, dropped: true, tierOverride: 'dismissed' }
+    }
+    return { posting: 'body', recommendation: null }   // safety net (non-blocking, non-suggestion)
+}
+
+// Map vote spread + raise corroboration onto the four-tier envelope. Emits ALL four keys;
+// `synthesiser` is always [] in panel mode. Confidence is now the discrete agreement flag
+// (severity axis); the numeric `confidence` is a back-compat shim (FLAG_TO_NUM) for the log
+// and classic-shared helpers.
 //
-// Track A (non-static): realness ratchet (step=ceil(31/s) per is_real:false vote)
-//   + symmetric severity notch from is_real:true panelist sevVotes.
-//   blocks iff roundedEffLevel >= Important AND confidence >= 70.
-//   majority-not-real → dismissed; otherwise non-blocking → contested.
-// Track B (static — STATIC.has(domain)): confidence-only ratchet (step=ceil(50/s),
-//   floor 50); severity locked to specialist value; blocks iff locked-sev >= Important
-//   AND conf >= 70; non-blocking → contested (NEVER dismissed).
+// Non-static: majority-not-real → dismissed; else severity majority governs — Critical/
+//   Important → consensus (blocking); Suggestion → contested (routing set later);
+//   scatter → contested + judgement_call.
+// Static (STATIC.has(domain)): severity locked, confidence_flag high, tractability Mechanical;
+//   blocks iff locked-sev >= Important → consensus; else contested (NEVER dismissed).
 function mapSpreadToTierConfidence(voteTallies, raisedClusters, s) {
     const tiers = { consensus: [], synthesiser: [], contested: [], dismissed: [] }
     const SEV_TO_LEVEL = { Suggestion: 1, Important: 2, Critical: 3 }
-    const LEVEL_TO_SEV = { 1: 'Suggestion', 2: 'Important', 3: 'Critical' }
-    const majorityNotReal = t => t.is_real_false > t.is_real_true
     const blocksGoal = t => t.blocks_goal > s / 2
     for (const { finding, tally } of voteTallies) {
         const { finding_id, ...rest } = finding
         const isStatic = STATIC.has(finding.domain)
-        let tier, confidence, severity
+        let tier, confidence_flag, severity, tractability, judgement_call = false
 
         if (isStatic) {
-            // Track B — severity locked, confidence-only ratchet, floor 50, never dismissed.
-            const step = Math.ceil(50 / s)
-            confidence = Math.max(50, 100 - tally.is_real_false * step)
-            severity = finding.severity // locked
-            const blocks = SEV_TO_LEVEL[severity] >= 2 && confidence >= 70
-            tier = blocks ? 'consensus' : 'contested'
+            severity = finding.severity           // locked
+            confidence_flag = 'high'
+            tractability = 'Mechanical'
+            tier = SEV_TO_LEVEL[severity] >= 2 ? 'consensus' : 'contested'
+        } else if (tally.is_real_false > tally.is_real_true) {
+            severity = finding.severity
+            confidence_flag = 'low'
+            tractability = resolveTractability(tally.tractVotes, s).value
+            tier = 'dismissed'
         } else {
-            // Track A — realness→confidence ratchet + symmetric severity notch.
-            const step = Math.ceil(31 / s)
-            confidence = Math.max(0, (finding.confidence ?? 0) - tally.is_real_false * step)
-            const specLevel = SEV_TO_LEVEL[finding.severity] ?? 1
-            let up = 0, down = 0
-            for (const sv of tally.sevVotes) {
-                const lvl = SEV_TO_LEVEL[sv] ?? specLevel
-                if (lvl > specLevel) up++
-                else if (lvl < specLevel) down++
+            const sevM = majorityOf(tally.sevVotes, s)
+            tractability = resolveTractability(tally.tractVotes, s).value
+            if (!sevM.value) {                    // severity scatter → judgement call
+                severity = finding.severity
+                confidence_flag = 'low'
+                judgement_call = true
+                tier = 'contested'
+            } else {
+                severity = sevM.value
+                confidence_flag = sevM.agreement
+                tier = SEV_TO_LEVEL[severity] >= 2 ? 'consensus' : 'contested'
             }
-            const effLevel = Math.min(3, Math.max(1, specLevel + (up - down) / s))
-            const roundedLevel = Math.round(effLevel)
-            severity = LEVEL_TO_SEV[roundedLevel]
-            const blocks = roundedLevel >= 2 && confidence >= 70
-            if (blocks) tier = 'consensus'
-            else if (majorityNotReal(tally)) tier = 'dismissed'
-            else tier = 'contested'
         }
-        tiers[tier].push({ ...rest, severity, confidence, blocks_goal: blocksGoal(tally) })
+        if (tier === 'dismissed') {
+            tiers[tier].push({
+                ...rest, severity, tractability, confidence_flag,
+                confidence: FLAG_TO_NUM[confidence_flag],
+                blocks_goal: blocksGoal(tally),
+                posting: 'drop',
+                recommendation: null,
+                ...(judgement_call ? { judgement_call: true } : {}),
+            })
+        } else {
+            const blocking = tier === 'consensus'
+            const route = routeFinding({ severity, tractability, judgement_call, blocking })
+            const destTier = route.tierOverride ?? tier
+            tiers[destTier].push({
+                ...rest, severity, tractability, confidence_flag,
+                confidence: FLAG_TO_NUM[confidence_flag],
+                blocks_goal: blocksGoal(tally),
+                posting: route.posting,
+                recommendation: route.recommendation,
+                ...(route.annotation ? { annotation: route.annotation } : {}),
+                ...(route.dropped ? { dropped: true } : {}),
+                ...(judgement_call ? { judgement_call: true } : {}),
+            })
+        }
     }
     for (const c of raisedClusters) {
-        let tier, confidence
-        if (c.corroboration >= Math.ceil((2 * s) / 3)) { tier = 'consensus'; confidence = 80 }
-        else if (c.corroboration > 1) { tier = 'contested'; confidence = 60 }
-        else { tier = 'contested'; confidence = 40 }
-        tiers[tier].push({ ...c.rep, domain: 'panel', confidence })
+        let baseTier, confidence_flag
+        if (c.corroboration >= Math.ceil((2 * s) / 3)) { baseTier = 'consensus'; confidence_flag = 'high' }
+        else if (c.corroboration > 1) { baseTier = 'contested'; confidence_flag = 'medium' }
+        else { baseTier = 'contested'; confidence_flag = 'low' }
+        const severity = c.rep.severity
+        const tractability = c.rep.tractability ?? 'Bounded'
+        const blocking = baseTier === 'consensus' && (severity === 'Critical' || severity === 'Important')
+        const route = routeFinding({ severity, tractability, judgement_call: false, blocking })
+        const destTier = route.tierOverride ?? baseTier
+        const { finding_id, ...rep } = c.rep
+        tiers[destTier].push({
+            ...rep, domain: 'panel', confidence_flag,
+            confidence: FLAG_TO_NUM[confidence_flag],
+            posting: route.posting,
+            recommendation: route.recommendation,
+            ...(route.annotation ? { annotation: route.annotation } : {}),
+            ...(route.dropped ? { dropped: true } : {}),
+        })
     }
     return tiers
 }
 
-// Apply the four verdict-rubric rows deterministically, first match wins. Row 1's
-// goal-achievement judgement scans consensus ∪ contested for blocks_goal (a real-majority
-// Suggestion still blocks if the panel says so; dismissed findings are false positives and
-// must not fire). Rows 2/3 scan consensus only. hasGoal gates row 1.
+// Verdict rubric, first match wins. Row 1 (goal) scans consensus ∪ contested for blocks_goal
+// (hasGoal-gated). Rows 2/3 scan consensus only. Row 3 has NO confidence gate: a majority
+// Important (which is the only way a non-static Important reaches consensus) blocks — a
+// 2/1 majority still blocks, because difficulty/doubt must never excuse a real defect.
 function applyRubric(tiers, hasGoal) {
     const consensus = tiers.consensus ?? []
     const contested = tiers.contested ?? []
@@ -735,8 +835,8 @@ function applyRubric(tiers, hasGoal) {
     if (consensus.some(f => f.severity === 'Critical')) {
         return { verdict: 'REQUEST_CHANGES', rubricRowApplied: 2, rubricReason: 'consensus Critical' }
     }
-    if (consensus.some(f => f.severity === 'Important' && (f.confidence ?? 0) >= 70)) {
-        return { verdict: 'REQUEST_CHANGES', rubricRowApplied: 3, rubricReason: 'consensus Important >= 70' }
+    if (consensus.some(f => f.severity === 'Important')) {
+        return { verdict: 'REQUEST_CHANGES', rubricRowApplied: 3, rubricReason: 'consensus Important (majority)' }
     }
     return { verdict: 'APPROVE', rubricRowApplied: 4, rubricReason: 'no blocking findings' }
 }
@@ -803,7 +903,7 @@ async function panelWrite(panelists, flat, phaseLog) {
         schema: WRITER_SCHEMA,
     })
     const bodyText = (w && w.bodyText) ? w.bodyText : '(panel writer produced no prose)'
-    const envelope = { verdict, rubricRowApplied, rubricReason, tiers, bodyText }
+    const envelope = { verdict, rubricRowApplied, rubricReason, tiers, bodyText, panel: true }
     return finalizeBundle(envelope, reviewMode, phaseLog)
 }
 
@@ -811,17 +911,19 @@ async function panelWrite(panelists, flat, phaseLog) {
 // Pure string-operation helpers (no prose judgement parsing).
 // ---------------------------------------------------------------------------
 
-// Posted-set membership — the existing verdict-driven filter, extracted as a
-// named predicate so body + comments share one rule. REQUEST_CHANGES posts
-// everything; APPROVE posts confidence >= POST_THRESHOLD (75).
+// Posted-set membership. Panel findings carry an explicit `posting` field; respect it
+// directly (inline → posted, body/drop → not). Classic findings use the verdict-driven
+// rule: REQUEST_CHANGES posts everything; APPROVE posts confidence >= POST_THRESHOLD (75).
 function isPosted(finding, verdict) {
+    if (finding.posting) return finding.posting === 'inline'   // panel: explicit routing
     if (verdict === 'REQUEST_CHANGES') return true
     return (finding.confidence ?? 0) >= POST_THRESHOLD
 }
 
 // verdict_relevant — a log annotation: true iff this finding is what the rubric
 // acted on to produce the verdict. APPROVE drives nothing. Under
-// REQUEST_CHANGES: consensus Critical (any confidence) or Important >= 70, plus
+// REQUEST_CHANGES: consensus Critical or Important (any confidence — a consensus
+// Important is a severity majority and always blocks; no numeric gate), plus
 // any finding whose positional [#N] token appears in rubricReason (covers the
 // synthesiser goal-block). consensusIndexToken is meaningful ONLY for the consensus
 // tier. rubricRowApplied gates the panel goal-block: panel row 1 sets rubricReason to
@@ -835,7 +937,12 @@ function isVerdictRelevant(finding, tier, verdict, rubricReason, consensusIndexT
     if (rubricRowApplied === 1 && (tier === 'consensus' || tier === 'contested') && finding.blocks_goal === true) return true
     if (tier === 'consensus') {
         if (finding.severity === 'Critical') return true
-        if (finding.severity === 'Important' && (finding.confidence ?? 0) >= 70) return true
+        if (finding.severity === 'Important') {
+            // Panel findings carry confidence_flag (majority semantics — always blocks).
+            // Classic findings use the numeric gate from rubric row 3 (>=70 required).
+            if (finding.confidence_flag != null) return true
+            if ((finding.confidence ?? 0) >= 70) return true
+        }
         if (consensusIndexToken && rubricReason && rubricReason.includes(`[#${consensusIndexToken}]`)) return true
     }
     return false
@@ -843,7 +950,11 @@ function isVerdictRelevant(finding, tier, verdict, rubricReason, consensusIndexT
 
 // Render one finding into a GitHub inline-comment body.
 function renderCommentBody(f) {
-    let s = `**${f.severity}** (confidence ${f.confidence})\n\n${f.description}`
+    const conf = f.confidence_flag ? `confidence ${f.confidence_flag}` : `confidence ${f.confidence}`
+    let s = `**${f.severity}** (${conf})`
+    if (f.recommendation) s += ` — ${f.recommendation === 'fix-now' ? 'fix in this PR' : 'raise as a follow-up'}`
+    s += `\n\n${f.description}`
+    if (f.annotation) s += `\n\n_${f.annotation}_`
     if (f.suggested_fix) s += `\n\n**Suggested fix:** ${f.suggested_fix}`
     if (f.reference) s += `\n\n${f.reference}`
     return s
@@ -934,10 +1045,15 @@ function buildBody(envelope, postedSet, suppressedCount) {
     const parts = [headline]
     if (assessment) parts.push(assessment)
     if (index) parts.push(`### Findings\n\n${index}`)
-    // Sub-75 disclosure (spec §4): an APPROVE that suppressed findings must not look
-    // cleaner than the run was. Disclosure only — the findings are still not posted inline.
+    // Suppressed-count disclosure (spec §4): an APPROVE that held findings back must not
+    // look cleaner than the run was. Disclosure only — the findings are still not posted
+    // inline. Classic: sub-threshold (confidence-suppressed) findings. Panel: tractability-
+    // dropped open-ended suggestions pruned by routing, not confidence-suppressed.
     if (envelope.verdict === 'APPROVE' && suppressedCount > 0) {
-        parts.push(`${suppressedCount} finding(s) below the posting threshold — see synthesiser report.`)
+        const msg = envelope.panel
+            ? `${suppressedCount} finding(s) pruned (open-ended suggestions not surfaced).`
+            : `${suppressedCount} finding(s) below the posting threshold — see synthesiser report.`
+        parts.push(msg)
     }
     if (freshness) parts.push(freshness)
     return parts.join('\n\n')
@@ -985,6 +1101,13 @@ function buildLogPayload(envelope, phaseLog) {
         domain: f.domain || tier,
         severity: f.severity,
         confidence: f.confidence ?? 0,
+        confidence_flag: f.confidence_flag ?? null,
+        tractability: f.tractability ?? null,
+        judgement_call: f.judgement_call ?? false,
+        recommendation: f.recommendation ?? null,
+        posting: f.posting ?? null,
+        dropped: f.dropped ?? false,
+        annotation: f.annotation ?? null,
         file: f.file || '',
         line: f.line ?? 0,
         description: f.description,

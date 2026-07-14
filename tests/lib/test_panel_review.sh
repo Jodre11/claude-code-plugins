@@ -505,3 +505,47 @@ test_panel_schema_has_tractability() {
     ' 2>&1)
     assert_equals "OK" "$result" "PANEL_SCHEMA votes + raised carry the tractability enum"
 }
+
+# Finding #1 regression: a panel APPROVE with a dropped open-ended Suggestion must disclose
+# the prune count in bodyText. The dismissed tier carries the dropped finding but was NOT
+# counted toward suppressedCount — the disclosure line was dead code.
+test_panel_dropped_openended_approve_discloses_prune() {
+    local specs pans out
+    # 3/3 unanimous real Suggestion + Open-ended → routeFinding drops it → dismissed tier,
+    # dropped:true. All 3 vote is_real:true so majority-not-real does NOT fire; the finding
+    # lands as consensus Suggestion, then routeFinding routes it to dismissed (Open-ended drop).
+    specs='{"style":[{"file":"a.cs","line":3,"severity":"Suggestion","confidence":80,"description":"open refactor","suggested_fix":"redesign everything"}]}'
+    pans='[{"votes":[{"finding_id":0,"is_real":true,"severity":"Suggestion","tractability":"Open-ended","blocks_goal":false,"rationale":"r"}],"raised":[]},{"votes":[{"finding_id":0,"is_real":true,"severity":"Suggestion","tractability":"Open-ended","blocks_goal":false,"rationale":"r"}],"raised":[]},{"votes":[{"finding_id":0,"is_real":true,"severity":"Suggestion","tractability":"Open-ended","blocks_goal":false,"rationale":"r"}],"raised":[]}]'
+    out=$(_pan_run_core "$(_pan_args 3)" "$specs" "$pans")
+    if ! echo "$out" | jq -e . >/dev/null 2>&1; then
+        fail "panel dropped-openended-approve: valid JSON bundle" "probe: ${out:0:200}"
+        return
+    fi
+    assert_equals "APPROVE" "$(echo "$out" | jq -r '.verdict')" "open-ended Suggestion → dropped → APPROVE"
+    assert_equals "0" "$(echo "$out" | jq '.comments | length')" "dropped finding is not posted as comment"
+    assert_equals "true" "$(echo "$out" | jq -r '.log.findings[0].dropped')" "finding marked dropped in log"
+    assert_matches "pruned" "$(echo "$out" | jq -r '.bodyText')" "APPROVE with dropped finding discloses prune count in bodyText"
+}
+
+# Finding #2 regression: classic path must keep the >=70 gate on consensus Important for
+# verdict_relevant. A sub-70 consensus Important alongside a Critical (which drives RC via
+# row 2) must NOT be flagged verdict_relevant on the classic path.
+test_classic_sub70_important_not_verdict_relevant() {
+    local args specs synth_env out
+    local sha40="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    # Classic path: no orchestrationMode key.
+    args="{\"agentPrompt\":\"x\",\"flags\":{},\"route\":\"full\",\"selfReReview\":false,\"reviewMode\":\"pr\",\"base\":\"main\",\"headSha\":\"${sha40}\",\"emptyTreeMode\":false,\"pathScope\":\"\",\"tempDir\":\"/tmp/claude-test/x\",\"intentLedger\":\"\"}"
+    specs='{"correctness":[]}'
+    # Synth envelope: consensus Critical (drives RC row 2) + consensus Important confidence 50
+    # (sub-70, does not independently drive row 3). No confidence_flag on classic findings.
+    synth_env='{"verdict":"REQUEST_CHANGES","rubricRowApplied":2,"rubricReason":"Critical finding present","tiers":{"consensus":[{"file":"a.cs","line":1,"severity":"Critical","confidence":90,"description":"critical bug","suggested_fix":"fix it"},{"file":"b.cs","line":5,"severity":"Important","confidence":50,"description":"marginal issue","suggested_fix":"maybe fix"}],"synthesiser":[],"contested":[],"dismissed":[]},"bodyText":"## Synthesiser Assessment\n> critical issue\n"}'
+    out=$(_pan_run_core "$args" "$specs" "[]" "" "$synth_env")
+    if ! echo "$out" | jq -e . >/dev/null 2>&1; then
+        fail "classic sub-70 Important verdict_relevant: valid JSON bundle" "probe: ${out:0:200}"
+        return
+    fi
+    assert_equals "REQUEST_CHANGES" "$(echo "$out" | jq -r '.verdict')" "classic RC driven by Critical"
+    # The Critical (confidence 90 ≥ 70) is verdict_relevant. The Important (confidence 50 < 70) is NOT.
+    assert_equals "false" "$(echo "$out" | jq -r '[.log.findings[] | select(.severity=="Important")][0].verdict_relevant')" "classic sub-70 Important must NOT be verdict_relevant"
+    assert_equals "true" "$(echo "$out" | jq -r '[.log.findings[] | select(.severity=="Critical")][0].verdict_relevant')" "classic Critical (>=70) IS verdict_relevant"
+}

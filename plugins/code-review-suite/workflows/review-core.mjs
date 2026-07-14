@@ -527,7 +527,12 @@ function finalizeBundle(envelope, reviewMode, phaseLog) {
     const bodySet = envelope.panel
         ? candidates.filter(f => f.posting === 'inline' || f.posting === 'body')
         : commentSet
-    const suppressedCount = candidates.length - bodySet.length
+    // Panel: open-ended Suggestions are routed to the dismissed tier (dropped:true) and never
+    // enter `candidates`. Count them separately so the APPROVE disclosure line can fire.
+    const droppedCount = envelope.panel
+        ? (envelope.tiers.dismissed ?? []).filter(f => f.dropped).length
+        : 0
+    const suppressedCount = (candidates.length - bodySet.length) + droppedCount
 
     const comments = renderComments(commentSet)
     const bodyText = buildBody(envelope, bodySet, suppressedCount)
@@ -932,7 +937,12 @@ function isVerdictRelevant(finding, tier, verdict, rubricReason, consensusIndexT
     if (rubricRowApplied === 1 && (tier === 'consensus' || tier === 'contested') && finding.blocks_goal === true) return true
     if (tier === 'consensus') {
         if (finding.severity === 'Critical') return true
-        if (finding.severity === 'Important') return true
+        if (finding.severity === 'Important') {
+            // Panel findings carry confidence_flag (majority semantics — always blocks).
+            // Classic findings use the numeric gate from rubric row 3 (>=70 required).
+            if (finding.confidence_flag != null) return true
+            if ((finding.confidence ?? 0) >= 70) return true
+        }
         if (consensusIndexToken && rubricReason && rubricReason.includes(`[#${consensusIndexToken}]`)) return true
     }
     return false

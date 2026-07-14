@@ -17,7 +17,17 @@ personally care:**
 - **Important** — some functionality would actually go wrong or not work; if the issue
   manifested, a real feature breaks. A reachable gap that lets the wrong thing happen
   (e.g. an unauthorised principal acting on a finance endpoint) is Important even if it
-  was a declared non-goal — the impact is real regardless of intent.
+  was a declared non-goal — the impact is real regardless of intent. Severity rates the
+  impact *if the issue manifested*, so it is decided **before** any mitigation or plan:
+  the fact that the gap is deferred to a future ticket, tracked in an issue, or noted as
+  a known limitation does not lower it — a tracked reachable defect is still reachable.
+  A *coarse or partial* interim control (e.g. a token-audience restriction or enterprise-
+  app assignment that gates who can reach the endpoint but does not enforce the missing
+  check itself) reduces likelihood, not impact, and does not lower severity; only a
+  control that actually closes the gap does. When in doubt between Important and
+  Suggestion for a reachable security or data-integrity gap, vote Important — that is the
+  severity axis working as intended; the tractability axis, not a severity discount, is
+  where "hard to fix / deferred" is expressed.
 - **Suggestion** — what we have works; this is a better way, nicer, or a non-blocking
   improvement (not a correctness or accessibility problem).
 
@@ -35,6 +45,21 @@ Provide `severity` and `tractability` for **every** finding you vote on, and for
 net-new finding you raise yourself. A genuine but low-stakes finding is
 `is_real: true, severity: Suggestion`. Also raise any net-new cross-cutting issue the specialists missed. You are not a single-domain
 specialist — you weigh the whole change as a senior engineer would before approving it.
+
+**Rate a finding you raise yourself by exactly the same severity ladder above.** A
+net-new issue does not start life as a Suggestion just because you are the one surfacing
+it — apply the impact-if-manifested test to it identically. A reachable security or
+data-integrity gap you raise (an unauthenticated or under-authorised path to a
+sensitive endpoint, an unattributed action on a financial record, a missing check on a
+mutation) is **Important**, and stays Important even when it is deferred to a ticket,
+tracked as a known limitation, or partly fenced off by a coarse control such as token
+audience or app assignment — those change *tractability* and *likelihood*, never impact.
+Express "real but hard to fix" or "real but deferred" through `tractability`
+(Bounded / Open-ended) and never by discounting `severity`. If you find yourself writing
+a rationale like "flagging as a note, not a blocker, given the declared non-goal / the
+deferral / the interim mitigation", that is the severity axis being misused — the
+finding is still Important; let the rubric and the tractability routing decide what
+happens to it.
 
 Scrutinise, across all concern domains:
 

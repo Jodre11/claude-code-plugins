@@ -876,6 +876,20 @@ async function panelVote(flat, panelBrief, ranDomains, phaseLog) {
 // Stage 3: deterministic writer. Below quorum → reuse finalizeBundle's Category-C
 // guard (no envelope). Otherwise tally → tiers → rubric → a sonnet prose turn →
 // the same sealed bundle finalizeBundle produces for the classic path.
+// Project the tier map to the writer's view: drop the numeric `confidence` shim from
+// every finding, keeping `confidence_flag`. The original `tiers` is untouched (the log
+// payload still reads the number); only the writer prompt consumes this projection.
+function stripNumericConfidence(tiers) {
+    const out = {}
+    for (const [tier, arr] of Object.entries(tiers)) {
+        out[tier] = (arr ?? []).map(f => {
+            const { confidence, ...rest } = f
+            return rest
+        })
+    }
+    return out
+}
+
 async function panelWrite(panelists, flat, phaseLog) {
     const n = panelSize ?? 3
     const s = panelists.length
@@ -888,13 +902,21 @@ async function panelWrite(panelists, flat, phaseLog) {
     const tiers = mapSpreadToTierConfidence(voteTallies, raisedClusters, s)
     const hasGoal = /(^|\n)\s*goal:\s*\S/.test(intentLedger || '')
     const { verdict, rubricRowApplied, rubricReason } = applyRubric(tiers, hasGoal)
+    // The writer sees confidence ONLY as the discrete flag (high/medium/low). The numeric
+    // `confidence` (FLAG_TO_NUM shim) stays in `tiers` for the durable log + differential.py,
+    // but is stripped from the writer's view so it cannot be echoed back as a false-precision
+    // percentage ("90 %") in the prose. See Design Decision 1: confidence is a discrete flag.
+    const writerTiers = stripNumericConfidence(tiers)
     const writerPrompt =
         `Mode: panel-write\n\n` +
         `Write the review report body (markdown) for this deterministically-tallied panel result. ` +
         `Include a '## Synthesiser Assessment' heading with your narrative. Do NOT change the verdict ` +
-        `or tiers — they are fixed.\n\n` +
+        `or tiers — they are fixed. Confidence is a discrete flag (high/medium/low); refer to it by ` +
+        `that word and never as a number or percentage. Do NOT assert exact finding counts (e.g. ` +
+        `"twelve suggestions") — the deterministic index carries the authoritative tally; describe ` +
+        `groups qualitatively ("several suggestions", "the static-analysis findings") instead.\n\n` +
         `Verdict: ${verdict} (rubric row ${rubricRowApplied}: ${rubricReason})\n\n` +
-        `Tiers (JSON):\n${JSON.stringify(tiers)}\n\n` +
+        `Tiers (JSON):\n${JSON.stringify(writerTiers)}\n\n` +
         `Use ${tempDir} for temporary files.`
     const w = await agent(writerPrompt, {
         label: 'panel-writer',
@@ -965,9 +987,14 @@ function sideFor(line) {
     return line <= 0 ? 'LEFT' : 'RIGHT'
 }
 
-// True when a finding has no file at all (the body must carry its full detail).
+// True when a finding has no usable file anchor (the body must carry its full detail).
+// Besides a missing/empty file, the alignment reviewer is instructed to emit the literal
+// sentinel `<n/a>` for body-improvement findings (see agents/alignment-reviewer.md); treat
+// that (and any whitespace-only value) as fileless so it never posts as an inline/file
+// comment on a nonexistent path.
 function isFileless(f) {
-    return !f.file
+    const file = (f.file ?? '').trim()
+    return !file || file === '<n/a>'
 }
 
 // Anchor ladder (spec "Anchor Ladder"): route each posted finding to the most
@@ -977,7 +1004,7 @@ function isFileless(f) {
 function renderComments(postedFindings) {
     const comments = []
     for (const f of postedFindings) {
-        if (!f.file) continue                                  // fileless → body only
+        if (isFileless(f)) continue                            // fileless (incl. <n/a>) → body only
         if (f.line > 0) {
             comments.push({ path: f.file, line: f.line, side: sideFor(f.line), body: renderCommentBody(f) })
         } else {
@@ -1012,19 +1039,40 @@ function unquote(text) {
 }
 
 // One compact index line per posted, anchorable finding. Fileless findings are
-// rendered with full detail (no inline home to point to).
+// rendered with full detail (no inline home to point to). The pointer reflects where
+// the finding actually surfaces: panel findings carry an explicit `posting` (inline vs
+// body/follow-up) — a body-routed finding has a positive line but does NOT post inline,
+// so the pointer must read `posting`, never infer it from the line number. Classic
+// findings have no `posting` and are all posted inline (bodySet === commentSet), so they
+// fall back to the line-based anchor (positive line → inline, else file-level comment).
+function indexPointer(f) {
+    if (f.posting === 'body') return '↳ in body (follow-up)'
+    if (f.posting === 'inline') return '↳ inline'
+    return f.line > 0 ? '↳ inline' : '↳ file comment'
+}
 function renderFindingIndex(postedSet) {
     const lines = []
     for (const f of postedSet) {
-        if (isFileless(f)) {
-            lines.push(`- **[${f.severity}]** ${f.description}\n\n  **Suggested fix:** ${f.suggested_fix}`)
-        } else {
-            const pointer = f.line > 0 ? '↳ inline' : '↳ file comment'
-            const loc = f.line > 0 ? `${f.file}:${f.line}` : f.file
-            lines.push(`- **[${f.severity}]** ${shortTitle(f.description)} — \`${loc}\` ${pointer}`)
-        }
+        if (isFileless(f)) continue                            // fileless → the Body notes section
+        const loc = f.line > 0 ? `${f.file}:${f.line}` : f.file
+        lines.push(`- **[${f.severity}]** ${shortTitle(f.description)} — \`${loc}\` ${indexPointer(f)}`)
     }
     return lines.join('\n')
+}
+
+// Fileless findings (body-improvement notes with no code anchor, e.g. the alignment
+// reviewer's `<n/a>` PR-body suggestions) have no inline thread to point to, so their
+// full detail lives in a dedicated section below the compact index rather than bloating
+// each index line. Returns '' when there are none.
+function renderBodyNotes(postedSet) {
+    const notes = postedSet.filter(isFileless)
+    if (!notes.length) return ''
+    const lines = notes.map(f => {
+        let s = `- **[${f.severity}]** ${f.description}`
+        if (f.suggested_fix) s += `\n\n  **Suggested fix:** ${f.suggested_fix}`
+        return s
+    })
+    return lines.join('\n\n')
 }
 
 // First sentence / first 80 chars of the description, for the index summary.
@@ -1040,11 +1088,13 @@ function buildBody(envelope, postedSet, suppressedCount) {
 
     const assessment = unquote(extractSection(envelope.bodyText, 'Synthesiser Assessment'))
     const index = renderFindingIndex(postedSet)
+    const bodyNotes = renderBodyNotes(postedSet)
     const freshness = buildFreshnessSection(envelope.bodyText)
 
     const parts = [headline]
     if (assessment) parts.push(assessment)
     if (index) parts.push(`### Findings\n\n${index}`)
+    if (bodyNotes) parts.push(`### Body notes\n\n${bodyNotes}`)
     // Suppressed-count disclosure (spec §4): an APPROVE that held findings back must not
     // look cleaner than the run was. Disclosure only — the findings are still not posted
     // inline. Classic: sub-threshold (confidence-suppressed) findings. Panel: tractability-

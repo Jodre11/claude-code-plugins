@@ -57,6 +57,40 @@ _pan_run_core() {
     ' 2>&1
 }
 
+# Capture the exact prompt string the panel-writer agent receives. Same eval mechanism
+# as _pan_run_core, but the panel-writer stub prints the prompt to stdout (prefixed with
+# a sentinel) and exits — so a test can assert what the writer is/ isn't shown. $1 args,
+# $2 specialists-map, $3 panelists.
+_pan_capture_writer_prompt() {
+    local wf
+    wf="$(_pan_cr_dir)/workflows/review-core.mjs"
+    WF="$wf" PAN_ARGS="$1" PAN_SPECIALISTS="$2" PAN_PANELISTS="$3" node -e '
+        const fs = require("fs");
+        const src = fs.readFileSync(process.env.WF, "utf8")
+            .replace(/^export\s+const\s+meta/m, "const meta");
+        const specialists = JSON.parse(process.env.PAN_SPECIALISTS);
+        const panelists = JSON.parse(process.env.PAN_PANELISTS);
+        const agent = async (prompt, opts) => {
+            const label = (opts && opts.label) || "";
+            if (label === "panel-writer") { process.stdout.write("WRITER_PROMPT<<<" + prompt); process.exit(0); }
+            if (label.startsWith("panel-")) {
+                const i = parseInt(label.slice("panel-".length), 10);
+                return panelists[i] === undefined ? null : panelists[i];
+            }
+            if (label.startsWith("cross-")) return { status: "ok", opinionsMarkdown: "", escalations: [] };
+            if (label === "review-synthesiser") return null;
+            return { status: "ok", findings: specialists[label] || [] };
+        };
+        const parallel = (thunks) => Promise.all(thunks.map(t => t()));
+        const phase = () => {}; const log = () => {}; const pipeline = async () => []; const workflow = async () => null;
+        (async () => {
+            const fn = new Function("agent","parallel","pipeline","phase","log","args","workflow",
+                "return (async()=>{" + src + "\n})()");
+            await fn(agent, parallel, pipeline, phase, log, process.env.PAN_ARGS, workflow);
+        })().catch(e => { process.stdout.write("THREW: " + e.message); process.exit(1); });
+    ' 2>&1
+}
+
 # args for a PR-mode panel run of size N (default 3). No intent ledger (goal absent).
 _pan_args() {
     local n="${1:-3}"
@@ -112,6 +146,52 @@ test_panel_split_majority_real_suggestion_approves() {
     out=$(_pan_run_core "$(_pan_args 3)" "$specs" "$pans")
     assert_equals "APPROVE" "$(echo "$out" | jq -r '.verdict')" "Suggestion non-blocking → contested → APPROVE"
     assert_equals "0" "$(echo "$out" | jq '.comments | length')" "contested Suggestion not posted"
+}
+
+# The findings-index pointer must reflect real posting, not infer it from the line number.
+# A Suggestion+Bounded finding routes posting:body (follow-up) — it has a positive line but
+# does NOT post inline, so the index must say "in body", not "inline". Guards the pointer
+# reading f.line>0 instead of f.posting.
+test_panel_index_pointer_reflects_body_routing() {
+    local specs pans out index
+    # Two real Suggestions: #0 Mechanical (→ inline), #1 Bounded (→ body/follow-up).
+    specs='{"style":[{"file":"a.cs","line":10,"severity":"Suggestion","confidence":50,"description":"mechanical nit","suggested_fix":"rename"},{"file":"b.cs","line":20,"severity":"Suggestion","confidence":50,"description":"bounded refactor","suggested_fix":"restructure"}]}'
+    pans='[{"votes":[{"finding_id":0,"is_real":true,"severity":"Suggestion","tractability":"Mechanical","blocks_goal":false,"rationale":"r"},{"finding_id":1,"is_real":true,"severity":"Suggestion","tractability":"Bounded","blocks_goal":false,"rationale":"r"}],"raised":[]},{"votes":[{"finding_id":0,"is_real":true,"severity":"Suggestion","tractability":"Mechanical","blocks_goal":false,"rationale":"r"},{"finding_id":1,"is_real":true,"severity":"Suggestion","tractability":"Bounded","blocks_goal":false,"rationale":"r"}],"raised":[]},{"votes":[{"finding_id":0,"is_real":true,"severity":"Suggestion","tractability":"Mechanical","blocks_goal":false,"rationale":"r"},{"finding_id":1,"is_real":true,"severity":"Suggestion","tractability":"Bounded","blocks_goal":false,"rationale":"r"}],"raised":[]}]'
+    out=$(_pan_run_core "$(_pan_args 3)" "$specs" "$pans")
+    index=$(echo "$out" | jq -r '.bodyText')
+    assert_matches "b.cs:20\` ↳ in body" "$index" "Bounded suggestion indexed as in-body follow-up, not inline"
+    assert_matches "a.cs:10\` ↳ inline" "$index" "Mechanical suggestion indexed as inline"
+}
+
+# A body-improvement finding carries the literal `<n/a>` file sentinel (alignment-reviewer
+# convention). It must NOT post as an inline/file comment on a nonexistent path — it renders
+# body-only. Guards the sentinel-vs-falsy mismatch in isFileless/renderComments.
+test_panel_na_sentinel_finding_is_body_only() {
+    local specs pans out
+    specs='{"alignment":[{"file":"<n/a>","line":0,"severity":"Important","confidence":80,"description":"PR body omits the deferred lifecycle-rule dependency","suggested_fix":"note it in the PR body"}]}'
+    pans='[{"votes":[{"finding_id":0,"is_real":true,"severity":"Important","tractability":"Bounded","blocks_goal":false,"rationale":"r"}],"raised":[]},{"votes":[{"finding_id":0,"is_real":true,"severity":"Important","tractability":"Bounded","blocks_goal":false,"rationale":"r"}],"raised":[]},{"votes":[{"finding_id":0,"is_real":true,"severity":"Important","tractability":"Bounded","blocks_goal":false,"rationale":"r"}],"raised":[]}]'
+    out=$(_pan_run_core "$(_pan_args 3)" "$specs" "$pans")
+    assert_equals "0" "$(echo "$out" | jq '.comments | length')" "<n/a> finding posts no inline/file comment"
+    assert_not_matches "n/a" "$(echo "$out" | jq -r '.comments')" "no comment anchored to the <n/a> sentinel"
+    assert_matches "### Body notes" "$(echo "$out" | jq -r '.bodyText')" "<n/a> finding rendered in the Body notes section"
+    assert_matches "PR body omits" "$(echo "$out" | jq -r '.bodyText')" "<n/a> finding full detail present in body"
+}
+
+# The writer must see confidence ONLY as the discrete flag, never the FLAG_TO_NUM shim
+# number — else it echoes it back as a false-precision "90 %" in the prose. Assert the
+# tiers JSON in the writer prompt carries confidence_flag but no numeric "confidence":,
+# and that the prompt instructs flag-word-not-number. Guards the deferred presentation fix.
+test_panel_writer_prompt_strips_numeric_confidence() {
+    local specs pans prompt tiersblock
+    specs='{"correctness":[{"file":"a.cs","line":10,"severity":"Important","confidence":100,"description":"the bug","suggested_fix":"fix"}]}'
+    pans='[{"votes":[{"finding_id":0,"is_real":true,"severity":"Important","tractability":"Bounded","blocks_goal":false,"rationale":"r"}],"raised":[]},{"votes":[{"finding_id":0,"is_real":true,"severity":"Important","tractability":"Bounded","blocks_goal":false,"rationale":"r"}],"raised":[]},{"votes":[{"finding_id":0,"is_real":true,"severity":"Important","tractability":"Bounded","blocks_goal":false,"rationale":"r"}],"raised":[]}]'
+    prompt=$(_pan_capture_writer_prompt "$(_pan_args 3)" "$specs" "$pans")
+    # Isolate the Tiers JSON block (everything after the "Tiers (JSON):" marker).
+    tiersblock="${prompt#*Tiers (JSON):}"
+    assert_matches "confidence_flag" "$tiersblock" "writer tiers keep the confidence_flag"
+    assert_not_matches '"confidence":' "$tiersblock" "writer tiers drop the numeric confidence shim"
+    assert_matches "never as a number or percentage" "$prompt" "writer prompt forbids numeric/percentage confidence"
+    assert_matches "Do NOT assert exact finding counts" "$prompt" "writer prompt forbids exact finding counts"
 }
 
 # Mixed severity with NO majority (1 Important / 1 Suggestion real, 1 not-real):

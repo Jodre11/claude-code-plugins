@@ -795,20 +795,23 @@ function mapSpreadToTierConfidence(voteTallies, raisedClusters, s) {
         }
     }
     for (const c of raisedClusters) {
-        let tier, confidence_flag, posting, recommendation
-        if (c.corroboration >= Math.ceil((2 * s) / 3)) {
-            tier = 'consensus'; confidence_flag = 'high'
-            posting = 'inline'; recommendation = 'fix-now'
-        } else if (c.corroboration > 1) {
-            tier = 'contested'; confidence_flag = 'medium'
-            posting = 'body'; recommendation = 'follow-up'
-        } else {
-            tier = 'contested'; confidence_flag = 'low'
-            posting = 'body'; recommendation = 'follow-up'
-        }
-        tiers[tier].push({
-            ...c.rep, domain: 'panel', confidence_flag, confidence: FLAG_TO_NUM[confidence_flag],
-            posting, recommendation,
+        let baseTier, confidence_flag
+        if (c.corroboration >= Math.ceil((2 * s) / 3)) { baseTier = 'consensus'; confidence_flag = 'high' }
+        else if (c.corroboration > 1) { baseTier = 'contested'; confidence_flag = 'medium' }
+        else { baseTier = 'contested'; confidence_flag = 'low' }
+        const severity = c.rep.severity
+        const tractability = c.rep.tractability ?? 'Bounded'
+        const blocking = baseTier === 'consensus' && (severity === 'Critical' || severity === 'Important')
+        const route = routeFinding({ severity, tractability, judgement_call: false, blocking })
+        const destTier = route.tierOverride ?? baseTier
+        const { finding_id, ...rep } = c.rep
+        tiers[destTier].push({
+            ...rep, domain: 'panel', confidence_flag,
+            confidence: FLAG_TO_NUM[confidence_flag],
+            posting: route.posting,
+            recommendation: route.recommendation,
+            ...(route.annotation ? { annotation: route.annotation } : {}),
+            ...(route.dropped ? { dropped: true } : {}),
         })
     }
     return tiers

@@ -156,7 +156,7 @@ test_panel_two_one_majority_important_blocks() {
 test_panel_raised_majority_is_consensus() {
     local specs pans out
     specs='{"correctness":[]}'
-    pans='[{"votes":[],"raised":[{"file":"n.cs","line":20,"severity":"Important","confidence":40,"description":"missing null check","suggested_fix":"guard"}]},{"votes":[],"raised":[{"file":"n.cs","line":22,"severity":"Important","confidence":90,"description":"missing null check","suggested_fix":"guard"}]},{"votes":[],"raised":[]}]'
+    pans='[{"votes":[],"raised":[{"file":"n.cs","line":20,"severity":"Important","tractability":"Bounded","confidence":40,"description":"missing null check","suggested_fix":"guard"}]},{"votes":[],"raised":[{"file":"n.cs","line":22,"severity":"Important","tractability":"Bounded","confidence":90,"description":"missing null check","suggested_fix":"guard"}]},{"votes":[],"raised":[]}]'
     out=$(_pan_run_core "$(_pan_args 3)" "$specs" "$pans")
     assert_equals "REQUEST_CHANGES" "$(echo "$out" | jq -r '.verdict')" "2-of-3 raised Important → consensus → RC row 3"
     assert_equals "1" "$(echo "$out" | jq '[.log.findings[] | select(.domain=="panel")] | length')" "raised finding stamped domain panel"
@@ -168,7 +168,7 @@ test_panel_raised_majority_is_consensus() {
 test_panel_solo_raise_is_low_contested() {
     local specs pans out
     specs='{"correctness":[]}'
-    pans='[{"votes":[],"raised":[{"file":"s.cs","line":5,"severity":"Important","confidence":88,"description":"solo concern","suggested_fix":"f"}]},{"votes":[],"raised":[]},{"votes":[],"raised":[]}]'
+    pans='[{"votes":[],"raised":[{"file":"s.cs","line":5,"severity":"Important","tractability":"Bounded","confidence":88,"description":"solo concern","suggested_fix":"f"}]},{"votes":[],"raised":[]},{"votes":[],"raised":[]}]'
     out=$(_pan_run_core "$(_pan_args 3)" "$specs" "$pans")
     assert_equals "APPROVE" "$(echo "$out" | jq -r '.verdict')" "solo raise does not drive a verdict"
     assert_equals "low" "$(echo "$out" | jq -r '[.log.findings[] | select(.domain=="panel")][0].confidence_flag')" "solo raise → contested confidence_flag low"
@@ -180,9 +180,29 @@ test_panel_solo_raise_is_low_contested() {
 test_panel_distant_raises_do_not_merge() {
     local specs pans out
     specs='{"correctness":[]}'
-    pans='[{"votes":[],"raised":[{"file":"d.cs","line":5,"severity":"Suggestion","confidence":50,"description":"dup far","suggested_fix":"f"}]},{"votes":[],"raised":[{"file":"d.cs","line":99,"severity":"Suggestion","confidence":50,"description":"dup far","suggested_fix":"f"}]},{"votes":[],"raised":[]}]'
+    pans='[{"votes":[],"raised":[{"file":"d.cs","line":5,"severity":"Suggestion","tractability":"Bounded","confidence":50,"description":"dup far","suggested_fix":"f"}]},{"votes":[],"raised":[{"file":"d.cs","line":99,"severity":"Suggestion","tractability":"Bounded","confidence":50,"description":"dup far","suggested_fix":"f"}]},{"votes":[],"raised":[]}]'
     out=$(_pan_run_core "$(_pan_args 3)" "$specs" "$pans")
     assert_equals "2" "$(echo "$out" | jq '[.log.findings[] | select(.domain=="panel")] | length')" "distant-line raises enter as two separate findings"
+}
+
+# A raised Suggestion + Open-ended is DROPPED even when corroborated by 2 panelists.
+test_panel_raised_suggestion_openended_dropped() {
+    local specs pans out
+    specs='{"correctness":[]}'
+    pans='[{"votes":[],"raised":[{"file":"n.cs","line":20,"severity":"Suggestion","tractability":"Open-ended","confidence":40,"description":"open refactor","suggested_fix":"rethink"}]},{"votes":[],"raised":[{"file":"n.cs","line":22,"severity":"Suggestion","tractability":"Open-ended","confidence":90,"description":"open refactor","suggested_fix":"rethink"}]},{"votes":[],"raised":[]}]'
+    out=$(_pan_run_core "$(_pan_args 3)" "$specs" "$pans")
+    assert_equals "0" "$(echo "$out" | jq '.comments | length')" "raised open-ended suggestion is not posted"
+    assert_equals "true" "$(echo "$out" | jq -r '[.log.findings[] | select(.domain=="panel")][0].dropped')" "raised open-ended suggestion marked dropped"
+}
+
+# A raised Important corroborated by 2 of 3 → consensus → RC, posted inline.
+test_panel_raised_important_blocks() {
+    local specs pans out
+    specs='{"correctness":[]}'
+    pans='[{"votes":[],"raised":[{"file":"n.cs","line":20,"severity":"Important","tractability":"Bounded","confidence":40,"description":"missing null check","suggested_fix":"guard"}]},{"votes":[],"raised":[{"file":"n.cs","line":22,"severity":"Important","tractability":"Bounded","confidence":90,"description":"missing null check","suggested_fix":"guard"}]},{"votes":[],"raised":[]}]'
+    out=$(_pan_run_core "$(_pan_args 3)" "$specs" "$pans")
+    assert_equals "REQUEST_CHANGES" "$(echo "$out" | jq -r '.verdict')" "corroborated raised Important → RC"
+    assert_equals "1" "$(echo "$out" | jq '.comments | length')" "corroborated raised Important posts inline"
 }
 
 # Row 1 fires: goal present + a finding with majority blocks_goal (2 of 3).

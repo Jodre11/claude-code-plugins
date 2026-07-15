@@ -750,16 +750,26 @@ function mapSpreadToTierConfidence(voteTallies, raisedClusters, s) {
         const isStatic = STATIC.has(finding.domain)
         let tier, confidence_flag, severity, tractability, judgement_call = false
 
-        if (isStatic) {
-            severity = finding.severity           // locked
-            confidence_flag = 'high'
-            tractability = 'Mechanical'
-            tier = SEV_TO_LEVEL[severity] >= 2 ? 'consensus' : 'contested'
-        } else if (tally.is_real_false > tally.is_real_true) {
+        if (tally.is_real_false > tally.is_real_true) {
+            // Existence gate — applies to EVERY domain, static included. A finding the
+            // panel majority calls a false positive is dismissed regardless of the
+            // raising specialist: static-trust governs severity calibration, never
+            // whether the issue is real (a static agent can hallucinate a tool result).
             severity = finding.severity
             confidence_flag = 'low'
             tractability = resolveTractability(tally.tractVotes, s).value
             tier = 'dismissed'
+        } else if (isStatic) {
+            // Survived the existence gate: severity stays locked to the tool's call, but
+            // confidence reflects panel agreement on is_real — unanimous-true blocks at
+            // high confidence; minority-true (e.g. 2 real / 1 false) surfaces as a
+            // low-confidence contested finding that never blocks. Tractability is derived
+            // from the real-voters (mostly Mechanical for static, but not hardcoded).
+            severity = finding.severity           // severity locked
+            const unanimousReal = tally.is_real_false === 0
+            confidence_flag = unanimousReal ? 'high' : 'low'
+            tractability = resolveTractability(tally.tractVotes, s).value
+            tier = (unanimousReal && SEV_TO_LEVEL[severity] >= 2) ? 'consensus' : 'contested'
         } else {
             const sevM = majorityOf(tally.sevVotes, s)
             tractability = resolveTractability(tally.tractVotes, s).value

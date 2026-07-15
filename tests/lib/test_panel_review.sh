@@ -439,19 +439,47 @@ test_panel_trackA_nonreal_abstains_from_severity() {
     assert_equals "dismissed" "$(echo "$out" | jq -r '.log.findings[0].tier')" "majority is_real:false → dismissed regardless of their severity field"
 }
 
-# Test E — Static severity is LOCKED and never dismissed.
-# Domain eslint (in STATIC), specialist Important. All 3 vote is_real:false severity=Suggestion.
-# Static locking: severity=Important (locked), confidence_flag=high, tractability=Mechanical → not blocking only if <Important.
-# Important ≥ 2 → consensus even with full dissent — static rules override realness majority.
-test_panel_trackB_static_locked_and_never_dismissed() {
+# Test E — Static severity is LOCKED, but the panel's is_real majority still governs
+# EXISTENCE. A static agent can hallucinate a tool result (observed: jbinspect emitted a
+# confidence-100 "missing global using" Critical the panel unanimously refuted from the
+# diff). Static-trust owns severity calibration, never whether the issue is real.
+# Domain eslint (in STATIC), specialist Important. All 3 vote is_real:false → majority
+# not-real fires FIRST → dismissed → APPROVE. Severity stays locked in the record.
+test_panel_trackB_static_majority_notreal_dismissed() {
     local specs pans out
     specs='{"eslint":[{"file":"a.js","line":2,"severity":"Important","confidence":100,"rule_id":"no-eval","description":"eval used","suggested_fix":"f"}]}'
     pans='[{"votes":[{"finding_id":0,"is_real":false,"severity":"Suggestion","tractability":"Bounded","blocks_goal":false,"rationale":"r"}],"raised":[]},{"votes":[{"finding_id":0,"is_real":false,"severity":"Suggestion","tractability":"Bounded","blocks_goal":false,"rationale":"r"}],"raised":[]},{"votes":[{"finding_id":0,"is_real":false,"severity":"Suggestion","tractability":"Bounded","blocks_goal":false,"rationale":"r"}],"raised":[]}]'
     out=$(_pan_run_core "$(_pan_args_js 3)" "$specs" "$pans")
-    assert_equals "REQUEST_CHANGES" "$(echo "$out" | jq -r '.verdict')" "static Important always blocks regardless of realness votes → RC"
-    assert_equals "consensus" "$(echo "$out" | jq -r '.log.findings[0].tier')" "static Important → consensus, NEVER dismissed"
-    assert_equals "Important" "$(echo "$out" | jq -r '.log.findings[0].severity')" "static severity is locked — panel Suggestion votes ignored"
-    assert_equals "high" "$(echo "$out" | jq -r '.log.findings[0].confidence_flag')" "static confidence_flag always high"
+    assert_equals "APPROVE" "$(echo "$out" | jq -r '.verdict')" "unanimous is_real:false on a static finding → dismissed → APPROVE"
+    assert_equals "dismissed" "$(echo "$out" | jq -r '.log.findings[0].tier')" "static existence gate: majority not-real → dismissed"
+}
+
+# Test E2 — Static minority-real (2 is_real:false / 1 true) surfaces at LOW confidence,
+# contested, non-blocking — NOT consensus. Severity stays locked to the tool's call, but a
+# split on existence means the tool hit is doubtful: show it, let the reader judge, never
+# block on it. is_real_false=2 > is_real_true=1 → dismissed by the existence gate.
+# (2/1 the other way — minority FALSE — is covered by Test E3.)
+test_panel_trackB_static_majority_notreal_2to1_dismissed() {
+    local specs pans out
+    specs='{"eslint":[{"file":"a.js","line":2,"severity":"Critical","confidence":100,"rule_id":"no-eval","description":"eval used","suggested_fix":"f"}]}'
+    pans='[{"votes":[{"finding_id":0,"is_real":false,"severity":"Critical","tractability":"Bounded","blocks_goal":false,"rationale":"r"}],"raised":[]},{"votes":[{"finding_id":0,"is_real":false,"severity":"Critical","tractability":"Bounded","blocks_goal":false,"rationale":"r"}],"raised":[]},{"votes":[{"finding_id":0,"is_real":true,"severity":"Critical","tractability":"Bounded","blocks_goal":false,"rationale":"r"}],"raised":[]}]'
+    out=$(_pan_run_core "$(_pan_args_js 3)" "$specs" "$pans")
+    assert_equals "APPROVE" "$(echo "$out" | jq -r '.verdict')" "static 2/1 majority not-real → dismissed → APPROVE (no false Critical block)"
+    assert_equals "dismissed" "$(echo "$out" | jq -r '.log.findings[0].tier')" "static 2/1 majority not-real → dismissed"
+}
+
+# Test E3 — Static minority-FALSE (2 is_real:true / 1 false): survives the existence gate,
+# but the single dissent means NOT unanimous-real, so it does NOT lock to consensus. Severity
+# stays locked (Important), confidence_flag=low, routed to contested — never blocks.
+test_panel_trackB_static_minority_false_is_low_contested() {
+    local specs pans out
+    specs='{"eslint":[{"file":"a.js","line":2,"severity":"Important","confidence":100,"rule_id":"no-eval","description":"eval used","suggested_fix":"f"}]}'
+    pans='[{"votes":[{"finding_id":0,"is_real":true,"severity":"Important","tractability":"Mechanical","blocks_goal":false,"rationale":"r"}],"raised":[]},{"votes":[{"finding_id":0,"is_real":true,"severity":"Important","tractability":"Mechanical","blocks_goal":false,"rationale":"r"}],"raised":[]},{"votes":[{"finding_id":0,"is_real":false,"severity":"Suggestion","tractability":"Bounded","blocks_goal":false,"rationale":"r"}],"raised":[]}]'
+    out=$(_pan_run_core "$(_pan_args_js 3)" "$specs" "$pans")
+    assert_equals "APPROVE" "$(echo "$out" | jq -r '.verdict')" "static minority-false (2/1 real) does NOT block → APPROVE"
+    assert_equals "contested" "$(echo "$out" | jq -r '.log.findings[0].tier')" "static minority-false → contested, not consensus"
+    assert_equals "Important" "$(echo "$out" | jq -r '.log.findings[0].severity')" "static severity stays locked Important"
+    assert_equals "low" "$(echo "$out" | jq -r '.log.findings[0].confidence_flag')" "static minority-false → low confidence flag"
 }
 
 # Test F — Static blocks when undissented.

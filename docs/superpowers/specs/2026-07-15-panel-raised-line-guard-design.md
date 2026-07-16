@@ -55,7 +55,12 @@ arrive as an `args` value. `skills/review-gh-pr/SKILL.md` Step 2.5 already build
 `args` payload". It is written to `$RESOLVED_TEMP_DIR/changed-lines.txt`.
 
 - Add `changedLinesBlock: $CHANGED_LINES_BLOCK` to the `workflow({scriptPath}, {...})`
-  call in SKILL.md (the args object around line 1082-1094).
+  args object in **all three** markdown call sites — they are byte-identical and must
+  stay in sync:
+  - `skills/review-gh-pr/SKILL.md` (~line 1082-1094),
+  - `includes/review-pipeline.md` (~line 955-967),
+  - `commands/pre-review.md` (~line 956-968) — pre-review builds `$CHANGED_LINES_BLOCK`
+    at its own Step 2.5 and supports panel mode, so its args object needs the key too.
 - Destructure `changedLinesBlock` in review-core's `resolvedArgs` block (~line 189-193).
 - Purely additive. The classic and lightweight paths never read it; only the panel
   path consumes it.
@@ -122,6 +127,20 @@ This lowers the demotion rate so real raised findings keep their precise inline 
 
 ## Testing
 
+**Regression the guard introduces (must be handled, not discovered at run time):**
+The existing raised-finding fixtures in `test_panel_review.sh` build their args via the
+`_pan_args` helper, which emits **no `changedLinesBlock` key**. Once the guard lands,
+`parseChangedLines(undefined)` → `{}` → every raised finding is treated as out-of-scope
+and demoted to the body. That flips exactly one existing assertion —
+`test_panel_raised_important_blocks` (`comments == 1`) — because `n.cs` is no longer in
+any diff. The other raised tests (`..._majority_is_consensus`, `..._solo_raise`,
+`..._openended_dropped`, `..._distant_raises`) assert verdict / log / cluster-count only,
+which the guard never touches, so they stay green. **Fix:** extend `_pan_args` (and any
+goal/js/iac variants used by raised tests) to carry a `changedLinesBlock` covering the
+fixtures' lines — `n.cs: 18-24`, `s.cs: 3-7`, `d.cs: 3-7, 97-101`. This both keeps the
+suite green and exercises the guard's happy path (valid in-diff line → kept inline)
+through the real fixtures.
+
 **Unit (review-core, the existing sandbox-shim harness in `tests/`):**
 
 - `parseChangedLines`:
@@ -155,17 +174,25 @@ handover.
   destructure, `parseChangedLines` helper, guard in the raised-cluster loop.
 - `plugins/code-review-suite/skills/review-gh-pr/SKILL.md` — thread
   `changedLinesBlock: $CHANGED_LINES_BLOCK` into the `workflow()` args object.
+- `plugins/code-review-suite/includes/review-pipeline.md` — the identical args-object edit.
+- `plugins/code-review-suite/commands/pre-review.md` — the identical args-object edit.
 - `plugins/code-review-suite/includes/panel-concern-brief.md` — one paragraph on
   citing a real diff line.
-- `tests/` — unit coverage for `parseChangedLines` + the three guard branches.
+- `tests/lib/test_panel_review.sh` — extend `_pan_args` (+ raised-test variants) with a
+  `changedLinesBlock`; add unit coverage for `parseChangedLines` + the three guard
+  branches + clustering integrity.
 
 ## Sync-note check
 
-The `workflow()` args object is documented in **two** places that must stay in sync:
-`skills/review-gh-pr/SKILL.md` (~line 1082-1094) and
-`includes/review-pipeline.md` (~line 955-966, confirmed). Adding `changedLinesBlock`
-to one requires the identical edit to the other. Check `tests/` for any structural
-sync-note assertion over the args key list and extend it if present. The concern-brief
+The `workflow()` args object is documented in **three** byte-identical places that must
+stay in sync: `skills/review-gh-pr/SKILL.md` (~line 1082-1094),
+`includes/review-pipeline.md` (~line 955-967), and `commands/pre-review.md`
+(~line 956-968). Adding `changedLinesBlock` to one requires the identical edit to all
+three. `tests/lib/test_panel_wiring.sh::test_panel_params_threaded_in_both_call_sites`
+already asserts the panel keys appear in SKILL.md + pre-review.md; it greps for existing
+keys rather than the full key list, so it does not need extending for a new additive key,
+but the new edit must not break its two grep targets. No structural test enumerates the
+full args key set, so none needs extending for `changedLinesBlock`. The concern-brief
 edit is prose-only and carries no sync partner. `review-core.mjs` destructures the new
 key at module scope (~line 189-193); helper functions read it as a closure global, the
 same pattern `panelSize` / `tempDir` / `intentLedger` already use — no parameter

@@ -61,6 +61,15 @@ deferral / the interim mitigation", that is the severity axis being misused — 
 finding is still Important; let the rubric and the tractability routing decide what
 happens to it.
 
+**Anchor a finding you raise to a real changed line.** The `line` you give a net-new
+finding MUST be a line that actually appears as an added or context line in the diff you
+were handed — the true location of the issue in the new file. Do not guess, extrapolate,
+or invent a line number to satisfy the schema. If the issue is real but you cannot point
+to a specific changed line for it (it is diffuse, spans the file, or concerns something
+outside the changed hunks), give the closest changed line you can genuinely justify, and
+never a fabricated one — a wrong line is worse than an approximate-but-real one, because
+it posts against code the reader is not looking at.
+
 Scrutinise, across all concern domains:
 
 - **Security** — injection, auth/authz gaps, secret handling, unsafe deserialisation,

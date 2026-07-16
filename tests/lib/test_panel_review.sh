@@ -91,13 +91,17 @@ _pan_capture_writer_prompt() {
     ' 2>&1
 }
 
-# $CHANGED_LINES_BLOCK covering every file+line the raised-finding fixtures below anchor
-# to (n.cs:18-24, s.cs:3-7, d.cs:3-7 & 97-101) plus the vote-fixture files (a.cs, b.cs,
-# a.js). Threaded into every panel args helper so the line-hallucination guard
-# (parseChangedLines) sees the fixtures' anchors as in-diff and keeps them inline; a bare
-# args JSON with no block would demote every raised finding to the body. Serialised with
-# literal \n so the JSON string parses to a real newline-delimited block.
-_PAN_CHANGED_BLOCK='Changed lines:\na.cs: 1-40\nb.cs: 1-40\na.js: 1-40\nn.cs: 18-24\ns.cs: 3-7\nd.cs: 3-7, 97-101\n'
+# $CHANGED_LINES_BLOCK covering every file+line the fixtures below anchor to. The
+# line-hallucination guard applies to BOTH the raised path (net-new panel findings) and the
+# voted path (Stage-1 specialist findings the panel confirms), so every fixture file whose
+# finding is expected to POST must appear here with its line in range — otherwise the guard
+# correctly demotes it and a comment-count assertion breaks. Covered: raised fixtures
+# (n.cs:18-24, s.cs:3-7, d.cs:3-7 & 97-101), vote fixtures (a.cs, b.cs, a.js), and the
+# domain-specific voted fixtures (api.cs security, main.tf trivy). Deliberately ABSENT:
+# far.cs and ghost.cs — those fixtures test guard demotion and must stay out of the diff.
+# Threaded into every panel args helper. Serialised with literal \n so the JSON string
+# parses to a real newline-delimited block.
+_PAN_CHANGED_BLOCK='Changed lines:\na.cs: 1-40\nb.cs: 1-40\na.js: 1-40\napi.cs: 1-40\nmain.tf: 1-40\nn.cs: 18-24\ns.cs: 3-7\nd.cs: 3-7, 97-101\n'
 
 # args for a PR-mode panel run of size N (default 3). No intent ledger (goal absent).
 _pan_args() {
@@ -399,6 +403,60 @@ test_panel_guard_runs_post_cluster() {
     pans='[{"votes":[],"raised":[{"file":"far.cs","line":100,"severity":"Suggestion","tractability":"Mechanical","confidence":50,"description":"issue one","suggested_fix":"f"}]},{"votes":[],"raised":[{"file":"far.cs","line":500,"severity":"Suggestion","tractability":"Mechanical","confidence":50,"description":"issue two","suggested_fix":"f"}]},{"votes":[],"raised":[]}]'
     out=$(_pan_run_core "$(_pan_args 3)" "$specs" "$pans")
     assert_equals "2" "$(echo "$out" | jq '[.log.findings[] | select(.domain=="panel")] | length')" "distinct bad-line raises stay separate (guard is post-cluster)"
+}
+
+# --- Line-hallucination guard: VOTED path (Point 3 follow-up) ------------------------
+# A specialist finding the panel votes real must not carry a hallucinated line to a posted
+# comment. _pan_args' changedLinesBlock covers a.cs/b.cs at 1-40, so a.cs:10 is a valid
+# in-diff line, a.cs:999 is a bad line, and ghost.cs is a file absent from the diff.
+
+# Voted finding with a bad line in an in-diff file → line zeroed → file-level comment
+# (path kept, no line anchor). Unanimous real Important → consensus → RC.
+test_panel_voted_bad_line_demotes_to_file_level() {
+    local specs pans out
+    specs='{"correctness":[{"file":"a.cs","line":999,"severity":"Important","confidence":100,"description":"real issue wrong line","suggested_fix":"fix"}]}'
+    pans='[{"votes":[{"finding_id":0,"is_real":true,"severity":"Important","tractability":"Bounded","blocks_goal":false,"rationale":"r"}],"raised":[]},{"votes":[{"finding_id":0,"is_real":true,"severity":"Important","tractability":"Bounded","blocks_goal":false,"rationale":"r"}],"raised":[]},{"votes":[{"finding_id":0,"is_real":true,"severity":"Important","tractability":"Bounded","blocks_goal":false,"rationale":"r"}],"raised":[]}]'
+    out=$(_pan_run_core "$(_pan_args 3)" "$specs" "$pans")
+    assert_equals "REQUEST_CHANGES" "$(echo "$out" | jq -r '.verdict')" "voted Important still blocks after line demotion"
+    assert_equals "1" "$(echo "$out" | jq '.comments | length')" "bad-line voted finding still posts (demoted)"
+    assert_equals "file" "$(echo "$out" | jq -r '.comments[0].subjectType')" "bad line → file-level comment"
+    assert_equals "a.cs" "$(echo "$out" | jq -r '.comments[0].path')" "file-level comment keeps the real path"
+    assert_equals "null" "$(echo "$out" | jq -r '.comments[0].line')" "file-level comment carries no line"
+}
+
+# Voted finding whose file is absent from the diff → file+line cleared → body-routed,
+# posts no comment. The finding survives in the log with file cleared.
+test_panel_voted_bad_file_demotes_to_body() {
+    local specs pans out
+    specs='{"correctness":[{"file":"ghost.cs","line":10,"severity":"Important","confidence":100,"description":"file not in diff","suggested_fix":"fix"}]}'
+    pans='[{"votes":[{"finding_id":0,"is_real":true,"severity":"Important","tractability":"Bounded","blocks_goal":false,"rationale":"r"}],"raised":[]},{"votes":[{"finding_id":0,"is_real":true,"severity":"Important","tractability":"Bounded","blocks_goal":false,"rationale":"r"}],"raised":[]},{"votes":[{"finding_id":0,"is_real":true,"severity":"Important","tractability":"Bounded","blocks_goal":false,"rationale":"r"}],"raised":[]}]'
+    out=$(_pan_run_core "$(_pan_args 3)" "$specs" "$pans")
+    assert_equals "REQUEST_CHANGES" "$(echo "$out" | jq -r '.verdict')" "voted Important still blocks after file demotion"
+    assert_equals "0" "$(echo "$out" | jq '.comments | length')" "absent-file voted finding posts no comment (body-routed)"
+    assert_equals "" "$(echo "$out" | jq -r '[.log.findings[] | select(.description=="file not in diff")][0].file')" "absent-file voted finding has file cleared"
+}
+
+# Voted finding with a valid in-diff line → guard no-op → posts inline at the original line.
+test_panel_voted_valid_line_kept_inline() {
+    local specs pans out
+    specs='{"correctness":[{"file":"a.cs","line":10,"severity":"Important","confidence":100,"description":"real inline issue","suggested_fix":"fix"}]}'
+    pans='[{"votes":[{"finding_id":0,"is_real":true,"severity":"Important","tractability":"Bounded","blocks_goal":false,"rationale":"r"}],"raised":[]},{"votes":[{"finding_id":0,"is_real":true,"severity":"Important","tractability":"Bounded","blocks_goal":false,"rationale":"r"}],"raised":[]},{"votes":[{"finding_id":0,"is_real":true,"severity":"Important","tractability":"Bounded","blocks_goal":false,"rationale":"r"}],"raised":[]}]'
+    out=$(_pan_run_core "$(_pan_args 3)" "$specs" "$pans")
+    assert_equals "1" "$(echo "$out" | jq '.comments | length')" "valid-line voted finding posts inline"
+    assert_equals "10" "$(echo "$out" | jq -r '.comments[0].line')" "valid line kept unchanged"
+    assert_equals "null" "$(echo "$out" | jq -r '.comments[0].subjectType')" "valid line → line comment, not file-level"
+}
+
+# A static (jbinspect) finding with a valid line passes through inline unchanged — the guard
+# applies to static findings too but is a no-op on valid anchors (guards against demoting
+# valid static lines). a.js is in the block at 1-40. Unanimous real → consensus → RC.
+test_panel_voted_static_valid_line_unchanged() {
+    local specs pans out
+    specs='{"eslint":[{"file":"a.js","line":5,"severity":"Important","confidence":100,"rule_id":"no-eval","description":"eval used","suggested_fix":"f"}]}'
+    pans='[{"votes":[{"finding_id":0,"is_real":true,"severity":"Important","tractability":"Mechanical","blocks_goal":false,"rationale":"r"}],"raised":[]},{"votes":[{"finding_id":0,"is_real":true,"severity":"Important","tractability":"Mechanical","blocks_goal":false,"rationale":"r"}],"raised":[]},{"votes":[{"finding_id":0,"is_real":true,"severity":"Important","tractability":"Mechanical","blocks_goal":false,"rationale":"r"}],"raised":[]}]'
+    out=$(_pan_run_core "$(_pan_args_js 3)" "$specs" "$pans")
+    assert_equals "1" "$(echo "$out" | jq '.comments | length')" "valid-line static finding posts inline"
+    assert_equals "5" "$(echo "$out" | jq -r '.comments[0].line')" "valid static line kept unchanged (guard no-op)"
 }
 
 # Row 1 fires: goal present + a finding with majority blocks_goal (2 of 3).

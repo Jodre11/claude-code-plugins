@@ -799,6 +799,24 @@ function mapSpreadToTierConfidence(voteTallies, raisedClusters, s) {
     const blocksGoal = t => t.blocks_goal > s / 2
     for (const { finding, tally } of voteTallies) {
         const { finding_id, ...rest } = finding
+        // Line-hallucination guard (voted path) — mirror of the raised-cluster guard below.
+        // An LLM specialist can emit a line outside the diff (the finding schema forces a
+        // `line`, and the in-prompt §5 filter is advisory, not deterministic); the panel
+        // voting it real must not carry that fabricated line to a posted comment. Skip
+        // already-fileless findings (empty or the <n/a> alignment sentinel) — they route to
+        // the body regardless and the sentinel is load-bearing for renderBodyNotes. File not
+        // in the diff → clear file+line (→ body). Line not among the file's changed lines →
+        // zero the line (→ Anchor Ladder file-level). Valid in-diff line, and line-0 deletion
+        // anchors (never in the set → file-level, unchanged behaviour) → left as-is.
+        const votedFile = (rest.file || '').trim()
+        if (votedFile && votedFile !== '<n/a>') {
+            if (!(votedFile in changedLines)) {
+                rest.file = ''
+                rest.line = 0
+            } else if (!changedLines[votedFile].has(rest.line)) {
+                rest.line = 0
+            }
+        }
         const isStatic = STATIC.has(finding.domain)
         let tier, confidence_flag, severity, tractability, judgement_call = false
 

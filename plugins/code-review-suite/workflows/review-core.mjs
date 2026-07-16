@@ -11,11 +11,17 @@
 export const meta = {
     name: 'review-core',
     description: 'Deterministic code-review core: fan out specialists, cross-review, synthesise, return a sealed post-only bundle',
+    // Two disjoint phase sets: classic (dispatch → cross → synth → resample) and panel
+    // (dispatch → panel-vote → panel-write). Only one set fires per run; the other stays
+    // inert in the progress tree. meta must be a pure literal, so it cannot branch on
+    // orchestrationMode — both sets are declared and the unused one renders empty.
     phases: [
         { title: 'dispatch', detail: 'parallel() over the fixed specialist list' },
-        { title: 'cross', detail: 'parallel() cross-review, static findings passed as data' },
-        { title: 'synth', detail: 'opus synthesis → verdict + tiers + prose' },
-        { title: 'resample', detail: 'round-2 re-dispatch of stochastic specialists when the boundary gate fires' },
+        { title: 'cross', detail: 'classic: parallel() cross-review, static findings passed as data' },
+        { title: 'synth', detail: 'classic: opus synthesis → verdict + tiers + prose' },
+        { title: 'resample', detail: 'classic: round-2 re-dispatch of stochastic specialists when the boundary gate fires' },
+        { title: 'panel-vote', detail: 'panel: N opus panelists vote is_real/severity/tractability in parallel' },
+        { title: 'panel-write', detail: 'panel: deterministic tally + rubric, then a sonnet writer renders the body' },
     ],
 }
 
@@ -183,7 +189,7 @@ const resolvedArgs = typeof args === 'string' ? JSON.parse(args) : args
 const {
     agentPrompt, flags, route, selfReReview, reviewMode,
     base, headSha, emptyTreeMode, pathScope, tempDir, intentLedger, repoDir,
-    orchestrationMode, panelSize, panelBrief,
+    orchestrationMode, panelSize, panelBrief, changedLinesBlock,
 } = resolvedArgs
 
 // Shared by isPosted and the PR-mode filter. The 75 bar is deliberate (above
@@ -673,6 +679,49 @@ function tallyVotes(panelists, flat) {
     })
 }
 
+// Parse the compact $CHANGED_LINES_BLOCK serialisation (review-pipeline.md Step 2.5)
+// into { [repoRelativePath]: Set<int> } of postable added/context lines. This is the
+// scope authority the panel-raised posting path otherwise lacks (every other path applies
+// a §5 $CHANGED_LINES filter; raised findings did not). Token grammar per that spec:
+//   path: 12-14, 17, near 22        → expand N-M ranges, keep bare ints, SKIP `near N`
+//   path (deleted): near 1          → deletion-only file, no postable lines
+//   path: (empty — rename only)     → zero-hunk file, no postable lines
+// `near N` anchors are deletion markers (archaeology), never added lines a raised finding
+// should anchor to, so they are skipped. A missing/empty block yields {} — the guard then
+// treats every raised finding as out-of-scope and demotes it to the body. That is the
+// deliberate fail-safe direction: demote rather than risk a 422 on a bad anchor.
+function parseChangedLines(block) {
+    const changed = {}
+    if (!block || typeof block !== 'string') return changed
+    for (const raw of block.split('\n')) {
+        const line = raw.trim()
+        if (!line || line === 'Changed lines:') continue
+        const colon = line.indexOf(':')
+        if (colon < 0) continue
+        // The path may carry a ` (deleted)` sentinel before the colon — strip it; such a
+        // file has only a `near N` anchor after the colon, which the token loop skips anyway,
+        // so it correctly contributes no postable lines.
+        const path = line.slice(0, colon).replace(/\s*\(deleted\)\s*$/, '').trim()
+        if (!path) continue
+        const rest = line.slice(colon + 1).trim()
+        if (!rest || rest.startsWith('(')) continue   // (empty — rename only) etc. → no lines
+        const set = changed[path] ?? (changed[path] = new Set())
+        for (const tokRaw of rest.split(',')) {
+            const tok = tokRaw.trim()
+            if (!tok || tok.startsWith('near')) continue      // deletion anchor → skip
+            const range = tok.match(/^(\d+)-(\d+)$/)
+            if (range) {
+                const lo = parseInt(range[1], 10)
+                const hi = parseInt(range[2], 10)
+                for (let n = lo; n <= hi; n++) set.add(n)
+            } else if (/^\d+$/.test(tok)) {
+                set.add(parseInt(tok, 10))
+            }
+        }
+    }
+    return changed
+}
+
 // Cluster raised findings across panelists by (file, line-window), reusing sameCluster.
 // corroboration = number of raises landing in the cluster. rep = the first raise seen.
 // NB: two raises by the SAME panelist into one cluster count as 2 — acceptable because
@@ -744,6 +793,9 @@ function routeFinding({ severity, tractability, judgement_call, blocking }) {
 function mapSpreadToTierConfidence(voteTallies, raisedClusters, s) {
     const tiers = { consensus: [], synthesiser: [], contested: [], dismissed: [] }
     const SEV_TO_LEVEL = { Suggestion: 1, Important: 2, Critical: 3 }
+    // Scope authority for panel-raised findings (the only posting path with no §5 filter).
+    // Parsed once here — mapSpreadToTierConfidence runs once per panel review.
+    const changedLines = parseChangedLines(changedLinesBlock)
     const blocksGoal = t => t.blocks_goal > s / 2
     for (const { finding, tally } of voteTallies) {
         const { finding_id, ...rest } = finding
@@ -820,6 +872,22 @@ function mapSpreadToTierConfidence(voteTallies, raisedClusters, s) {
         const route = routeFinding({ severity, tractability, judgement_call: false, blocking })
         const destTier = route.tierOverride ?? baseTier
         const { finding_id, ...rep } = c.rep
+        // Line-hallucination guard: a panelist may cite a line the diff never touched (the
+        // RAISED_SHAPE schema forces a `line` but the brief gives no changed-line set). This
+        // is the only posting path with no §5 scope filter, so validate the anchor here —
+        // AFTER clustering (zeroing lines before clusterRaised would collapse distinct
+        // same-file findings into one bogus line-0 cluster). File not in the diff → clear
+        // BOTH file and line so isFileless routes it to the body (a file-level comment on a
+        // path absent from the PR also 422s). Line not among the file's changed lines → keep
+        // the file, zero the line so the Anchor Ladder emits a file-level comment. Valid
+        // in-diff line → untouched.
+        const repFile = (rep.file || '').trim()
+        if (!repFile || !(repFile in changedLines)) {
+            rep.file = ''
+            rep.line = 0
+        } else if (!changedLines[repFile].has(rep.line)) {
+            rep.line = 0
+        }
         tiers[destTier].push({
             ...rep, domain: 'panel', confidence_flag,
             confidence: FLAG_TO_NUM[confidence_flag],
@@ -871,7 +939,7 @@ async function panelVote(flat, panelBrief, ranDomains, phaseLog) {
     const results = await parallel(Array.from({ length: n }, (_, i) => () =>
         agent(prompt, {
             label: `panel-${i}`,
-            phase: 'panel',
+            phase: 'panel-vote',
             model: 'opus',
             schema: PANEL_SCHEMA,
         }).then(out => (out ? { votes: out.votes ?? [], raised: out.raised ?? [] } : null)).catch(() => null)
@@ -930,7 +998,7 @@ async function panelWrite(panelists, flat, phaseLog) {
         `Use ${tempDir} for temporary files.`
     const w = await agent(writerPrompt, {
         label: 'panel-writer',
-        phase: 'panel',
+        phase: 'panel-write',
         model: 'sonnet',
         schema: WRITER_SCHEMA,
     })

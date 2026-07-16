@@ -91,25 +91,33 @@ _pan_capture_writer_prompt() {
     ' 2>&1
 }
 
+# $CHANGED_LINES_BLOCK covering every file+line the raised-finding fixtures below anchor
+# to (n.cs:18-24, s.cs:3-7, d.cs:3-7 & 97-101) plus the vote-fixture files (a.cs, b.cs,
+# a.js). Threaded into every panel args helper so the line-hallucination guard
+# (parseChangedLines) sees the fixtures' anchors as in-diff and keeps them inline; a bare
+# args JSON with no block would demote every raised finding to the body. Serialised with
+# literal \n so the JSON string parses to a real newline-delimited block.
+_PAN_CHANGED_BLOCK='Changed lines:\na.cs: 1-40\nb.cs: 1-40\na.js: 1-40\nn.cs: 18-24\ns.cs: 3-7\nd.cs: 3-7, 97-101\n'
+
 # args for a PR-mode panel run of size N (default 3). No intent ledger (goal absent).
 _pan_args() {
     local n="${1:-3}"
     local sha40="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-    echo "{\"agentPrompt\":\"x\",\"flags\":{},\"route\":\"full\",\"selfReReview\":false,\"reviewMode\":\"pr\",\"base\":\"main\",\"headSha\":\"${sha40}\",\"emptyTreeMode\":false,\"pathScope\":\"\",\"tempDir\":\"/tmp/claude-test/x\",\"intentLedger\":\"\",\"orchestrationMode\":\"panel\",\"panelSize\":${n},\"panelBrief\":\"BRIEF\"}"
+    echo "{\"agentPrompt\":\"x\",\"flags\":{},\"route\":\"full\",\"selfReReview\":false,\"reviewMode\":\"pr\",\"base\":\"main\",\"headSha\":\"${sha40}\",\"emptyTreeMode\":false,\"pathScope\":\"\",\"tempDir\":\"/tmp/claude-test/x\",\"intentLedger\":\"\",\"orchestrationMode\":\"panel\",\"panelSize\":${n},\"panelBrief\":\"BRIEF\",\"changedLinesBlock\":\"${_PAN_CHANGED_BLOCK}\"}"
 }
 
 # args with flags.js=true — enables the eslint specialist (Track B test E).
 _pan_args_js() {
     local n="${1:-3}"
     local sha40="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-    echo "{\"agentPrompt\":\"x\",\"flags\":{\"js\":true},\"route\":\"full\",\"selfReReview\":false,\"reviewMode\":\"pr\",\"base\":\"main\",\"headSha\":\"${sha40}\",\"emptyTreeMode\":false,\"pathScope\":\"\",\"tempDir\":\"/tmp/claude-test/x\",\"intentLedger\":\"\",\"orchestrationMode\":\"panel\",\"panelSize\":${n},\"panelBrief\":\"BRIEF\"}"
+    echo "{\"agentPrompt\":\"x\",\"flags\":{\"js\":true},\"route\":\"full\",\"selfReReview\":false,\"reviewMode\":\"pr\",\"base\":\"main\",\"headSha\":\"${sha40}\",\"emptyTreeMode\":false,\"pathScope\":\"\",\"tempDir\":\"/tmp/claude-test/x\",\"intentLedger\":\"\",\"orchestrationMode\":\"panel\",\"panelSize\":${n},\"panelBrief\":\"BRIEF\",\"changedLinesBlock\":\"${_PAN_CHANGED_BLOCK}\"}"
 }
 
 # args with flags.iac=true — enables the trivy specialist (Track B test F).
 _pan_args_iac() {
     local n="${1:-3}"
     local sha40="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-    echo "{\"agentPrompt\":\"x\",\"flags\":{\"iac\":true},\"route\":\"full\",\"selfReReview\":false,\"reviewMode\":\"pr\",\"base\":\"main\",\"headSha\":\"${sha40}\",\"emptyTreeMode\":false,\"pathScope\":\"\",\"tempDir\":\"/tmp/claude-test/x\",\"intentLedger\":\"\",\"orchestrationMode\":\"panel\",\"panelSize\":${n},\"panelBrief\":\"BRIEF\"}"
+    echo "{\"agentPrompt\":\"x\",\"flags\":{\"iac\":true},\"route\":\"full\",\"selfReReview\":false,\"reviewMode\":\"pr\",\"base\":\"main\",\"headSha\":\"${sha40}\",\"emptyTreeMode\":false,\"pathScope\":\"\",\"tempDir\":\"/tmp/claude-test/x\",\"intentLedger\":\"\",\"orchestrationMode\":\"panel\",\"panelSize\":${n},\"panelBrief\":\"BRIEF\",\"changedLinesBlock\":\"${_PAN_CHANGED_BLOCK}\"}"
 }
 
 # args with a goal-bearing intent ledger (matches the /(^|\n)\s*goal:\s*\S/ detector).
@@ -117,7 +125,7 @@ _pan_args_goal() {
     local n="${1:-3}"
     local sha40="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
     local ledger="Intent ledger:\ngoal: ship the widget end to end.\nnon_goals: none\nsource: pr_body\n"
-    echo "{\"agentPrompt\":\"x\",\"flags\":{},\"route\":\"full\",\"selfReReview\":false,\"reviewMode\":\"pr\",\"base\":\"main\",\"headSha\":\"${sha40}\",\"emptyTreeMode\":false,\"pathScope\":\"\",\"tempDir\":\"/tmp/claude-test/x\",\"intentLedger\":\"${ledger}\",\"orchestrationMode\":\"panel\",\"panelSize\":${n},\"panelBrief\":\"BRIEF\"}"
+    echo "{\"agentPrompt\":\"x\",\"flags\":{},\"route\":\"full\",\"selfReReview\":false,\"reviewMode\":\"pr\",\"base\":\"main\",\"headSha\":\"${sha40}\",\"emptyTreeMode\":false,\"pathScope\":\"\",\"tempDir\":\"/tmp/claude-test/x\",\"intentLedger\":\"${ledger}\",\"orchestrationMode\":\"panel\",\"panelSize\":${n},\"panelBrief\":\"BRIEF\",\"changedLinesBlock\":\"${_PAN_CHANGED_BLOCK}\"}"
 }
 
 # One Important consensus finding, unanimously voted real by 3 panelists → RC via rubric row 3.
@@ -283,6 +291,114 @@ test_panel_raised_important_blocks() {
     out=$(_pan_run_core "$(_pan_args 3)" "$specs" "$pans")
     assert_equals "REQUEST_CHANGES" "$(echo "$out" | jq -r '.verdict')" "corroborated raised Important → RC"
     assert_equals "1" "$(echo "$out" | jq '.comments | length')" "corroborated raised Important posts inline"
+}
+
+# --- Line-hallucination guard (Point 3) ---------------------------------------------
+# parseChangedLines is a pure helper below `const resolvedArgs`, so the schema-extraction
+# slice (prefix-before-resolvedArgs) cannot reach it. Extract the function body by name
+# markers and eval it standalone; it references only its argument and JS built-ins.
+_pan_eval_parse() {
+    local wf block="$1"
+    wf="$(_pan_cr_dir)/workflows/review-core.mjs"
+    WF="$wf" BLOCK="$block" node -e '
+        const fs = require("fs");
+        const src = fs.readFileSync(process.env.WF, "utf8");
+        const start = src.indexOf("function parseChangedLines");
+        if (start < 0) { console.log("NO_FN"); process.exit(1); }
+        // Slice from the declaration to the marker comment that follows it.
+        const end = src.indexOf("// Cluster raised findings across panelists", start);
+        const body = src.slice(start, end);
+        const parseChangedLines = new Function(body + "\nreturn parseChangedLines;")();
+        const out = parseChangedLines(process.env.BLOCK);
+        // Serialise Sets to sorted arrays for stable JSON comparison.
+        const plain = {};
+        for (const [k, v] of Object.entries(out)) plain[k] = [...v].sort((a, b) => a - b);
+        console.log(JSON.stringify(plain));
+    ' 2>&1
+}
+
+# parseChangedLines expands N-M ranges, keeps bare ints, skips `near N`, and drops
+# (empty)/(deleted) sentinel files.
+test_parse_changed_lines_grammar() {
+    local out
+    out=$(_pan_eval_parse 'Changed lines:
+a.cs: 12-14, 17, near 22
+b.cs: 5
+r.txt: (empty — rename only)
+d.cs (deleted): near 1
+')
+    assert_equals '[12,13,14,17]' "$(echo "$out" | jq -c '.["a.cs"]')" "N-M range expands, bare int kept, near skipped"
+    assert_equals '[5]' "$(echo "$out" | jq -c '.["b.cs"]')" "bare integer parsed"
+    # A (deleted) file contributes an empty set (its only token is a skipped `near`).
+    assert_equals '[]' "$(echo "$out" | jq -c '.["d.cs"] // []')" "deleted-file near anchor yields no postable lines"
+    # An (empty — rename only) file has no colon-token list → absent from the map.
+    assert_equals 'null' "$(echo "$out" | jq -c '.["r.txt"]')" "rename-only file absent from map"
+}
+
+# An empty / missing block parses to {} — the fail-safe that demotes every raised finding.
+test_parse_changed_lines_empty_is_failsafe() {
+    assert_equals '{}' "$(_pan_eval_parse '')" "empty block → {} (fail-safe demote-all)"
+    assert_equals '{}' "$(_pan_eval_parse 'Changed lines:
+')" "header-only block → {}"
+}
+
+# Guard branch 1 — a raised finding whose LINE is not in the file's changed set (but the
+# file IS in the diff) has its line zeroed → Anchor Ladder emits a file-level comment
+# (path present, no `line`), never a line-anchored 422.
+test_panel_raised_bad_line_demotes_to_file_level() {
+    local specs pans out
+    specs='{"correctness":[]}'
+    # n.cs is in the block (18-24); line 999 is not. 2/3 corroboration → consensus Important.
+    pans='[{"votes":[],"raised":[{"file":"n.cs","line":999,"severity":"Important","tractability":"Bounded","confidence":40,"description":"real issue wrong line","suggested_fix":"guard"}]},{"votes":[],"raised":[{"file":"n.cs","line":999,"severity":"Important","tractability":"Bounded","confidence":90,"description":"real issue wrong line","suggested_fix":"guard"}]},{"votes":[],"raised":[]}]'
+    out=$(_pan_run_core "$(_pan_args 3)" "$specs" "$pans")
+    assert_equals "REQUEST_CHANGES" "$(echo "$out" | jq -r '.verdict')" "real raised Important still blocks after line demotion"
+    assert_equals "1" "$(echo "$out" | jq '.comments | length')" "bad-line raised finding still posts (demoted)"
+    assert_equals "file" "$(echo "$out" | jq -r '.comments[0].subjectType')" "bad line → file-level comment, no line anchor"
+    assert_equals "n.cs" "$(echo "$out" | jq -r '.comments[0].path')" "file-level comment keeps the real path"
+    assert_equals "null" "$(echo "$out" | jq -r '.comments[0].line')" "file-level comment carries no line"
+}
+
+# Guard branch 2 — a raised finding whose FILE is not in the diff at all has both file and
+# line cleared → isFileless routes it to the body, posting zero comments (a file-level
+# comment on an absent path also 422s).
+test_panel_raised_bad_file_demotes_to_body() {
+    local specs pans out
+    specs='{"correctness":[]}'
+    # ghost.cs is absent from _PAN_CHANGED_BLOCK entirely.
+    pans='[{"votes":[],"raised":[{"file":"ghost.cs","line":10,"severity":"Important","tractability":"Bounded","confidence":40,"description":"file not in diff","suggested_fix":"guard"}]},{"votes":[],"raised":[{"file":"ghost.cs","line":11,"severity":"Important","tractability":"Bounded","confidence":90,"description":"file not in diff","suggested_fix":"guard"}]},{"votes":[],"raised":[]}]'
+    out=$(_pan_run_core "$(_pan_args 3)" "$specs" "$pans")
+    assert_equals "REQUEST_CHANGES" "$(echo "$out" | jq -r '.verdict')" "real raised Important still blocks after file demotion"
+    assert_equals "0" "$(echo "$out" | jq '.comments | length')" "absent-file raised finding posts no comment (body-routed)"
+    # The finding survives in the log with its file cleared.
+    assert_equals "" "$(echo "$out" | jq -r '[.log.findings[] | select(.domain=="panel")][0].file')" "absent-file raised finding has file cleared"
+}
+
+# Guard branch 3 — a raised finding with a VALID in-diff line is untouched: it posts as a
+# normal line-anchored inline comment. (Covered indirectly by test_panel_raised_important_blocks
+# via the now-populated block; asserted explicitly here on the line value.)
+test_panel_raised_valid_line_kept_inline() {
+    local specs pans out
+    specs='{"correctness":[]}'
+    # n.cs:20 and 22 are both inside the block's 18-24 range.
+    pans='[{"votes":[],"raised":[{"file":"n.cs","line":20,"severity":"Important","tractability":"Bounded","confidence":40,"description":"real inline issue","suggested_fix":"guard"}]},{"votes":[],"raised":[{"file":"n.cs","line":22,"severity":"Important","tractability":"Bounded","confidence":90,"description":"real inline issue","suggested_fix":"guard"}]},{"votes":[],"raised":[]}]'
+    out=$(_pan_run_core "$(_pan_args 3)" "$specs" "$pans")
+    assert_equals "1" "$(echo "$out" | jq '.comments | length')" "valid-line raised finding posts inline"
+    assert_equals "20" "$(echo "$out" | jq -r '.comments[0].line')" "valid line kept (cluster rep is first raise, line 20)"
+    assert_equals "null" "$(echo "$out" | jq -r '.comments[0].subjectType')" "valid line → line comment, not file-level (no subjectType)"
+}
+
+# Clustering integrity — the guard runs AFTER clusterRaised, so two distinct same-file
+# raises with different bad lines do NOT collapse into one line-0 cluster. Both are far
+# apart (> CLUSTER_WINDOW) so they stay separate; each is then independently demoted.
+test_panel_guard_runs_post_cluster() {
+    local specs pans out
+    specs='{"correctness":[]}'
+    # Two solo raises in an absent file, lines 100 and 500 (both bad, both far apart).
+    # If the guard ran BEFORE clustering it would zero both lines → sameCluster(0,0) true →
+    # they would merge into one cluster. Running post-cluster keeps them as two findings.
+    pans='[{"votes":[],"raised":[{"file":"far.cs","line":100,"severity":"Suggestion","tractability":"Mechanical","confidence":50,"description":"issue one","suggested_fix":"f"}]},{"votes":[],"raised":[{"file":"far.cs","line":500,"severity":"Suggestion","tractability":"Mechanical","confidence":50,"description":"issue two","suggested_fix":"f"}]},{"votes":[],"raised":[]}]'
+    out=$(_pan_run_core "$(_pan_args 3)" "$specs" "$pans")
+    assert_equals "2" "$(echo "$out" | jq '[.log.findings[] | select(.domain=="panel")] | length')" "distinct bad-line raises stay separate (guard is post-cluster)"
 }
 
 # Row 1 fires: goal present + a finding with majority blocks_goal (2 of 3).

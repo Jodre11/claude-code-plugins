@@ -963,7 +963,8 @@ workflow({scriptPath: $REVIEW_CORE_PATH}, {
     base: $BASE, headSha: $HEAD_SHA, emptyTreeMode: $EMPTY_TREE_MODE,
     pathScope: $PATH_SCOPE, tempDir: $RESOLVED_TEMP_DIR,
     intentLedger: $INTENT_LEDGER, repoDir: $REPO_DIR,
-    orchestrationMode: $ORCHESTRATION_MODE, panelSize: $PANEL_SIZE, panelBrief: $PANEL_BRIEF
+    orchestrationMode: $ORCHESTRATION_MODE, panelSize: $PANEL_SIZE, panelBrief: $PANEL_BRIEF,
+    changedLinesBlock: $CHANGED_LINES_BLOCK
 })
 ```
 

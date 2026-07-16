@@ -58,14 +58,44 @@ If `jb` is not installed or not on PATH, emit `Skipped — jb inspectcode not av
 Read the report XML from each invocation's stdout. Look for `<Issue>` elements within `<Issues>` > `<Project>` sections. Each `<Issue>` has attributes:
 
 - `TypeId` — the inspection rule identifier
-- `File` — relative file path
+- `File` — file path **relative to the solution directory**, not the repo root
 - `Offset` — character range (optional)
 - `Line` — line number (if present)
 - `Message` — description of the issue
 
 Cross-reference `TypeId` against the `<IssueType>` definitions in the XML header to get `Severity` (ERROR | WARNING | SUGGESTION | HINT), `Category`, and `Description`.
 
-After cross-referencing, intersect each `<Issue>`'s `Line` attribute against `$CHANGED_LINES[<File>]` per `includes/static-analysis-context.md` §5. Drop non-matching issues.
+### Re-root the path to repo-relative (MANDATORY — do this before anything else uses `File`)
+
+InspectCode reports `File` relative to the **solution's own directory**, so a solution that
+does not sit at the repo root yields a truncated path (e.g. solution
+`src/foo/App.slnx` inspecting `src/foo/src/App/Bar.cs` emits `File="src/App/Bar.cs"`, missing
+the `src/foo/` prefix). Left unrooted, this path is wrong two ways: GitHub rejects the inline
+comment (the path is not in the PR's file list → HTTP 422), **and** the `$CHANGED_LINES` scope
+filter below silently fails open (its keys are repo-relative, so a solution-relative key never
+matches and §5's "drop non-matching / not in `$CHANGED_LINES`" rule cannot apply — the whole
+scope gate is defeated).
+
+For each affected solution, compute its directory relative to `$REPO_DIR` once:
+
+```
+$SLN_DIR_REL = dirname(<solution path>) with the leading "$REPO_DIR/" stripped
+```
+
+(e.g. solution `$REPO_DIR/src/foo/App.slnx` → `$SLN_DIR_REL = src/foo`; a solution at the repo
+root → `$SLN_DIR_REL = ""`.) Then re-root every `<Issue>` from that solution:
+
+```
+repo_relative_path = $SLN_DIR_REL == "" ? Issue.File : "$SLN_DIR_REL/" + Issue.File
+```
+
+Normalise away any `./` or redundant separators. Use `repo_relative_path` for the §5
+intersection below **and** for the emitted `file` field — never the raw `Issue.File`. Sanity-check
+that `repo_relative_path` appears in the changed-file list you were given; if it does not, the
+re-rooting is wrong (or the file is genuinely out of scope) and the finding must be dropped, not
+emitted with a bad path.
+
+After re-rooting, intersect each `<Issue>`'s `Line` attribute against `$CHANGED_LINES[repo_relative_path]` per `includes/static-analysis-context.md` §5. Drop non-matching issues.
 
 ## Severity mapping
 

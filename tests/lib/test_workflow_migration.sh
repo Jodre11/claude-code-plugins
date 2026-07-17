@@ -919,3 +919,75 @@ test_synth_call_sets_stall_budget() {
             "$result"
     fi
 }
+
+# Same root cause as the synth stall, one stage over: the panel path's in-sandbox agents —
+# the N opus panelists (panelVote) and the sonnet writer (panelWrite) — inherit the default
+# 180s watchdog unless their agent() call carries stallMs. On a complex diff a panelist
+# reasons past 180s, trips the watchdog, and is dropped by the `.catch(() => null)`, silently
+# shrinking the panel until quorum fails. This test drives review-core in panel mode with a
+# mock agent() that captures the panel-vote and panel-write opts and asserts stallMs=600000
+# reaches both — a behavioural guard so a refactor cannot silently drop it and reintroduce
+# the stall (matching the synth guard above).
+test_panel_calls_set_stall_budget() {
+    local cr
+    cr=$(_wm_cr_dir)
+    local wf="$cr/workflows/review-core.mjs"
+    if [[ ! -f "$wf" ]]; then
+        fail "panel stall budget" "missing: $wf"
+        return
+    fi
+    local result
+    result=$(node -e '
+        const fs = require("fs");
+        const src = fs.readFileSync(process.argv[1], "utf8")
+            .replace(/^export\s+const\s+meta/m, "const meta");
+        const baseArgs = {
+            agentPrompt: "x", flags: {}, route: "full", selfReReview: false,
+            reviewMode: "pr", base: "main", headSha: "a".repeat(40),
+            emptyTreeMode: false, pathScope: "", tempDir: "/tmp/x",
+            orchestrationMode: "panel", panelSize: 3, panelBrief: "brief",
+            changedLinesBlock: "",
+        };
+        const parallel = (thunks) => Promise.all(thunks.map(t => t()));
+        const phase = () => {};
+        const log = () => {};
+        const pipeline = async () => [];
+        const workflow = async () => null;
+        const run = (agent, args) => {
+            const fn = new Function("agent","parallel","pipeline","phase","log","args","workflow",
+                "return (async()=>{" + src + "\n})()");
+            return fn(agent, parallel, pipeline, phase, log, args, workflow);
+        };
+        (async () => {
+            let voteOpts = [];
+            let writeOpts = null;
+            const agent = async (prompt, opts) => {
+                if (opts && opts.phase === "panel-vote") {
+                    voteOpts.push(opts);
+                    // Minimal valid panelist: one is_real:false vote, no raises.
+                    return { votes: [], raised: [] };
+                }
+                if (opts && opts.phase === "panel-write") {
+                    writeOpts = opts;
+                    return { bodyText: "## Synthesiser Assessment\nok\n" };
+                }
+                // Specialist dispatch.
+                return { status: "ok", findings: [], opinionsMarkdown: "", escalations: [] };
+            };
+            try { await run(agent, baseArgs); }
+            catch (e) { console.log("THREW: " + e.message); return; }
+            if (voteOpts.length === 0) { console.log("PANEL_VOTE_NOT_CALLED"); return; }
+            const badVote = voteOpts.find(o => o.stallMs !== 600000);
+            if (badVote) { console.log("BAD_VOTE_STALLMS: " + JSON.stringify(badVote.stallMs)); return; }
+            if (writeOpts === null) { console.log("PANEL_WRITE_NOT_CALLED"); return; }
+            if (writeOpts.stallMs !== 600000) { console.log("BAD_WRITE_STALLMS: " + JSON.stringify(writeOpts.stallMs)); return; }
+            console.log("OK");
+        })();
+    ' "$wf" 2>&1)
+    if [[ "$result" == "OK" ]]; then
+        pass "panel-vote and panel-write agent() calls carry stallMs=600000 (raises sandbox watchdog above 180s)"
+    else
+        fail "panel-vote and panel-write agent() calls carry stallMs=600000 (raises sandbox watchdog above 180s)" \
+            "$result"
+    fi
+}

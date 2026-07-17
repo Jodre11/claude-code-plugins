@@ -647,10 +647,12 @@ function unionFindingsByDomain(r1ByDomain, r2ByDomain, stochasticDomains) {
 // a re-run reproduces exactly. A plain name is content-neutral by design: it
 // must NOT steer WHAT the seat looks for (that would bias the panel), only that
 // the seats differ. Roster (the Titans) covers the common panel sizes 3 and 5;
-// beyond it, fall back to the bare seat index.
-const PANEL_SEAT_NAMES = ['Cronus', 'Rhea', 'Oceanus', 'Hyperion', 'Themis']
+// beyond it, fall back to the bare seat index. The roster is inlined (not a
+// module-level const) because panelVote runs before this point in the file's
+// top-to-bottom execution, so an outer const would be in its temporal dead zone.
 function panelSeatPrefix(i) {
-    const name = PANEL_SEAT_NAMES[i] ?? `Seat ${i}`
+    const roster = ['Cronus', 'Rhea', 'Oceanus', 'Hyperion', 'Themis']
+    const name = roster[i] ?? `Seat ${i}`
     return `Panelist: ${name} (independent reviewer; vote your own honest judgement).\n\n`
 }
 

@@ -28,8 +28,8 @@ path_scope: ""
 empty_tree_mode: false
 review_mode: pr
 planted:
-  file: tests/invoiceEmitter.test.ts
-  line: 7
+  file: src/invoiceEmitter.ts
+  line: 2
   expect_arm_b: Important  # producer stubs empty payload — consumer test never asserts populated fields are emitted
   expect_arm_a: ABSENT     # arm A lacks test-adequacy basis
 intent_ledger: |

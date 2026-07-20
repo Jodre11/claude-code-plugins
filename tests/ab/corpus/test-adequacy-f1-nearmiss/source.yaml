@@ -29,7 +29,7 @@ empty_tree_mode: false
 review_mode: pr
 planted:
   file: tax_calculator.py
-  line: 7
+  line: 6
   expect_arm_b: ABSENT  # direct unit test already asserts behaviour — no test-adequacy gap
   expect_arm_a: ABSENT  # arm A also expected absent (inflation guard)
 intent_ledger: |

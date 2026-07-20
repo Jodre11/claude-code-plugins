@@ -27,7 +27,7 @@ empty_tree_mode: false
 review_mode: pr
 planted:
   file: src/OrderProcessor.cs
-  line: 15
+  line: 14
   expect_arm_b: Important  # new public type with correctness-central logic and NO test — swapping behaviour ships green
   expect_arm_a: ABSENT     # arm A lacks test-adequacy basis
 intent_ledger: |

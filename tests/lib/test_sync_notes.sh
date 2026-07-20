@@ -498,7 +498,7 @@ test_dispatcher_includes_new_static_analysis_flags() {
         fi
 
         local flag
-        for flag in '$JS_DETECTED' '$PY_DETECTED' '$IAC_DETECTED' '$HOUSEKEEPING_DETECTED'; do
+        for flag in '$JS_DETECTED' '$PY_DETECTED' '$IAC_DETECTED' '$HOUSEKEEPING_DETECTED' '$PRODUCTION_SOURCE_DETECTED'; do
             if grep -qF "$flag" "$path"; then
                 pass "static-analysis dispatcher flags: $file contains $flag"
             else

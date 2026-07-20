@@ -1,0 +1,110 @@
+#!/usr/bin/env bash
+# review-diff — deterministic diff construction for code-review-suite.
+#
+# The two-arg-vs-three-dot diff-syntax choice was previously model-executed
+# prose. An orchestrator could silently pick two-arg `git diff $BASE $HEAD`
+# against an un-rebased branch, which reports the stale base's newer commits as
+# spurious deletions (the finance-erp PR #593 incident: 11 files/157 deletions
+# measured vs GitHub's true 4 files/0 deletions). Moving the choice into
+# deterministic, unit-tested shell makes the syntax non-negotiable.
+#
+# Subcommand:
+#   emit <repoDir> <base> <headSha> <emptyTreeMode> [pathScope] [outDir]
+#       Construct the review diff using the syntax dictated by <emptyTreeMode>
+#       (two-arg when true — the empty-tree base has no merge-base; three-dot
+#       otherwise) and write two artifacts into <outDir>:
+#         <outDir>/review-diff.patch   — the full diff, pinned to <headSha>
+#         <outDir>/changed-files.txt   — one repo-relative changed path per line
+#       Prints <outDir> on success. Exits non-zero and writes nothing on any
+#       validation failure.
+#
+# Output dir: <outDir arg>, else ${CLAUDE_TEMP_DIR:-${TMPDIR:-/tmp}}
+# CLAUDE_TEMP_DIR is set in the session's conversation context but is NOT
+# exported into Bash subprocesses, so callers should pass <outDir> explicitly
+# rather than rely on the env fallback (which silently lands under $TMPDIR,
+# /var/folders on macOS).
+set -euo pipefail
+
+_die() {
+    echo "review-diff: $*" >&2
+    exit 1
+}
+
+cmd_emit() {
+    local repo_dir="${1:-}" base="${2:-}" head_sha="${3:-}" empty_tree_mode="${4:-}"
+    local path_scope="${5:-}" out_dir="${6:-}"
+
+    [[ -n "$repo_dir" && -n "$base" && -n "$head_sha" && -n "$empty_tree_mode" ]] \
+        || _die "emit requires <repoDir> <base> <headSha> <emptyTreeMode> [pathScope] [outDir]"
+
+    git -C "$repo_dir" rev-parse --show-toplevel >/dev/null 2>&1 \
+        || _die "not a git repo: $repo_dir"
+
+    [[ "$head_sha" =~ ^[0-9a-f]{40}$ ]] \
+        || _die "head SHA is not a 40-hex string: $head_sha"
+
+    # $base is either the empty-tree SHA (empty-tree mode) or a branch name /
+    # pinned base SHA. Both are covered by the branch-ref charset; 40-hex is a
+    # subset. Reject anything outside it (defends the git command below).
+    [[ "$base" =~ ^[a-zA-Z0-9/_.\-]+$ ]] \
+        || _die "invalid base ref: $base"
+
+    case "$empty_tree_mode" in
+        true|false) : ;;
+        *) _die "emptyTreeMode must be 'true' or 'false', got: $empty_tree_mode" ;;
+    esac
+
+    # Path scope validation mirrors the pipeline prose: charset plus an explicit
+    # directory-traversal guard. Passed to `git diff -- <pathspec>` verbatim.
+    if [[ -n "$path_scope" ]]; then
+        [[ "$path_scope" =~ ^[a-zA-Z0-9/_.\*\-]+$ ]] \
+            || _die "invalid path scope: $path_scope"
+        case "$path_scope" in
+            *..*) _die "invalid path scope (directory traversal): $path_scope" ;;
+        esac
+    fi
+
+    out_dir="${out_dir:-${CLAUDE_TEMP_DIR:-${TMPDIR:-/tmp}}}"
+    out_dir="${out_dir%/}"
+    mkdir -p "$out_dir" || _die "cannot create output dir: $out_dir"
+
+    # Build the range argument deterministically from the mode. This is the
+    # whole point of the helper: the syntax is chosen here, in code, never by a
+    # model. Two-arg is the ONE legitimate case (empty-tree base has no history
+    # for a merge-base); every real PR uses three-dot so the diff matches what
+    # GitHub computes against the merge base.
+    local range
+    if [[ "$empty_tree_mode" == "true" ]]; then
+        range=("$base" "$head_sha")
+    else
+        range=("${base}...${head_sha}")
+    fi
+
+    local patch_file="$out_dir/review-diff.patch"
+    local files_file="$out_dir/changed-files.txt"
+
+    if [[ -n "$path_scope" ]]; then
+        git -C "$repo_dir" diff "${range[@]}" -- "$path_scope" > "$patch_file" \
+            || _die "git diff failed (patch)"
+        git -C "$repo_dir" diff --name-only "${range[@]}" -- "$path_scope" > "$files_file" \
+            || _die "git diff failed (name-only)"
+    else
+        git -C "$repo_dir" diff "${range[@]}" > "$patch_file" \
+            || _die "git diff failed (patch)"
+        git -C "$repo_dir" diff --name-only "${range[@]}" > "$files_file" \
+            || _die "git diff failed (name-only)"
+    fi
+
+    printf '%s\n' "$out_dir"
+}
+
+main() {
+    local sub="${1:-}"
+    shift || true
+    case "$sub" in
+        emit) cmd_emit "$@" ;;
+        *) _die "unknown subcommand: ${sub:-<none>} (expected emit)" ;;
+    esac
+}
+
+main "$@"

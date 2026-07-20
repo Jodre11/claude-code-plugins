@@ -399,6 +399,7 @@ test_sync_changed_lines_rule_matches_canonical() {
         "$cr/agents/reuse-reviewer.md" \
         "$cr/agents/security-reviewer.md" \
         "$cr/agents/style-reviewer.md" \
+        "$cr/agents/test-adequacy-reviewer.md" \
         "$cr/agents/test-quality-reviewer.md" \
         "$cr/agents/ui-reviewer.md"; do
 

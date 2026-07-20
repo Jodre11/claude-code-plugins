@@ -48,7 +48,7 @@ instead of one correctness agent grinding through everything serially.
 | Primary goal | Both, latency-led — faster AND at least as good; measure both |
 | Measure timing first? | Build, then A/B validate (trust the observation; confirm at the end) |
 | Split boundary | API/contract-truth only moves; silent-failure STAYS in correctness |
-| Dispatch | Conditional on a changed source file (not always-on) |
+| Dispatch | **Core (always-on), like correctness** — API/contract-truth is language-agnostic; gating it on the 3-language `$PRODUCTION_SOURCE_DETECTED` flag would silently drop API-truth review on Go/Ruby/Rust/etc PRs, violating the zero-net-loss gate |
 | Cross-review | NOT a cross-reviewer (Stage-1 only; panel votes; consistent with retiring classic) |
 | Agent name | `api-contract-reviewer` |
 
@@ -80,11 +80,22 @@ pinned versions, comments-vs-code. These are genuinely different modes of
 reasoning, so the cut does not orphan a shared sub-concern.
 
 ### Dispatch model
-- `api-contract` is a **conditional** specialist gated on a changed source file.
-  Reuse `$PRODUCTION_SOURCE_DETECTED` if the test-adequacy work has landed;
-  otherwise define the flag. Skips pure-docs/config PRs; the lens applies whenever
-  code changes anyway, so miss-risk is low.
+- `api-contract` is a **core (always-on)** domain, added to `review-core.mjs`'s
+  `CORE` list alongside `correctness`. It is NOT gated on a detection flag.
+  **Rationale:** correctness carries API/contract-truth today as a core domain, so
+  the lens runs on *every* PR in every language. `$PRODUCTION_SOURCE_DETECTED` fires
+  only on C#/Python/TS-JS (its scope is set by test-adequacy's grep-the-test-tree
+  logic), so gating `api-contract` on it would silently strip API-truth and
+  comment-truth review from Go/Ruby/Rust/Java/etc PRs — a net finding loss that
+  fails the ship-gate. Keeping it core preserves exact pre-split coverage. The cost
+  is one extra always-parallel dispatch even on pure-docs PRs, which is acceptable:
+  correctness already dispatches there, the lens no-ops cleanly (0 findings) when no
+  code changed, and the split's whole point is parallelising the two halves.
 - `correctness` stays a **core** (always-on) domain.
+- No new detection flag and no `review-pipeline.md` triad edit are needed for the
+  dispatch itself — `api-contract` joins `CORE`, so it is not threaded through the
+  `flags` object at all. (Contrast test-adequacy, which IS conditional and needs the
+  flag.)
 - Only the **full route** fans out specialists; the lightweight route is untouched.
 
 ### Cross-review
@@ -104,19 +115,25 @@ but NOT the cross-review-mode block, and is excluded from `crossDomains` via the
 - **MODIFY `agents/correctness-reviewer.md`** — delete the API/contract-truth
   bullets (`:84-97`); leave logic/null/boundary/concurrency/resource-leak/
   silent-failure. Cross-review-mode and CHANGED_LINES blocks untouched.
-- **MODIFY the three byte-identical pipeline copies** (`includes/review-pipeline.md`,
-  `skills/review-gh-pr/SKILL.md`, `commands/pre-review.md`) — detection flag +
-  args key threading. Byte-identity enforced by
-  `test_sync_pipeline_inline_matches_canonical`.
-- **MODIFY `workflows/review-core.mjs`** — add `['api-contract', flags.<flag>]` to
-  `CONDITIONAL`; add `api-contract` to `NON_CROSS`.
+- **The three byte-identical pipeline copies** (`includes/review-pipeline.md`,
+  `skills/review-gh-pr/SKILL.md`, `commands/pre-review.md`) — **NOT touched by the
+  dispatch change** (api-contract is core, not flag-gated, so no detection bullet or
+  args-key threading). Left here only to state explicitly that the split does not
+  edit the triad, avoiding a spurious `test_sync_pipeline_inline_matches_canonical`
+  concern.
+- **MODIFY `workflows/review-core.mjs`** — add `'api-contract'` to the `CORE` list
+  (alongside `correctness`); add `api-contract` to `NON_CROSS` (it is not a
+  cross-reviewer). No `CONDITIONAL` entry and no `flags.*` reference.
 - **MODIFY `README.md`** — roster prose + domain-table row.
 - **MODIFY `tests/lib/test_sync_notes.sh`** — enroll `api-contract-reviewer.md` in
   `test_sync_changed_lines_rule_matches_canonical`; update
   `test_sync_agent_hazard_severity_basis` (the `agent-hazard basis` citation moves
-  out of correctness with the comment-truth lens — assert it in the new agent, and
-  adjust the correctness assertion accordingly); extend the dispatcher-flags test if
-  a new flag is introduced.
+  out of correctness with the comment-truth lens — its `$corr` assertion at
+  ~line 1568 currently requires `agent-hazard basis` **in** correctness-reviewer.md;
+  after the move that anchor no longer appears there, so the assertion must be
+  re-pointed to `api-contract-reviewer.md` — not merely added, or the correctness
+  check fails). No dispatcher-flags-test change: api-contract is core, not
+  flag-gated, so no new `$..._DETECTED` literal is introduced.
 - **CREATE A/B corpus fixtures** — a hallucinated-API/wrong-signature hit, a
   comment-truth hit, and a near-miss inflation guard, at
   `agent: api-contract-reviewer`; plus `tests/ab/configs/per-agent/api-contract-baseline.yaml`.
@@ -152,9 +169,16 @@ Behavioural A/B (ship-gate, at the end, operator-run):
 
 ## Dependencies / sequencing
 
-- Shares `$PRODUCTION_SOURCE_DETECTED` and the `NON_CROSS` set with the
-  test-adequacy specialist work (`docs/superpowers/plans/2026-07-20-test-adequacy-specialist.md`).
-  Whichever lands second reuses what the first built; if this lands first, it
-  defines both.
+- Shares **only** the `NON_CROSS` set with the test-adequacy specialist work
+  (`docs/superpowers/plans/2026-07-20-test-adequacy-specialist.md`). It does **not**
+  share `$PRODUCTION_SOURCE_DETECTED` — api-contract is core/always-on, not
+  flag-gated (see Dispatch model). Whichever lands second reuses the `NON_CROSS`
+  set; if this lands first, it defines `NON_CROSS = new Set([...STATIC,
+  'api-contract'])` and test-adequacy later extends it with `'test-adequacy'`.
+- Because api-contract needs no detection flag, the ordering coupling is weaker than
+  originally framed: this piece could land first with no dependency on the
+  test-adequacy flag machinery. The user's stated preferred sequence
+  (test-adequacy first) still holds, but it is now a preference, not a technical
+  prerequisite.
 - Separate PR from test-adequacy. Per branch-protection, land via PR (no
   admin-bypass push to `main`).

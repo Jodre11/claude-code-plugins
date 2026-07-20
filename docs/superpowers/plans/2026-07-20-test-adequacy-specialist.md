@@ -154,7 +154,7 @@ Restrict every finding to symbols introduced or changed on lines in `$CHANGED_LI
 - **F1 — untested new/changed public production type or function.** For each new or changed **public** production symbol (a class, record, interface, exported function, public method, or module-level function that is part of the unit's surface), `Grep` the repo's test tree (`test/`, `tests/`, `spec/`, `specs/`, `__tests__/`, or files matching test-naming conventions) for a test that exercises it *directly*. A symbol whose only exercise is incidental (reached transitively through an unrelated integration test, or only through a different project that does not count toward its own coverage gate) counts as **untested**. Flag symbols with no direct test. Anchor the finding to the symbol's declaration line (a changed/added line).
   - **Severity:** an untested symbol on a **correctness-central or money/data-affecting path** (e.g. a projection that selects a lookup key, a calculation, a state transition) is **Important** via the agent-hazard basis — a regression ships green on a path where wrong output has real consequences. An untested symbol whose blast radius is **confined and low-stakes** (display-only formatting, a trivial pass-through, a symbol with no branching logic) is **Suggestion**. Do not inflate every untested helper to Important; apply the honest impact-if-manifested test.
 
-- **F4 — untested producer of a new wire contract / DTO.** For each new **wire-contract or DTO type** (a serialised payload, response/request shape, event, or message crossing a process/service boundary), check that the **producer** side has a test asserting it *emits a populated instance* — not only that the **consumer** side pins the shape. A contract whose consumer/deserialiser is tested but whose producer/serialiser is only stubbed (e.g. the server test uses an `Empty`/default instance and never asserts a populated payload is emitted) is a silent gap: the server can stop populating the block and every test stays green. Flag the untested producer side.
+- **F4 — untested producer of a new wire contract / DTO.** For each new **wire-contract or DTO type** (a serialised payload, response/request shape, event, or message crossing a process/service boundary), check that the **producer** side has a test asserting it *emits a populated instance* — not only that the **consumer** side pins the shape. A contract whose consumer/deserialiser is tested but whose producer/serialiser is only stubbed (e.g. the server test uses an `Empty`/default instance and never asserts a populated payload is emitted) is a silent gap: the server can stop populating the block and every test stays green. Flag the untested producer side. **Anchor the finding to a changed line** — the new/changed contract type or field declaration that appears in `$CHANGED_LINES` — **never** to the (frequently unchanged) producer serialiser body, or the MANDATORY CHANGED_LINES filter below silently drops the finding. If the PR adds a field to an existing contract, anchor to that added field line.
   - **Severity:** **Important** when the unpopulated payload would manifest as missing/blank data a user or downstream system relies on; **Suggestion** when the block is optional or cosmetic.
 
 ## Analysis Process
@@ -329,10 +329,12 @@ EOF
 
 ### Task 4: Update the roster enumerations (README) in lockstep
 
-The README is the human-facing roster. It must list the new specialist in both the prose sentence and the domain table so it stays in sync with the code. (The `specialist-context.md` base-branch/regex sync tests and the `cross-review-mode` sync test do **not** need the new agent — it is not a cross-reviewer and does not inline those blocks.)
+The README is the human-facing roster. It must list the new specialist in the prose sentence, the domain table, AND the two numeric count claims so it stays internally consistent with the code. (The `specialist-context.md` base-branch/regex sync tests and the `cross-review-mode` sync test do **not** need the new agent — it is not a cross-reviewer and does not inline those blocks.)
+
+Adding `test-adequacy` takes the conditional roster from **7 to 8** specialists and the all-conditionals total from **15 to 16** (8 core + 8 conditional). Both counts appear as prose in the README and will go stale if only the table is updated.
 
 **Files:**
-- Modify: `plugins/code-review-suite/README.md` (roster prose ~line 30-36; domain table ~line 76-91)
+- Modify: `plugins/code-review-suite/README.md` (count claims ~line 29 and ~line 69; roster prose ~line 32-36; domain table ~line 84-91)
 
 **Interfaces:** none (documentation only).
 
@@ -352,12 +354,18 @@ In the domain table, add a row after the `test-quality-reviewer` row:
 | `test-adequacy-reviewer` | Absent coverage on new production code — untested new/changed public types (F1) and untested producers of new wire contracts/DTOs (F4) (conditional — fires on changed non-test C#/Python/TS-JS source) |
 ```
 
-- [ ] **Step 3: Run the full suite (no regressions)**
+- [ ] **Step 3: Update the two numeric count claims**
+
+These are the counts that go stale silently (no test guards them):
+- ~line 29: `The full review path dispatches 8 core specialists (up to 15 with all conditionals):` → change `up to 15` to `up to 16`.
+- ~line 69: `the full route dispatches 8 core specialists plus up to 7 conditional specialists (C#, UI, JS/TS, Python, IaC, dependency freshness, test quality)` → change `up to 7` to `up to 8` and append `, test adequacy` to the parenthetical list.
+
+- [ ] **Step 4: Run the full suite (no regressions)**
 
 Run: `bash tests/run.sh`
 Expected: PASS (README changes are not asserted by structural tests, but confirm nothing else broke).
 
-- [ ] **Step 4: Commit**
+- [ ] **Step 5: Commit**
 
 ```bash
 git add plugins/code-review-suite/README.md

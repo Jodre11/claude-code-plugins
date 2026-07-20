@@ -26,15 +26,15 @@ another takes over). The synthesiser constrains the verdict to `REQUEST_CHANGES`
 
 ### Specialists
 
-The full review path dispatches 8 core specialists (up to 15 with all conditionals):
+The full review path dispatches 8 core specialists (up to 16 with all conditionals):
 `security-reviewer`, `correctness-reviewer`, `consistency-reviewer`, `style-reviewer`,
 `archaeology-reviewer`, `reuse-reviewer`, `efficiency-reviewer`, `alignment-reviewer`, plus
 conditional specialists by file type: `jbinspect-reviewer` (C#), `ui-reviewer` (visual
 components), `eslint-reviewer` (JS/TS), `ruff-reviewer` (Python incl. notebooks),
 `trivy-reviewer` (IaC: Terraform, Dockerfile, Kubernetes, Helm, CFN),
 `housekeeper-reviewer` (dependency/version freshness + maintenance-health: GitHub Actions,
-workflow runners, npm, NuGet, Docker base images, PyPI), and `test-quality-reviewer`
-(false-green test detection — test files only).
+workflow runners, npm, NuGet, Docker base images, PyPI), `test-quality-reviewer`
+(false-green test detection — test files only), and `test-adequacy-reviewer` (new production code lacking a direct test, or a new wire contract whose producer side is untested).
 
 The five static-analysis specialists (`jbinspect`, `eslint`, `ruff`, `trivy`,
 `housekeeper`) share the cross-cutting contract in `includes/static-analysis-context.md`
@@ -66,7 +66,7 @@ mode, making the single-path guarantee measurable.
 1. **Inline prep** — Phase 0 intent ledger, Phase 0.6 CI status gate, base branch determination, diff measurement, C#/UI/deletion/security detection
 2. **Trivial-mode (Phase 0.7)** — orchestrator-only mini-review for docs/config-only diffs (≤3 files, ≤30 lines, allow-listed extensions, excluding load-bearing prompt paths under `plugins/*/agents|skills|commands|includes/`). Hard cap of 3 inline comments and a user-confirm gate before posting. Override with the `--force` argument or `intent.skip_trivial_check = true` in `.claude/code-review.toml`. Falls through to the lightweight or full path when the bar is not met.
 3. **Classification** — Step 3 computes the route (`lightweight` for small diffs: ≤5 files, ≤150 lines, no significant deletions, no security-sensitive areas; `full` otherwise) and Step 3.5 passes it to the Workflow.
-4. **Workflow core** — the lightweight route runs a single `code-analysis` pass inside the Workflow; the full route dispatches 8 core specialists plus up to 7 conditional specialists (C#, UI, JS/TS, Python, IaC, dependency freshness, test quality) in parallel, then fresh cross-review agents evaluate peer findings (excluding the five static-analysis specialists — see `includes/static-analysis-context.md`), then a synthesiser produces a tiered report. All of this is implemented in `review-core.mjs`.
+4. **Workflow core** — the lightweight route runs a single `code-analysis` pass inside the Workflow; the full route dispatches 8 core specialists plus up to 8 conditional specialists (C#, UI, JS/TS, Python, IaC, dependency freshness, test quality, test adequacy) in parallel, then fresh cross-review agents evaluate peer findings (excluding the five static-analysis specialists — see `includes/static-analysis-context.md`), then a synthesiser produces a tiered report. All of this is implemented in `review-core.mjs`.
 
 ## Agents
 
@@ -87,6 +87,7 @@ mode, making the single-path guarantee measurable.
 | `trivy-reviewer` | `trivy config` IaC security analysis (conditional — Terraform / Dockerfile / Kubernetes / Helm / CFN files only) |
 | `housekeeper-reviewer` | Dependency/version freshness + maintenance-health — flags GitHub Actions, workflow runners, npm, NuGet, Docker base images, and PyPI packages behind latest GA or marked deprecated/unlisted/yanked (conditional — workflows + `package.json` + `*.csproj`/`*.props` + `pyproject.toml`/`requirements*.txt` + Dockerfiles; registry-backed deterministic engine) |
 | `test-quality-reviewer` | False-green test detection — no-assert, tautological, asserts-on-the-mock, over-mocking (conditional — test files only) |
+| `test-adequacy-reviewer` | Absent coverage on new production code — untested new/changed public types (F1) and untested producers of new wire contracts/DTOs (F4) (conditional — fires on changed non-test C#/Python/TS-JS source) |
 | `ui-reviewer` | UI/UX quality, accessibility, usability (conditional — visual component files only) |
 | `cross-reviewer` | Domain-focused cross-review — evaluates peer findings through a single domain lens |
 | `review-synthesiser` | Frontier-model synthesis — independent deep analysis, tiered report with cross-review integration |

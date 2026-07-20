@@ -723,10 +723,27 @@ The `*` character is intentional: it is forwarded to `git diff -- <pathspec>` wh
 ### Step 2: Measure the diff and build agent prompt
 
 2.1. Run `git rev-parse HEAD` and store as `$HEAD_SHA`. Validate that `$HEAD_SHA` matches `^[0-9a-f]{40}$` — if it does not, report "Invalid HEAD SHA: $HEAD_SHA" and stop. All subsequent diff commands use `$HEAD_SHA` instead of `HEAD` to pin the review to a single commit and avoid race conditions if new commits land during the review.
-2.2. Run `git diff` (append `-- "$PATH_SCOPE"` if set) using the diff syntax
-determined by `$EMPTY_TREE_MODE` (two-arg when true, three-dot when false) and
-store as `$FULL_DIFF`. If `$FULL_DIFF` is empty, report "No changes found
-against $BASE" and stop.
+2.2. Construct the diff **deterministically** with the `review-diff` helper —
+never hand-run `git diff`. The two-arg-vs-three-dot syntax choice is the
+`finance-erp` PR #593 failure mode: an orchestrator that hand-runs two-arg
+`git diff $BASE $HEAD` against an un-rebased branch measures the stale base's
+newer commits as spurious deletions. The helper picks the syntax in code from
+`$EMPTY_TREE_MODE`, so it cannot be got wrong. Call the helper (from this
+plugin's `bin/` directory, already on `PATH`):
+
+```bash
+review-diff emit "$REPO_DIR" "$BASE" "$HEAD_SHA" "$EMPTY_TREE_MODE" "$PATH_SCOPE" "$RESOLVED_TEMP_DIR"
+```
+
+(Pass `$PATH_SCOPE` as an empty string when unset.) On a **non-zero exit**,
+hard-halt with the helper's stderr message — never analyse a diff the helper
+refused to construct. The helper writes
+`$RESOLVED_TEMP_DIR/review-diff.patch` (the full diff, pinned to `$HEAD_SHA`) and
+`$RESOLVED_TEMP_DIR/changed-files.txt` (one path per line), and exits non-zero
+without writing anything on invalid input. Read `review-diff.patch` into
+`$FULL_DIFF`. If `$FULL_DIFF` is empty, report "No changes found against $BASE"
+and stop. These are the same two artifacts Step 2.85 previously reproduced — the
+helper is now their single source, so 2.85 no longer re-runs `git diff` for them.
 
 2.3. Derive `$CHANGED_FILES` from `$FULL_DIFF` by collecting the path component
 of every `+++ b/<path>` header (or `a/<path>` for `+++ b/dev/null` deletions),
@@ -739,6 +756,39 @@ A rename with no content change contributes 0 to `$LINE_COUNT`. Binary files
 show no `+`/`-` lines in the diff output and likewise contribute 0.
 Insertions-only and deletions-only diffs are handled implicitly because the
 count is over both prefix types.
+
+2.45. **Cross-check the measured diff against GitHub's authoritative counts
+(PR mode only).** This is the deterministic backstop to Step 2.2's helper: even
+with the syntax locked, a stale base pin or a wrong `$BASE` would produce a diff
+that disagrees with the PR. Apply this check **only** when ALL of the following
+hold — otherwise skip it:
+
+- `$REVIEW_MODE` is `pr` (a live PR exists; `local` pre-review has no oracle), AND
+- `$EMPTY_TREE_MODE` is `false` (the empty-tree base has no GitHub-side merge-base
+  count to compare against), AND
+- `$PATH_SCOPE` is empty (a scoped review deliberately measures a subset, so it
+  will legitimately differ from GitHub's whole-PR count).
+
+When it applies, run
+`gh pr view "$ARGUMENTS" --repo "$OWNER_REPO" --json changedFiles -q .changedFiles`
+and compare the returned integer to `$FILE_COUNT`. GitHub computes `changedFiles`
+against the merge base — the same basis as the correct three-dot diff — so the two
+must be **exactly equal**. If they differ, **HALT** and report:
+
+```
+Step 2.45 halt: measured diff ($FILE_COUNT files) does not match GitHub's
+changedFiles (<N>) for PR $ARGUMENTS. The measured diff is wrong — likely a
+two-arg `git diff` against an un-rebased base, or a stale/incorrect base pin.
+Do not proceed; the review would analyse the wrong change set.
+```
+
+If the `gh` call fails or returns a non-integer, **HALT** with
+`Step 2.45 halt: could not read GitHub changedFiles for PR $ARGUMENTS`. In PR mode
+`gh` has already succeeded earlier this run (Phase 0's description fetch and the
+base-pin's `baseRefOid`), and posting the verdict at the end also needs it — a
+failure here means `gh` is broken for this run, so the review cannot complete
+regardless. Halting now is honest and early rather than 20 minutes later at the
+post step.
 
 ### Step 2.5: Build $CHANGED_LINES
 
@@ -852,10 +902,10 @@ The block is now ready for use in Step 2.9 when building `$AGENT_PROMPT`.
 2.7. Scan for **significant deletions:** run `git diff -w` (using the diff syntax determined by `$EMPTY_TREE_MODE`, append `-- "$PATH_SCOPE"` if set) and scan its hunks for any single hunk with 10+ contiguous deleted lines. If any such hunk exists, set `$SIGNIFICANT_DELETIONS = true`. The `-w` view drops whitespace-only differences before the deletion count is taken, so re-indents and other whitespace-only edits do not register as significant deletions. **Do NOT replace `$FULL_DIFF` with the `-w` view** — `$FULL_DIFF` (already captured in 2.2 without `-w`) remains the authoritative artifact for `$CHANGED_LINES`, `$LINE_COUNT`, specialists, and archaeology anchors. Only the deletion-detection scan uses `-w`.
 2.8. Scan changed file paths and `$FULL_DIFF` content for **security-sensitive areas** (auth, crypto, input validation, SQL, API endpoints, secrets management, deserialisation, JWT, session, token, eval, exec, spawn, certificate, CORS). If found, set `$SECURITY_SENSITIVE = true`
 
-2.85. **Materialise diff artifacts for downstream consumers.** Write three files under `$RESOLVED_TEMP_DIR` (the concrete `/tmp/claude-<session-id>/` path — resolved in Phase -0.5 and re-stated in Step 2.9) so the housekeeper, round-1 specialists, the synthesiser, and the cross-review core can read the diff and scope lists the orchestrator already computed in Steps 2.2–2.5 instead of each re-deriving them from `git`. The writes are purely additive — Step 2.9 also carries the paths, and every consumer keeps its own `git diff` fallback for when those path lines are absent (standalone / direct-invocation runs) — so nothing about what any agent reviews changes.
-   - `$RESOLVED_TEMP_DIR/review-diff.patch` — the full diff. Reproduce `$FULL_DIFF` with one redirected git call, using the diff syntax determined by `$EMPTY_TREE_MODE` (two-arg when true, three-dot when false) and appending `-- "$PATH_SCOPE"` if set: `git -C "$REPO_DIR" diff … > "$RESOLVED_TEMP_DIR/review-diff.patch"`. Every diff command is pinned to `$HEAD_SHA` (Step 2.1), so this is byte-identical to the `$FULL_DIFF` captured in Step 2.2.
-   - `$RESOLVED_TEMP_DIR/changed-files.txt` — one repo-relative changed-file path per line. Reproduce it with one redirected `git diff --name-only` call, same syntax and `-- "$PATH_SCOPE"` scoping: `git -C "$REPO_DIR" diff --name-only … > "$RESOLVED_TEMP_DIR/changed-files.txt"`.
-   - `$RESOLVED_TEMP_DIR/changed-lines.txt` — the `$CHANGED_LINES_BLOCK` body from Step 2.5, verbatim (including its `Changed lines:` header and trailing blank line). It is an in-memory serialised string, not the output of one git command, so write it with the Write tool.
+2.85. **Materialise diff artifacts for downstream consumers.** Three files under `$RESOLVED_TEMP_DIR` (the concrete `/tmp/claude-<session-id>/` path — resolved in Phase -0.5 and re-stated in Step 2.9) let the housekeeper, round-1 specialists, the synthesiser, and the cross-review core read the diff and scope lists the orchestrator already computed instead of each re-deriving them from `git`. The artifacts are purely additive — Step 2.9 also carries the paths, and every consumer keeps its own `git diff` fallback for when those path lines are absent (standalone / direct-invocation runs) — so nothing about what any agent reviews changes.
+   - `$RESOLVED_TEMP_DIR/review-diff.patch` — the full diff. **Already written by the `review-diff` helper in Step 2.2** (pinned to `$HEAD_SHA`, so byte-identical to `$FULL_DIFF`). Do not re-run `git diff` here.
+   - `$RESOLVED_TEMP_DIR/changed-files.txt` — one repo-relative changed-file path per line. **Already written by the `review-diff` helper in Step 2.2.** Do not re-run `git diff` here.
+   - `$RESOLVED_TEMP_DIR/changed-lines.txt` — the `$CHANGED_LINES_BLOCK` body from Step 2.5, verbatim (including its `Changed lines:` header and trailing blank line). It is an in-memory serialised string, not the output of one git command, so write it with the Write tool. (The helper does not produce this one — it is derived from the diff walk, not from `git`.)
 
 #### 2.9. Build agent prompt
 

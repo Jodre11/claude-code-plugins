@@ -855,14 +855,14 @@ test_sync_static_analysis_cross_feed_documented() {
 
     # Assertion 1: the cross-feed now lives in the Workflow engine (review-core.mjs), not
     # inline prose. crossAndSynth must build a `peer` object over crossDomains, and the
-    # STATIC set must be EXCLUDED from RECEIVING cross-review (crossDomains filters STATIC
+    # STATIC set must be EXCLUDED from RECEIVING cross-review (crossDomains filters NON_CROSS
     # out). Both the STATIC set definition and the crossDomains filter are load-bearing.
     if grep -qE 'const STATIC = new Set\(\[' "$review_core" \
-            && grep -qE 'const crossDomains = allSpecialists\.filter\(d => !STATIC\.has\(d\)\)' "$review_core"; then
+            && grep -qE 'const crossDomains = allSpecialists\.filter\(d => !NON_CROSS\.has\(d\)\)' "$review_core"; then
         pass "static-analysis cross-feed: review-core.mjs excludes STATIC from receiving cross-review"
     else
         fail "static-analysis cross-feed: review-core.mjs excludes STATIC from receiving cross-review" \
-            "review-core.mjs must define 'const STATIC = new Set([...])' and 'const crossDomains = allSpecialists.filter(d => !STATIC.has(d))' — this is what excludes static-analysis specialists from receiving cross-review while still feeding their findings to the cross-reviewers (the peer object in crossAndSynth)"
+            "review-core.mjs must define 'const STATIC = new Set([...])' and 'const crossDomains = allSpecialists.filter(d => !NON_CROSS.has(d))' — this is what excludes static-analysis specialists from receiving cross-review while still feeding their findings to the cross-reviewers (the peer object in crossAndSynth)"
     fi
 
     # Assertion 2: static-analysis-context.md §8 must affirm that findings ARE shown

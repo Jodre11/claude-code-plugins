@@ -103,7 +103,7 @@ test_phaselog_captures_cross_io() {
     args=$(_pe_args)
     env='{"verdict":"APPROVE","rubricRowApplied":4,"rubricReason":"clean","tiers":{"consensus":[],"synthesiser":[],"contested":[],"dismissed":[]},"bodyText":"## Synthesiser Assessment\n> ok\n"}'
     out=$(_pe_run_core "$args" "$env")
-    # Cross cogs: one per stochastic domain (8 core, none static here).
+    # Cross cogs: one per cross-eligible domain (9 core minus api-contract in NON_CROSS = 8; none static here).
     assert_equals "8" "$(echo "$out" | jq '[.log.cogs[] | select(.phase=="cross")] | length')" "8 cross cogs"
     # Each cross cog carries its peer-set input and opinions output.
     local first

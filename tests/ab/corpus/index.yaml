@@ -109,3 +109,18 @@ fixtures:
     type: synthetic
     description: New wire-contract DTO whose consumer side is tested but whose producer stubs an empty instance and never asserts a populated payload is emitted. Expected Important (producer-side silent gap).
     tags: [test-adequacy, f4, wire-contract]
+  - id: api-contract-apitruth-hit
+    agent: api-contract-reviewer
+    type: synthetic
+    description: New call to a library function with a wrong/nonexistent signature for the pinned version. Arm B expected Important; arm A ABSENT (pre-split correctness minus the moved lens cannot see it). Zero-net-loss proof.
+    tags: [api-contract, api-truth]
+  - id: api-contract-commenttruth-hit
+    agent: api-contract-reviewer
+    type: synthetic
+    description: "New docstring that contradicts the implementation (says returns null on missing key; code throws). Arm B expected Important via agent-hazard basis; arm A ABSENT."
+    tags: [api-contract, comment-truth, agent-hazard]
+  - id: api-contract-nearmiss
+    agent: api-contract-reviewer
+    type: synthetic
+    description: New library call with a correct signature for the pinned version and an accurate docstring. Inflation guard — expected ABSENT in both arms.
+    tags: [api-contract, inflation-guard]

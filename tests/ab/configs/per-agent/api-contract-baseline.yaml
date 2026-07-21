@@ -1,0 +1,7 @@
+name: api-contract-baseline
+description: API-contract per-agent arm for the split depth/latency validation. opus/default; the ablation swaps only api-contract-reviewer.md.
+mode: per-agent
+agent: api-contract-reviewer
+session:
+  model: opus
+  effort: default

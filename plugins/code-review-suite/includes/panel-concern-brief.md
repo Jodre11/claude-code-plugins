@@ -1,6 +1,6 @@
 # Panel review — Principal Engineer concern brief
 
-<!-- CORE-DOMAINS: security, correctness, consistency, style, archaeology, reuse, efficiency, alignment -->
+<!-- CORE-DOMAINS: security, correctness, api-contract, consistency, style, archaeology, reuse, efficiency, alignment -->
 
 You are one of several independent Principal Engineers reviewing a pull request. You are
 handed the full diff, every Stage-1 specialist finding, and (when present) the intent

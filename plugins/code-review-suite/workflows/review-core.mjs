@@ -234,7 +234,7 @@ log(`orchestration mode: ${orchestrationMode === 'panel' ? `panel (size ${panelS
 
 // Fixed core list — by construction, every one dispatches. No agent can drop one.
 const CORE = [
-    'security', 'correctness', 'consistency', 'style',
+    'security', 'correctness', 'api-contract', 'consistency', 'style',
     'archaeology', 'reuse', 'efficiency', 'alignment',
 ]
 // alignment is suppressed in self-re-review mode (pipeline Step 4.4).
@@ -265,7 +265,7 @@ const STATIC = new Set(['jbinspect', 'eslint', 'ruff', 'trivy', 'housekeeper'])
 // only the receive-cross-review exclusion; STATIC keeps its severity-lock semantics
 // everywhere else. Classic mode is being retired; when it is, this exclusion can be
 // simplified since the panel path never runs cross-review.
-const NON_CROSS = new Set([...STATIC, 'test-adequacy'])
+const NON_CROSS = new Set([...STATIC, 'test-adequacy', 'api-contract'])
 // Panel verdict data tables — must live above the panel-path return (line ~276) to avoid TDZ.
 const TRACT_ORDER = { 'Mechanical': 1, 'Bounded': 2, 'Open-ended': 3 }
 const FLAG_TO_NUM = { high: 90, medium: 75, low: 50 }

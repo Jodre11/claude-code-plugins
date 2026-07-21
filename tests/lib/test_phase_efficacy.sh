@@ -92,8 +92,8 @@ test_phaselog_captures_round1_and_meta() {
     assert_equals "main" "$(echo "$out" | jq -r '.log.meta.base')" "log.meta.base captured"
     assert_equals "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" "$(echo "$out" | jq -r '.log.meta.head_sha')" "log.meta.head_sha captured"
     assert_equals "false" "$(echo "$out" | jq -r '.log.meta.empty_tree_mode')" "log.meta.empty_tree_mode captured"
-    # One round-1 cog per core specialist (8 core, no conditionals).
-    assert_equals "8" "$(echo "$out" | jq '[.log.cogs[] | select(.phase=="round1")] | length')" "8 round-1 cogs (core list)"
+    # One round-1 cog per core specialist (9 core, no conditionals).
+    assert_equals "9" "$(echo "$out" | jq '[.log.cogs[] | select(.phase=="round1")] | length')" "9 round-1 cogs (core list)"
     # Round-1 cogs carry no input (diff reconstructed from meta).
     assert_equals "null" "$(echo "$out" | jq -r '[.log.cogs[] | select(.phase=="round1")][0].input // "null"')" "round-1 cog omits input"
 }

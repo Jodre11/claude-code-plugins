@@ -1,0 +1,7 @@
+name: test-adequacy-baseline
+description: Test-adequacy per-agent arm for the absence-detection ablation. opus/default; the ablation swaps only test-adequacy-reviewer.md.
+mode: per-agent
+agent: test-adequacy-reviewer
+session:
+  model: opus
+  effort: default

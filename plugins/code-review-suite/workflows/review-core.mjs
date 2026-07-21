@@ -249,6 +249,7 @@ const CONDITIONAL = [
     ['trivy', flags.iac],
     ['housekeeper', flags.housekeeping],
     ['test-quality', flags.tests],
+    ['test-adequacy', flags.production],
 ]
 const condList = CONDITIONAL.filter(([, on]) => on).map(([d]) => d)
 const allSpecialists = [...coreList, ...condList]
@@ -259,10 +260,16 @@ log(`dispatch: ${specialists.filter(s => s.out.status === 'ok').length}/${allSpe
 // Static-analysis specialists are EXCLUDED from RECEIVING cross-review, but their
 // findings ARE shown to every cross-reviewer (pipeline 5.2.3).
 const STATIC = new Set(['jbinspect', 'eslint', 'ruff', 'trivy', 'housekeeper'])
+// test-adequacy is an LLM specialist with NO cross-review-mode contract (unlike the
+// core reviewers) and is NOT severity-locked like the STATIC analysers. NON_CROSS is
+// only the receive-cross-review exclusion; STATIC keeps its severity-lock semantics
+// everywhere else. Classic mode is being retired; when it is, this exclusion can be
+// simplified since the panel path never runs cross-review.
+const NON_CROSS = new Set([...STATIC, 'test-adequacy'])
 // Panel verdict data tables — must live above the panel-path return (line ~276) to avoid TDZ.
 const TRACT_ORDER = { 'Mechanical': 1, 'Bounded': 2, 'Open-ended': 3 }
 const FLAG_TO_NUM = { high: 90, medium: 75, low: 50 }
-const crossDomains = allSpecialists.filter(d => !STATIC.has(d))
+const crossDomains = allSpecialists.filter(d => !NON_CROSS.has(d))
 
 // Boundary-gate tunable knobs (spec "Open knobs"). Bands are [lo, hi) on confidence.
 const GATE_APPROVE_IMPORTANT_BAND = [60, 80]

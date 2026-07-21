@@ -94,3 +94,18 @@ fixtures:
     type: synthetic
     description: Clean-test fixture — test_create_user_stores_record uses real assertions on a real DB. Inflation guard; both arms expected ABSENT.
     tags: [test-quality, inflation-guard]
+  - id: test-adequacy-f1-hit
+    agent: test-adequacy-reviewer
+    type: synthetic
+    description: "New public production type with correctness-central logic and NO direct test — swapping its behaviour passes the whole suite. Expected Important (agent-hazard: regression ships green)."
+    tags: [test-adequacy, agent-hazard, f1]
+  - id: test-adequacy-f1-nearmiss
+    agent: test-adequacy-reviewer
+    type: synthetic
+    description: New public production type WITH a direct unit test asserting its behaviour. Inflation guard — expected ABSENT.
+    tags: [test-adequacy, inflation-guard, f1]
+  - id: test-adequacy-f4-hit
+    agent: test-adequacy-reviewer
+    type: synthetic
+    description: New wire-contract DTO whose consumer side is tested but whose producer stubs an empty instance and never asserts a populated payload is emitted. Expected Important (producer-side silent gap).
+    tags: [test-adequacy, f4, wire-contract]

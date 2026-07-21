@@ -391,6 +391,7 @@ test_sync_changed_lines_rule_matches_canonical() {
 
     local agent
     for agent in \
+        "$cr/agents/api-contract-reviewer.md" \
         "$cr/agents/archaeology-reviewer.md" \
         "$cr/agents/code-analysis.md" \
         "$cr/agents/consistency-reviewer.md" \

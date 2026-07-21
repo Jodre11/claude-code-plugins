@@ -79,22 +79,7 @@ Review every change for:
 - **Error handling gaps** — swallowed exceptions, missing error paths, incomplete catch blocks, and **silent failure paths**: a new error/retry/fallback/external-call path that emits nothing observable — an exception caught but not logged, a retry with no trace, a fallback that returns a default without signalling. The unique residue after efficiency (hot-loop logging) and consistency (wrong framework) take their slices is that a future debugger is left blind to a path that failed. Flag the missing signal, not the logging style.
 - **Boundary conditions** — empty collections, zero values, max/min values, overflow
 - **Type mismatches** — implicit conversions, wrong generic parameters, narrowing casts
-- **Incorrect API usage** — wrong method signatures, deprecated APIs, misunderstood contracts
 - **Async/await pitfalls** — fire-and-forget tasks, missing ConfigureAwait where required, deadlocks from sync-over-async, unawaited disposables, cancelled token not propagated
-- **Hallucinated APIs / wrong signatures / wrong API versions** — when the diff calls a
-  library or framework function, verify the signature against the version pinned in the
-  project's lockfile or manifest (read the lockfile if present, e.g. `package-lock.json`,
-  `*.csproj`, `requirements.txt`, `go.sum`). When in doubt, web-fetch the current docs for
-  that version. Flag confident-looking calls that don't exist or whose signature doesn't
-  match the pinned version.
-- **Comment-truth verification** — read each new or modified comment, docstring, or `///`
-  summary against the code it describes. Flag claims that don't match the actual behaviour
-  (e.g. a docstring says "returns null on missing key" but the implementation throws).
-  This is a Critical or Important finding only when the inaccurate documentation would
-  mislead a caller into writing wrong code; otherwise Suggestion. A misleading comment is
-  an instance of the **agent-hazard basis** in `includes/severity-definitions.md` — it
-  predictably induces a future maintainer to write wrong code — which is why it reaches
-  Important even though the comment itself causes no runtime defect today.
 
 ## Output Format
 

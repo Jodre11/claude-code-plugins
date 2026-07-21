@@ -68,8 +68,8 @@ test_panel_concern_brief_domains_match_core() {
     # `const CORE = [` and the closing `]`), normalise to a comma-space list.
     core_line=$(sed -n '/const CORE = \[/,/\]/p' "$mjs" \
         | grep -oE "'[a-z-]+'" | tr -d "'" | paste -sd, - | sed 's/,/, /g')
-    # Extract the brief's declared domain marker. Use [a-z, ]+ (no hyphen) so the
-    # trailing ' -->' of the HTML comment close is not captured.
-    brief_line=$(grep -oE 'CORE-DOMAINS: [a-z, ]+' "$brief" | sed 's/CORE-DOMAINS: //' | sed 's/ *$//')
+    # Extract the brief's declared domain marker. Capture to end-of-line, strip
+    # the CORE-DOMAINS: prefix and the trailing ' -->' comment close.
+    brief_line=$(grep -oE 'CORE-DOMAINS:.*-->' "$brief" | sed 's/CORE-DOMAINS: //' | sed 's/ *-->$//' | sed 's/ *$//')
     assert_equals "$core_line" "$brief_line" "concern-brief domain list tracks review-core.mjs CORE"
 }

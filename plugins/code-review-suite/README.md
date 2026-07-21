@@ -26,8 +26,8 @@ another takes over). The synthesiser constrains the verdict to `REQUEST_CHANGES`
 
 ### Specialists
 
-The full review path dispatches 8 core specialists (up to 16 with all conditionals):
-`security-reviewer`, `correctness-reviewer`, `consistency-reviewer`, `style-reviewer`,
+The full review path dispatches 9 core specialists (up to 17 with all conditionals):
+`security-reviewer`, `correctness-reviewer`, `api-contract-reviewer`, `consistency-reviewer`, `style-reviewer`,
 `archaeology-reviewer`, `reuse-reviewer`, `efficiency-reviewer`, `alignment-reviewer`, plus
 conditional specialists by file type: `jbinspect-reviewer` (C#), `ui-reviewer` (visual
 components), `eslint-reviewer` (JS/TS), `ruff-reviewer` (Python incl. notebooks),
@@ -66,7 +66,7 @@ mode, making the single-path guarantee measurable.
 1. **Inline prep** — Phase 0 intent ledger, Phase 0.6 CI status gate, base branch determination, diff measurement, C#/UI/deletion/security detection
 2. **Trivial-mode (Phase 0.7)** — orchestrator-only mini-review for docs/config-only diffs (≤3 files, ≤30 lines, allow-listed extensions, excluding load-bearing prompt paths under `plugins/*/agents|skills|commands|includes/`). Hard cap of 3 inline comments and a user-confirm gate before posting. Override with the `--force` argument or `intent.skip_trivial_check = true` in `.claude/code-review.toml`. Falls through to the lightweight or full path when the bar is not met.
 3. **Classification** — Step 3 computes the route (`lightweight` for small diffs: ≤5 files, ≤150 lines, no significant deletions, no security-sensitive areas; `full` otherwise) and Step 3.5 passes it to the Workflow.
-4. **Workflow core** — the lightweight route runs a single `code-analysis` pass inside the Workflow; the full route dispatches 8 core specialists plus up to 8 conditional specialists (C#, UI, JS/TS, Python, IaC, dependency freshness, test quality, test adequacy) in parallel, then fresh cross-review agents evaluate peer findings (excluding the five static-analysis specialists — see `includes/static-analysis-context.md`), then a synthesiser produces a tiered report. All of this is implemented in `review-core.mjs`.
+4. **Workflow core** — the lightweight route runs a single `code-analysis` pass inside the Workflow; the full route dispatches 9 core specialists plus up to 8 conditional specialists (C#, UI, JS/TS, Python, IaC, dependency freshness, test quality, test adequacy) in parallel, then fresh cross-review agents evaluate peer findings (excluding the five static-analysis specialists — see `includes/static-analysis-context.md`), then a synthesiser produces a tiered report. All of this is implemented in `review-core.mjs`.
 
 ## Agents
 
@@ -75,6 +75,7 @@ mode, making the single-path guarantee measurable.
 | `code-analysis` | Lightweight single-agent review (small diffs) |
 | `security-reviewer` | Injection, auth bypass, secrets, OWASP top 10, version safety/pinning, SSRF, path traversal |
 | `correctness-reviewer` | Logic errors, off-by-one, null derefs, race conditions, async/await pitfalls |
+| `api-contract-reviewer` | Hallucinated/nonexistent APIs, wrong signatures/versions, deprecated API usage, and comment-truth (comments that misdescribe the code) — always-on core |
 | `consistency-reviewer` | Violations of project conventions (CLAUDE.md, .editorconfig, linting configs) |
 | `style-reviewer` | Readability, unnecessary complexity, dead code, naming clarity |
 | `archaeology-reviewer` | Investigates deleted/modified code for hidden historical intent |

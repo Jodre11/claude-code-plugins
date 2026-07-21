@@ -92,8 +92,8 @@ test_phaselog_captures_round1_and_meta() {
     assert_equals "main" "$(echo "$out" | jq -r '.log.meta.base')" "log.meta.base captured"
     assert_equals "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" "$(echo "$out" | jq -r '.log.meta.head_sha')" "log.meta.head_sha captured"
     assert_equals "false" "$(echo "$out" | jq -r '.log.meta.empty_tree_mode')" "log.meta.empty_tree_mode captured"
-    # One round-1 cog per core specialist (8 core, no conditionals).
-    assert_equals "8" "$(echo "$out" | jq '[.log.cogs[] | select(.phase=="round1")] | length')" "8 round-1 cogs (core list)"
+    # One round-1 cog per core specialist (9 core, no conditionals).
+    assert_equals "9" "$(echo "$out" | jq '[.log.cogs[] | select(.phase=="round1")] | length')" "9 round-1 cogs (core list)"
     # Round-1 cogs carry no input (diff reconstructed from meta).
     assert_equals "null" "$(echo "$out" | jq -r '[.log.cogs[] | select(.phase=="round1")][0].input // "null"')" "round-1 cog omits input"
 }
@@ -103,7 +103,7 @@ test_phaselog_captures_cross_io() {
     args=$(_pe_args)
     env='{"verdict":"APPROVE","rubricRowApplied":4,"rubricReason":"clean","tiers":{"consensus":[],"synthesiser":[],"contested":[],"dismissed":[]},"bodyText":"## Synthesiser Assessment\n> ok\n"}'
     out=$(_pe_run_core "$args" "$env")
-    # Cross cogs: one per stochastic domain (8 core, none static here).
+    # Cross cogs: one per cross-eligible domain (9 core minus api-contract in NON_CROSS = 8; none static here).
     assert_equals "8" "$(echo "$out" | jq '[.log.cogs[] | select(.phase=="cross")] | length')" "8 cross cogs"
     # Each cross cog carries its peer-set input and opinions output.
     local first

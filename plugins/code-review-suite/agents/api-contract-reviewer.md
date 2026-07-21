@@ -81,7 +81,6 @@ Edit the include first, then propagate to all listed specialists. -->
 
 ---
 
-
 - Be precise. Cite file paths and line numbers; the line must be a changed line (the offending call site or the new/modified comment).
 - Note certainty level and reasoning for each finding.
 - NEVER review logic errors, null-derefs, boundary conditions, concurrency, resource leaks, or silent-failure paths — those stay with `correctness-reviewer`.

@@ -1532,10 +1532,10 @@ test_sync_agent_hazard_severity_basis() {
 
     local sev="$cr/includes/severity-definitions.md"
     local synth="$cr/agents/review-synthesiser.md"
-    local corr="$cr/agents/correctness-reviewer.md"
+    local apic="$cr/agents/api-contract-reviewer.md"
 
     local f
-    for f in "$sev" "$synth" "$corr"; do
+    for f in "$sev" "$synth" "$apic"; do
         if [[ ! -f "$f" ]]; then
             fail "agent-hazard severity basis: inputs present" "missing: $f"
             return
@@ -1566,11 +1566,11 @@ test_sync_agent_hazard_severity_basis() {
             "anchor 'agent-hazard basis' not found in $synth"
     fi
 
-    # Additive re-point lock: comment-truth must cite the basis.
-    if grep -qF 'agent-hazard basis' "$corr"; then
+    # Additive re-point lock: comment-truth (now in api-contract) must cite the basis.
+    if grep -qF 'agent-hazard basis' "$apic"; then
         pass "agent-hazard severity basis: comment-truth cites the agent-hazard basis"
     else
         fail "agent-hazard severity basis: comment-truth cites the agent-hazard basis" \
-            "anchor 'agent-hazard basis' not found in $corr"
+            "anchor 'agent-hazard basis' not found in $apic"
     fi
 }

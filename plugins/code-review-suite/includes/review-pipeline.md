@@ -985,12 +985,16 @@ still triggers the launch-approval prompt; that prompt is inherent to dynamic wo
 and is NOT suppressed by scriptPath. Silence it via auto permission mode (records
 user-level consent once) or by answering "don't ask again" for this script per-project:
 
-**Resolve panel orchestration (default classic).** Resolve `orchestration.review_mode` and
-`orchestration.panel_size` from two config layers, first match wins, exactly as `full_log`
-resolves (Step 3.6): (1) the reviewed repo's `.claude/code-review.toml`, then (2) the
-user-level `~/.claude/code-review.toml`. Treat a missing/malformed file as not setting the
-key. If neither layer sets `review_mode`, `$ORCHESTRATION_MODE = classic`; otherwise it is
-the resolved `"classic"` or `"panel"`. If neither sets `panel_size`, `$PANEL_SIZE = 3`.
+**Resolve panel orchestration.** You MUST read both config layers before resolving — do not
+assume a value or skip a layer because you expect a particular default. Resolve
+`orchestration.review_mode` and `orchestration.panel_size` from two config layers, first match
+wins, exactly as `full_log` resolves (Step 3.6): (1) the reviewed repo's
+`.claude/code-review.toml`, then (2) the user-level `~/.claude/code-review.toml`. Read each file
+even when you believe the outcome is obvious. Treat a missing/malformed file as not setting the
+key. Only after reading both layers do you resolve the value.
+If neither layer sets `review_mode`, `$ORCHESTRATION_MODE = classic` (the built-in default);
+otherwise it is the resolved `"classic"` or `"panel"`. If neither sets `panel_size`,
+`$PANEL_SIZE = 3`.
 
 **Validate `panel_size`.** When `$ORCHESTRATION_MODE = panel`, if `$PANEL_SIZE` is even or
 `< 3`, halt with: `> Panel review requires an odd panel_size >= 3 (got <value>).` Do not

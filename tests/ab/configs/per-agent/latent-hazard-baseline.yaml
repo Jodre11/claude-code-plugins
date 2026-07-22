@@ -1,0 +1,7 @@
+name: latent-hazard-baseline
+description: Latent-hazard per-agent arm for the silent-conditional origination ablation. sonnet/default; the ablation swaps only latent-hazard-reviewer.md (arm A removes it and reverts the correctness carve-out).
+mode: per-agent
+agent: latent-hazard-reviewer
+session:
+  model: sonnet
+  effort: default

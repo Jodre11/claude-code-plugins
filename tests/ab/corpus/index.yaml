@@ -124,3 +124,13 @@ fixtures:
     type: synthetic
     description: New library call with a correct signature for the pinned version and an accurate docstring. Inflation guard — expected ABSENT in both arms.
     tags: [api-contract, inflation-guard]
+  - id: latent-hazard-hit
+    agent: latent-hazard-reviewer
+    type: synthetic
+    description: Optional-column-read hazard — read_subdepartment returns "" on a missing ZB61 column, which downstream reads as the legitimate "000 = None". Silent AND conditional on column drift. Arm B expected Important; arm A ABSENT (correctness minus the carved-out clause cannot originate it).
+    tags: [latent-hazard, silent-conditional, agent-hazard]
+  - id: latent-hazard-nearmiss
+    agent: latent-hazard-reviewer
+    type: synthetic
+    description: Required-column-read fixture — the same read raises KeyError on a missing column. Loud, not silent; out of scope. Inflation guard — both arms expected ABSENT.
+    tags: [latent-hazard, inflation-guard]

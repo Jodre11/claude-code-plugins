@@ -1,0 +1,38 @@
+id: latent-hazard-nearmiss
+agent: latent-hazard-reviewer
+type: synthetic
+captured_at: 2026-07-22T09:00:00Z
+baseline_revision: 1
+captured_under:
+  suite_sha: PLACEHOLDER_FILL_AT_CAPTURE
+  agent_model: sonnet
+  agent_effort: default
+working_dir_strategy: copy
+source_path: tests/fixtures/latent-hazard/nearmiss/
+setup:
+  command: |
+    export GIT_AUTHOR_NAME=ab-trial GIT_AUTHOR_EMAIL=ab-trial@example.invalid GIT_COMMITTER_NAME=ab-trial GIT_COMMITTER_EMAIL=ab-trial@example.invalid GIT_AUTHOR_DATE="2026-01-01T00:00:00 +0000" GIT_COMMITTER_DATE="2026-01-01T00:00:00 +0000"
+    mv src/margin_reader.py .margin_reader.py.planted
+    git init -q -b main
+    git add README.md
+    git commit -q -m "base: margin reader scaffold"
+    mkdir -p src
+    mv .margin_reader.py.planted src/margin_reader.py
+    git add src/margin_reader.py
+    git commit -q -m "feat: add required sub-department column read"
+base_sha: ""
+head_sha: ""
+path_scope: ""
+empty_tree_mode: false
+review_mode: pr
+planted:
+  file: src/margin_reader.py
+  line: 9
+  expect_arm_b: ABSENT  # required read throws loudly — not silent, out of scope (inflation guard)
+  expect_arm_a: ABSENT
+intent_ledger: |
+  ## Intent ledger
+  - goal: read the A&L sub-department from the margin report row
+depends_on:
+  - plugins/code-review-suite/agents/latent-hazard-reviewer.md
+  - tests/fixtures/latent-hazard/nearmiss/src/margin_reader.py

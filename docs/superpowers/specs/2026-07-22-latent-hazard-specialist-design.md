@@ -135,9 +135,25 @@ specialist.
 - `workflows/review-core.mjs` — `CONDITIONAL` list + `NON_CROSS` set + comment.
 - `includes/review-pipeline.md` — Step 4 conditional-dispatch prose registry (mirrors the code).
 - `agents/latent-hazard-reviewer.md` — **new** agent file (structure per `test-adequacy-reviewer.md`).
-- `agents/correctness-reviewer.md` — remove the silent-failure clause; add the reciprocal boundary note.
-- `.claude-plugin/plugin.json`, `README.md` — register/document the new agent (the structural test
-  suite checks these are populated).
+  Must **inline the CHANGED_LINES output filter block** (canonical source is
+  `includes/specialist-context.md`; `test-adequacy-reviewer.md:58` is the worked example of the inlined
+  copy) so the new agent's output is changed-line-filtered like every LLM specialist.
+- `agents/correctness-reviewer.md` — remove the silent-failure residue from the "Error handling gaps"
+  bullet at L79 (keep the *loud* cases); add the reciprocal boundary note.
+- `includes/specialist-context.md` — the CHANGED_LINES filter block here is the canonical source; add
+  `latent-hazard-reviewer.md` to the "agents that inline this block" enumeration comment (~L147-157) so
+  the inline copy stays tracked.
+- `plugins/code-review-suite/README.md` — document the new agent in the two specialist tables (the
+  `test_cross_references.sh` suite requires the README to exist and be populated; agent enumeration in
+  README is the human-facing registry). **`plugin.json` is NOT edited** — the plugin manifest uses
+  agent auto-discovery (it enumerates no agents), and `test_manifests.sh` only checks its
+  schema/name/no-version, so no manifest change is needed to register a new agent.
+
+**Structural-test impact (validation, not a source edit):** adding a conditional specialist should be
+checked against the structural suite (`tests/run.sh`), not only the A/B re-score. Confirm whether a
+corpus/fixture pair is expected — `test-adequacy` shipped with both `tests/ab/corpus/` and
+`tests/fixtures/` entries and `test_sync_notes.sh` couples specialist agent files by name. The plan's
+validation phase must run `tests/run.sh` and reconcile any roster-drift failures.
 
 **Deliberately NOT touched:** `includes/panel-concern-brief.md`, `includes/verdict-rubric.md`,
 `includes/severity-definitions.md`. The first two are the deferred adjudication redesign. The third is

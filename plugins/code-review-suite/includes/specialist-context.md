@@ -147,8 +147,8 @@ The pipeline orchestrator has already measured the diff once and written it to f
 <!-- CHANGED_LINES OUTPUT FILTER — this is the canonical source.
 Edit this file first, then propagate to all specialist agents that inline
 this block: archaeology-reviewer.md, code-analysis.md, consistency-reviewer.md,
-correctness-reviewer.md, efficiency-reviewer.md, reuse-reviewer.md,
-security-reviewer.md, style-reviewer.md, ui-reviewer.md.
+correctness-reviewer.md, efficiency-reviewer.md, latent-hazard-reviewer.md,
+reuse-reviewer.md, security-reviewer.md, style-reviewer.md, ui-reviewer.md.
 
 alignment-reviewer.md does NOT inline this block — alignment findings
 legitimately span pre-existing lines (intent drift is rare but can manifest

@@ -19,6 +19,7 @@ Restrict every finding to a mechanism introduced or changed on lines in `$CHANGE
 1. **Mechanism present now.** The hazardous code is in the diff, not hypothetical. Point at the changed line.
 2. **Concrete named trigger.** State the *specific* condition that makes it bite — a named upstream value going absent, a duplicated constant edited in one place but not here, a report-layout drift, a config key that could change. **No concrete named trigger → not a finding.** You cannot rate a hazard "conditional" without naming the condition; that requirement is what starves speculative "if X ever changes…" noise.
 3. **Silent / integrity impact.** When it fires it yields wrong results or data loss with **no error signal** — the wrong value reads as a legitimate one, or data silently drops. A conditional path that *throws loudly* is out of scope: correctness owns that.
+   - **The value-collision test (the crux of silence).** For a read/fallback that substitutes a default on absence (`.get(k, "")`, `?? 0`, `index < 0 ? "" : …`, `TryGetValue`-else-default), ask: **does the default collide with a legitimate domain value the code accepts elsewhere?** If the fallback value (`""`, `0`, a real category/status code) is indistinguishable downstream from a genuine value — e.g. `""` reads as the valid category `"000 = None"`, `0` reads as a real amount — then the failure is **silent** and it is **yours**. If instead the missing key **throws** (`row[k]` on an absent key, a required lookup) that is **loud** → correctness. A missing-key access that raises is NOT your finding; a default that quietly *impersonates* a legitimate value IS.
 
 **Boundary (stated reciprocally with correctness):**
 - Fires **every time** the path runs, **or** fails **loudly** → **correctness**, not you.
@@ -27,6 +28,8 @@ Restrict every finding to a mechanism introduced or changed on lines in `$CHANGE
 ## Load-bearing behavioural mandate — trace before you raise
 
 Follow the mechanism to ground **before** you emit. Read the called code, confirm optional-vs-required reads, walk duplicated constants across files. You have `Read`/`Grep` over the whole repo and read unchanged context freely — only your *output* is changed-line-filtered. If the trace is inconclusive, **say so honestly and do NOT raise the finding.** Do not launder uncertainty into a confident-sounding finding — a hazard you cannot substantiate by tracing is not raised. Hedged prose ("I cannot see the full body… this may already be handled") is a signal to *keep tracing or drop it*, never to emit a coin-flip as an Important.
+
+**"Correct for one caller" does not clear it for another — trace every caller.** An optional read is often *deliberately* correct for the caller that motivated it (a column legitimately absent for some inputs). Do NOT stop there and declare the guard "correct": that only tells you it is loud-safe for the absent-is-expected caller. Enumerate the *other* callers/inputs that DO expect the value present. For any of those, apply the value-collision test: if absence there yields a default that impersonates a legitimate value with no signal, the hazard is real regardless of how correct the read is for the first caller. The ZB61 archetype below is exactly this: the optional read is correct for F&B reports (no sub-department) yet silently mislabels every A&L row on drift.
 
 ## Severity
 
@@ -40,6 +43,35 @@ The **concrete-trigger requirement is the anti-inflation guardrail**: no named t
 2. For each, trace to ground: read the called code and the data source; confirm the read is optional (not required/throwing); walk any duplicated constant to its siblings across files.
 3. Apply the triple. Drop anything missing a concrete named trigger, anything that fails loudly, and anything that fires unconditionally (→ correctness).
 4. For survivors, state the mechanism (changed line), the concrete named trigger, and the silent impact. Rate Important (concrete trigger + silent integrity) or Suggestion (weaker trigger); never Critical.
+
+## Worked example — the archetype
+
+A diff adds an optional column read:
+
+```csharp
+var subdepartmentIndex = IndexOfOptional(result, SubdepartmentPath);   // returns -1 when the column is absent
+// …
+Subdepartment = subdepartmentIndex >= 0
+    ? row[subdepartmentIndex].GetString() ?? string.Empty
+    : string.Empty,                                                    // absent → ""
+```
+
+Wrong trace (the trap): "`IndexOfOptional` returns -1 when the column is absent and the guard
+handles it — the read is *correct*. The only risk is `row[subdepartmentIndex]` throwing
+`KeyNotFoundException` on a sparse row." → raised as a **loud** Suggestion, or nothing. **This
+misses the hazard.** A throw is loud and belongs to correctness; stopping at "the guard is
+correct" is the exoneration error.
+
+Right trace: the guard is correct *for the callers where the column is legitimately absent* (F&B
+reports don't carry it). But trace the value: `""` is the default, and downstream `""` is
+indistinguishable from the legitimate sub-department code `"000 = None"`. Now name the trigger and
+the caller it bites: for **A&L reports** the column is expected present; if it ever drifts (renamed
+in ERPx, the path const `SubdepartmentPath` edited elsewhere but not here, a report-layout change),
+`IndexOfOptional` returns -1 and **every A&L row silently reports `""` = the valid `000 = None`
+category** — wrong data shown to finance, no exception, no log. Mechanism present (the changed
+lines), concrete named trigger (ZB61 column drift for A&L), silent integrity impact (`""`
+impersonates a real category). → **Important**. This is your archetype; do not let "optional read,
+guard present, correct for the F&B caller" talk you out of it.
 
 ## Output Format
 

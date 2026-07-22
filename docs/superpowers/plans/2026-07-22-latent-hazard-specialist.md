@@ -740,6 +740,47 @@ EOF
 
 ---
 
+## Validation log (2026-07-22)
+
+**Baseline run (agent as shipped at eb3e18f) — FALSIFIED the origination-alone bet.**
+Sonnet/default, per-agent + standalone-specialist harness. Not n=20 (coverage/precision).
+
+- Step 1 structural suite: 844 tests, 843 passed, 1 skipped. PASS.
+- Step 2 synthetic: hit 3/3 Important @ margin_reader.py:8; nearmiss 3/3 zero findings. PASS.
+  (Fixed a gap: both latent-hazard fixtures shipped without diff/changed-lines.txt — created.)
+- **Step 3 PRIMARY cf9bc9d (n=3): 3/3 MISSED ZB61. Scorecard stayed 2/5 (target 3/5).**
+  All three traced to MarginReportReader.cs:55-57 but reframed the silent-blank as a *loud*
+  KeyNotFoundException (Suggestion) — one even called the optional guard "correct". Same
+  reasoning trap the original correctness reviewer fell into. Consistent, not variance.
+  Ground truth (controller-traced): MarginReports.cs:23-25 confirms 000/680 are legitimate A&L
+  subdepartments, so "" impersonates the valid "000 = None" — the hazard WAS originable.
+  Precision fine (2-3 findings/trial, no flood); agent originated a NEW true hazard 3/3
+  (MarginExtractBuilder cost-centre-key conflation) but that is not one of Marlon's 5.
+- Step 4 anti-flood: nearmiss + 15 doc/config PR files → zero findings. PASS.
+- Step 5 correctness no-regression: silentfail-hit 2/2 Important (kept). silentfail-unique-hit
+  2/2 ABSENT — but a DELIBERATE, boundary-cited hand-off to latent-hazard (the fallback is
+  conditional-silent, not always-taken). Fixture sat on the deterministic/conditional seam.
+
+**Iteration 1 (branch feat/latent-hazard-collide-fix) — fix validated.**
+Prompt edits: value-collision test on criterion 3; "correct for one caller ≠ safe for another —
+trace every caller" anti-exoneration note; ZB61 worked example. Reclassified silentfail-unique-hit
+correctness → latent-hazard (default 100 collides with a legitimate tenant limit); planted line
+21 → 20 (the .get mechanism).
+
+- INDEPENDENT generalisation — silentfail-unique-hit (un-named domain, not in prompt): **3/3
+  Important @ line 20**, value-collision reasoning applied verbatim. Clean signal.
+- SECONDARY cf9bc9d (contaminated — prompt now names ZB61): **1/1 Important @
+  MarginReportReader.cs:55**, correctly silent-framed; 1 finding on 22 files (no flood). Moves
+  scorecard 2/5 → 3/5. Weak alone, strong with the independent case.
+- anti-flood nearmiss: 3/3 zero findings (guard held under the widened prompt).
+- regression hit: 3/3 Important (2 @ line 8 optional-read, 1 @ line 1 duplicated-constant).
+
+**Outcome: value-collision test closes the ZB61-class gap AND generalises, without loosening
+anti-flood. This PR ships the fix.** Caveat: cf9bc9d is now a teaching-to-the-test case (the
+prompt names it); the durable independent evidence is the unique-hit generalisation.
+
+---
+
 ## Self-Review
 
 **1. Spec coverage** — every spec section maps to a task:

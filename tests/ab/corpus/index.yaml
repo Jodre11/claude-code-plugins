@@ -60,10 +60,10 @@ fixtures:
     description: Signalled-failure fixture — fetch_user_profile logs the exception before returning None. Inflation guard; arm B expected ABSENT.
     tags: [silent-failure, correctness]
   - id: silentfail-unique-hit
-    agent: correctness-reviewer
+    agent: latent-hazard-reviewer
     type: synthetic
-    description: Fallback-returns-default fixture — resolve_tenant_rate_limit silently serves DEFAULT_RATE_LIMIT when the API omits rate_limit (legitimate control flow, no exception). Arm B expected Important via the new "fallback without signalling" clause; arm A expected ABSENT (no error path for the pre-edit bullets to grab). Unique-fire contrast.
-    tags: [silent-failure, correctness, unique-fire]
+    description: Conditional-silent fallback fixture (reclassified 2026-07-22 from correctness) — resolve_tenant_rate_limit serves DEFAULT_RATE_LIMIT only when the config API omits rate_limit; the default (100) collides with a legitimate tenant limit, so absence silently impersonates a real value with no exception. Fires only under the named condition, so it belongs to latent-hazard, not correctness. Arm B (incl. latent-hazard) expected Important; arm A ABSENT.
+    tags: [silent-failure, latent-hazard, conditional-silent, unique-fire]
   - id: reuse-hit
     agent: reuse-reviewer
     type: synthetic

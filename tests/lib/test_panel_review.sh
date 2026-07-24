@@ -548,19 +548,20 @@ test_panel_log_carries_cogs_and_meta() {
     assert_equals "3" "$(echo "$out" | jq -r '.log.meta.panel_size')" "log meta records panel_size=3"
 }
 
-# orchestrationMode absent → classic path: inject a real APPROVE synth envelope so
-# finalizeBundle reaches buildLogPayload and the meta key is present. Proves default-
-# classic routing distinctly from a panel run (panel sets orchestration_mode="panel").
-test_absent_mode_takes_classic_path() {
-    local args specs synth_env out
+# orchestrationMode absent → panel path (panel is the built-in default). With neither
+# orchestrationMode nor panelSize set, the engine normalises mode→panel and panel_size→3.
+# Proves default-panel routing distinctly from a classic run (which sets
+# orchestration_mode="classic", panel_size=null).
+test_absent_mode_takes_panel_path() {
+    local args specs pans out
     local sha40="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-    # Note: no orchestrationMode key at all.
+    # Note: no orchestrationMode key and no panelSize key at all.
     args="{\"agentPrompt\":\"x\",\"flags\":{},\"route\":\"full\",\"selfReReview\":false,\"reviewMode\":\"pr\",\"base\":\"main\",\"headSha\":\"${sha40}\",\"emptyTreeMode\":false,\"pathScope\":\"\",\"tempDir\":\"/tmp/claude-test/x\",\"intentLedger\":\"\"}"
-    specs='{"correctness":[]}'
-    synth_env='{"verdict":"APPROVE","rubricRowApplied":0,"rubricReason":"","tiers":{"consensus":[],"synthesiser":[],"contested":[],"dismissed":[]},"bodyText":"## Synthesiser Assessment\n> all good\n"}'
-    out=$(_pan_run_core "$args" "$specs" "[]" "" "$synth_env")
-    assert_equals "classic" "$(echo "$out" | jq -r '.log.meta.orchestration_mode')" "absent mode → classic path (meta proves it)"
-    assert_equals "null" "$(echo "$out" | jq -r '.log.meta.panel_size')" "absent mode → panel_size null (not a panel run)"
+    specs='{"correctness":[{"file":"a.cs","line":10,"severity":"Important","confidence":50,"description":"b","suggested_fix":"f"}]}'
+    pans='[{"votes":[{"finding_id":0,"is_real":true,"severity":"Important","tractability":"Bounded","blocks_goal":false,"rationale":"r"}],"raised":[]},{"votes":[{"finding_id":0,"is_real":true,"severity":"Important","tractability":"Bounded","blocks_goal":false,"rationale":"r"}],"raised":[]},{"votes":[{"finding_id":0,"is_real":true,"severity":"Important","tractability":"Bounded","blocks_goal":false,"rationale":"r"}],"raised":[]}]'
+    out=$(_pan_run_core "$args" "$specs" "$pans")
+    assert_equals "panel" "$(echo "$out" | jq -r '.log.meta.orchestration_mode')" "absent mode → panel path (meta proves it)"
+    assert_equals "3" "$(echo "$out" | jq -r '.log.meta.panel_size')" "absent mode → panel_size defaults to 3"
 }
 
 # route lightweight ignores orchestrationMode=panel (panel only replaces the full middle).
@@ -828,8 +829,8 @@ test_panel_dropped_openended_approve_discloses_prune() {
 test_classic_sub70_important_not_verdict_relevant() {
     local args specs synth_env out
     local sha40="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-    # Classic path: no orchestrationMode key.
-    args="{\"agentPrompt\":\"x\",\"flags\":{},\"route\":\"full\",\"selfReReview\":false,\"reviewMode\":\"pr\",\"base\":\"main\",\"headSha\":\"${sha40}\",\"emptyTreeMode\":false,\"pathScope\":\"\",\"tempDir\":\"/tmp/claude-test/x\",\"intentLedger\":\"\"}"
+    # Classic path: explicit orchestrationMode=classic (panel is the built-in default now).
+    args="{\"agentPrompt\":\"x\",\"flags\":{},\"route\":\"full\",\"selfReReview\":false,\"reviewMode\":\"pr\",\"base\":\"main\",\"headSha\":\"${sha40}\",\"emptyTreeMode\":false,\"pathScope\":\"\",\"tempDir\":\"/tmp/claude-test/x\",\"intentLedger\":\"\",\"orchestrationMode\":\"classic\"}"
     specs='{"correctness":[]}'
     # Synth envelope: consensus Critical (drives RC row 2) + consensus Important confidence 50
     # (sub-70, does not independently drive row 3). No confidence_flag on classic findings.

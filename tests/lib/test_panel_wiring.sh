@@ -37,17 +37,19 @@ test_panel_size_validation_documented() {
     done
 }
 
-# review_mode config default must be documented as classic in both call-sites.
-test_panel_review_mode_defaults_classic() {
+# review_mode config default must be documented as panel in both call-sites.
+# Regex is scoped to the built-in-default line (review_mode ... = panel ... built-in default)
+# so it does not merely match the "otherwise resolved classic or panel" clause.
+test_panel_review_mode_defaults_panel() {
     local cr skill prerev
     cr=$(_pw_cr_dir)
     skill="$cr/skills/review-gh-pr/SKILL.md"
     prerev="$cr/commands/pre-review.md"
     for f in "$skill" "$prerev"; do
-        if grep -qiE "review_mode.*classic" "$f"; then
-            pass "review_mode default classic documented in $(basename "$f")"
+        if grep -qiE "review_mode.*= panel.*built-in default" "$f"; then
+            pass "review_mode default panel documented in $(basename "$f")"
         else
-            fail "review_mode default classic documented in $(basename "$f")" "no classic-default prose"
+            fail "review_mode default panel documented in $(basename "$f")" "no panel-default prose"
         fi
     done
 }

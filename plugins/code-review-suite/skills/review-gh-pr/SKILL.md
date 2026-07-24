@@ -1119,7 +1119,7 @@ wins, exactly as `full_log` resolves (Step 3.6): (1) the reviewed repo's
 `.claude/code-review.toml`, then (2) the user-level `~/.claude/code-review.toml`. Read each file
 even when you believe the outcome is obvious. Treat a missing/malformed file as not setting the
 key. Only after reading both layers do you resolve the value.
-If neither layer sets `review_mode`, `$ORCHESTRATION_MODE = classic` (the built-in default);
+If neither layer sets `review_mode`, `$ORCHESTRATION_MODE = panel` (the built-in default);
 otherwise it is the resolved `"classic"` or `"panel"`. If neither sets `panel_size`,
 `$PANEL_SIZE = 3`.
 

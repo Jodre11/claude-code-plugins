@@ -192,6 +192,11 @@ const {
     orchestrationMode, panelSize, panelBrief, changedLinesBlock,
 } = resolvedArgs
 
+// Built-in orchestration default is panel (classic is the explicit opt-in, being retired).
+// Any value that is not the literal "classic" — including undefined, "", or a typo —
+// normalises to panel, the intended default.
+const mode = orchestrationMode === 'classic' ? 'classic' : 'panel'
+
 // Shared by isPosted and the PR-mode filter. The 75 bar is deliberate (above
 // the rubric's 70) — see "Posting policy" in verdict-rubric.md. Hoisted to
 // module scope so the finalize-route early return can reach it via isPosted.
@@ -210,8 +215,8 @@ const phaseLog = {
     head_sha: headSha,
     empty_tree_mode: emptyTreeMode,
     path_scope: pathScope || '',
-    orchestration_mode: orchestrationMode || 'classic',
-    panel_size: orchestrationMode === 'panel' ? (panelSize ?? 3) : null,
+    orchestration_mode: mode,
+    panel_size: mode === 'panel' ? (panelSize ?? 3) : null,
   },
   cogs: [],
 }
@@ -230,7 +235,7 @@ if (route === 'lightweight') {
 
 phase('dispatch')
 
-log(`orchestration mode: ${orchestrationMode === 'panel' ? `panel (size ${panelSize ?? 3})` : 'classic'}`)
+log(`orchestration mode: ${mode === 'panel' ? `panel (size ${panelSize ?? 3})` : 'classic'}`)
 
 // Fixed core list — by construction, every one dispatches. No agent can drop one.
 const CORE = [
@@ -308,7 +313,7 @@ for (const [domain, fs] of Object.entries(findingsByDomain)) {
 
 // Panel orchestration (opt-in): replace the classic cross/synth/gate middle stage
 // with an N-panelist vote + a deterministic writer. Returns the same sealed bundle.
-if (orchestrationMode === 'panel') {
+if (mode === 'panel') {
     const flat = flattenFindings(findingsByDomain)
     const panelists = await panelVote(flat, panelBrief, allSpecialists, phaseLog)
     return panelWrite(panelists, flat, phaseLog)

@@ -447,6 +447,7 @@ test_review_core_threads_full_diff_file_to_synth() {
                 agentPrompt: "x", flags: {}, route: "full", selfReReview: false,
                 reviewMode: "pr", base: "main", headSha: "a".repeat(40),
                 emptyTreeMode: false, pathScope: "", tempDir: "/tmp/claude-abc/",
+                orchestrationMode: "classic",
             };
             let deferred;
             try { deferred = await run(agentStall, args); }
@@ -534,6 +535,7 @@ test_review_core_threads_full_diff_file_to_cross() {
                 agentPrompt: "x", flags: {}, route: "full", selfReReview: false,
                 reviewMode: "pr", base: "main", headSha: "a".repeat(40),
                 emptyTreeMode: false, pathScope: "", tempDir: "/tmp/claude-abc/",
+                orchestrationMode: "classic",
             };
             try { await run(agentMock, args); }
             catch (e) { console.log("THREW: " + e.message); return; }
@@ -590,6 +592,7 @@ test_finalize_route_parity() {
             agentPrompt: "x", flags: {}, selfReReview: false,
             reviewMode: "pr", base: "main", headSha: "a".repeat(40),
             emptyTreeMode: false, pathScope: "", tempDir: "/tmp/x",
+            orchestrationMode: "classic",
         };
         const parallel = (thunks) => Promise.all(thunks.map(t => t()));
         const phase = () => {};
@@ -663,6 +666,7 @@ test_finalize_route_null_envelope_degrades() {
             agentPrompt: "x", flags: {}, selfReReview: false,
             reviewMode: "pr", base: "main", headSha: "a".repeat(40),
             emptyTreeMode: false, pathScope: "", tempDir: "/tmp/x",
+            orchestrationMode: "classic",
         };
         const parallel = (thunks) => Promise.all(thunks.map(t => t()));
         const phase = () => {};
@@ -729,6 +733,7 @@ test_synth_stall_defers() {
             agentPrompt: "x", flags: {}, route: "full", selfReReview: false,
             reviewMode: "pr", base: "main", headSha: "a".repeat(40),
             emptyTreeMode: false, pathScope: "", tempDir: "/tmp/x",
+            orchestrationMode: "classic",
         };
         const parallel = (thunks) => Promise.all(thunks.map(t => t()));
         const phase = () => {};
@@ -885,6 +890,7 @@ test_synth_call_sets_stall_budget() {
             agentPrompt: "x", flags: {}, route: "full", selfReReview: false,
             reviewMode: "pr", base: "main", headSha: "a".repeat(40),
             emptyTreeMode: false, pathScope: "", tempDir: "/tmp/x",
+            orchestrationMode: "classic",
         };
         const parallel = (thunks) => Promise.all(thunks.map(t => t()));
         const phase = () => {};

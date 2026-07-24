@@ -57,7 +57,10 @@ const agent = async (_prompt, opts) => {
     const label = (opts && opts.label) || ''
     if (label === 'panel-writer') return { bodyText: writerBody }
     if (label.startsWith('panel-')) {
-        const i = parseInt(label.slice('panel-'.length), 10)
+        // Labels are `panel-<seatName>` (roster names, else `Seat N`) — map back to index.
+        const roster = ['Cronus', 'Rhea', 'Oceanus', 'Hyperion', 'Themis']
+        const seat = label.slice('panel-'.length)
+        const i = roster.indexOf(seat) !== -1 ? roster.indexOf(seat) : parseInt(seat.replace(/^Seat /, ''), 10)
         return panelists[i] === undefined ? null : panelists[i]
     }
     if (label.startsWith('cross-')) return { status: 'ok', opinionsMarkdown: '', escalations: [] }

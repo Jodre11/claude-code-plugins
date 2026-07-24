@@ -673,21 +673,26 @@ function unionFindingsByDomain(r1ByDomain, r2ByDomain, stochasticDomains) {
 // Panel helpers (pure except panelVote/panelWrite which dispatch agents).
 // ---------------------------------------------------------------------------
 
+// Per-seat name. Content-neutral by design: it must NOT steer WHAT the seat
+// looks for (that would bias the panel), only make the seats distinguishable —
+// both in the byte-distinct prompt prefix and in the progress-panel label.
+// Deterministic in the seat index — no Math.random/Date (banned in the workflow
+// sandbox) — so a re-run reproduces exactly. Roster (the Titans) covers the
+// common panel sizes 3 and 5; beyond it, fall back to a bare seat index. The
+// roster is inlined in a hoisted function (not a module-level const) because
+// panelVote runs before this point in the file's top-to-bottom execution, so an
+// outer const would be in its temporal dead zone; a function declaration hoists.
+function panelSeatName(i) {
+    const roster = ['Cronus', 'Rhea', 'Oceanus', 'Hyperion', 'Themis']
+    return roster[i] ?? `Seat ${i}`
+}
+
 // Per-seat prompt prefix. Its ONLY job is to make each panelist's prompt
 // byte-distinct so Bedrock draws each vote independently instead of collapsing
 // n=3 to n≈1 on identical input (result/completion caching of panelists is
-// banned, so prompt variation is the only safe diversity lever). Deterministic
-// in the seat index — no Math.random/Date (banned in the workflow sandbox) — so
-// a re-run reproduces exactly. A plain name is content-neutral by design: it
-// must NOT steer WHAT the seat looks for (that would bias the panel), only that
-// the seats differ. Roster (the Titans) covers the common panel sizes 3 and 5;
-// beyond it, fall back to the bare seat index. The roster is inlined (not a
-// module-level const) because panelVote runs before this point in the file's
-// top-to-bottom execution, so an outer const would be in its temporal dead zone.
+// banned, so prompt variation is the only safe diversity lever).
 function panelSeatPrefix(i) {
-    const roster = ['Cronus', 'Rhea', 'Oceanus', 'Hyperion', 'Themis']
-    const name = roster[i] ?? `Seat ${i}`
-    return `Panelist: ${name} (independent reviewer; vote your own honest judgement).\n\n`
+    return `Panelist: ${panelSeatName(i)} (independent reviewer; vote your own honest judgement).\n\n`
 }
 
 // Flatten the nested per-domain findings into one ordered list with a stable
@@ -1014,7 +1019,7 @@ async function panelVote(flat, panelBrief, ranDomains, phaseLog) {
     // typically run shorter, but the headroom covers the complex-review tail.
     const results = await parallel(Array.from({ length: n }, (_, i) => () =>
         agent(panelSeatPrefix(i) + body, {
-            label: `panel-${i}`,
+            label: `panel-${panelSeatName(i)}`,
             phase: 'panel-vote',
             model: 'opus',
             schema: PANEL_SCHEMA,

@@ -253,7 +253,27 @@ const CONDITIONAL = [
     ['latent-hazard', flags.production],
 ]
 const condList = CONDITIONAL.filter(([, on]) => on).map(([d]) => d)
-const allSpecialists = [...coreList, ...condList]
+
+// Dispatch order = slowest-first. The Workflow scheduler fills a fixed concurrency
+// pool (min(16, cores-2), i.e. 8 on a 10-core host) in array order; with ~11-12
+// specialists per run the pool is oversubscribed and the tail specialist is the
+// dispatch-phase critical path (measured: dispatch wall clock ≈ slowest single
+// specialist). Front-loading the slow reviewers lets them run while fast ones fill
+// gaps, so they finish nearer together and the wall clock shrinks. Ranks are derived
+// from recent-run mean durations (durationMs in the workflow transcripts); lower rank
+// = slower = dispatched earlier. Order-only: reordering permutes the internal
+// finding_id index but changes no verdict, and correctness stays stochastic for the
+// resample path. An unlisted domain sorts last (rank Infinity) — safe default for any
+// future specialist until it has timing data. Re-derive periodically as models/tools drift.
+const DISPATCH_RANK = {
+    correctness: 0, 'api-contract': 1, 'latent-hazard': 2, ui: 3, consistency: 4,
+    style: 5, 'test-quality': 6, 'test-adequacy': 7, archaeology: 8, efficiency: 9,
+    alignment: 10, reuse: 11, security: 12, jbinspect: 13, ruff: 14, eslint: 15,
+    trivy: 16, housekeeper: 17,
+}
+const allSpecialists = [...coreList, ...condList].sort(
+    (a, b) => (DISPATCH_RANK[a] ?? Infinity) - (DISPATCH_RANK[b] ?? Infinity)
+)
 
 const specialists = await dispatchSpecialists(allSpecialists, 'dispatch')
 log(`dispatch: ${specialists.filter(s => s.out.status === 'ok').length}/${allSpecialists.length} specialists ok`)

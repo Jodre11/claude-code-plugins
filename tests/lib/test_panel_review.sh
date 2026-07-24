@@ -33,7 +33,9 @@ _pan_run_core() {
             const label = (opts && opts.label) || "";
             if (label === "panel-writer") return { bodyText: writerBody };
             if (label.startsWith("panel-")) {
-                const i = parseInt(label.slice("panel-".length), 10);
+                const roster = ["Cronus", "Rhea", "Oceanus", "Hyperion", "Themis"];
+                const seat = label.slice("panel-".length);
+                const i = roster.indexOf(seat) !== -1 ? roster.indexOf(seat) : parseInt(seat.replace(/^Seat /, ""), 10);
                 return panelists[i] === undefined ? null : panelists[i];
             }
             if (label.startsWith("cross-")) return { status: "ok", opinionsMarkdown: "", escalations: [] };
@@ -74,7 +76,9 @@ _pan_capture_writer_prompt() {
             const label = (opts && opts.label) || "";
             if (label === "panel-writer") { process.stdout.write("WRITER_PROMPT<<<" + prompt); process.exit(0); }
             if (label.startsWith("panel-")) {
-                const i = parseInt(label.slice("panel-".length), 10);
+                const roster = ["Cronus", "Rhea", "Oceanus", "Hyperion", "Themis"];
+                const seat = label.slice("panel-".length);
+                const i = roster.indexOf(seat) !== -1 ? roster.indexOf(seat) : parseInt(seat.replace(/^Seat /, ""), 10);
                 return panelists[i] === undefined ? null : panelists[i];
             }
             if (label.startsWith("cross-")) return { status: "ok", opinionsMarkdown: "", escalations: [] };

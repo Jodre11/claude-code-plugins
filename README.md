@@ -51,6 +51,7 @@ manual reinstall required. Each plugin's `bin/` directory is added to PATH autom
 | web-search | Docker Desktop + SearXNG container (`searxng-ctl.sh start`), `jq` (`brew install jq`) |
 | playwright-cli | `playwright-cli` (`brew install playwright-cli` or `npx playwright-cli`) |
 | md-to-clipboard | `pandoc` (`brew install pandoc`), `md2clip` (ships with plugin — see [setup](plugins/md-to-clipboard/README.md)) |
+| adoption-glance (script) | `gh` (authenticated as repo owner), `jq` (`brew install jq`) |
 
 ## Versioning
 
@@ -73,6 +74,11 @@ in the Claude Code docs for details.
   `--no-worktree` in the review arguments to review in place, or a
   `Worktree: <abs-path>` line to supply an externally-owned worktree (the plugin
   then neither creates nor tears it down).
+- [`scripts/adoption-glance.sh`](scripts/adoption-glance.sh) — manually-run
+  GitHub-traffic adoption pulse for the marketplace repo (unique cloners, total
+  clones, clones/person, viewers, stars/forks). Owner-only endpoints; requires
+  an authenticated `gh` owner token and `jq`. Point-in-time glance over a 14-day
+  rolling window — no storage or history.
 
 ## Licence
 

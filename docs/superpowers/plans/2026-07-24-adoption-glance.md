@@ -139,7 +139,7 @@ PATH="$tmp:$PATH" scripts/adoption-glance.sh
 rm -rf "$tmp"
 ```
 
-Expected: the summary block prints with `Unique cloners : 128`, `Total clones : 416`, `Clones/person : 3.3`, `Unique viewers : 3`, `Stars / Forks : 0 / 0`, and the caveat line.
+Expected: the summary block prints with `Unique cloners : 128`, `Total clones : 416`, `Clones/person : 3.2` (416 ÷ 128 = 3.25; awk rounds half-to-even → 3.2), `Unique viewers : 3`, `Stars / Forks : 0 / 0`, and the caveat line.
 
 - [ ] **Step 5: Verify divide-by-zero guard**
 

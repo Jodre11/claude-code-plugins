@@ -98,8 +98,8 @@ if [ "$mode" = teams ]; then
         {
             # Insert blank line between content lines, but not before/after block elements
             if (prev != "" && $0 != "" &&
-                prev !~ /^<(ul|ol|\/ul|\/ol|table|\/table|thead|\/thead|tbody|\/tbody|tr|\/tr|th|\/th|td|\/td|li|\/li)/ &&
-                $0 !~ /^<(ul|ol|\/ul|\/ol|table|\/table|thead|\/thead|tbody|\/tbody|tr|\/tr|th|\/th|td|\/td|li|\/li)/)
+                prev !~ /^<(ul|ol|\/ul|\/ol|table|\/table|thead|\/thead|tbody|\/tbody|tr|\/tr|th|\/th|td|\/td|li|\/li|h[1-6]|\/h[1-6]|blockquote|\/blockquote)/ &&
+                $0 !~ /^<(ul|ol|\/ul|\/ol|table|\/table|thead|\/thead|tbody|\/tbody|tr|\/tr|th|\/th|td|\/td|li|\/li|h[1-6]|\/h[1-6]|blockquote|\/blockquote)/)
                 print ""
             print
             prev=$0

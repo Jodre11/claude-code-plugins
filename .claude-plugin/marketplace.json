@@ -35,6 +35,11 @@
       "source": "./plugins/roslyn-lsp"
     },
     {
+      "name": "spec-review",
+      "description": "Adversarial review panel for a written spec — independent reviewers with subtraction/completeness/framing lenses, between brainstorming and writing-plans",
+      "source": "./plugins/spec-review"
+    },
+    {
       "name": "mattpocock-skills",
       "description": "Vendored subset of Matt Pocock's engineering skills (MIT): writing-great-skills, codebase-design, domain-modeling, grill-with-docs, teach — curated to complement the superpowers/code-review stack without conflict",
       "source": "./plugins/mattpocock-skills"

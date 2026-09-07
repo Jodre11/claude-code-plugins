@@ -1,0 +1,14 @@
+{
+  "name": "spec-review",
+  "description": "Adversarial review panel for a written spec, between brainstorming and writing-plans",
+  "author": {
+    "name": "Christian Haddrell"
+  },
+  "license": "MIT",
+  "keywords": [
+    "spec-review",
+    "design-review",
+    "adversarial-review",
+    "superpowers"
+  ]
+}

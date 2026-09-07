@@ -46,8 +46,10 @@ Three lenses, ordered by marginal value in this workflow:
 | `completeness` | What is missing or readable two ways? | Overlaps spec self-review, but from outside the authoring context. |
 | `framing` | Right problem? Right shape? | Only lens that may `REJECT`. Drop to a two-lens panel when the brainstorming dialogue interrogated framing thoroughly and the author approved the shape. |
 
-Dispatch **in parallel, in one message**, each with `subagent_type: "spec-reviewer"` and a
-distinct `name` (`spec-reviewer-subtraction`, etc.).
+Dispatch **in parallel, in one message**, each with
+`subagent_type: "spec-review:spec-reviewer"` and a distinct `name`
+(`spec-reviewer-subtraction`, etc.). The agent type must be plugin-qualified — the bare
+`spec-reviewer` is not the registered name.
 
 **Model selection is made here, at dispatch — never in the agent's frontmatter.** Choose the
 most capable model available, and never one weaker than the session that wrote the spec: a

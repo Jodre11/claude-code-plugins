@@ -84,7 +84,7 @@ and ask whether a model-agnostic fix closes it.
   working tree clean` false-fails — that is the KNOWN dirty-tree artifact, not a
   regression. It passes once committed clean.
 - **Tooling is PRESENT (the spec's deferral condition is lifted):**
-  - `jb` → `/Users/jodre11/.dotnet/tools/jb`, **InspectCode 2026.1.0.1**.
+  - `jb` → `~/.dotnet/tools/jb`, **InspectCode 2026.1.0.1**.
   - `dotnet` SDK **10.0.300** (.NET 10 runtime).
   - This is the heavier-provisioning specialist the spec flagged (line 238) — but
     the tools are installed, so you can proceed. The fixture must be a real,

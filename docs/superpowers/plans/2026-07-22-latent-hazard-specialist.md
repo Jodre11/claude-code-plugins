@@ -705,7 +705,7 @@ This is a coverage/precision check, not a Haiku-vs-Sonnet equivalence sweep — 
 
 - [ ] **Step 3: Re-score the real `cf9bc9d` case (the primary test)**
 
-Using the standalone-specialist-on-a-pinned-diff harness, run the full specialist set **+ latent-hazard** against commit `cf9bc9d` of `HavenEngineering/finance-erp-apps` PR #158 (base commit available at the separate clone `~/Repos/haven/finance-erp-apps`). Score against Marlon's 5 reference findings with the same caught/missed/noise scoring as the frozen baseline.
+Using the standalone-specialist-on-a-pinned-diff harness, run the full specialist set **+ latent-hazard** against a pinned commit of a pull request on a private work repository (base commit available in a separate local clone). Score against an external reviewer's 5 reference findings with the same caught/missed/noise scoring as the frozen baseline.
 
 Expected: **scorecard moves 2/5 → 3/5**, driven by latent-hazard **originating the ZB61 silent-blank finding** (`MarginReportReader.cs`, the optional A&L sub-department read) with a concrete trigger, where correctness previously raised a false adjacent `IsDescription`-guard concern.
 
@@ -755,7 +755,8 @@ Sonnet/default, per-agent + standalone-specialist harness. Not n=20 (coverage/pr
   Ground truth (controller-traced): MarginReports.cs:23-25 confirms 000/680 are legitimate A&L
   subdepartments, so "" impersonates the valid "000 = None" — the hazard WAS originable.
   Precision fine (2-3 findings/trial, no flood); agent originated a NEW true hazard 3/3
-  (MarginExtractBuilder cost-centre-key conflation) but that is not one of Marlon's 5.
+  (MarginExtractBuilder cost-centre-key conflation) but that is not one of the external
+  reviewer's 5.
 - Step 4 anti-flood: nearmiss + 15 doc/config PR files → zero findings. PASS.
 - Step 5 correctness no-regression: silentfail-hit 2/2 Important (kept). silentfail-unique-hit
   2/2 ABSENT — but a DELIBERATE, boundary-cited hand-off to latent-hazard (the fallback is

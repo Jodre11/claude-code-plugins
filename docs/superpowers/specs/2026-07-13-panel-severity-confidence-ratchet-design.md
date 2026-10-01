@@ -8,7 +8,7 @@
 ## Problem
 
 The panel arm of the code-review orchestrator systematically under-blocks. In the
-2026-07-13 A/B pilot against `HavenEngineering/finance-erp-apps` PR #98, the panel
+2026-07-13 A/B pilot against a pull request on a private work repository, the panel
 returned APPROVE on 2 of 3 trials where classic returned REQUEST_CHANGES on 3 of 3 — on
 identical code — and the divergence was traced to the panel vote schema, not review
 quality or capture.

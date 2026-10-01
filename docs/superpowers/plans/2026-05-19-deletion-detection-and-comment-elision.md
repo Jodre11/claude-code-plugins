@@ -70,26 +70,26 @@ The plan below carves each numbered phase into bite-sized steps.
 
 - [ ] **Step 0.1: Verify clean working tree (other than the spec doc)**
 
-Run: `git -C /Users/jodre11/.claude/plugins/marketplaces/jodre11-plugins status --short`
+Run: `git -C "$(git rev-parse --show-toplevel)" status --short`
 
 Expected: only the new untracked spec file `docs/superpowers/specs/2026-05-19-deletion-detection-and-comment-elision-design.md` and (after writing this plan) `docs/superpowers/plans/2026-05-19-deletion-detection-and-comment-elision.md` show. No tracked-file modifications. If anything else is dirty, stop and surface it to the user.
 
 - [ ] **Step 0.2: Verify base is `main`, fast-forward expected**
 
-Run: `git -C /Users/jodre11/.claude/plugins/marketplaces/jodre11-plugins fetch origin main`
-Run: `git -C /Users/jodre11/.claude/plugins/marketplaces/jodre11-plugins log --oneline origin/main..main`
+Run: `git -C "$(git rev-parse --show-toplevel)" fetch origin main`
+Run: `git -C "$(git rev-parse --show-toplevel)" log --oneline origin/main..main`
 
 Expected: empty (local `main` has no extra commits) OR the few diverging commits the user knows about. Don't reset.
 
 - [ ] **Step 0.3: Create the feature branch off `main`**
 
-Run: `git -C /Users/jodre11/.claude/plugins/marketplaces/jodre11-plugins switch -c feat/deletion-detection-and-comment-elision main`
+Run: `git -C "$(git rev-parse --show-toplevel)" switch -c feat/deletion-detection-and-comment-elision main`
 
 Expected output: `Switched to a new branch 'feat/deletion-detection-and-comment-elision'`.
 
 - [ ] **Step 0.4: Confirm branch is correct**
 
-Run: `git -C /Users/jodre11/.claude/plugins/marketplaces/jodre11-plugins branch --show-current`
+Run: `git -C "$(git rev-parse --show-toplevel)" branch --show-current`
 
 Expected: `feat/deletion-detection-and-comment-elision`.
 
@@ -202,7 +202,7 @@ Use the same `old_string` / `new_string` pair as Task 1 Step 1.3, but on `plugin
 
 - [ ] **Step 2.5: Run the pipeline-inline sync test in isolation**
 
-Run: `bash -c 'cd /Users/jodre11/.claude/plugins/marketplaces/jodre11-plugins && source tests/lib/harness.sh && source tests/lib/test_sync_notes.sh && test_sync_pipeline_inline_matches_canonical && summary'`
+Run: `bash -c 'cd "$(git rev-parse --show-toplevel)" && source tests/lib/harness.sh && source tests/lib/test_sync_notes.sh && test_sync_pipeline_inline_matches_canonical && summary'`
 
 Expected: 2 passes (one per consumer), no failures.
 
@@ -441,7 +441,7 @@ Make the file executable: `chmod +x tests/lib/test_deletion_detection.sh`.
 
 - [ ] **Step 3.4: Run only the new test (verify it passes against the post-edit pipeline)**
 
-Run: `bash -c 'cd /Users/jodre11/.claude/plugins/marketplaces/jodre11-plugins && source tests/lib/harness.sh && source tests/lib/test_deletion_detection.sh && test_deletion_detection_real_block_triggers && test_deletion_detection_reindent_does_not_trigger && summary'`
+Run: `bash -c 'cd "$(git rev-parse --show-toplevel)" && source tests/lib/harness.sh && source tests/lib/test_deletion_detection.sh && test_deletion_detection_real_block_triggers && test_deletion_detection_reindent_does_not_trigger && summary'`
 
 Expected: 6 passes (3 per test), 0 failures.
 
@@ -449,7 +449,7 @@ If the reindent test fails, the awk `_max_contiguous_deletions_w` helper has a b
 
 - [ ] **Step 3.5: Run the full test suite to confirm no regression**
 
-Run: `bash /Users/jodre11/.claude/plugins/marketplaces/jodre11-plugins/tests/run.sh`
+Run: `bash "$(git rev-parse --show-toplevel)/tests/run.sh"`
 
 Expected: every existing test still passes; the two new test functions appear in the output (each producing 3 passes).
 
@@ -570,7 +570,7 @@ Use the same `old_string` / `new_string` pair as Task 4 Step 4.3, but on `plugin
 
 - [ ] **Step 5.7: Run only the verdict-rubric and pipeline sync tests**
 
-Run: `bash -c 'cd /Users/jodre11/.claude/plugins/marketplaces/jodre11-plugins && source tests/lib/harness.sh && source tests/lib/test_sync_notes.sh && test_sync_verdict_rubric_inline_matches_canonical && test_sync_pipeline_inline_matches_canonical && summary'`
+Run: `bash -c 'cd "$(git rev-parse --show-toplevel)" && source tests/lib/harness.sh && source tests/lib/test_sync_notes.sh && test_sync_verdict_rubric_inline_matches_canonical && test_sync_pipeline_inline_matches_canonical && summary'`
 
 Expected: 4 passes total (2 per sync test), 0 failures.
 
@@ -965,7 +965,7 @@ test_orchestrator_comment_elision_negative_presence() {
 
 - [ ] **Step 7.3: Run the full test suite**
 
-Run: `bash /Users/jodre11/.claude/plugins/marketplaces/jodre11-plugins/tests/run.sh`
+Run: `bash "$(git rev-parse --show-toplevel)/tests/run.sh"`
 
 Expected:
 - Every existing test still passes.
@@ -1008,14 +1008,14 @@ Expected: at least 6 hits (Phase 0.7.6 paragraph and Step 2.7 in canonical + 2 i
 
 - [ ] **Step 8.3: Final test-suite run**
 
-Run: `bash /Users/jodre11/.claude/plugins/marketplaces/jodre11-plugins/tests/run.sh`
+Run: `bash "$(git rev-parse --show-toplevel)/tests/run.sh"`
 
 Expected: ALL tests pass. Note the total count and pass/fail summary.
 
 - [ ] **Step 8.4: Show the user the working tree diff for review**
 
-Run: `git -C /Users/jodre11/.claude/plugins/marketplaces/jodre11-plugins diff --stat main..HEAD`
-Run: `git -C /Users/jodre11/.claude/plugins/marketplaces/jodre11-plugins status --short`
+Run: `git -C "$(git rev-parse --show-toplevel)" diff --stat main..HEAD`
+Run: `git -C "$(git rev-parse --show-toplevel)" status --short`
 
 Surface the file list and diff stats to the user.
 
@@ -1033,7 +1033,7 @@ Do not invoke `gh pr create` until the user gives the explicit green light.
 
 Stage the touched files explicitly (no `-A` / `.`):
 
-Run: `git -C /Users/jodre11/.claude/plugins/marketplaces/jodre11-plugins add plugins/code-review-suite/includes/review-pipeline.md plugins/code-review-suite/includes/verdict-rubric.md plugins/code-review-suite/agents/review-synthesiser.md plugins/code-review-suite/commands/pre-review.md plugins/code-review-suite/skills/review-gh-pr/SKILL.md tests/lib/test_sync_notes.sh tests/lib/test_deletion_detection.sh tests/fixtures/deletion-detection/reindent.diff tests/fixtures/deletion-detection/real-deletion.diff docs/superpowers/specs/2026-05-19-deletion-detection-and-comment-elision-design.md docs/superpowers/plans/2026-05-19-deletion-detection-and-comment-elision.md`
+Run: `git -C "$(git rev-parse --show-toplevel)" add plugins/code-review-suite/includes/review-pipeline.md plugins/code-review-suite/includes/verdict-rubric.md plugins/code-review-suite/agents/review-synthesiser.md plugins/code-review-suite/commands/pre-review.md plugins/code-review-suite/skills/review-gh-pr/SKILL.md tests/lib/test_sync_notes.sh tests/lib/test_deletion_detection.sh tests/fixtures/deletion-detection/reindent.diff tests/fixtures/deletion-detection/real-deletion.diff docs/superpowers/specs/2026-05-19-deletion-detection-and-comment-elision-design.md docs/superpowers/plans/2026-05-19-deletion-detection-and-comment-elision.md`
 
 Then commit (HEREDOC carve-out is permitted for `git commit -m`):
 
@@ -1068,15 +1068,15 @@ Per the user's CLAUDE.md, do NOT add a `Co-Authored-By: Claude` trailer.
 
 Push the branch:
 
-Run: `git -C /Users/jodre11/.claude/plugins/marketplaces/jodre11-plugins push -u origin feat/deletion-detection-and-comment-elision`
+Run: `git -C "$(git rev-parse --show-toplevel)" push -u origin feat/deletion-detection-and-comment-elision`
 
 Open the PR. Use `gh pr create --body-file "$CLAUDE_TEMP_DIR/pr-body.md"` (the user's CLAUDE.md prefers `--body-file` over HEREDOC for PR bodies).
 
 First write the PR body to `$CLAUDE_TEMP_DIR/pr-body.md` using the `Write` tool. Suggested content (no Claude Code advertising trailer per CLAUDE.md):
 
 ```markdown
-This pair of fixes addresses two annoyances that came out of reviewing PR #319 on
-HavenEngineering/finance-erp-config: a 1-line semantic change buried in a 12-line
+This pair of fixes addresses two annoyances that came out of reviewing a PR on a
+private work repository's config: a 1-line semantic change buried in a 12-line
 re-indent was routed to the full 8-specialist pipeline, and the orchestrator
 auto-downgraded an APPROVE to COMMENT when an unrelated peer review was hanging
 around. Both behaviours are now removed. The work lands as a single PR because

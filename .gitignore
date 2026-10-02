@@ -10,7 +10,8 @@ Thumbs.db
 *~
 
 # Hooks
-.githooks/patterns.local
+.githooks/identity-patterns.local
+.githooks/always-patterns.local
 
 # Python
 __pycache__/

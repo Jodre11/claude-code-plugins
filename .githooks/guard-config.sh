@@ -2,8 +2,8 @@
 # shellcheck disable=SC2034  # read by guard-lib.sh and the hooks that source it
 # Pattern sets and path exemptions for .githooks/pre-commit and .githooks/pre-push, sourced by .githooks/guard-lib.sh.
 # Each pattern is a POSIX ERE, matched case-insensitively against each added line. .gitleaks.toml carries the same
-# patterns; tests/test-pattern-sync.sh checks that the two stay in step. The other guard files are copied unchanged
-# from the claude-settings-template and dotfiles-template repositories; this file alone is this repository's own.
+# patterns; tests/test-pattern-sync.sh checks that the two stay in step. Both are this repository's own; the other
+# guard files are copied unchanged from the claude-settings-template and dotfiles-template repositories.
 #
 # The IDENTITY_PATTERNS are placeholders. Names this repository must not publish are kept out of it, in the optional,
 # gitignored .githooks/identity-patterns.local, one ERE per line; secret-shaped literals of your own go in
@@ -69,7 +69,7 @@ LOCAL_IDENTITY_EXEMPT_RE='^$.'
 # Patterns of identity-patterns.local this repository disregards on every path, each the exact text of one line of
 # that list: the owner's GitHub handle, which names this repository and its marketplace, and the name of the internal
 # S3 tool the s3-search plugin wraps. Both are this repository's own public identity. Every other local pattern, and
-# always-patterns.local, still applies.
+# always-patterns.local, still applies. An entry that matches no line drops nothing, so a changed pattern bites again.
 LOCAL_IDENTITY_IGNORE=(
     'Jodre11'
     's3search'

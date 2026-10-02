@@ -155,6 +155,29 @@ test_host_wires_workflow_flag() {
     done
 }
 
+# Both hosts pre-approve the named workflow in frontmatter so the launch does not prompt.
+# allowed-tools only pre-approves; it does not restrict the host's other tools.
+test_hosts_preapprove_review_core_workflow() {
+    local cr
+    cr=$(_wm_cr_dir)
+    local file
+    for file in skills/review-gh-pr/SKILL.md commands/pre-review.md; do
+        local path="$cr/$file"
+        if [[ ! -f "$path" ]]; then
+            fail "host pre-approves review-core: $file" "file not found"
+            continue
+        fi
+        local frontmatter
+        frontmatter=$(awk 'NR == 1 && $0 == "---" { inside = 1; next } inside && $0 == "---" { exit } inside' "$path")
+        if grep -qE '^allowed-tools:.*Workflow\(code-review-suite:review-core\)' <<< "$frontmatter"; then
+            pass "host pre-approves review-core: $file"
+        else
+            fail "host pre-approves review-core: $file" \
+                "frontmatter must carry allowed-tools: Workflow(code-review-suite:review-core) so the Step 3.5 launch is pre-approved"
+        fi
+    done
+}
+
 # Registered as a plugin workflow, review-core is also reachable as a bare slash command,
 # which supplies no host-computed args (or a free-text string). It must return an inert
 # bundle without dispatching any agent, rather than throwing on the missing fields.

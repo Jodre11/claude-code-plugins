@@ -2,6 +2,7 @@
 name: review-gh-pr
 description: Review a GitHub pull request with inline comments
 argument-hint: "[pr-number-or-url]"
+allowed-tools: Workflow(code-review-suite:review-core)
 ---
 
 # PR Review Workflow
@@ -1111,8 +1112,10 @@ injected into this conversation (shown before the skill body) and strip everythi
 Invoke the core by its registered name, never by `scriptPath`: Claude Code refuses a
 `scriptPath` outside the working directory unless a read of that file is already allowed,
 which the plugin cache usually is not. The name is also a stable permission identity across
-plugin updates: an allow rule for `Workflow(code-review-suite:review-core)` covers every
-launch, and answering "Yes, and don't ask again" at the launch prompt records that rule.
+plugin updates. `/review-gh-pr` and `/pre-review` pre-approve
+`Workflow(code-review-suite:review-core)` in their `allowed-tools`, which holds only for the
+turn that invoked them; a launch in a later turn (after a confirmation gate, say) shows the
+launch prompt, where "Yes, and don't ask again" records the same rule permanently.
 
 **Resolve panel orchestration.** You MUST read both config layers before resolving — do not
 assume a value or skip a layer because you expect a particular default. Resolve

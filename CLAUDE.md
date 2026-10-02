@@ -95,6 +95,23 @@ Run `tests/run.sh` to validate plugin structure. The test suite checks:
 
 ## Secret Scanning
 
-A pre-commit hook runs pattern-based secret scanning on staged changes. The CI gitleaks workflow
-provides a second layer of protection. To manage false positives, add entries to `.gitleaks.toml`
-(allowlist) rather than bypassing the hook with `SKIP_SECRET_SCAN=1`.
+Two git hooks keep sensitive data out of the repository. `.githooks/pre-commit` scans every added line for
+secret-shaped values and identity markers (the patterns are in `.githooks/guard-config.sh`), then runs gitleaks over
+the staged changes; `.githooks/pre-push` repeats both over every commit a push would publish, its message, author and
+committer included. CI runs gitleaks, a pattern-sync check (`tests/test-pattern-sync.sh`) and the guard suites
+(`tests/test-git-guards.sh`, `tests/test-pre-push.sh`, `tests/test-history-push.sh`) on every push to `main` and every
+pull request into it.
+
+- **Activation:** git does not activate the hooks on clone; run `git config core.hooksPath .githooks` once per clone.
+  The hooks use gitleaks 8.25.0 or later (8.30.1 is tested).
+- **Local pattern lists:** to screen for names that must not be published without publishing them, put them in the
+  gitignored `.githooks/identity-patterns.local` and `.githooks/always-patterns.local`, one POSIX ERE per line; either
+  may be a symlink to a list kept elsewhere. The hooks refuse to commit or push either one.
+- **Ignored local patterns:** `LOCAL_IDENTITY_IGNORE` in `.githooks/guard-config.sh` names, by exact text, the local
+  identity patterns this repository disregards because they are its own public identity: the owner's handle and the
+  name of the S3 tool the `s3-search` plugin wraps. Every other local pattern still applies.
+- **Bypass:** `SKIP_PATTERN_SCAN=1 git commit` (or `git push`) skips the pattern scan only, for a file that must carry
+  a pattern; say so in the commit body. gitleaks always runs and has no bypass: clear a false positive with a targeted
+  `[[allowlists]]` entry in `.gitleaks.toml`, committed with the change.
+- **Shared files:** every guard file but `guard-config.sh` and `.gitleaks.toml` is a byte-identical copy of the one in
+  the public claude-settings-template and dotfiles-template repositories. Change it there first, then copy it here.

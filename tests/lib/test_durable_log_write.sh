@@ -5,7 +5,7 @@ _dlw_bin() { echo "$REPO_ROOT/plugins/code-review-suite/bin/durable-log-write"; 
 
 # Build a payload fixture: "full" = meta + cogs + findings (normal PR/local path);
 # "nocogs" = bodyText + findings only, no meta/cogs. The nocogs shape is what the
-# FINALIZE / stall-recovery route emits (review-core.mjs:136 passes phaseLog=null →
+# FINALIZE / stall-recovery route emits (review-core.js:136 passes phaseLog=null →
 # buildLogPayload returns {bodyText, findings}). NOTE: the true "lightweight" route
 # (buildLightweightBundle) returns NO `log` key at all, so Step 3.6 skips it entirely;
 # this fixture is the recovered-envelope case, not the lightweight case.

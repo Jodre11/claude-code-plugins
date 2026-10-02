@@ -246,7 +246,7 @@ preserved).
 
 ### Body construction (orchestrator)
 
-The body is built by `review-core.mjs` `buildBody` from parts — headline +
+The body is built by `review-core.js` `buildBody` from parts — headline +
 promoted Synthesiser Assessment + compact finding index + reformatted Dependency
 Freshness.
 

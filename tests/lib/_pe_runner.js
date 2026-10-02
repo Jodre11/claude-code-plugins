@@ -1,7 +1,7 @@
 // Runner for _pe_build_log_payload: invokes buildLogPayload in isolation.
-// Env vars: WF (path to review-core.mjs), PE_ENV (envelope JSON), PE_PHASELOG (optional).
+// Env vars: WF (path to review-core.js), PE_ENV (envelope JSON), PE_PHASELOG (optional).
 //
-// Uses the async-wrapper pattern so top-level `await` in review-core.mjs is
+// Uses the async-wrapper pattern so top-level `await` in review-core.js is
 // valid. A sentinel return injected before `const resolvedArgs` causes the
 // async body to return buildLogPayload's result before any agent() call runs.
 'use strict';

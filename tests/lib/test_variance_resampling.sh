@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Variance-resampling boundary-gate tests. Runs review-core.mjs end-to-end with
+# Variance-resampling boundary-gate tests. Runs review-core.js end-to-end with
 # mock globals: round-1 synth returns VR_ENV1, round-2 synth returns VR_ENV2;
 # stochastic specialists return VR_STOCH_R1 / VR_STOCH_R2 keyed by phase. The
 # harness emits a JSON probe: the bundle, per-phase dispatch counts, synth-call
@@ -12,7 +12,7 @@ _vr_cr_dir() {
 # $1 args json, $2 env1 json, $3 env2 json, $4 stoch-r1 map json, $5 stoch-r2 map json
 _vr_run_core() {
     local wf stochR1 stochR2
-    wf="$(_vr_cr_dir)/workflows/review-core.mjs"
+    wf="$(_vr_cr_dir)/workflows/review-core.js"
     # Default the stochastic maps to an empty object. NB: a `${4:-{}}` default is
     # mis-parsed by bash as `${4:-{}` plus a literal `}`, which appends a stray brace
     # to a supplied arg and yields malformed JSON — assign the defaults explicitly.

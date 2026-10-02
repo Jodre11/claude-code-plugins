@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# Panel-review path tests. Drives review-core.mjs end-to-end with mock globals:
+# Panel-review path tests. Drives review-core.js end-to-end with mock globals:
 # specialist dispatch returns PAN_SPECIALISTS[label]; each `panel-<i>` agent returns
 # PAN_PANELISTS[i] (null when absent → a dropped panelist); the `panel-writer` agent
 # returns {bodyText}. The pure helpers are exercised through the returned bundle,
-# mirroring test_variance_resampling.sh (review-core.mjs cannot export them — the
+# mirroring test_variance_resampling.sh (review-core.js cannot export them — the
 # sandbox evals the stripped source, so an `export function` would break it).
 
 _pan_cr_dir() {
@@ -15,7 +15,7 @@ _pan_cr_dir() {
 # $5 synth envelope json (optional, defaults to null → classic path hits Category-C).
 _pan_run_core() {
     local wf writerBody synthEnvJson
-    wf="$(_pan_cr_dir)/workflows/review-core.mjs"
+    wf="$(_pan_cr_dir)/workflows/review-core.js"
     writerBody="## Synthesiser Assessment\n> panel prose\n"
     synthEnvJson=""
     [ "$#" -ge 4 ] && writerBody="$4"
@@ -65,7 +65,7 @@ _pan_run_core() {
 # $2 specialists-map, $3 panelists.
 _pan_capture_writer_prompt() {
     local wf
-    wf="$(_pan_cr_dir)/workflows/review-core.mjs"
+    wf="$(_pan_cr_dir)/workflows/review-core.js"
     WF="$wf" PAN_ARGS="$1" PAN_SPECIALISTS="$2" PAN_PANELISTS="$3" node -e '
         const fs = require("fs");
         const src = fs.readFileSync(process.env.WF, "utf8")
@@ -307,7 +307,7 @@ test_panel_raised_important_blocks() {
 # markers and eval it standalone; it references only its argument and JS built-ins.
 _pan_eval_parse() {
     local wf block="$1"
-    wf="$(_pan_cr_dir)/workflows/review-core.mjs"
+    wf="$(_pan_cr_dir)/workflows/review-core.js"
     WF="$wf" BLOCK="$block" node -e '
         const fs = require("fs");
         const src = fs.readFileSync(process.env.WF, "utf8");
@@ -788,7 +788,7 @@ test_panel_comment_body_shows_flag() {
 # PANEL_SCHEMA.votes require tractability; PANEL_SCHEMA.raised items carry tractability.
 test_panel_schema_has_tractability() {
     local wf result
-    wf="$(_pan_cr_dir)/workflows/review-core.mjs"
+    wf="$(_pan_cr_dir)/workflows/review-core.js"
     result=$(WF="$wf" node -e '
         const fs = require("fs");
         const wf = fs.readFileSync(process.env.WF, "utf8");

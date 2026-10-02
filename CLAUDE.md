@@ -47,7 +47,9 @@ item as `/<plugin-name>:<command-name>` in the slash menu instead of the cleaner
 ### Optional fields
 
 - `argument-hint` — placeholder shown in the slash menu (e.g. `"[pr-number-or-url]"`).
-- `allowed-tools` — restrict which tools the skill may use (e.g. `Bash(playwright-cli:*)`).
+- `allowed-tools` — pre-approve tools for the turn that invokes the skill, so they run without a
+  permission prompt (e.g. `Bash(playwright-cli:*)`). It does not restrict the skill's other tools;
+  use deny rules for that.
 
 ### Required layout
 

@@ -1,4 +1,4 @@
-// review-core.mjs — deterministic code-review core Workflow script.
+// review-core.js — deterministic code-review core Workflow script.
 //
 // Mirrors Steps 4-6 of the markdown pipeline (skills/review-gh-pr/SKILL.md):
 // fan out specialists in parallel, cross-review (static findings passed as data),
@@ -11,6 +11,7 @@
 export const meta = {
     name: 'review-core',
     description: 'Deterministic code-review core: fan out specialists, cross-review, synthesise, return a sealed post-only bundle',
+    whenToUse: 'Started by /review-gh-pr and /pre-review with the review args they compute. If a user types this bare slash command, do not call Workflow: tell them to run /review-gh-pr <pr> or /pre-review instead.',
     // Two disjoint phase sets: classic (dispatch → cross → synth → resample) and panel
     // (dispatch → panel-vote → panel-write). Only one set fires per run; the other stays
     // inert in the progress tree. meta must be a pure literal, so it cannot branch on
@@ -183,9 +184,25 @@ const CROSS_SCHEMA = {
 
 // The Workflow TOOL delivers args as a JSON string; the workflow() PRIMITIVE passes an
 // object. The host skill runs in the main agent loop (no workflow() primitive) so its
-// documented workflow({scriptPath}, {...}) call is executed as a Workflow-tool invocation
-// and arrives as a string. Normalise both shapes before destructuring.
-const resolvedArgs = typeof args === 'string' ? JSON.parse(args) : args
+// documented Workflow({ name, args }) call arrives as a string. Normalise both shapes
+// before destructuring; a string that is not JSON resolves to null.
+const resolvedArgs = (() => {
+    if (typeof args !== 'string') return args
+    try { return JSON.parse(args) } catch { return null }
+})()
+
+// Registered as a plugin workflow, review-core is also reachable as a bare slash command,
+// which carries no host-computed args. Every host call sets `route`, so its absence means
+// nobody prepared a review: return an inert bundle instead of dispatching on undefined fields.
+if (resolvedArgs === null || typeof resolvedArgs !== 'object' || typeof resolvedArgs.route !== 'string') {
+    log('review-core was started without review args; run /review-gh-pr or /pre-review instead')
+    return {
+        verdict: 'NONE',
+        bodyText: 'review-core is the engine behind /review-gh-pr and /pre-review and cannot run on its own. '
+            + 'Run /review-gh-pr <pr> to review a pull request, or /pre-review to review local changes.',
+        comments: [],
+    }
+}
 const {
     agentPrompt, flags, route, selfReReview, reviewMode,
     base, headSha, emptyTreeMode, pathScope, tempDir, intentLedger, repoDir,

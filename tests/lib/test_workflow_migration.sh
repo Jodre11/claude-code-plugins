@@ -71,11 +71,11 @@ test_synthesiser_documents_structured_envelope() {
     fi
 }
 
-# A workflow .mjs cannot pass a raw `node --check`: it is parsed as an ES module, so
-# `export const meta` combined with the script's top-level `return` is illegal ESM and
-# `node --check` always errors "Illegal return statement". The Workflow runtime strips
-# `export` and wraps the body in an async function before running it; a faithful syntax
-# check must do the same. This helper mirrors that transform.
+# A workflow script cannot pass a raw `node --check`: `export const meta` is illegal in a
+# CommonJS .js file, and a top-level `return` is illegal in an ES module, so node errors
+# either way. The Workflow runtime strips `export` and wraps the body in an async function
+# before running it; a faithful syntax check must do the same. This helper mirrors that
+# transform.
 _wm_syntax_ok() {
     local file="$1"
     node -e '
@@ -90,28 +90,43 @@ _wm_syntax_ok() {
 test_review_core_workflow_present_and_well_formed() {
     local cr
     cr=$(_wm_cr_dir)
-    local wf="$cr/workflows/review-core.mjs"
+    local wf="$cr/workflows/review-core.js"
     if [[ ! -f "$wf" ]]; then
-        fail "review-core.mjs exists" "missing: $wf"
+        fail "review-core.js exists" "missing: $wf"
         return
     fi
-    pass "review-core.mjs exists"
+    pass "review-core.js exists"
     if grep -qE "name: 'review-core'" "$wf"; then
-        pass "review-core.mjs meta declares name review-core"
+        pass "review-core.js meta declares name review-core"
     else
-        fail "review-core.mjs meta declares name review-core" "meta.name missing or wrong"
+        fail "review-core.js meta declares name review-core" "meta.name missing or wrong"
     fi
     if grep -qF 'description:' "$wf"; then
-        pass "review-core.mjs meta declares a description"
+        pass "review-core.js meta declares a description"
     else
-        fail "review-core.mjs meta declares a description" "meta.description missing"
+        fail "review-core.js meta declares a description" "meta.description missing"
     fi
     # Syntax validity via the runtime-faithful transform (NOT raw `node --check`).
     if _wm_syntax_ok "$wf"; then
-        pass "review-core.mjs is syntactically valid (runtime-faithful check)"
+        pass "review-core.js is syntactically valid (runtime-faithful check)"
     else
-        fail "review-core.mjs is syntactically valid (runtime-faithful check)" \
+        fail "review-core.js is syntactically valid (runtime-faithful check)" \
             "the strip-export + async-wrap transform failed to parse the script"
+    fi
+}
+
+# Claude Code registers a plugin's workflows from workflows/*.js only; a .mjs, .cjs or .ts
+# file there is skipped without a warning, so it never becomes a named workflow.
+test_plugin_workflows_use_registrable_extension() {
+    local cr
+    cr=$(_wm_cr_dir)
+    local stray
+    stray=$(find "$cr/workflows" -maxdepth 1 -type f \( -name '*.mjs' -o -name '*.cjs' -o -name '*.ts' \))
+    if [[ -z "$stray" ]]; then
+        pass "plugin workflows use the .js extension Claude Code registers"
+    else
+        fail "plugin workflows use the .js extension Claude Code registers" \
+            "Claude Code skips these, so they never register as named workflows: $stray"
     fi
 }
 
@@ -125,11 +140,85 @@ test_host_wires_workflow_flag() {
             fail "host wires workflow flag: $file" "file not found"
             continue
         fi
-        if grep -qF "workflow({scriptPath: \$REVIEW_CORE_PATH}" "$path"; then
-            pass "host wires workflow flag: $file calls workflow({scriptPath})"
+        if grep -qF 'Workflow({ name: "code-review-suite:review-core", args: {' "$path"; then
+            pass "host wires workflow flag: $file invokes the named workflow"
         else
-            fail "host wires workflow flag: $file calls workflow({scriptPath})" \
-                "Step 3.5 must call workflow({scriptPath: \$REVIEW_CORE_PATH}, ...) unconditionally in every pipeline copy — the Workflow is the only orchestration path"
+            fail "host wires workflow flag: $file invokes the named workflow" \
+                "Step 3.5 must call Workflow({ name: \"code-review-suite:review-core\", args: {...} }) in every pipeline copy — the Workflow is the only orchestration path"
+        fi
+        if grep -qE 'scriptPath:|REVIEW_CORE_PATH' "$path"; then
+            fail "host wires workflow flag: $file has no scriptPath invocation" \
+                "Claude Code refuses a plugin-cache scriptPath unless a read of it is already allowed; invoke by name instead"
+        else
+            pass "host wires workflow flag: $file has no scriptPath invocation"
+        fi
+    done
+}
+
+# Both hosts pre-approve the named workflow in frontmatter so the launch does not prompt.
+# allowed-tools only pre-approves; it does not restrict the host's other tools.
+test_hosts_preapprove_review_core_workflow() {
+    local cr
+    cr=$(_wm_cr_dir)
+    local file
+    for file in skills/review-gh-pr/SKILL.md commands/pre-review.md; do
+        local path="$cr/$file"
+        if [[ ! -f "$path" ]]; then
+            fail "host pre-approves review-core: $file" "file not found"
+            continue
+        fi
+        local frontmatter
+        frontmatter=$(awk 'NR == 1 && $0 == "---" { inside = 1; next } inside && $0 == "---" { exit } inside' "$path")
+        if grep -qE '^allowed-tools:.*Workflow\(code-review-suite:review-core\)' <<< "$frontmatter"; then
+            pass "host pre-approves review-core: $file"
+        else
+            fail "host pre-approves review-core: $file" \
+                "frontmatter must carry allowed-tools: Workflow(code-review-suite:review-core) so the Step 3.5 launch is pre-approved"
+        fi
+    done
+}
+
+# Registered as a plugin workflow, review-core is also reachable as a bare slash command,
+# which supplies no host-computed args (or a free-text string). It must return an inert
+# bundle without dispatching any agent, rather than throwing on the missing fields.
+test_review_core_bare_invocation_is_inert() {
+    local cr
+    cr=$(_wm_cr_dir)
+    local wf="$cr/workflows/review-core.js"
+    if [[ ! -f "$wf" ]]; then
+        fail "review-core bare invocation" "missing: $wf"
+        return
+    fi
+    local shape result
+    for shape in undefined empty-object empty-string free-text; do
+        result=$(node -e '
+            const fs = require("fs");
+            const src = fs.readFileSync(process.argv[1], "utf8")
+                .replace(/^export\s+const\s+meta/m, "const meta");
+            const shapes = { "undefined": undefined, "empty-object": {}, "empty-string": "", "free-text": "123 please" };
+            let agentCalls = 0;
+            const agent = async () => { agentCalls++; return null; };
+            const parallel = (thunks) => Promise.all(thunks.map(t => t()));
+            const noop = () => {};
+            (async () => {
+                let bundle;
+                try {
+                    const fn = new Function("agent","parallel","pipeline","phase","log","args","workflow",
+                        "return (async()=>{" + src + "\n})()");
+                    bundle = await fn(agent, parallel, async () => [], noop, noop, shapes[process.argv[2]], async () => null);
+                } catch (e) { console.log("THREW: " + e.message); return; }
+                if (agentCalls !== 0) { console.log("DISPATCHED " + agentCalls); return; }
+                if (!bundle || bundle.verdict !== "NONE" || !Array.isArray(bundle.comments) || !bundle.bodyText) {
+                    console.log("BADSHAPE " + JSON.stringify(bundle)); return;
+                }
+                console.log("OK");
+            })();
+        ' "$wf" "$shape" 2>&1)
+        if [[ "$result" == "OK" ]]; then
+            pass "review-core bare invocation ($shape args) returns an inert bundle"
+        else
+            fail "review-core bare invocation ($shape args) returns an inert bundle" \
+                "expected verdict NONE, no agent dispatch and no throw; got: $result"
         fi
     done
 }
@@ -169,10 +258,10 @@ test_no_inline_dispatch_fallback() {
 test_inlined_schema_matches_canonical() {
     local cr
     cr=$(_wm_cr_dir)
-    local wf="$cr/workflows/review-core.mjs"
+    local wf="$cr/workflows/review-core.js"
     local schema="$cr/includes/finding-schema.json"
     if [[ ! -f "$wf" || ! -f "$schema" ]]; then
-        fail "inlined schema parity" "review-core.mjs or finding-schema.json missing"
+        fail "inlined schema parity" "review-core.js or finding-schema.json missing"
         return
     fi
     local result
@@ -229,11 +318,11 @@ test_inlined_schema_matches_canonical() {
 # ~30% empty-stdout failure mode) must not crash any of the three dispatch sites. We eval
 # the full script body with mock globals — mock agent() always returns null — and assert
 # the workflow returns a bundle (verdict NONE in local mode) rather than throwing. This
-# guards review-core.mjs:228-231 (specialist), 265-272 (cross), and 295-309 (synth).
+# guards review-core.js:228-231 (specialist), 265-272 (cross), and 295-309 (synth).
 test_review_core_survives_null_agent_results() {
     local cr
     cr=$(_wm_cr_dir)
-    local wf="$cr/workflows/review-core.mjs"
+    local wf="$cr/workflows/review-core.js"
     if [[ ! -f "$wf" ]]; then
         fail "review-core null-agent resilience" "missing: $wf"
         return
@@ -288,7 +377,7 @@ test_review_core_survives_null_agent_results() {
 test_review_core_accepts_string_args() {
     local cr
     cr=$(_wm_cr_dir)
-    local wf="$cr/workflows/review-core.mjs"
+    local wf="$cr/workflows/review-core.js"
     if [[ ! -f "$wf" ]]; then
         fail "review-core string-args resilience" "missing: $wf"
         return
@@ -334,7 +423,7 @@ test_review_core_accepts_string_args() {
 test_review_core_threads_intent_ledger_to_synth() {
     local cr
     cr=$(_wm_cr_dir)
-    local wf="$cr/workflows/review-core.mjs"
+    local wf="$cr/workflows/review-core.js"
     if [[ ! -f "$wf" ]]; then
         fail "review-core intent-ledger threading" "missing: $wf"
         return
@@ -363,7 +452,7 @@ test_review_core_threads_intent_ledger_to_synth() {
 test_review_core_threads_repo_dir_to_synth() {
     local cr
     cr=$(_wm_cr_dir)
-    local wf="$cr/workflows/review-core.mjs"
+    local wf="$cr/workflows/review-core.js"
     if [[ ! -f "$wf" ]]; then
         fail "review-core repoDir threading" "missing: $wf"
         return
@@ -393,7 +482,7 @@ test_review_core_threads_repo_dir_to_synth() {
 test_review_core_threads_full_diff_file_to_synth() {
     local cr
     cr=$(_wm_cr_dir)
-    local wf="$cr/workflows/review-core.mjs"
+    local wf="$cr/workflows/review-core.js"
     if [[ ! -f "$wf" ]]; then
         fail "review-core full-diff-file threading" "missing: $wf"
         return
@@ -482,7 +571,7 @@ test_review_core_threads_full_diff_file_to_synth() {
 test_review_core_threads_full_diff_file_to_cross() {
     local cr
     cr=$(_wm_cr_dir)
-    local wf="$cr/workflows/review-core.mjs"
+    local wf="$cr/workflows/review-core.js"
     if [[ ! -f "$wf" ]]; then
         fail "review-core full-diff-file threading to cross" "missing: $wf"
         return
@@ -566,7 +655,7 @@ test_review_core_threads_full_diff_file_to_cross() {
 test_finalize_route_parity() {
     local cr
     cr=$(_wm_cr_dir)
-    local wf="$cr/workflows/review-core.mjs"
+    local wf="$cr/workflows/review-core.js"
     if [[ ! -f "$wf" ]]; then
         fail "finalize route parity" "missing: $wf"
         return
@@ -652,7 +741,7 @@ test_finalize_route_parity() {
 test_finalize_route_null_envelope_degrades() {
     local cr
     cr=$(_wm_cr_dir)
-    local wf="$cr/workflows/review-core.mjs"
+    local wf="$cr/workflows/review-core.js"
     if [[ ! -f "$wf" ]]; then
         fail "finalize route null-envelope degrade" "missing: $wf"
         return
@@ -718,7 +807,7 @@ test_finalize_route_null_envelope_degrades() {
 test_synth_stall_defers() {
     local cr
     cr=$(_wm_cr_dir)
-    local wf="$cr/workflows/review-core.mjs"
+    local wf="$cr/workflows/review-core.js"
     if [[ ! -f "$wf" ]]; then
         fail "synth stall recovery" "missing: $wf"
         return
@@ -869,7 +958,7 @@ test_synthesiser_documents_standalone_recovery() {
 test_synth_call_sets_stall_budget() {
     local cr
     cr=$(_wm_cr_dir)
-    local wf="$cr/workflows/review-core.mjs"
+    local wf="$cr/workflows/review-core.js"
     if [[ ! -f "$wf" ]]; then
         fail "synth stall budget" "missing: $wf"
         return
@@ -937,7 +1026,7 @@ test_synth_call_sets_stall_budget() {
 test_panel_calls_set_stall_budget() {
     local cr
     cr=$(_wm_cr_dir)
-    local wf="$cr/workflows/review-core.mjs"
+    local wf="$cr/workflows/review-core.js"
     if [[ ! -f "$wf" ]]; then
         fail "panel stall budget" "missing: $wf"
         return

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Offline PR-mockup renderer. Replays a captured panel trial through the REAL
-// review-core.mjs (model calls stubbed with captured fixtures) and renders the
+// review-core.js (model calls stubbed with captured fixtures) and renders the
 // full user-facing surface a reviewed PR would show: the review submission body
 // plus every inline comment thread at its file:line anchor.
 //
@@ -24,7 +24,7 @@ if (!fixtureDir) {
 }
 
 const REPO_ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..', '..', '..')
-const WF = path.join(REPO_ROOT, 'plugins', 'code-review-suite', 'workflows', 'review-core.mjs')
+const WF = path.join(REPO_ROOT, 'plugins', 'code-review-suite', 'workflows', 'review-core.js')
 
 const flat = JSON.parse(fs.readFileSync(path.join(fixtureDir, 'flat_findings.json'), 'utf8'))
 const panelists = JSON.parse(fs.readFileSync(path.join(fixtureDir, 'panelists.json'), 'utf8'))

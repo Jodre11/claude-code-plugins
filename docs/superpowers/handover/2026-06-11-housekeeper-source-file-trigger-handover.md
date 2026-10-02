@@ -41,7 +41,7 @@ nearest-ancestor `.csproj` and audits ALL that project's NuGet deps
 `package.json` (`npm_scope_roots`, line 435). But the **dispatch gate**
 `$HOUSEKEEPING_DETECTED` (`includes/review-pipeline.md:693`) only fires when a
 *dependency-manifest file itself* is in the diff. So a source-only PR (the trigger
-case: PR #566 on the `HavenEngineering/finance-erp` repo — seven `.cs` files, no
+case: a pull request on a private work repository — seven `.cs` files, no
 manifest) never invokes the engine, even though the engine would have surfaced
 every stale NuGet package and a High-severity transitive advisory
 (`Tmds.DBus.Protocol`). **The trigger is strictly narrower than the engine behind

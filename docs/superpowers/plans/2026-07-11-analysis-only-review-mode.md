@@ -454,7 +454,7 @@ Expected: `tests` and `gitleaks` both pass.
 
 ## After the mode ships & merges
 
-Resume the ORIGINAL task (tracked by tasks #1/#2/#3): re-run the arm-tell capture on merged PR #98 (`HavenEngineering/finance-erp-apps`, head `55fbd27a29764539bf14b13b1ef47ea32130d504`) with `analysis_only` active. It must now produce a real multi-finding report rendered to stdout plus a harvestable durable log, not a "review halted" stub. Then hand-diff the two durable-log bodies → rewrite `tests/ab/lib/arm_tells.json` → pause for maintainer review (scope was capture-only). The model-as-judge ban is permanent — blind human ranking is the sole quality adjudicator.
+Resume the ORIGINAL task (tracked by tasks #1/#2/#3): re-run the arm-tell capture on a merged pull request on a private work repository with `analysis_only` active. It must now produce a real multi-finding report rendered to stdout plus a harvestable durable log, not a "review halted" stub. Then hand-diff the two durable-log bodies → rewrite `tests/ab/lib/arm_tells.json` → pause for maintainer review (scope was capture-only). The model-as-judge ban is permanent — blind human ranking is the sole quality adjudicator.
 
 ## Self-Review
 

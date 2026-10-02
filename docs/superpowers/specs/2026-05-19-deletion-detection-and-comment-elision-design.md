@@ -53,7 +53,7 @@ The rule misfires on **whitespace-only re-indents.** A 12-line block that is
 re-indented (each line emitted as `-` then `+` with different leading
 whitespace) registers as 12 contiguous deletions, even though the `-w` view
 of the same diff shows zero changed lines for that block. A documented
-incident: HavenEngineering/finance-erp-config PR #319 (1 file, 26 lines: a
+incident: a pull request on a private work repository (1 file, 26 lines: a
 single value tweak plus a 12-line re-indent of an unchanged
 `DistillerConfig` block) triggered both checks and was routed to the full
 8-specialist pipeline. Wildly disproportionate for a 1-line semantic change.

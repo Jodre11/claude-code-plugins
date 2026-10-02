@@ -294,7 +294,7 @@ accumulates across all repos and reviews (feeds phase-efficacy thread #2):
 ```
 
 - `<repo-slug>` — the `owner/name` of the reviewed repo, slugified
-  (`/` → `-`), e.g. `HavenEngineering-lambda-haven-workday-integrations`.
+  (`/` → `-`), e.g. `example-org-example-repo`.
 - `<pr-or-branch>` — the PR number in `pr` mode (e.g. `pr-80`), or the
   branch name slugified in `local` mode.
 - `<head-sha>` — the short (12-char) HEAD SHA the review analysed, so

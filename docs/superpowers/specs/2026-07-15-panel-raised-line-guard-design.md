@@ -3,7 +3,7 @@
 ## Context
 
 Point 3 of the organic panel-review validation on
-`HavenEngineering/lambda-haven-dayforce-integrations` PR #3 (run `wf_06ad0294-58a`,
+a pull request on a private work repository (run `wf_06ad0294-58a`,
 verdict REQUEST_CHANGES, 83 comments). Of the 83 comments, the **two panel-raised**
 net-new findings anchored to non-existent lines: `DayforceOrgUnitsClient.cs:1160`
 (the file is 165 lines) and `FunctionHandler.cs:1977` (the file is 407 lines). The

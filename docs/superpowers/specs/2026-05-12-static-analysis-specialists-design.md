@@ -54,8 +54,8 @@ non-archived non-fork repos via `gh repo list --no-archived --source`; fetch
 Source artefacts captured at survey time:
 `/tmp/claude-<session>/lang-survey/totals.json` and `languages.jsonl`.
 
-Surveyed scope: HavenEngineering (655 repos) + Jodre11 (20 repos) = 675 source repos,
-1,103,902,784 bytes of code, 56 languages reported by GitHub Linguist.
+Surveyed scope: a work organisation (655 repos) plus personal repos (20) = 675 source
+repos, 1,103,902,784 bytes of code, 56 languages reported by GitHub Linguist.
 
 Top of the ranking, descending by bytes:
 

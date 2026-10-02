@@ -66,12 +66,12 @@ Right trace: the guard is correct *for the callers where the column is legitimat
 reports don't carry it). But trace the value: `""` is the default, and downstream `""` is
 indistinguishable from the legitimate sub-department code `"000 = None"`. Now name the trigger and
 the caller it bites: for **A&L reports** the column is expected present; if it ever drifts (renamed
-in ERPx, the path const `SubdepartmentPath` edited elsewhere but not here, a report-layout change),
-`IndexOfOptional` returns -1 and **every A&L row silently reports `""` = the valid `000 = None`
-category** — wrong data shown to finance, no exception, no log. Mechanism present (the changed
-lines), concrete named trigger (ZB61 column drift for A&L), silent integrity impact (`""`
-impersonates a real category). → **Important**. This is your archetype; do not let "optional read,
-guard present, correct for the F&B caller" talk you out of it.
+in a finance ERP integration, the path const `SubdepartmentPath` edited elsewhere but not here, a
+report-layout change), `IndexOfOptional` returns -1 and **every A&L row silently reports `""` = the
+valid `000 = None` category** — wrong data shown to finance, no exception, no log. Mechanism
+present (the changed lines), concrete named trigger (ZB61 column drift for A&L), silent integrity
+impact (`""` impersonates a real category). → **Important**. This is your archetype; do not let
+"optional read, guard present, correct for the F&B caller" talk you out of it.
 
 ## Output Format
 

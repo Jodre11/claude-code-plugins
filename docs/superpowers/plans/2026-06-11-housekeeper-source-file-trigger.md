@@ -99,7 +99,7 @@ test_housekeeping_trigger_mirrors_engine_scope() {
 
 - [ ] **Step 2: Run the test to verify it FAILS**
 
-Run: `cd /Users/jodre11/.claude/plugins/marketplaces/jodre11-plugins && bash tests/run.sh 2>&1 | grep -A2 'housekeeping trigger mirrors'`
+Run: `cd "$(git rev-parse --show-toplevel)" && bash tests/run.sh 2>&1 | grep -A2 'housekeeping trigger mirrors'`
 
 Expected: FAIL, listing `prose:.cs prose:.fs ...` — the current trigger bullet names no source extensions, so every one is absent from the prose. (The engine side already has them, so only `prose:` entries appear.)
 
@@ -137,7 +137,7 @@ Replace with:
 
 - [ ] **Step 2: Verify the test now passes**
 
-Run: `cd /Users/jodre11/.claude/plugins/marketplaces/jodre11-plugins && bash tests/run.sh 2>&1 | grep 'housekeeping trigger mirrors'`
+Run: `cd "$(git rev-parse --show-toplevel)" && bash tests/run.sh 2>&1 | grep 'housekeeping trigger mirrors'`
 
 Expected: PASS — `all source extensions present in prose and engine`.
 
@@ -173,7 +173,7 @@ Find the same old bullet text shown in Task 2 Step 1 (byte-identical at `SKILL.m
 
 - [ ] **Step 2: Run the full test suite**
 
-Run: `cd /Users/jodre11/.claude/plugins/marketplaces/jodre11-plugins && bash tests/run.sh`
+Run: `cd "$(git rev-parse --show-toplevel)" && bash tests/run.sh`
 
 Expected: all tests pass. Specifically confirm:
 - `test_housekeeping_trigger_mirrors_engine_scope` — PASS.
@@ -187,7 +187,7 @@ If the `bad-config rejection` test false-fails on a dirty tree, that is a known 
 Confirm the engine already honours a source-only changeset. Use the existing NuGet fixture under `tests/fixtures/static-analysis/housekeeper/` (or any fixture project containing a `.csproj` with a stale dep). Write a changed-files list naming only a `.cs` path inside that project and an empty changed-lines file:
 
 ```bash
-cd /Users/jodre11/.claude/plugins/marketplaces/jodre11-plugins
+cd "$(git rev-parse --show-toplevel)"
 printf 'tests/fixtures/static-analysis/housekeeper/SomeProject/Program.cs\n' > "${CLAUDE_TEMP_DIR}/cf.txt"
 : > "${CLAUDE_TEMP_DIR}/cl.txt"
 HOUSEKEEPER_REGISTRY_FIXTURES=<fixtures-dir> plugins/code-review-suite/bin/housekeeper-freshness --root . --changed-files-from "${CLAUDE_TEMP_DIR}/cf.txt" --changed-lines-from "${CLAUDE_TEMP_DIR}/cl.txt"

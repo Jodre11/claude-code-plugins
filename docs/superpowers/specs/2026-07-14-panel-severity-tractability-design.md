@@ -3,7 +3,7 @@
 **Date:** 2026-07-14
 **Status:** design
 **Builds on:** `2026-07-13-panel-severity-confidence-ratchet-design.md` (the two-axis split)
-**Motivated by:** post-ratchet smoke test on `HavenEngineering/finance-erp-apps` PR #98
+**Motivated by:** post-ratchet smoke test on a pull request on a private work repository
 
 ## Problem
 

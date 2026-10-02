@@ -8,8 +8,8 @@ vote is binary; conflates hallucination filter with stochastic-hazard likelihood
 ## Context
 
 A retrospective quality A/B ran the five core `code-review-suite` specialists standalone against
-commit `cf9bc9d` of `HavenEngineering/finance-erp-apps` PR #158 — the exact commit an external
-reviewer ("Marlon") reviewed with his own tool — and scored our output against his five findings.
+a pinned commit of a pull request on a private work repository — the exact commit an external
+reviewer reviewed with their own tool — and scored our output against their five findings.
 Result: **caught 2/5, missed 3/5**. The two caught were structural/coverage gaps (test-adequacy on
 `MarginExtractBuilder`, test-quality on an AND-across-columns filter). The three missed were all
 judgement-heavy: the **ZB61 silent-failure** in `MarginReportReader.cs`, and a pair of comment-truth
@@ -52,7 +52,7 @@ work. Revisited only if origination proves insufficient.
 | Relationship to correctness | **Carve out + hand off** — silent/conditional moves out of correctness; single owner. |
 | Dispatch model | **Conditional**, gated on the existing `flags.production` (as `test-adequacy`). |
 | Panel / rubric changes | **None** — deferred (see above). |
-| Validation | **Re-score the same `cf9bc9d` case** against Marlon's 5; target **2/5 → 3/5**. |
+| Validation | **Re-score the same `cf9bc9d` case** against the external reviewer's 5; target **2/5 → 3/5**. |
 
 ## Section 1 — The specialist's charter
 
@@ -184,11 +184,11 @@ not raised. This lives in the agent prompt only. We do **not** edit the shared
 "Feels right, unproven" is the honest state until this runs. No prompt ships on intuition.
 
 **Baseline (frozen):** the prior A/B scorecard against `cf9bc9d` — **caught 2/5, missed 3/5** of
-Marlon's findings. ZB61 was one of the three misses.
+the external reviewer's findings. ZB61 was one of the three misses.
 
 **Primary test — same case, re-scored:**
-- **Same commit** `cf9bc9d`, **same reference set** (Marlon's 5 findings), **same scoring** (caught /
-  missed / noise).
+- **Same commit** `cf9bc9d`, **same reference set** (the external reviewer's 5 findings),
+  **same scoring** (caught / missed / noise).
 - **New configuration** = prior specialist set **+ `latent-hazard`**, with the correctness carve-out
   applied.
 - **Success = the scorecard moves to 3/5**, driven by latent-hazard **originating the ZB61

@@ -62,7 +62,7 @@ is in self-re-review mode (a validated `$LAST_REVIEW_SHA` is set — see
 
 Run (from inside the marketplace repo):
 ```bash
-cd /Users/jodre11/.claude/plugins/marketplaces/jodre11-plugins
+cd "$(git rev-parse --show-toplevel)"
 ```
 Then:
 ```bash

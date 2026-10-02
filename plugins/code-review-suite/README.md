@@ -56,7 +56,7 @@ cross-review.
 ## Architecture
 
 The review pipeline (`includes/review-pipeline.md`) does inline prep and classification,
-then hands every review to the deterministic Workflow core (`workflows/review-core.mjs`) —
+then hands every review to the deterministic Workflow core (`workflows/review-core.js`) —
 the **sole orchestration engine**. There is no inline specialist-dispatch fallback: the
 pipeline's Step 3.5 calls the Workflow unconditionally, and the orchestrator only posts the
 sealed bundle the Workflow returns. A plugin-shipped `PreToolUse(Agent)` hook
@@ -66,7 +66,7 @@ mode, making the single-path guarantee measurable.
 1. **Inline prep** — Phase 0 intent ledger, Phase 0.6 CI status gate, base branch determination, diff measurement, C#/UI/deletion/security detection
 2. **Trivial-mode (Phase 0.7)** — orchestrator-only mini-review for docs/config-only diffs (≤3 files, ≤30 lines, allow-listed extensions, excluding load-bearing prompt paths under `plugins/*/agents|skills|commands|includes/`). Hard cap of 3 inline comments and a user-confirm gate before posting. Override with the `--force` argument or `intent.skip_trivial_check = true` in `.claude/code-review.toml`. Falls through to the lightweight or full path when the bar is not met.
 3. **Classification** — Step 3 computes the route (`lightweight` for small diffs: ≤5 files, ≤150 lines, no significant deletions, no security-sensitive areas; `full` otherwise) and Step 3.5 passes it to the Workflow.
-4. **Workflow core** — the lightweight route runs a single `code-analysis` pass inside the Workflow; the full route dispatches 9 core specialists plus up to 9 conditional specialists (C#, UI, JS/TS, Python, IaC, dependency freshness, test quality, test adequacy, latent hazard) in parallel, then fresh cross-review agents evaluate peer findings (excluding the five static-analysis specialists — see `includes/static-analysis-context.md`), then a synthesiser produces a tiered report. All of this is implemented in `review-core.mjs`.
+4. **Workflow core** — the lightweight route runs a single `code-analysis` pass inside the Workflow; the full route dispatches 9 core specialists plus up to 9 conditional specialists (C#, UI, JS/TS, Python, IaC, dependency freshness, test quality, test adequacy, latent hazard) in parallel, then fresh cross-review agents evaluate peer findings (excluding the five static-analysis specialists — see `includes/static-analysis-context.md`), then a synthesiser produces a tiered report. All of this is implemented in `review-core.js`.
 
 ## Agents
 

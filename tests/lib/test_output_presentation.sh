@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Output-presentation tests: schema relaxation, log payload, anchor ladder,
-# body construction, dependency reformat. review-core.mjs logic is exercised by
+# body construction, dependency reformat. review-core.js logic is exercised by
 # evaluating the whole script with mock globals (see _op_run_core below).
 
 _op_cr_dir() {
@@ -61,12 +61,12 @@ test_finding_agreement_is_optional() {
     fi
 }
 
-# Runs review-core.mjs end-to-end with mock globals. $1 = JSON args string.
+# Runs review-core.js end-to-end with mock globals. $1 = JSON args string.
 # A crafted mock agent returns the envelope passed via OP_SYNTH_ENVELOPE (json)
 # for the synthesiser label, and empty-ok specialist/cross outputs otherwise.
 _op_run_core() {
     local wf
-    wf="$(_op_cr_dir)/workflows/review-core.mjs"
+    wf="$(_op_cr_dir)/workflows/review-core.js"
     WF="$wf" OP_ARGS="$1" OP_SYNTH_ENVELOPE="$2" node -e '
         const fs = require("fs");
         const src = fs.readFileSync(process.env.WF, "utf8")
@@ -273,10 +273,10 @@ test_no_teasing_footer() {
     local cr f
     cr=$(_op_cr_dir)
     # The core must not emit the count-of-hidden-findings footer.
-    if grep -qF 'additional finding' "$cr/workflows/review-core.mjs"; then
-        fail "no teasing footer in review-core.mjs" "the 'N additional finding(s)' footer must be removed"
+    if grep -qF 'additional finding' "$cr/workflows/review-core.js"; then
+        fail "no teasing footer in review-core.js" "the 'N additional finding(s)' footer must be removed"
     else
-        pass "no teasing footer in review-core.mjs"
+        pass "no teasing footer in review-core.js"
     fi
     # Behavioural: an APPROVE with a sub-75 consensus finding posts NO footer.
     local args env out body

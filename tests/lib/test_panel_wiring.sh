@@ -54,14 +54,14 @@ test_panel_review_mode_defaults_panel() {
     done
 }
 
-# The concern-brief's domain list must match the CORE array in review-core.mjs.
+# The concern-brief's domain list must match the CORE array in review-core.js.
 # Directional check (brief tracks CORE), not byte-parity. The brief lists domains in
 # an HTML comment marker line: <!-- CORE-DOMAINS: security, correctness, ... -->
 test_panel_concern_brief_domains_match_core() {
     local cr brief mjs core_line brief_line
     cr=$(_pw_cr_dir)
     brief="$cr/includes/panel-concern-brief.md"
-    mjs="$cr/workflows/review-core.mjs"
+    mjs="$cr/workflows/review-core.js"
     if [[ ! -f "$brief" ]]; then
         fail "panel-concern-brief.md exists" "file not found: $brief"
         return
@@ -73,5 +73,5 @@ test_panel_concern_brief_domains_match_core() {
     # Extract the brief's declared domain marker. Capture to end-of-line, strip
     # the CORE-DOMAINS: prefix and the trailing ' -->' comment close.
     brief_line=$(grep -oE 'CORE-DOMAINS:.*-->' "$brief" | sed 's/CORE-DOMAINS: //' | sed 's/ *-->$//' | sed 's/ *$//')
-    assert_equals "$core_line" "$brief_line" "concern-brief domain list tracks review-core.mjs CORE"
+    assert_equals "$core_line" "$brief_line" "concern-brief domain list tracks review-core.js CORE"
 }

@@ -77,7 +77,7 @@ jq -c '.findings[]? | . + {type:"finding"}' "$payload" >> "$jsonl"
 
 # Tokens: best-effort. Validate each line; skip (warn) a malformed row, never
 # abort. Guarded so set -euo pipefail cannot kill the script on a bad line.
-# NOTE: no producer of $CLAUDE_TEMP_DIR/tokens.jsonl was found in review-core.mjs
+# NOTE: no producer of $CLAUDE_TEMP_DIR/tokens.jsonl was found in review-core.js
 # (the --tokens reference is inherited from the old Step 7a). Absent/empty is the
 # expected common case and handled below; if a producer is never wired, token
 # rows simply never land — out of scope for this reliability fix.

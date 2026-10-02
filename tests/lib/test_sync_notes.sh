@@ -845,7 +845,7 @@ test_sync_static_analysis_cross_feed_documented() {
     local pipeline="$cr/includes/review-pipeline.md"
     local sa_context="$cr/includes/static-analysis-context.md"
     local cr_mode="$cr/includes/cross-review-mode.md"
-    local review_core="$cr/workflows/review-core.mjs"
+    local review_core="$cr/workflows/review-core.js"
 
     local file
     for file in "$pipeline" "$sa_context" "$cr_mode" "$review_core"; do
@@ -855,16 +855,16 @@ test_sync_static_analysis_cross_feed_documented() {
         fi
     done
 
-    # Assertion 1: the cross-feed now lives in the Workflow engine (review-core.mjs), not
+    # Assertion 1: the cross-feed now lives in the Workflow engine (review-core.js), not
     # inline prose. crossAndSynth must build a `peer` object over crossDomains, and the
     # STATIC set must be EXCLUDED from RECEIVING cross-review (crossDomains filters NON_CROSS
     # out). Both the STATIC set definition and the crossDomains filter are load-bearing.
     if grep -qE 'const STATIC = new Set\(\[' "$review_core" \
             && grep -qE 'const crossDomains = allSpecialists\.filter\(d => !NON_CROSS\.has\(d\)\)' "$review_core"; then
-        pass "static-analysis cross-feed: review-core.mjs excludes STATIC from receiving cross-review"
+        pass "static-analysis cross-feed: review-core.js excludes STATIC from receiving cross-review"
     else
-        fail "static-analysis cross-feed: review-core.mjs excludes STATIC from receiving cross-review" \
-            "review-core.mjs must define 'const STATIC = new Set([...])' and 'const crossDomains = allSpecialists.filter(d => !NON_CROSS.has(d))' — this is what excludes static-analysis specialists from receiving cross-review while still feeding their findings to the cross-reviewers (the peer object in crossAndSynth)"
+        fail "static-analysis cross-feed: review-core.js excludes STATIC from receiving cross-review" \
+            "review-core.js must define 'const STATIC = new Set([...])' and 'const crossDomains = allSpecialists.filter(d => !NON_CROSS.has(d))' — this is what excludes static-analysis specialists from receiving cross-review while still feeding their findings to the cross-reviewers (the peer object in crossAndSynth)"
     fi
 
     # Assertion 2: static-analysis-context.md §8 must affirm that findings ARE shown
@@ -886,7 +886,7 @@ test_sync_static_analysis_cross_feed_documented() {
     fi
 
     # Assertion 4: each of the five static-analysis specialist names must appear in
-    # both review-core.mjs (the STATIC set — the engine excludes them from receiving
+    # both review-core.js (the STATIC set — the engine excludes them from receiving
     # cross-review) and static-analysis-context.md. We assert presence individually
     # (not order/format) so that legitimate prose variations do not trigger false
     # positives. The names are the load-bearing tokens: a future edit that drops one of
@@ -906,7 +906,7 @@ test_sync_static_analysis_cross_feed_documented() {
         pass "static-analysis cross-feed: specialist enumeration consistent across canonicals"
     else
         fail "static-analysis cross-feed: specialist enumeration consistent across canonicals" \
-            "review-core.mjs missing names:${core_missing:-<none>}; static-analysis-context.md missing names:${sa_missing:-<none>} — both must reference all five (jbinspect, eslint, ruff, trivy, housekeeper) static-analysis specialists"
+            "review-core.js missing names:${core_missing:-<none>}; static-analysis-context.md missing names:${sa_missing:-<none>} — both must reference all five (jbinspect, eslint, ruff, trivy, housekeeper) static-analysis specialists"
     fi
 }
 
@@ -918,25 +918,25 @@ test_sync_synthesiser_dispatch_includes_review_mode() {
         return
     fi
 
-    # The synthesiser is now dispatched only by the Workflow engine (review-core.mjs
+    # The synthesiser is now dispatched only by the Workflow engine (review-core.js
     # crossAndSynth). Its synthPrompt must include "Review mode: ${reviewMode}" so the
     # synthesiser can suppress verdict guidance in local mode.
-    local review_core="$cr/workflows/review-core.mjs"
+    local review_core="$cr/workflows/review-core.js"
     if [[ ! -f "$review_core" ]]; then
-        fail "synthesiser dispatch Review mode: review-core.mjs" "review-core.mjs not found"
+        fail "synthesiser dispatch Review mode: review-core.js" "review-core.js not found"
         return
     fi
 
     if grep -qE "agentType: 'code-review-suite:review-synthesiser'" "$review_core"; then
         if grep -qE 'Review mode: \$\{reviewMode\}' "$review_core"; then
-            pass "synthesiser dispatch Review mode: review-core.mjs synthPrompt includes reviewMode"
+            pass "synthesiser dispatch Review mode: review-core.js synthPrompt includes reviewMode"
         else
-            fail "synthesiser dispatch Review mode: review-core.mjs synthPrompt includes reviewMode" \
-                "review-core.mjs's synthPrompt must include 'Review mode: \${reviewMode}' so the synthesiser can suppress verdict guidance in local mode"
+            fail "synthesiser dispatch Review mode: review-core.js synthPrompt includes reviewMode" \
+                "review-core.js's synthPrompt must include 'Review mode: \${reviewMode}' so the synthesiser can suppress verdict guidance in local mode"
         fi
     else
-        fail "synthesiser dispatch Review mode: review-core.mjs" \
-            "expected review-core.mjs to dispatch the synthesiser (agentType: 'code-review-suite:review-synthesiser') but none was found — was the dispatch deleted?"
+        fail "synthesiser dispatch Review mode: review-core.js" \
+            "expected review-core.js to dispatch the synthesiser (agentType: 'code-review-suite:review-synthesiser') but none was found — was the dispatch deleted?"
     fi
 }
 
@@ -948,26 +948,26 @@ test_sync_synthesiser_dispatch_uses_ultrathink() {
         return
     fi
 
-    # The synthesiser's synthPrompt (review-core.mjs) must START with the literal
+    # The synthesiser's synthPrompt (review-core.js) must START with the literal
     # "ultrathink" keyword, followed by \n\n. The keyword is what Claude Code's keyword
     # detector looks for to set the max thinking budget.
-    local review_core="$cr/workflows/review-core.mjs"
+    local review_core="$cr/workflows/review-core.js"
     if [[ ! -f "$review_core" ]]; then
-        fail "synthesiser dispatch ultrathink keyword: review-core.mjs" "review-core.mjs not found"
+        fail "synthesiser dispatch ultrathink keyword: review-core.js" "review-core.js not found"
         return
     fi
 
     if grep -qE "agentType: 'code-review-suite:review-synthesiser'" "$review_core"; then
         if grep -qE "const synthPrompt =" "$review_core" \
                 && grep -qE '`ultrathink\\n\\n`' "$review_core"; then
-            pass "synthesiser dispatch ultrathink keyword: review-core.mjs synthPrompt starts with ultrathink"
+            pass "synthesiser dispatch ultrathink keyword: review-core.js synthPrompt starts with ultrathink"
         else
-            fail "synthesiser dispatch ultrathink keyword: review-core.mjs synthPrompt starts with ultrathink" \
-                "review-core.mjs's synthPrompt must begin with the literal \`ultrathink\\n\\n\` so Claude Code's keyword detector sets the max thinking budget; without it, the synthesiser runs at default effort regardless of any frontmatter declaration"
+            fail "synthesiser dispatch ultrathink keyword: review-core.js synthPrompt starts with ultrathink" \
+                "review-core.js's synthPrompt must begin with the literal \`ultrathink\\n\\n\` so Claude Code's keyword detector sets the max thinking budget; without it, the synthesiser runs at default effort regardless of any frontmatter declaration"
         fi
     else
-        fail "synthesiser dispatch ultrathink keyword: review-core.mjs" \
-            "expected review-core.mjs to dispatch the synthesiser (agentType: 'code-review-suite:review-synthesiser') but none was found — was the dispatch deleted?"
+        fail "synthesiser dispatch ultrathink keyword: review-core.js" \
+            "expected review-core.js to dispatch the synthesiser (agentType: 'code-review-suite:review-synthesiser') but none was found — was the dispatch deleted?"
     fi
 }
 
@@ -976,7 +976,7 @@ test_sync_synth_dispatch_passes_intent_ledger() {
     # any consensus finding indicates the goal is not achieved." Row 1 is unevaluable
     # without the ledger, so the synthPrompt MUST include the intent ledger. The
     # synthesiser's agent definition already has the `Intent ledger:` extraction
-    # block; this test asserts the producer side (review-core.mjs) is wired up too.
+    # block; this test asserts the producer side (review-core.js) is wired up too.
     local cr
     cr=$(_cr_dir)
     if [[ ! -d "$cr" ]]; then
@@ -984,9 +984,9 @@ test_sync_synth_dispatch_passes_intent_ledger() {
         return
     fi
 
-    local review_core="$cr/workflows/review-core.mjs"
+    local review_core="$cr/workflows/review-core.js"
     if [[ ! -f "$review_core" ]]; then
-        fail "synthesiser dispatch intent ledger: review-core.mjs" "review-core.mjs not found"
+        fail "synthesiser dispatch intent ledger: review-core.js" "review-core.js not found"
         return
     fi
 
@@ -994,14 +994,14 @@ test_sync_synth_dispatch_passes_intent_ledger() {
         # The synthPrompt interpolates the intentLedger arg between the Review mode line
         # and the trust boundary advisory.
         if grep -qE 'intentLedger \? `\$\{intentLedger\}' "$review_core"; then
-            pass "synthesiser dispatch intent ledger: review-core.mjs synthPrompt passes intentLedger"
+            pass "synthesiser dispatch intent ledger: review-core.js synthPrompt passes intentLedger"
         else
-            fail "synthesiser dispatch intent ledger: review-core.mjs synthPrompt passes intentLedger" \
-                "review-core.mjs's synthPrompt must interpolate \${intentLedger} — without it the synthesiser cannot evaluate verdict rubric row 1 (intent-ledger goal unachieved) and must infer the goal from the diff non-deterministically"
+            fail "synthesiser dispatch intent ledger: review-core.js synthPrompt passes intentLedger" \
+                "review-core.js's synthPrompt must interpolate \${intentLedger} — without it the synthesiser cannot evaluate verdict rubric row 1 (intent-ledger goal unachieved) and must infer the goal from the diff non-deterministically"
         fi
     else
-        fail "synthesiser dispatch intent ledger: review-core.mjs" \
-            "expected review-core.mjs to dispatch the synthesiser (agentType: 'code-review-suite:review-synthesiser') but none was found — was the dispatch deleted?"
+        fail "synthesiser dispatch intent ledger: review-core.js" \
+            "expected review-core.js to dispatch the synthesiser (agentType: 'code-review-suite:review-synthesiser') but none was found — was the dispatch deleted?"
     fi
 }
 

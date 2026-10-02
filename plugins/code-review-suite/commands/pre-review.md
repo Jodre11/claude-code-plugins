@@ -968,7 +968,8 @@ Discard `$FULL_DIFF` from working memory — specialists fetch their own diffs i
 ### Step 3.5: Dispatch the review core (Workflow)
 
 This is the only orchestration path — there is no inline fallback. The deterministic
-Workflow core (`workflows/review-core.mjs`) runs every review.
+Workflow core (`workflows/review-core.js`, registered as the plugin workflow
+`code-review-suite:review-core`) runs every review.
 
 Resolve `$SELF_RE_REVIEW` for the args object below: `true` when the caller
 is in self-re-review mode (a validated `$LAST_REVIEW_SHA` is set — see
@@ -977,14 +978,15 @@ is in self-re-review mode (a validated `$LAST_REVIEW_SHA` is set — see
 Resolve the `review-core` args object from the values Phases 0–3 already computed,
 then call the Workflow once.
 
-Resolve `$REVIEW_CORE_PATH`: take the "Base directory for this skill" path that
-Claude Code injected into this conversation (shown before the skill body), strip
-everything after `code-review-suite/<sha>/`, then append `workflows/review-core.mjs`.
-Invoke by scriptPath — this resolves the script directly, avoiding the named-workflow
-registry (which plugins cannot register into). Note: a scriptPath (dynamic) workflow
-still triggers the launch-approval prompt; that prompt is inherent to dynamic workflows
-and is NOT suppressed by scriptPath. Silence it via auto permission mode (records
-user-level consent once) or by answering "don't ask again" for this script per-project:
+Resolve `$PLUGIN_ROOT`: take the "Base directory for this skill" path that Claude Code
+injected into this conversation (shown before the skill body) and strip everything after
+`code-review-suite/<sha>/`.
+
+Invoke the core by its registered name, never by `scriptPath`: Claude Code refuses a
+`scriptPath` outside the working directory unless a read of that file is already allowed,
+which the plugin cache usually is not. The name is also a stable permission identity across
+plugin updates: an allow rule for `Workflow(code-review-suite:review-core)` covers every
+launch, and answering "Yes, and don't ask again" at the launch prompt records that rule.
 
 **Resolve panel orchestration.** You MUST read both config layers before resolving — do not
 assume a value or skip a layer because you expect a particular default. Resolve
@@ -1002,13 +1004,12 @@ otherwise it is the resolved `"classic"` or `"panel"`. If neither sets `panel_si
 silently round.
 
 **Read the concern brief.** Set `$PANEL_BRIEF` to the verbatim contents of
-`includes/panel-concern-brief.md` (resolve its path the same way `$REVIEW_CORE_PATH` is
-resolved, replacing `workflows/review-core.mjs` with `includes/panel-concern-brief.md`).
+`$PLUGIN_ROOT/includes/panel-concern-brief.md`.
 When `$ORCHESTRATION_MODE = classic`, `$PANEL_BRIEF` may be the empty string — the workflow
 ignores it on the classic path.
 
 ```
-workflow({scriptPath: $REVIEW_CORE_PATH}, {
+Workflow({ name: "code-review-suite:review-core", args: {
     agentPrompt: $AGENT_PROMPT,
     flags: { csharp: $CSHARP_DETECTED, ui: $UI_DETECTED, js: $JS_DETECTED,
              py: $PY_DETECTED, iac: $IAC_DETECTED, housekeeping: $HOUSEKEEPING_DETECTED,
@@ -1022,7 +1023,7 @@ workflow({scriptPath: $REVIEW_CORE_PATH}, {
     intentLedger: $INTENT_LEDGER, repoDir: $REPO_DIR,
     orchestrationMode: $ORCHESTRATION_MODE, panelSize: $PANEL_SIZE, panelBrief: $PANEL_BRIEF,
     changedLinesBlock: $CHANGED_LINES_BLOCK
-})
+} })
 ```
 
 The Workflow returns the sealed bundle `{ verdict, bodyText, comments:[{path,line,side,body}] }`.
@@ -1057,13 +1058,13 @@ Workflow's synth path (it would re-stall):
 3. Re-invoke the Workflow to seal the recovered envelope deterministically:
 
    ```
-   workflow({scriptPath: $REVIEW_CORE_PATH}, { route: 'finalize', reviewMode: $REVIEW_MODE, envelope: $RECOVERED_ENVELOPE })
+   Workflow({ name: "code-review-suite:review-core", args: { route: 'finalize', reviewMode: $REVIEW_MODE, envelope: $RECOVERED_ENVELOPE } })
    ```
 
    The `finalize` route spawns zero agents (the watchdog never engages) and runs the same
    Class D filter + comment renderer as the normal path. Its return value is the sealed bundle;
-   use it exactly as the normal bundle below. The launch-approval prompt for this second
-   Workflow invoke is silenced under `auto` mode (already required for the first launch).
+   use it exactly as the normal bundle below. It is the same named workflow, so whatever approved
+   the first launch also covers this one.
 
 ## Phase 9: Worktree teardown
 

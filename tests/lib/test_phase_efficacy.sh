@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Per-cog I/O instrumentation tests. The first group calls buildLogPayload in
-# isolation (strip-export + invoke). Later groups run review-core.mjs end-to-end
+# isolation (strip-export + invoke). Later groups run review-core.js end-to-end
 # with mock globals and assert on bundle.log.
 
 _pe_cr_dir() {
@@ -10,11 +10,11 @@ _pe_cr_dir() {
 # Invoke buildLogPayload(envelope, phaseLog) in isolation. $1 = envelope json,
 # $2 = phaseLog json (optional, defaults to undefined). Emits the payload JSON.
 # Uses the async-wrapper pattern (same as _op_run_core) so top-level await in
-# review-core.mjs is valid; a sentinel inserted before resolvedArgs causes the
+# review-core.js is valid; a sentinel inserted before resolvedArgs causes the
 # async body to return before any agent() call is made.
 _pe_build_log_payload() {
     local wf phaseLog runner
-    wf="$(_pe_cr_dir)/workflows/review-core.mjs"
+    wf="$(_pe_cr_dir)/workflows/review-core.js"
     phaseLog=''
     [ "$#" -ge 2 ] && phaseLog="$2"
     runner="$REPO_ROOT/tests/lib/_pe_runner.js"
@@ -42,11 +42,11 @@ test_buildlogpayload_emits_meta_and_cogs() {
     assert_equals "round1" "$(echo "$out" | jq -r '.cogs[0].phase')" "cog phase passed through"
 }
 
-# Runs review-core.mjs end-to-end. $1 = args json, $2 = synth envelope json,
+# Runs review-core.js end-to-end. $1 = args json, $2 = synth envelope json,
 # $3 = round-1 specialist findings map (domain -> findings[]), optional.
 _pe_run_core() {
     local wf r1
-    wf="$(_pe_cr_dir)/workflows/review-core.mjs"
+    wf="$(_pe_cr_dir)/workflows/review-core.js"
     r1='{}'
     [ "$#" -ge 3 ] && r1="$3"
     WF="$wf" PE_ARGS="$1" PE_ENV="$2" PE_R1="$r1" node -e '

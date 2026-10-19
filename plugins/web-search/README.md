@@ -1,7 +1,7 @@
 # Web Search Plugin
 
-Search the web via a local SearXNG instance with caching and automatic retry. No API key, no
-tracking. Self-hosted metasearch aggregating results from Google, Bing, DuckDuckGo, Brave,
+Search the web via a SearXNG instance, local or remote, with caching and automatic retry. No API key,
+no tracking. Self-hosted metasearch aggregating results from Google, Bing, DuckDuckGo, Brave,
 Wikipedia, and GitHub.
 
 ## Usage
@@ -11,8 +11,9 @@ invoked explicitly with `/web-search`.
 
 ## Prerequisites
 
-- Docker Desktop running
-- SearXNG container started (via LaunchAgent or `searxng-ctl.sh start`)
+- A SearXNG instance with the JSON output format enabled (`search.formats` includes `json`), on this machine
+  (e.g. a Docker container) or reachable over the network
+- `SEARXNG_URL` set to its base URL, if it is not `http://localhost:8888`
 - Python 3 — required by the caching wrapper
 - `jq` — for field extraction in the shell
 
@@ -50,9 +51,9 @@ that's a good trade.
 Results are cached locally in `~/.cache/web-search/cache.db` (SQLite). Identical queries within
 the TTL window (default: 1 hour) return instantly without hitting SearXNG.
 
-When SearXNG is unreachable (Docker not running, container stopped), the wrapper retries with
-exponential backoff (up to 3 attempts) before returning a structured error with guidance to start
-the container.
+When SearXNG is unreachable (instance down, network path unavailable), the wrapper retries with
+exponential backoff (up to 3 attempts) before returning a structured error that points at the configured
+`SEARXNG_URL`.
 
 ### Configuration
 

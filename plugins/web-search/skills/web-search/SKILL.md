@@ -5,8 +5,8 @@ description: Use when you need to search the web for URLs, documentation, error 
 
 # Web Search
 
-Search the web via `web-search`, a caching wrapper around a local SearXNG instance. No tracking,
-no API key. Results are cached locally to avoid redundant requests.
+Search the web via `web-search`, a caching wrapper around a SearXNG instance at `SEARXNG_URL` (local or
+remote). No tracking, no API key. Results are cached locally to avoid redundant requests.
 
 ## When to Use
 
@@ -52,23 +52,24 @@ web-search -n 3 "EFF Cover Your Tracks" | jq '.[].url'
 
 ## Error Handling
 
-If SearXNG is unreachable (Docker not running, container stopped), the wrapper retries with
+If SearXNG is unreachable (instance down, network or VPN path unavailable), the wrapper retries with
 exponential backoff (2s, 4s, 8s) then returns:
 
 ```json
 {
   "error": "Search failed after 3 retries for query: ...",
-  "suggestion": "Check that SearXNG is running: searxng-ctl.sh status. ...",
+  "suggestion": "Check that SearXNG is reachable at the configured SEARXNG_URL. Verify network connectivity.",
   "results": []
 }
 ```
 
-**Follow the suggestion.** Do NOT abandon this tool — start SearXNG and retry.
+**Follow the suggestion.** Do NOT abandon this tool — tell the user the instance is unreachable, and retry once it
+is back.
 
 ## Prerequisites
 
-- Docker Desktop must be running
-- SearXNG container started via `searxng-ctl.sh start` or the LaunchAgent
+- A SearXNG instance with the JSON output format enabled
+- `SEARXNG_URL` set to its base URL (default `http://localhost:8888`)
 
 ## Caching
 
@@ -80,4 +81,4 @@ exponential backoff (2s, 4s, 8s) then returns:
 ## Common Mistakes
 
 - Guessing URLs instead of searching — always search and verify
-- Not checking SearXNG is running when search fails — run `searxng-ctl.sh status`
+- Abandoning search when it fails — check that `SEARXNG_URL` is reachable instead

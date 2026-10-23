@@ -200,6 +200,16 @@ class GitHubActionsTest(unittest.TestCase):
         uses = self.m.find_action_uses(text)
         self.assertEqual(uses, [("actions/checkout", "v3.6.0", 1)])
 
+    def test_find_action_uses_reads_comment_for_digit_leading_sha_pin(self):
+        # A full SHA that starts with a digit must not be read as a version tag.
+        text = "      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1\n"
+        uses = self.m.find_action_uses(text)
+        self.assertEqual(uses, [("actions/checkout", "v7.0.1", 1)])
+
+    def test_find_action_uses_skips_digit_leading_sha_pin_without_comment(self):
+        text = "      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1\n"
+        self.assertEqual(self.m.find_action_uses(text), [])
+
     def test_find_action_uses_skips_sha_pin_without_comment(self):
         text = "      - uses: actions/checkout@abc123def456\n"
         # No trustworthy current version -> not collected.
@@ -228,6 +238,31 @@ class GitHubActionsTest(unittest.TestCase):
         self.assertEqual(f["current"], "v3")
         self.assertEqual(f["latest_ga"], "v4.2.1")
         self.assertEqual(f["target"], "v4")
+
+    def test_actions_finding_digit_leading_sha_pin_stale_by_comment(self):
+        # Positive control for the SHA fix: an old comment version still flags.
+        reg = self.m.Registry(fixtures_dir=None)
+        reg.fetch = lambda *a, **k: {"tag_name": "v7.0.1"}
+        line = "      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4.1.1\n"
+        findings = self.m.collect_github_actions(
+            [".github/workflows/ci.yml"],
+            {".github/workflows/ci.yml": line},
+            {".github/workflows/ci.yml": {1}},
+            reg)
+        self.assertEqual(len(findings), 1)
+        self.assertEqual(findings[0]["current"], "v4.1.1")
+        self.assertEqual(findings[0]["target"], "v7")
+
+    def test_actions_finding_digit_leading_sha_pin_silent_when_current(self):
+        reg = self.m.Registry(fixtures_dir=None)
+        reg.fetch = lambda *a, **k: {"tag_name": "v7.0.1"}
+        line = "      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1\n"
+        findings = self.m.collect_github_actions(
+            [".github/workflows/ci.yml"],
+            {".github/workflows/ci.yml": line},
+            {".github/workflows/ci.yml": {1}},
+            reg)
+        self.assertEqual(findings, [])
 
     def test_actions_finding_silent_when_current(self):
         reg = self.m.Registry(fixtures_dir=None)

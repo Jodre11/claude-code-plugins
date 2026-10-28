@@ -12,7 +12,6 @@ Personal plugin marketplace for [Claude Code](https://docs.anthropic.com/en/docs
 | [md-to-clipboard](plugins/md-to-clipboard/) | Convert Markdown to rich text on the macOS clipboard for pasting into Teams, Slack, Outlook |
 | [pdf-reader](plugins/pdf-reader/) | Extract text from any PDF — native text via poppler, scanned/image via tesseract OCR |
 | [roslyn-lsp](plugins/roslyn-lsp/) | Solution-aware C# LSP via Microsoft Roslyn + ClaudeCodeRoslynLspProxy — re-host of unsafePtr/ClaudeCodeRoslynLspProxy (MIT) with locally-tuned defaults |
-| [mattpocock-skills](plugins/mattpocock-skills/) | Vendored subset of Matt Pocock's engineering skills (MIT) — `writing-great-skills`, `codebase-design`, `domain-modeling`, `grill-with-docs`, `teach` |
 
 ## Installation
 

@@ -1,23 +1,22 @@
 # Spec Review Plugin
 
-An adversarial review panel for a written spec, sitting between `superpowers:brainstorming` and
-`superpowers:writing-plans`. Independent reviewers who never saw the design conversation read the
+An adversarial review panel for a written spec, run after the design is committed and before its
+implementation is planned. Independent reviewers who never saw the design conversation read the
 committed spec, and the lead verifies their findings before anything changes.
 
-Both existing self-review steps — brainstorming's spec self-review and writing-plans' — are
-same-agent, same-context passes that end "fix inline and move on". The only independent critic of a
-spec in that flow is the human. This adds the missing pass, at the point where design mistakes are
-cheapest to fix.
+An author's self-review is a same-agent, same-context pass that ends "fix inline and move on". The
+only independent critic of a spec is then the human. This adds the missing pass, at the point where
+design mistakes are cheapest to fix.
 
 ## Usage
 
-The skill triggers automatically once brainstorming has committed a spec, and can be invoked
-explicitly:
+The skill triggers once a spec is committed, and can be invoked explicitly:
 
     /review-spec
-    /review-spec docs/superpowers/specs/2026-09-07-my-feature-design.md
+    /review-spec docs/specs/2026-09-07-my-feature-design.md
 
-With no argument it takes the most recently modified file in `docs/superpowers/specs/`.
+With no argument it takes the most recently modified file in `docs/specs/`, falling back to
+`docs/superpowers/specs/`.
 
 It runs unattended. You are consulted once, for genuine trade-offs only — batched into a single
 question with options, trade-offs, and a recommendation. Everything verified and unambiguous is
@@ -46,15 +45,14 @@ No prerequisites — no binaries, no hooks, no scripts.
    step, not caution.
 5. Apply, commit the amended spec, and emit a receipt of what changed, what was rejected, and what
    was decided on your behalf.
-6. Hand over to `writing-plans` via the `handover` skill.
+6. Stop, leaving implementation planning to a fresh session.
 
 ## Design notes
 
 **Lenses are ordered by marginal value, not blast radius.** A spec can be wrong in three
 non-overlapping ways: wrong problem, incomplete answer, over-built answer. `subtraction` comes
-first because brainstorming instructs itself to apply YAGNI ruthlessly but only ever self-checks
-it. `framing` comes last, and is the one to drop for a two-lens panel, because the brainstorming
-dialogue has usually already interrogated it.
+first because authors rarely cut their own design. `framing` comes last, and is the one to drop for
+a two-lens panel, because the design dialogue has usually already interrogated it.
 
 **The reviewer model is chosen at dispatch, never pinned in agent frontmatter.** An alias that
 fails to resolve silently inherits the parent model, producing a review that only *looks*

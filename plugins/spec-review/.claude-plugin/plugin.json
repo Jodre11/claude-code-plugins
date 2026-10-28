@@ -1,6 +1,6 @@
 {
   "name": "spec-review",
-  "description": "Adversarial review panel for a written spec, between brainstorming and writing-plans",
+  "description": "Adversarial review panel for a written spec, between design and implementation planning",
   "author": {
     "name": "Christian Haddrell"
   },
@@ -8,7 +8,6 @@
   "keywords": [
     "spec-review",
     "design-review",
-    "adversarial-review",
-    "superpowers"
+    "adversarial-review"
   ]
 }

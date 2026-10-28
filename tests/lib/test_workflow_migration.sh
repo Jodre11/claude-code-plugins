@@ -1,10 +1,49 @@
 #!/usr/bin/env bash
 # Workflow-migration structural tests (schema validity, agent cross-refs,
-# and — added in Phase 2 — workflow meta + flag wiring).
+# workflow meta + flag wiring, and the panel prompt/stall/routing wiring in review-core).
 
 _wm_cr_dir() {
     echo "$REPO_ROOT/plugins/code-review-suite"
 }
+
+# Shared JS prelude for tests that drive the REAL review-core module with mock globals.
+# Defines run(agent, args), a panel-shaped baseArgs, and capturePanel(args), which records
+# every panel-vote prompt and the writer prompt while returning minimal valid outputs.
+# Single-quoted so bash leaves it alone; the JS uses double quotes only.
+_WM_JS_PRELUDE='
+const fs = require("fs");
+const src = fs.readFileSync(process.argv[1], "utf8")
+    .replace(/^export\s+const\s+meta/m, "const meta");
+const parallel = (thunks) => Promise.all(thunks.map(t => t()));
+const phase = () => {};
+const log = () => {};
+const pipeline = async () => [];
+const workflow = async () => null;
+const run = (agent, args) => {
+    const fn = new Function("agent","parallel","pipeline","phase","log","args","workflow",
+        "return (async()=>{" + src + "\n})()");
+    return fn(agent, parallel, pipeline, phase, log, args, workflow);
+};
+const baseArgs = {
+    agentPrompt: "x", flags: {}, route: "full", selfReReview: false,
+    reviewMode: "pr", base: "main", headSha: "a".repeat(40),
+    emptyTreeMode: false, pathScope: "", tempDir: "/tmp/x",
+    panelSize: 3, panelBrief: "brief", changedLinesBlock: "",
+};
+const capturePanel = async (args) => {
+    const votePrompts = [];
+    let writerPrompt = null;
+    const agentTypes = [];
+    const agent = async (prompt, opts) => {
+        if (opts && opts.agentType) agentTypes.push(opts.agentType);
+        if (opts && opts.phase === "panel-vote") { votePrompts.push(prompt); return { votes: [], raised: [] }; }
+        if (opts && opts.phase === "panel-write") { writerPrompt = prompt; return { bodyText: "## Panel Assessment\nok\n" }; }
+        return { status: "ok", findings: [] };
+    };
+    const bundle = await run(agent, args);
+    return { votePrompts, writerPrompt, agentTypes, bundle };
+};
+'
 
 test_finding_schema_is_valid_json() {
     local cr
@@ -19,13 +58,22 @@ test_finding_schema_is_valid_json() {
     else
         fail "finding-schema.json is well-formed JSON" "jq could not parse $schema"
     fi
-    # Every $def the migration depends on must be present.
+    # Every $def the Workflow depends on must be present.
     local def
-    for def in finding specialistOutput synthEnvelope sealedBundle crossOpinionEnvelope; do
+    for def in finding specialistOutput sealedBundle; do
         if jq -e --arg d "$def" '.["$defs"][$d]' "$schema" >/dev/null 2>&1; then
             pass "finding-schema.json defines \$defs.$def"
         else
             fail "finding-schema.json defines \$defs.$def" "definition missing"
+        fi
+    done
+    # The classic synthesiser and cross-review envelopes were retired with classic orchestration.
+    for def in synthEnvelope crossOpinionEnvelope; do
+        if jq -e --arg d "$def" '.["$defs"][$d]' "$schema" >/dev/null 2>&1; then
+            fail "finding-schema.json no longer defines \$defs.$def" \
+                "classic orchestration is retired; nothing produces or consumes $def"
+        else
+            pass "finding-schema.json no longer defines \$defs.$def"
         fi
     done
 }
@@ -49,25 +97,51 @@ test_static_agents_reference_finding_schema() {
     done
 }
 
-test_synthesiser_documents_structured_envelope() {
+# Classic orchestration (cross-review + review-synthesiser + stall recovery) is retired: the
+# panel is the only path. Its agent and include are deleted, review-core carries none of its
+# dispatch tokens, and a stale `orchestrationMode: "classic"` arg is ignored — the run still
+# votes through the panel and never dispatches a synthesiser or cross-reviewer.
+test_classic_orchestration_removed() {
     local cr
     cr=$(_wm_cr_dir)
-    local synth="$cr/agents/review-synthesiser.md"
-    if [[ ! -f "$synth" ]]; then
-        fail "synthesiser envelope section" "review-synthesiser.md not found"
+    local wf="$cr/workflows/review-core.js"
+    local gone
+    for gone in agents/review-synthesiser.md includes/cross-review-mode.md; do
+        if [[ -e "$cr/$gone" ]]; then
+            fail "classic artefact deleted: $gone" "classic orchestration is retired; delete $gone"
+        else
+            pass "classic artefact deleted: $gone"
+        fi
+    done
+    if [[ ! -f "$wf" ]]; then
+        fail "review-core has no classic dispatch tokens" "missing: $wf"
         return
     fi
-    if grep -qF 'synthEnvelope' "$synth"; then
-        pass "synthesiser envelope: references finding-schema synthEnvelope def"
+    local token
+    for token in 'review-synthesiser' 'Mode: cross-review' 'synthDeferred' 'SYNTH_SCHEMA' 'CROSS_SCHEMA' 'orchestrationMode'; do
+        if grep -qF "$token" "$wf"; then
+            fail "review-core has no classic token: $token" "found '$token' in review-core.js"
+        else
+            pass "review-core has no classic token: $token"
+        fi
+    done
+    local result
+    result=$(node -e "$_WM_JS_PRELUDE"'
+        (async () => {
+            let cap;
+            try { cap = await capturePanel({ ...baseArgs, orchestrationMode: "classic" }); }
+            catch (e) { console.log("THREW: " + e.message); return; }
+            if (cap.votePrompts.length !== 3) { console.log("PANEL_NOT_RUN: " + cap.votePrompts.length); return; }
+            const classic = cap.agentTypes.filter(t => /synthesiser|cross/.test(t));
+            if (classic.length) { console.log("CLASSIC_DISPATCH: " + classic.join(",")); return; }
+            console.log("OK");
+        })();
+    ' "$wf" 2>&1)
+    if [[ "$result" == "OK" ]]; then
+        pass "a stale orchestrationMode=classic arg still runs the panel (no synthesiser/cross dispatch)"
     else
-        fail "synthesiser envelope: references finding-schema synthEnvelope def" \
-            "synthesiser body must document the synthEnvelope structured output for the review-core consumer"
-    fi
-    if grep -qF 'bodyText' "$synth"; then
-        pass "synthesiser envelope: documents bodyText carries full prose"
-    else
-        fail "synthesiser envelope: documents bodyText carries full prose" \
-            "the envelope's bodyText field (full prose report) must be documented so the schema is not read as flattening the judgement"
+        fail "a stale orchestrationMode=classic arg still runs the panel (no synthesiser/cross dispatch)" \
+            "$result"
     fi
 }
 
@@ -247,14 +321,14 @@ test_no_inline_dispatch_fallback() {
 }
 
 # R2-B: the script inlines the schema (import() is unavailable in the sandbox), so a
-# structural test asserts the inlined literals stay a faithful $ref-flattened equivalent
-# of includes/finding-schema.json. We slice the script prefix (the schema consts precede
-# the `const resolvedArgs = ...` args normaliser and the `const {...} = resolvedArgs`
-# destructure), eval it to recover SPECIALIST_SCHEMA / SYNTH_SCHEMA, flatten the canonical's
-# `#/$defs/finding` $refs the same way, and deep-compare. The cut anchors on `const
-# resolvedArgs` (not the destructure) because the normaliser reads the unbound `args` global,
-# which would throw in the schema-only extract harness. The eval input is the repo's own
-# committed source — same trust level as the syntax gate above.
+# structural test asserts the inlined SPECIALIST_SCHEMA stays a faithful $ref-flattened
+# equivalent of includes/finding-schema.json's specialistOutput. We slice the script prefix
+# (the schema consts precede the `const resolvedArgs = ...` args normaliser), eval it to
+# recover SPECIALIST_SCHEMA, flatten the canonical's `#/$defs/finding` $refs the same way, and
+# deep-compare. The cut anchors on `const resolvedArgs` because the normaliser reads the
+# unbound `args` global, which would throw in the schema-only extract harness. PANEL_SCHEMA
+# and WRITER_SCHEMA are panel-local and deliberately outside the canonical schema. The eval
+# input is the repo's own committed source — same trust level as the syntax gate above.
 test_inlined_schema_matches_canonical() {
     local cr
     cr=$(_wm_cr_dir)
@@ -273,8 +347,8 @@ test_inlined_schema_matches_canonical() {
         const cut = wf.indexOf("const resolvedArgs");
         if (cut < 0) { console.log("ERR: resolvedArgs normaliser not found"); process.exit(1); }
         const prefix = wf.slice(0, cut).replace(/^export\s+const\s+meta/m, "const meta");
-        const extract = new Function(prefix + "\nreturn { SPECIALIST_SCHEMA, SYNTH_SCHEMA, CROSS_SCHEMA };");
-        const { SPECIALIST_SCHEMA, SYNTH_SCHEMA, CROSS_SCHEMA } = extract();
+        const extract = new Function(prefix + "\nreturn { SPECIALIST_SCHEMA };");
+        const { SPECIALIST_SCHEMA } = extract();
         const canon = JSON.parse(fs.readFileSync(schemaPath, "utf8"));
         const finding = canon["$defs"].finding;
         const flatten = (node) => {
@@ -300,25 +374,21 @@ test_inlined_schema_matches_canonical() {
             return node;
         };
         const eq = (a, b) => JSON.stringify(canonical(a)) === JSON.stringify(canonical(b));
-        const sOk = eq(SPECIALIST_SCHEMA, flatten(canon["$defs"].specialistOutput));
-        const yOk = eq(SYNTH_SCHEMA, flatten(canon["$defs"].synthEnvelope));
-        const cOk = eq(CROSS_SCHEMA, flatten(canon["$defs"].crossOpinionEnvelope));
-        if (sOk && yOk && cOk) { console.log("OK"); }
-        else { console.log("MISMATCH specialist=" + sOk + " synth=" + yOk + " cross=" + cOk); }
+        if (eq(SPECIALIST_SCHEMA, flatten(canon["$defs"].specialistOutput))) { console.log("OK"); }
+        else { console.log("MISMATCH specialist"); }
     ' "$wf" "$schema" 2>&1)
     if [[ "$result" == "OK" ]]; then
-        pass "inlined schema parity: SPECIALIST_SCHEMA + SYNTH_SCHEMA + CROSS_SCHEMA match finding-schema.json"
+        pass "inlined schema parity: SPECIALIST_SCHEMA matches finding-schema.json specialistOutput"
     else
-        fail "inlined schema parity: SPECIALIST_SCHEMA + SYNTH_SCHEMA + CROSS_SCHEMA match finding-schema.json" \
-            "the inlined schema literals drifted from the canonical \$ref-flattened defs: $result"
+        fail "inlined schema parity: SPECIALIST_SCHEMA matches finding-schema.json specialistOutput" \
+            "the inlined schema literal drifted from the canonical \$ref-flattened def: $result"
     fi
 }
 
 # Category C resilience: an agent() that resolves successfully with null (the documented
-# ~30% empty-stdout failure mode) must not crash any of the three dispatch sites. We eval
-# the full script body with mock globals — mock agent() always returns null — and assert
-# the workflow returns a bundle (verdict NONE in local mode) rather than throwing. This
-# guards review-core.js:228-231 (specialist), 265-272 (cross), and 295-309 (synth).
+# ~30% empty-stdout failure mode) must not crash any dispatch site — the specialists, the
+# panelists or the writer. We eval the full script body with mock globals — mock agent()
+# always returns null — and assert the workflow returns a bundle rather than throwing.
 test_review_core_survives_null_agent_results() {
     local cr
     cr=$(_wm_cr_dir)
@@ -418,9 +488,10 @@ test_review_core_accepts_string_args() {
     fi
 }
 
-# The intent ledger must be threaded from args into the synth prompt (gate follow-up #1).
-# Without it, verdict-rubric row 1 can never fire on the --workflow path.
-test_review_core_threads_intent_ledger_to_synth() {
+# The intent ledger must be threaded from args into every panel-vote prompt: panelists
+# decide `blocks_goal` against it, and without it verdict-rubric row 1 can never fire.
+# With no ledger, no ledger text may leak in.
+test_review_core_threads_intent_ledger_to_panel() {
     local cr
     cr=$(_wm_cr_dir)
     local wf="$cr/workflows/review-core.js"
@@ -428,28 +499,39 @@ test_review_core_threads_intent_ledger_to_synth() {
         fail "review-core intent-ledger threading" "missing: $wf"
         return
     fi
-    # Assert intentLedger appears in the args destructure (the `const { ... } = args` block).
     if grep -qE 'intentLedger,' "$wf" || grep -qE 'intentLedger\s*\}' "$wf"; then
         pass "review-core destructures intentLedger from args"
     else
         fail "review-core destructures intentLedger from args" \
-            "the args destructure must include intentLedger so the synth prompt can reference it"
+            "the args destructure must include intentLedger so the panel prompt can reference it"
     fi
-    # Direct check: the synthPrompt string-concatenation references intentLedger via a
-    # defensive ternary (intentLedger ? ... : ...).
-    if grep -qE 'intentLedger\s*\?' "$wf"; then
-        pass "review-core interpolates intentLedger into synth prompt (defensive ternary)"
+    local result
+    result=$(node -e "$_WM_JS_PRELUDE"'
+        (async () => {
+            const LEDGER = "## Intent ledger\ngoal: ship the widget exporter";
+            let withL, without;
+            try {
+                withL = await capturePanel({ ...baseArgs, intentLedger: LEDGER });
+                without = await capturePanel({ ...baseArgs, intentLedger: "" });
+            } catch (e) { console.log("THREW: " + e.message); return; }
+            if (withL.votePrompts.length !== 3) { console.log("VOTE_COUNT: " + withL.votePrompts.length); return; }
+            if (!withL.votePrompts.every(p => p.includes(LEDGER))) { console.log("LEDGER_MISSING"); return; }
+            if (without.votePrompts.some(p => p.includes("goal:"))) { console.log("LEDGER_LEAKED_WHEN_ABSENT"); return; }
+            console.log("OK");
+        })();
+    ' "$wf" 2>&1)
+    if [[ "$result" == "OK" ]]; then
+        pass "every panel-vote prompt carries the intent ledger (and none when it is absent)"
     else
-        fail "review-core interpolates intentLedger into synth prompt (defensive ternary)" \
-            "the synth prompt assembly must include a conditional (intentLedger ? ...) for the ledger block"
+        fail "every panel-vote prompt carries the intent ledger (and none when it is absent)" "$result"
     fi
 }
 
-# repoDir must be threaded from args into the synth prompt so the synthesiser analyses
-# the target repository (not cwd) when the review targets a PR in another checkout.
-# Specialists receive repoDir via the host-built agentPrompt's "Repo dir:" line; the
-# synthesiser prompt is built inside review-core, so it needs its own injection.
-test_review_core_threads_repo_dir_to_synth() {
+# repoDir must reach every panel-vote prompt so a panelist reads surrounding code in the
+# target repository (not cwd) when the review targets a PR in another checkout. Specialists
+# receive repoDir via the host-built agentPrompt; the panel prompt is built inside review-core,
+# so it needs its own injection. The line is omitted when no target repo was supplied.
+test_review_core_threads_repo_dir_to_panel() {
     local cr
     cr=$(_wm_cr_dir)
     local wf="$cr/workflows/review-core.js"
@@ -457,29 +539,39 @@ test_review_core_threads_repo_dir_to_synth() {
         fail "review-core repoDir threading" "missing: $wf"
         return
     fi
-    # Assert repoDir appears in the args destructure.
     if grep -qE 'repoDir,' "$wf" || grep -qE 'repoDir\s*\}' "$wf"; then
         pass "review-core destructures repoDir from args"
     else
         fail "review-core destructures repoDir from args" \
-            "the args destructure must include repoDir so the synth prompt can target the right repo"
+            "the args destructure must include repoDir so the panel prompt can target the right repo"
     fi
-    # Direct check: the synthPrompt assembly references repoDir via a defensive ternary
-    # so the "Repo dir:" line is emitted only when a target repo was supplied.
-    if grep -qE 'repoDir\s*\?' "$wf"; then
-        pass "review-core interpolates repoDir into synth prompt (defensive ternary)"
+    local result
+    result=$(node -e "$_WM_JS_PRELUDE"'
+        (async () => {
+            let withR, without;
+            try {
+                withR = await capturePanel({ ...baseArgs, repoDir: "/repos/target" });
+                without = await capturePanel({ ...baseArgs });
+            } catch (e) { console.log("THREW: " + e.message); return; }
+            if (withR.votePrompts.length !== 3) { console.log("VOTE_COUNT: " + withR.votePrompts.length); return; }
+            if (!withR.votePrompts.every(p => p.includes("Repo dir: /repos/target\n"))) { console.log("REPO_DIR_MISSING"); return; }
+            if (without.votePrompts.some(p => p.includes("Repo dir:"))) { console.log("REPO_DIR_LINE_WHEN_ABSENT"); return; }
+            console.log("OK");
+        })();
+    ' "$wf" 2>&1)
+    if [[ "$result" == "OK" ]]; then
+        pass "every panel-vote prompt carries the Repo dir line (and none when repoDir is absent)"
     else
-        fail "review-core interpolates repoDir into synth prompt (defensive ternary)" \
-            "the synth prompt assembly must include a conditional (repoDir ? ...) for the Repo dir line"
+        fail "every panel-vote prompt carries the Repo dir line (and none when repoDir is absent)" "$result"
     fi
 }
 
-# PR D: the synthesiser's Context Gathering step 1 reads the pinned diff from a
-# "Full diff file:" line when present. That line is built inside review-core's
-# synthPrompt (the synthesiser prompt is assembled here, not by the host), derived
-# from tempDir to match review-pipeline.md Step 2.85's $RESOLVED_TEMP_DIR/review-diff.patch.
-# Without this threading the synthesiser never sees the line and always falls back to git.
-test_review_core_threads_full_diff_file_to_synth() {
+# PR D: panelists read the pinned diff from a "Full diff file:" line rather than re-running
+# git. The panel prompt is assembled inside review-core, so the line is derived from tempDir
+# + the Step 2.85 filename (review-pipeline.md writes $RESOLVED_TEMP_DIR/review-diff.patch).
+# Drive the REAL module with a trailing-slash tempDir (the join must not double the slash)
+# and with no tempDir (the line must be omitted, not point at a bogus path).
+test_review_core_threads_full_diff_file_to_panel() {
     local cr
     cr=$(_wm_cr_dir)
     local wf="$cr/workflows/review-core.js"
@@ -487,542 +579,42 @@ test_review_core_threads_full_diff_file_to_synth() {
         fail "review-core full-diff-file threading" "missing: $wf"
         return
     fi
-
-    # Structural: the synthPrompt assembly must emit a "Full diff file:" line via a
-    # defensive ternary so it appears only when the diff path is resolvable.
-    if grep -qE 'Full diff file: \$\{fullDiffFile\}' "$wf"; then
-        pass "review-core interpolates Full diff file into synth prompt"
-    else
-        fail "review-core interpolates Full diff file into synth prompt" \
-            "synthPrompt must include a 'Full diff file: \${fullDiffFile}' line so the synthesiser reads the pinned diff (PR D)"
-    fi
-
-    # Structural: the path must be derived from tempDir + the Step 2.85 filename.
     if grep -qE 'review-diff\.patch' "$wf"; then
         pass "review-core derives the diff path from the Step 2.85 filename"
     else
         fail "review-core derives the diff path from the Step 2.85 filename" \
             "the diff path must reference review-diff.patch (the artifact review-pipeline.md Step 2.85 writes)"
     fi
-
-    # Behavioural: drive the REAL module (as the stall test does) and capture the actual
-    # synthPrompt it builds. Force a round-1 synth stall so crossAndSynth returns the
-    # synthDeferred bundle carrying synthPrompt, then assert the resolved "Full diff file:"
-    # line is present with the correct joined path (tempDir + Step 2.85 filename).
     local result
-    result=$(node -e '
-        const fs = require("fs");
-        const src = fs.readFileSync(process.argv[1], "utf8")
-            .replace(/^export\s+const\s+meta/m, "const meta");
-        const STALL = "agent stalled on all 6 attempts (no progress for 180000ms each)";
-        const parallel = (thunks) => Promise.all(thunks.map(t => t()));
-        const phase = () => {};
-        const log = () => {};
-        const pipeline = async () => [];
-        const workflow = async () => null;
-        const run = (agent, args) => {
-            const fn = new Function("agent","parallel","pipeline","phase","log","args","workflow",
-                "return (async()=>{" + src + "\n})()");
-            return fn(agent, parallel, pipeline, phase, log, args, workflow);
-        };
-        const isSynth = (opts) => opts && opts.agentType === "code-review-suite:review-synthesiser";
-        const agentStall = async (prompt, opts) => {
-            if (isSynth(opts)) throw new Error(STALL);
-            return { status: "ok", findings: [], opinionsMarkdown: "", escalations: [] };
-        };
+    result=$(node -e "$_WM_JS_PRELUDE"'
         (async () => {
-            // tempDir with a trailing slash — the join must not double up.
-            const args = {
-                agentPrompt: "x", flags: {}, route: "full", selfReReview: false,
-                reviewMode: "pr", base: "main", headSha: "a".repeat(40),
-                emptyTreeMode: false, pathScope: "", tempDir: "/tmp/claude-abc/",
-                orchestrationMode: "classic",
-            };
-            let deferred;
-            try { deferred = await run(agentStall, args); }
-            catch (e) { console.log("THREW: " + e.message); return; }
-            const p = deferred && deferred.synthPrompt;
-            if (typeof p !== "string") { console.log("NO_PROMPT"); return; }
-            if (!p.includes("Full diff file: /tmp/claude-abc/review-diff.patch")) {
-                console.log("MISSING_OR_BAD_LINE: " + (p.match(/Full diff file:.*/)||["<absent>"])[0]);
-                return;
-            }
-            if (p.includes("//review-diff")) { console.log("DOUBLE_SLASH"); return; }
-            console.log("OK");
-        })();
-    ' "$wf" 2>&1)
-
-    if [[ "$result" == "OK" ]]; then
-        pass "review-core synthPrompt carries a clean Full diff file line (real module, trailing-slash tempDir)"
-    else
-        fail "review-core synthPrompt carries a clean Full diff file line (real module, trailing-slash tempDir)" \
-            "expected OK, got: $result"
-    fi
-}
-
-# PR E: cross-reviewers stop re-running git to reconstruct context by being handed the
-# pinned diff as data. The cross prompt is assembled inside review-core's crossAndSynth
-# (NOT the host agentPrompt, and NOT agent_dispatch.sh — the cross path is review-core-only),
-# so the "Full diff file:" line must be threaded there, derived from tempDir + the Step 2.85
-# filename exactly as the synth prompt is. Without it the cross-reviewers never see the line
-# and fall back to git. Drive the REAL module and capture the actual cross prompt via the
-# agent() mock (cross-reviewers are dispatched before the synth turn, so a synth stall still
-# lets us observe the cross prompt the module built).
-test_review_core_threads_full_diff_file_to_cross() {
-    local cr
-    cr=$(_wm_cr_dir)
-    local wf="$cr/workflows/review-core.js"
-    if [[ ! -f "$wf" ]]; then
-        fail "review-core full-diff-file threading to cross" "missing: $wf"
-        return
-    fi
-
-    # Structural: the cross prompt assembly must emit a "Full diff file:" line via a
-    # defensive ternary so it appears only when the diff path is resolvable. The grep
-    # targets the fullDiffFile-interpolated form used in the cross agent() prompt string.
-    if grep -qE 'Full diff file: \$\{fullDiffFile\}' "$wf"; then
-        pass "review-core interpolates Full diff file into cross prompt"
-    else
-        fail "review-core interpolates Full diff file into cross prompt" \
-            "the cross-reviewer prompt must include a 'Full diff file: \${fullDiffFile}' line so cross-reviewers read the pinned diff (PR E)"
-    fi
-
-    # Behavioural: drive the REAL module and capture the FIRST cross-reviewer prompt. Cross
-    # reviewers run under a non-synthesiser agentType; the synth turn throws a stall so the
-    # run returns the synthDeferred bundle without needing a full envelope. Assert the
-    # captured cross prompt carries the resolved, clean "Full diff file:" line and, as a
-    # guard against re-inlining the whole diff, that the prompt still passes peer findings.
-    local result
-    result=$(node -e '
-        const fs = require("fs");
-        const src = fs.readFileSync(process.argv[1], "utf8")
-            .replace(/^export\s+const\s+meta/m, "const meta");
-        const STALL = "agent stalled on all 6 attempts (no progress for 180000ms each)";
-        const parallel = (thunks) => Promise.all(thunks.map(t => t()));
-        const phase = () => {};
-        const log = () => {};
-        const pipeline = async () => [];
-        const workflow = async () => null;
-        const run = (agent, args) => {
-            const fn = new Function("agent","parallel","pipeline","phase","log","args","workflow",
-                "return (async()=>{" + src + "\n})()");
-            return fn(agent, parallel, pipeline, phase, log, args, workflow);
-        };
-        const isSynth = (opts) => opts && opts.agentType === "code-review-suite:review-synthesiser";
-        let crossPrompt = null;
-        const agentMock = async (prompt, opts) => {
-            if (isSynth(opts)) throw new Error(STALL);
-            // Capture the first cross-review prompt (round-1 specialists get the host
-            // agentPrompt "x"; cross prompts are the ones that open with "Mode: cross-review").
-            if (crossPrompt === null && typeof prompt === "string" && prompt.startsWith("Mode: cross-review")) {
-                crossPrompt = prompt;
-            }
-            return { status: "ok", findings: [], opinionsMarkdown: "", escalations: [] };
-        };
-        (async () => {
-            const args = {
-                agentPrompt: "x", flags: {}, route: "full", selfReReview: false,
-                reviewMode: "pr", base: "main", headSha: "a".repeat(40),
-                emptyTreeMode: false, pathScope: "", tempDir: "/tmp/claude-abc/",
-                orchestrationMode: "classic",
-            };
-            try { await run(agentMock, args); }
-            catch (e) { console.log("THREW: " + e.message); return; }
-            if (typeof crossPrompt !== "string") { console.log("NO_CROSS_PROMPT"); return; }
-            if (!crossPrompt.includes("Full diff file: /tmp/claude-abc/review-diff.patch")) {
-                console.log("MISSING_OR_BAD_LINE: " + (crossPrompt.match(/Full diff file:.*/)||["<absent>"])[0]);
-                return;
-            }
-            if (crossPrompt.includes("//review-diff")) { console.log("DOUBLE_SLASH"); return; }
-            if (!crossPrompt.includes("Peer findings (JSON):")) { console.log("NO_PEER_FINDINGS"); return; }
-            console.log("OK");
-        })();
-    ' "$wf" 2>&1)
-
-    if [[ "$result" == "OK" ]]; then
-        pass "review-core cross prompt carries a clean Full diff file line (real module, trailing-slash tempDir)"
-    else
-        fail "review-core cross prompt carries a clean Full diff file line (real module, trailing-slash tempDir)" \
-            "expected OK, got: $result"
-    fi
-}
-
-# Task 1: the finalize route re-enters review-core with a recovered envelope, runs
-# finalizeBundle (Class D filter + render) with ZERO agent() calls, and produces a bundle
-# identical (in verdict/comments/bodyText) to the normal path for the same non-gate-firing
-# envelope. Uses an APPROVE envelope with no contested tier and no Important consensus, so
-# boundaryGateFires() is false and the two paths are directly comparable.
-test_finalize_route_parity() {
-    local cr
-    cr=$(_wm_cr_dir)
-    local wf="$cr/workflows/review-core.js"
-    if [[ ! -f "$wf" ]]; then
-        fail "finalize route parity" "missing: $wf"
-        return
-    fi
-    local result
-    result=$(node -e '
-        const fs = require("fs");
-        const src = fs.readFileSync(process.argv[1], "utf8")
-            .replace(/^export\s+const\s+meta/m, "const meta");
-        const ENV = {
-            verdict: "APPROVE",
-            rubricRowApplied: 4,
-            rubricReason: "no high-confidence findings",
-            tiers: {
-                consensus: [{ file: "a.js", line: 10, severity: "Suggestion", confidence: 90, description: "desc one", suggested_fix: "fix one" }],
-                synthesiser: [{ file: "b.js", line: 20, severity: "Suggestion", confidence: 50, description: "desc two", suggested_fix: "fix two" }],
-                contested: [],
-                dismissed: [],
-            },
-            bodyText: "## Summary\n1 file(s) changed | 1 finding(s) | 0 contested\n\n## Synthesiser Assessment\n> Looks fine.\n",
-        };
-        const baseArgs = {
-            agentPrompt: "x", flags: {}, selfReReview: false,
-            reviewMode: "pr", base: "main", headSha: "a".repeat(40),
-            emptyTreeMode: false, pathScope: "", tempDir: "/tmp/x",
-            orchestrationMode: "classic",
-        };
-        const parallel = (thunks) => Promise.all(thunks.map(t => t()));
-        const phase = () => {};
-        const log = () => {};
-        const pipeline = async () => [];
-        const workflow = async () => null;
-        const run = (agent, args) => {
-            const fn = new Function("agent","parallel","pipeline","phase","log","args","workflow",
-                "return (async()=>{" + src + "\n})()");
-            return fn(agent, parallel, pipeline, phase, log, args, workflow);
-        };
-        const pick = (b) => ({ verdict: b.verdict, comments: b.comments, bodyText: b.bodyText });
-        (async () => {
-            // (a) finalize route: agent() must NEVER be called; envelope passed as arg.
-            let called = false;
-            const agentNever = async () => { called = true; return null; };
-            let finalizeBundle;
+            let withT, without;
             try {
-                finalizeBundle = await run(agentNever, { ...baseArgs, route: "finalize", envelope: ENV });
-            } catch (e) { console.log("THREW(finalize): " + e.message); return; }
-            if (called) { console.log("AGENT_CALLED_ON_FINALIZE"); return; }
-            if (finalizeBundle.verdict !== "APPROVE") { console.log("BADVERDICT: " + finalizeBundle.verdict); return; }
-            if (!Array.isArray(finalizeBundle.comments) || finalizeBundle.comments.length !== 1) { console.log("BADCOMMENTS: " + JSON.stringify(finalizeBundle.comments)); return; }
-            if (finalizeBundle.comments[0].path !== "a.js" || finalizeBundle.comments[0].line !== 10) { console.log("BADANCHOR: " + JSON.stringify(finalizeBundle.comments[0])); return; }
-            if (!finalizeBundle.bodyText.includes("**APPROVE**")) { console.log("NOHEADLINE"); return; }
-            // (b) normal path with a synth mock returning the SAME envelope, no gate fires.
-            const agentSynth = async (prompt, opts) => {
-                if (opts && opts.agentType === "code-review-suite:review-synthesiser") return ENV;
-                return { status: "ok", findings: [], opinionsMarkdown: "", escalations: [] };
-            };
-            let normal;
-            try {
-                normal = await run(agentSynth, { ...baseArgs, route: "full" });
-            } catch (e) { console.log("THREW(normal): " + e.message); return; }
-            if (JSON.stringify(pick(normal)) !== JSON.stringify(pick(finalizeBundle))) {
-                console.log("PARITY_MISMATCH\nnormal=" + JSON.stringify(pick(normal)) + "\nfinalize=" + JSON.stringify(pick(finalizeBundle)));
-                return;
-            }
+                withT = await capturePanel({ ...baseArgs, tempDir: "/tmp/claude-abc/" });
+                without = await capturePanel({ ...baseArgs, tempDir: "" });
+            } catch (e) { console.log("THREW: " + e.message); return; }
+            if (withT.votePrompts.length !== 3) { console.log("VOTE_COUNT: " + withT.votePrompts.length); return; }
+            const bad = withT.votePrompts.find(p => !p.includes("Full diff file: /tmp/claude-abc/review-diff.patch"));
+            if (bad) { console.log("MISSING_OR_BAD_LINE: " + (bad.match(/Full diff file:.*/) || ["<absent>"])[0]); return; }
+            if (withT.votePrompts.some(p => p.includes("//review-diff"))) { console.log("DOUBLE_SLASH"); return; }
+            if (without.votePrompts.some(p => p.includes("Full diff file:"))) { console.log("LINE_WITHOUT_TEMPDIR"); return; }
             console.log("OK");
         })();
     ' "$wf" 2>&1)
     if [[ "$result" == "OK" ]]; then
-        pass "finalize route runs finalizeBundle with zero agents and matches normal-path output"
+        pass "every panel-vote prompt carries a clean Full diff file line (and none without tempDir)"
     else
-        fail "finalize route runs finalizeBundle with zero agents and matches normal-path output" \
-            "$result"
+        fail "every panel-vote prompt carries a clean Full diff file line (and none without tempDir)" "$result"
     fi
 }
 
-# Task 4 (recovery-path degrade): the finalize route is what seals a recovered envelope, but
-# the standalone synth can write a corrupt/absent file — the caller's defensive Read/parse then
-# hands finalize a null (or the caller emits the empty bundle directly). finalizeBundle's
-# Category-C guard MUST turn a null/missing-tiers envelope into the exact empty bundle
-# `{ verdict:'NONE', bodyText:'(synthesiser produced no usable output)', comments:[] }` with ZERO
-# agent() calls — that is the "degrade, never hang" promise on the recovery path itself. The
-# parity test only drives finalize with a well-formed envelope; this asserts the degrade branch.
-test_finalize_route_null_envelope_degrades() {
-    local cr
-    cr=$(_wm_cr_dir)
-    local wf="$cr/workflows/review-core.js"
-    if [[ ! -f "$wf" ]]; then
-        fail "finalize route null-envelope degrade" "missing: $wf"
-        return
-    fi
-    local result
-    result=$(node -e '
-        const fs = require("fs");
-        const src = fs.readFileSync(process.argv[1], "utf8")
-            .replace(/^export\s+const\s+meta/m, "const meta");
-        const baseArgs = {
-            agentPrompt: "x", flags: {}, selfReReview: false,
-            reviewMode: "pr", base: "main", headSha: "a".repeat(40),
-            emptyTreeMode: false, pathScope: "", tempDir: "/tmp/x",
-            orchestrationMode: "classic",
-        };
-        const parallel = (thunks) => Promise.all(thunks.map(t => t()));
-        const phase = () => {};
-        const log = () => {};
-        const pipeline = async () => [];
-        const workflow = async () => null;
-        const run = (agent, args) => {
-            const fn = new Function("agent","parallel","pipeline","phase","log","args","workflow",
-                "return (async()=>{" + src + "\n})()");
-            return fn(agent, parallel, pipeline, phase, log, args, workflow);
-        };
-        (async () => {
-            // finalize route with a null envelope (corrupt/absent recovery file) must NOT call
-            // agent() and must return the exact empty bundle.
-            let called = false;
-            const agentNever = async () => { called = true; return null; };
-            let bundle;
-            try {
-                bundle = await run(agentNever, { ...baseArgs, route: "finalize", envelope: null });
-            } catch (e) { console.log("THREW(null): " + e.message); return; }
-            if (called) { console.log("AGENT_CALLED_ON_NULL_FINALIZE"); return; }
-            if (bundle.verdict !== "NONE") { console.log("BADVERDICT: " + bundle.verdict); return; }
-            if (!Array.isArray(bundle.comments) || bundle.comments.length !== 0) { console.log("BADCOMMENTS: " + JSON.stringify(bundle.comments)); return; }
-            if (bundle.bodyText !== "(synthesiser produced no usable output)") { console.log("BADBODY: " + JSON.stringify(bundle.bodyText)); return; }
-            // Also cover a valid-JSON-but-missing-tiers envelope (partial corruption that JSON.parse
-            // accepts): same Category-C guard, same empty bundle.
-            let bundle2;
-            try {
-                bundle2 = await run(agentNever, { ...baseArgs, route: "finalize", envelope: { verdict: "APPROVE" } });
-            } catch (e) { console.log("THREW(notiers): " + e.message); return; }
-            if (bundle2.verdict !== "NONE" || bundle2.bodyText !== "(synthesiser produced no usable output)") {
-                console.log("NOTIERS_NOT_DEGRADED: " + JSON.stringify(bundle2)); return;
-            }
-            console.log("OK");
-        })();
-    ' "$wf" 2>&1)
-    if [[ "$result" == "OK" ]]; then
-        pass "finalize route degrades a null/missing-tiers envelope to the empty bundle with zero agents"
-    else
-        fail "finalize route degrades a null/missing-tiers envelope to the empty bundle with zero agents" \
-            "$result"
-    fi
-}
-
-# Task 2: a synth agent() that throws the runtime stall message must be caught inside
-# crossAndSynth; the round-1 site then returns a synthDeferred bundle (NOT a crash, NOT an
-# empty Category-C bundle). A non-stall throw must re-propagate. A round-2 stall must be
-# absorbed by the existing "retain round-1" degrade (no defer, no crash).
-test_synth_stall_defers() {
-    local cr
-    cr=$(_wm_cr_dir)
-    local wf="$cr/workflows/review-core.js"
-    if [[ ! -f "$wf" ]]; then
-        fail "synth stall recovery" "missing: $wf"
-        return
-    fi
-    local result
-    result=$(node -e '
-        const fs = require("fs");
-        const src = fs.readFileSync(process.argv[1], "utf8")
-            .replace(/^export\s+const\s+meta/m, "const meta");
-        const STALL = "agent stalled on all 6 attempts (no progress for 180000ms each)";
-        const baseArgs = {
-            agentPrompt: "x", flags: {}, route: "full", selfReReview: false,
-            reviewMode: "pr", base: "main", headSha: "a".repeat(40),
-            emptyTreeMode: false, pathScope: "", tempDir: "/tmp/x",
-            orchestrationMode: "classic",
-        };
-        const parallel = (thunks) => Promise.all(thunks.map(t => t()));
-        const phase = () => {};
-        const log = () => {};
-        const pipeline = async () => [];
-        const workflow = async () => null;
-        const run = (agent, args) => {
-            const fn = new Function("agent","parallel","pipeline","phase","log","args","workflow",
-                "return (async()=>{" + src + "\n})()");
-            return fn(agent, parallel, pipeline, phase, log, args, workflow);
-        };
-        const isSynth = (opts) => opts && opts.agentType === "code-review-suite:review-synthesiser";
-        (async () => {
-            // (a) round-1 synth stall → synthDeferred bundle carrying the prompt.
-            const agentStall = async (prompt, opts) => {
-                if (isSynth(opts)) throw new Error(STALL);
-                return { status: "ok", findings: [], opinionsMarkdown: "", escalations: [] };
-            };
-            let deferred;
-            try { deferred = await run(agentStall, baseArgs); }
-            catch (e) { console.log("THREW(stall): " + e.message); return; }
-            if (deferred.synthDeferred !== true) { console.log("NO_DEFER: " + JSON.stringify(deferred).slice(0, 120)); return; }
-            if (typeof deferred.synthPrompt !== "string" || !deferred.synthPrompt.includes("ultrathink")) { console.log("BAD_PROMPT"); return; }
-            // (b) a non-stall throw must re-propagate.
-            const agentOtherThrow = async (prompt, opts) => {
-                if (isSynth(opts)) throw new Error("some other failure");
-                return { status: "ok", findings: [], opinionsMarkdown: "", escalations: [] };
-            };
-            let propagated = false;
-            try { await run(agentOtherThrow, baseArgs); }
-            catch (e) { propagated = /some other failure/.test(e.message); }
-            if (!propagated) { console.log("NONSTALL_NOT_PROPAGATED"); return; }
-            // (c) round-2 stall is absorbed: round-1 gate fires (APPROVE + contested), round-2
-            // synth stalls, and the run retains the round-1 verdict without deferring/crashing.
-            const ENV_GATE = {
-                verdict: "APPROVE", rubricRowApplied: 4, rubricReason: "borderline",
-                tiers: { consensus: [], synthesiser: [],
-                         contested: [{ file: "c.js", line: 5, severity: "Suggestion", confidence: 55, description: "d", suggested_fix: "f" }],
-                         dismissed: [] },
-                bodyText: "## Synthesiser Assessment\n> hi\n",
-            };
-            let synthCalls = 0;
-            const agentGateThenStall = async (prompt, opts) => {
-                if (isSynth(opts)) { synthCalls++; if (synthCalls === 1) return ENV_GATE; throw new Error(STALL); }
-                return { status: "ok", findings: [], opinionsMarkdown: "", escalations: [] };
-            };
-            let r2;
-            try { r2 = await run(agentGateThenStall, baseArgs); }
-            catch (e) { console.log("THREW(round2): " + e.message); return; }
-            if (r2.synthDeferred) { console.log("ROUND2_WRONGLY_DEFERRED"); return; }
-            if (r2.verdict !== "APPROVE") { console.log("ROUND2_LOST_R1_VERDICT: " + r2.verdict); return; }
-            console.log("OK");
-        })();
-    ' "$wf" 2>&1)
-    if [[ "$result" == "OK" ]]; then
-        pass "synth stall defers (round 1), re-propagates non-stall, absorbs round-2 stall"
-    else
-        fail "synth stall defers (round 1), re-propagates non-stall, absorbs round-2 stall" \
-            "$result"
-    fi
-}
-
-# Task 4: all three pipeline copies must document the caller-side stall-recovery branch
-# (synthDeferred → standalone dispatch → finalize re-entry). The sync test enforces the three
-# are byte-identical; this test asserts the recovery tokens are present in each.
-test_caller_wires_stall_recovery() {
-    local cr
-    cr=$(_wm_cr_dir)
-    local file
-    for file in includes/review-pipeline.md skills/review-gh-pr/SKILL.md commands/pre-review.md; do
-        local path="$cr/$file"
-        if [[ ! -f "$path" ]]; then
-            fail "caller wires stall recovery: $file" "file not found"
-            continue
-        fi
-        if grep -qF 'synthDeferred' "$path" \
-            && grep -qF 'synth-standalone-recovery' "$path" \
-            && grep -qF "route: 'finalize'" "$path"; then
-            pass "caller wires stall recovery: $file has the synthDeferred recovery branch"
-        else
-            fail "caller wires stall recovery: $file has the synthDeferred recovery branch" \
-                "Step 3.5 must handle a synthDeferred bundle: standalone review-synthesiser dispatch (name synth-standalone-recovery) then a workflow re-invoke with route: 'finalize'"
-        fi
-    done
-}
-
-# Task 3: the synthesiser agent must document the standalone recovery mode — when an
-# `Envelope output path:` line is present, Write the structured envelope JSON to that path.
-# It must ALSO be granted the Write tool, or the standalone dispatch inherits a toolset that
-# cannot honour the contract and every recovery silently degrades to the empty bundle.
-test_synthesiser_documents_standalone_recovery() {
-    local cr
-    cr=$(_wm_cr_dir)
-    local synth="$cr/agents/review-synthesiser.md"
-    if [[ ! -f "$synth" ]]; then
-        fail "synthesiser standalone recovery note" "review-synthesiser.md not found"
-        return
-    fi
-    if grep -qF 'Envelope output path:' "$synth"; then
-        pass "synthesiser documents the Envelope output path: recovery trigger"
-    else
-        fail "synthesiser documents the Envelope output path: recovery trigger" \
-            "review-synthesiser.md must document the standalone recovery mode keyed on an 'Envelope output path:' prompt line"
-    fi
-    if grep -qiE 'standalone recovery' "$synth"; then
-        pass "synthesiser has a Standalone recovery mode section"
-    else
-        fail "synthesiser has a Standalone recovery mode section" \
-            "add a 'Standalone recovery mode' note instructing the agent to Write the envelope JSON"
-    fi
-    # The recovery contract is inert without the Write tool: the standalone dispatch inherits
-    # this frontmatter, so a missing Write grant means the agent cannot write the envelope file
-    # and the caller's defensive read always falls back to the empty bundle. Assert the tools:
-    # frontmatter line grants Write.
-    if grep -qE '^tools:.*\bWrite\b' "$synth"; then
-        pass "synthesiser frontmatter grants the Write tool (recovery envelope file write)"
-    else
-        fail "synthesiser frontmatter grants the Write tool (recovery envelope file write)" \
-            "review-synthesiser.md 'tools:' frontmatter must include Write — without it the standalone recovery dispatch cannot write the envelope JSON and every recovery degrades to the empty bundle"
-    fi
-}
-
-# The lone in-sandbox synth turn reasons in 2min+ silent windows (opus + ultrathink), which
-# trips the Workflow sandbox's default 180s (V$m=180000) no-progress watchdog on EVERY full
-# review — 6 stalled attempts + ~30min + ~77k discarded output tokens before the out-of-sandbox
-# recovery fires. The watchdog timeout is NOT fixed: the binary binds it from a per-agent()-call
-# `stallMs` option (`ie = se?.stallMs != null ? Number(se.stallMs) : V$m`), forwarded on the
-# workflow path. Setting stallMs to the async-path budget (600000, 3.3x headroom, proven by the
-# standalone recovery run) keeps the synth in-sandbox and lets it complete in one attempt. This
-# test drives review-core with a mock agent() that captures the synth call's opts and asserts the
-# stallMs value actually reaches the call — a behavioural guard, immune to comments/stray tokens,
-# so a future refactor cannot silently drop it and reintroduce the stall tax.
-test_synth_call_sets_stall_budget() {
-    local cr
-    cr=$(_wm_cr_dir)
-    local wf="$cr/workflows/review-core.js"
-    if [[ ! -f "$wf" ]]; then
-        fail "synth stall budget" "missing: $wf"
-        return
-    fi
-    local result
-    result=$(node -e '
-        const fs = require("fs");
-        const src = fs.readFileSync(process.argv[1], "utf8")
-            .replace(/^export\s+const\s+meta/m, "const meta");
-        const ENV = {
-            verdict: "APPROVE",
-            rubricRowApplied: 4,
-            rubricReason: "no high-confidence findings",
-            tiers: { consensus: [], synthesiser: [], contested: [], dismissed: [] },
-            bodyText: "## Synthesiser Assessment\n> Looks fine.\n",
-        };
-        const baseArgs = {
-            agentPrompt: "x", flags: {}, route: "full", selfReReview: false,
-            reviewMode: "pr", base: "main", headSha: "a".repeat(40),
-            emptyTreeMode: false, pathScope: "", tempDir: "/tmp/x",
-            orchestrationMode: "classic",
-        };
-        const parallel = (thunks) => Promise.all(thunks.map(t => t()));
-        const phase = () => {};
-        const log = () => {};
-        const pipeline = async () => [];
-        const workflow = async () => null;
-        const run = (agent, args) => {
-            const fn = new Function("agent","parallel","pipeline","phase","log","args","workflow",
-                "return (async()=>{" + src + "\n})()");
-            return fn(agent, parallel, pipeline, phase, log, args, workflow);
-        };
-        (async () => {
-            let synthOpts = null;
-            const agent = async (prompt, opts) => {
-                if (opts && opts.agentType === "code-review-suite:review-synthesiser") {
-                    synthOpts = opts;
-                    return ENV;
-                }
-                return { status: "ok", findings: [], opinionsMarkdown: "", escalations: [] };
-            };
-            try { await run(agent, baseArgs); }
-            catch (e) { console.log("THREW: " + e.message); return; }
-            if (synthOpts === null) { console.log("SYNTH_NOT_CALLED"); return; }
-            if (synthOpts.stallMs !== 600000) { console.log("BAD_STALLMS: " + JSON.stringify(synthOpts.stallMs)); return; }
-            console.log("OK");
-        })();
-    ' "$wf" 2>&1)
-    if [[ "$result" == "OK" ]]; then
-        pass "synth agent() call carries stallMs=600000 (raises sandbox watchdog above 180s)"
-    else
-        fail "synth agent() call carries stallMs=600000 (raises sandbox watchdog above 180s)" \
-            "$result"
-    fi
-}
-
-# Same root cause as the synth stall, one stage over: the panel path's in-sandbox agents —
-# the N opus panelists (panelVote) and the sonnet writer (panelWrite) — inherit the default
-# 180s watchdog unless their agent() call carries stallMs. On a complex diff a panelist
-# reasons past 180s, trips the watchdog, and is dropped by the `.catch(() => null)`, silently
-# shrinking the panel until quorum fails. This test drives review-core in panel mode with a
-# mock agent() that captures the panel-vote and panel-write opts and asserts stallMs=600000
-# reaches both — a behavioural guard so a refactor cannot silently drop it and reintroduce
-# the stall (matching the synth guard above).
+# The panel's in-sandbox agents — the N opus panelists (panelVote) and the sonnet writer
+# (panelWrite) — inherit the sandbox's default 180s no-progress watchdog unless their agent()
+# call carries stallMs. On a complex diff a panelist reasons past 180s, trips the watchdog,
+# and is dropped by the `.catch(() => null)`, silently shrinking the panel until quorum fails.
+# The watchdog binds a per-agent()-call `stallMs` option, so this test drives review-core
+# with a mock agent() that captures the panel-vote and panel-write opts and asserts
+# stallMs=600000 reaches both — a behavioural guard so a refactor cannot silently drop it.
 test_panel_calls_set_stall_budget() {
     local cr
     cr=$(_wm_cr_dir)
@@ -1032,42 +624,14 @@ test_panel_calls_set_stall_budget() {
         return
     fi
     local result
-    result=$(node -e '
-        const fs = require("fs");
-        const src = fs.readFileSync(process.argv[1], "utf8")
-            .replace(/^export\s+const\s+meta/m, "const meta");
-        const baseArgs = {
-            agentPrompt: "x", flags: {}, route: "full", selfReReview: false,
-            reviewMode: "pr", base: "main", headSha: "a".repeat(40),
-            emptyTreeMode: false, pathScope: "", tempDir: "/tmp/x",
-            orchestrationMode: "panel", panelSize: 3, panelBrief: "brief",
-            changedLinesBlock: "",
-        };
-        const parallel = (thunks) => Promise.all(thunks.map(t => t()));
-        const phase = () => {};
-        const log = () => {};
-        const pipeline = async () => [];
-        const workflow = async () => null;
-        const run = (agent, args) => {
-            const fn = new Function("agent","parallel","pipeline","phase","log","args","workflow",
-                "return (async()=>{" + src + "\n})()");
-            return fn(agent, parallel, pipeline, phase, log, args, workflow);
-        };
+    result=$(node -e "$_WM_JS_PRELUDE"'
         (async () => {
-            let voteOpts = [];
+            const voteOpts = [];
             let writeOpts = null;
             const agent = async (prompt, opts) => {
-                if (opts && opts.phase === "panel-vote") {
-                    voteOpts.push(opts);
-                    // Minimal valid panelist: one is_real:false vote, no raises.
-                    return { votes: [], raised: [] };
-                }
-                if (opts && opts.phase === "panel-write") {
-                    writeOpts = opts;
-                    return { bodyText: "## Synthesiser Assessment\nok\n" };
-                }
-                // Specialist dispatch.
-                return { status: "ok", findings: [], opinionsMarkdown: "", escalations: [] };
+                if (opts && opts.phase === "panel-vote") { voteOpts.push(opts); return { votes: [], raised: [] }; }
+                if (opts && opts.phase === "panel-write") { writeOpts = opts; return { bodyText: "## Panel Assessment\nok\n" }; }
+                return { status: "ok", findings: [] };
             };
             try { await run(agent, baseArgs); }
             catch (e) { console.log("THREW: " + e.message); return; }
@@ -1083,6 +647,84 @@ test_panel_calls_set_stall_budget() {
         pass "panel-vote and panel-write agent() calls carry stallMs=600000 (raises sandbox watchdog above 180s)"
     else
         fail "panel-vote and panel-write agent() calls carry stallMs=600000 (raises sandbox watchdog above 180s)" \
+            "$result"
+    fi
+}
+
+# Housekeeper findings audit the whole touched project, so their manifest is often outside
+# the diff. They must bypass the voted-line guard (keeping file + line for the table) and
+# route to posting 'table': rendered in the Dependency Freshness section, never posted
+# inline, forced to Suggestion, and never verdict-relevant — even when the panel votes one
+# Important. A non-housekeeper finding on the same out-of-diff anchor proves the guard is
+# still active for everyone else (its file and line are cleared).
+test_housekeeper_findings_bypass_line_guard_and_route_to_table() {
+    local cr
+    cr=$(_wm_cr_dir)
+    local wf="$cr/workflows/review-core.js"
+    if [[ ! -f "$wf" ]]; then
+        fail "housekeeper table routing" "missing: $wf"
+        return
+    fi
+    local result
+    result=$(node -e "$_WM_JS_PRELUDE"'
+        const HK = [
+            { file: ".github/workflows/ci.yml", line: 12, severity: "Suggestion", confidence: 100,
+              description: "actions/checkout is at v3; latest GA is v4.", suggested_fix: "Bump to v4." },
+            { file: "package.json", line: 7, severity: "Suggestion", confidence: 100,
+              description: "lodash is at 4.17.20; latest GA is 4.17.21. Deprecated upstream.", suggested_fix: "Bump." },
+        ];
+        const CORR = [
+            { file: ".github/workflows/ci.yml", line: 12, severity: "Suggestion", confidence: 80,
+              description: "Step name is misleading.", suggested_fix: "Rename it." },
+        ];
+        const agent = async (prompt, opts) => {
+            if (opts && opts.phase === "panel-vote") {
+                const flat = JSON.parse(prompt.split("by finding_id):\n")[1]);
+                return {
+                    votes: flat.map(f => ({
+                        finding_id: f.finding_id, is_real: true,
+                        severity: f.domain === "housekeeper" ? "Important" : "Suggestion",
+                        tractability: "Bounded", blocks_goal: false, rationale: "r",
+                    })),
+                    raised: [],
+                };
+            }
+            if (opts && opts.phase === "panel-write") return { bodyText: "## Panel Assessment\nok\n" };
+            if (opts && opts.agentType === "code-review-suite:housekeeper-reviewer") return { status: "ok", findings: HK };
+            if (opts && opts.agentType === "code-review-suite:correctness-reviewer") return { status: "ok", findings: CORR };
+            return { status: "ok", findings: [] };
+        };
+        (async () => {
+            let b;
+            try {
+                b = await run(agent, { ...baseArgs, flags: { housekeeping: true },
+                    changedLinesBlock: "Changed lines:\nsrc/a.js: 1-5" });
+            } catch (e) { console.log("THREW: " + e.message); return; }
+            if (b.verdict !== "APPROVE") { console.log("VERDICT: " + b.verdict); return; }
+            if (b.comments.length !== 0) { console.log("COMMENTS: " + JSON.stringify(b.comments)); return; }
+            const hk = b.log.findings.filter(f => f.domain === "housekeeper");
+            if (hk.length !== 2) { console.log("HK_COUNT: " + hk.length); return; }
+            for (const f of hk) {
+                if (f.tier !== "contested" || f.posting !== "table" || f.severity !== "Suggestion" || f.verdict_relevant !== false) {
+                    console.log("HK_ROUTE: " + JSON.stringify(f)); return;
+                }
+            }
+            const ci = hk.find(f => f.description.startsWith("actions/checkout"));
+            if (!ci || ci.file !== ".github/workflows/ci.yml" || ci.line !== 12) { console.log("HK_ANCHOR_LOST: " + JSON.stringify(ci)); return; }
+            const corr = b.log.findings.find(f => f.domain === "correctness");
+            if (!corr || corr.file !== "" || corr.line !== 0) { console.log("GUARD_INACTIVE: " + JSON.stringify(corr)); return; }
+            const body = b.bodyText;
+            if (!body.includes("### Dependency Freshness")) { console.log("NO_FRESHNESS_SECTION"); return; }
+            if (!body.includes("| actions/checkout | v3 | v4 | `.github/workflows/ci.yml:12` |  |")) { console.log("BAD_CI_ROW"); return; }
+            if (!body.includes("| lodash | 4.17.20 | 4.17.21 | `package.json:7` | Deprecated upstream. |")) { console.log("BAD_LODASH_ROW"); return; }
+            if (/### Findings[\s\S]*actions\/checkout/.test(body.split("### Dependency Freshness")[0])) { console.log("HK_IN_INDEX"); return; }
+            console.log("OK");
+        })();
+    ' "$wf" 2>&1)
+    if [[ "$result" == "OK" ]]; then
+        pass "housekeeper findings keep their out-of-diff anchor, route to the freshness table and never block"
+    else
+        fail "housekeeper findings keep their out-of-diff anchor, route to the freshness table and never block" \
             "$result"
     fi
 }

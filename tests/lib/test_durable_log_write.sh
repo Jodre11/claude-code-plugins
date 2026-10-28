@@ -89,7 +89,7 @@ test_dlw_nocogs_emits_meta_and_finding_only() {
 test_dlw_tokens_appended_and_malformed_skipped() {
     local bin payload out jsonl toks n
     bin=$(_dlw_bin); payload=$(_dlw_payload full); out=$(mktemp -d); toks=$(mktemp)
-    printf '%s\n' '{"phase":"round1","tokens":10}' 'THIS IS NOT JSON' '{"phase":"synth","tokens":5}' > "$toks"
+    printf '%s\n' '{"phase":"round1","tokens":10}' 'THIS IS NOT JSON' '{"phase":"panel","tokens":5}' > "$toks"
     "$bin" --repo-slug o-r --ident pr-1 --sha 0123456789ab --plugin-sha x \
         --payload "$payload" --tokens "$toks" --out-dir "$out"
     jsonl="$out/o-r/pr-1-0123456789ab.jsonl"

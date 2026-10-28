@@ -100,7 +100,7 @@ subjects fail this; this is intentional).
 ### 0.4 Halt path (insufficient)
 
 If no source passes Step 0.3, halt **before** Step 1. Do not dispatch any specialists, do
-not call the synthesiser, do not measure the diff.
+not run the panel, do not measure the diff.
 
 **Mode `pr`:**
 

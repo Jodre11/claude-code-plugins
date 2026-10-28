@@ -1,6 +1,6 @@
 {
   "name": "code-review-suite",
-  "description": "Multi-agent code review with specialist, cross-review, and synthesis agents — includes review pipeline, PR review skill, pre-review and address-pr-comments commands",
+  "description": "Multi-agent code review: specialist agents whose findings a panel of independent reviewers votes on — includes review pipeline, PR review skill, pre-review and address-pr-comments commands",
   "author": {
     "name": "Christian Haddrell"
   },
@@ -19,7 +19,7 @@
     "jetbrains",
     "accessibility",
     "ui",
-    "synthesis",
+    "panel-review",
     "pre-review",
     "trivial-mode",
     "static-analysis",

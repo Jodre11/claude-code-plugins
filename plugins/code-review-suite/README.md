@@ -1,8 +1,8 @@
 # Code Review Plugin
 
-Deep code review using specialist agents, cross-review agents, and a frontier-model
-synthesiser. Includes a PR review skill and commands for pre-review analysis and
-addressing PR comments.
+Deep code review using specialist agents whose findings a panel of independent reviewers
+votes on. Includes a PR review skill and commands for pre-review analysis and addressing PR
+comments.
 
 ### Phase 0: intent ledger and CI status
 
@@ -15,14 +15,13 @@ commit message), the PR body itself, and (for local pre-review only) the branch 
 subjects. The first source containing a narrative paragraph (≥ 2 sentences, > 7 words,
 not a verbatim PR template) becomes the ledger. Without a sufficient source, the pipeline
 halts with `REQUEST_CHANGES` (PR mode) or an inline prompt (local mode) — no specialists
-fan out, no synthesiser is dispatched.
+fan out and the panel does not run.
 
 **CI status (PR mode only):** after the body check, the pipeline fetches `gh pr checks`.
-Definitive failures (`FAILURE`, `ERROR`, `ACTION_REQUIRED`) and transient failures
-(`TIMED_OUT`) prompt for explicit reviewer acknowledgement before fan-out. `CANCELLED` is
-not treated as a failure (multi-trigger workflows legitimately cancel one trigger when
-another takes over). The synthesiser constrains the verdict to `REQUEST_CHANGES` or
-`COMMENT` whenever definitive failures are present — it never recommends `APPROVE`.
+Any check that is not green and settled — a failure, a time-out, or one still pending or in
+progress — halts the review before fan-out, with no acknowledge-to-proceed path. `CANCELLED`
+counts as settled (multi-trigger workflows legitimately cancel one trigger when another takes
+over). The verdict is therefore only ever computed on green CI.
 
 ### Specialists
 
@@ -37,9 +36,8 @@ workflow runners, npm, NuGet, Docker base images, PyPI), `test-quality-reviewer`
 (false-green test detection — test files only), `test-adequacy-reviewer` (new production code lacking a direct test, or a new wire contract whose producer side is untested), and `latent-hazard-reviewer` (silent-conditional hazards — a mechanism present in the diff that fails silently only under a concrete named trigger).
 
 The five static-analysis specialists (`jbinspect`, `eslint`, `ruff`, `trivy`,
-`housekeeper`) share the cross-cutting contract in `includes/static-analysis-context.md`
-and are excluded from cross-review (their tool output does not benefit from cross-domain
-evaluation).
+`housekeeper`) share the cross-cutting contract in `includes/static-analysis-context.md`:
+the tool's severity is locked, and the panel decides only whether each finding is real.
 
 ### Version-freshness rule
 
@@ -49,9 +47,10 @@ release, and flags packages the registry marks deprecated, unlisted, or yanked
 (maintenance-health). Its deterministic engine
 (`bin/housekeeper-freshness`) parses in-scope sources, fetches latest-GA from the
 registries, and emits stale-version findings — uniform `Suggestion` severity ("staleness is
-a smell, not a defect"). When a stale version also has a known advisory, the
-`security-reviewer`'s version-safety check (#6a) escalates it to Important or Critical via
-cross-review.
+a smell, not a defect"). They render in an informational `### Dependency Freshness` table in
+the review body and never affect the verdict. A stale version with a known advisory reaches
+the verdict through the `security-reviewer`'s own version-safety finding (#6a), or through a
+panelist raising the upgrade as a net-new finding.
 
 ## Architecture
 
@@ -66,7 +65,8 @@ mode, making the single-path guarantee measurable.
 1. **Inline prep** — Phase 0 intent ledger, Phase 0.6 CI status gate, base branch determination, diff measurement, C#/UI/deletion/security detection
 2. **Trivial-mode (Phase 0.7)** — orchestrator-only mini-review for docs/config-only diffs (≤3 files, ≤30 lines, allow-listed extensions, excluding load-bearing prompt paths under `plugins/*/agents|skills|commands|includes/`). Hard cap of 3 inline comments and a user-confirm gate before posting. Override with the `--force` argument or `intent.skip_trivial_check = true` in `.claude/code-review.toml`. Falls through to the lightweight or full path when the bar is not met.
 3. **Classification** — Step 3 computes the route (`lightweight` for small diffs: ≤5 files, ≤150 lines, no significant deletions, no security-sensitive areas; `full` otherwise) and Step 3.5 passes it to the Workflow.
-4. **Workflow core** — the lightweight route runs a single `code-analysis` pass inside the Workflow; the full route dispatches 9 core specialists plus up to 9 conditional specialists (C#, UI, JS/TS, Python, IaC, dependency freshness, test quality, test adequacy, latent hazard) in parallel, then fresh cross-review agents evaluate peer findings (excluding the five static-analysis specialists — see `includes/static-analysis-context.md`), then a synthesiser produces a tiered report. All of this is implemented in `review-core.js`.
+4. **Workflow core** — the lightweight route runs a single `code-analysis` pass inside the Workflow; the full route dispatches 9 core specialists plus up to 9 conditional specialists (C#, UI, JS/TS, Python, IaC, dependency freshness, test quality, test adequacy, latent hazard) in parallel (slowest first). A panel of independent opus reviewers then votes on every finding (is it real, how severe, how tractable, does it block the stated goal) and may raise net-new findings; code tallies the votes into consensus, contested and dismissed tiers and applies the verdict rubric (`includes/verdict-rubric.md`); a writer agent produces the prose assessment. All of this is implemented in `review-core.js`.
+5. **Panel size** — `orchestration.panel_size` in `.claude/code-review.toml` (the reviewed repo first, then `~/.claude/code-review.toml`) sets the number of panelists. It must be odd and at least 3; the default is 3. `orchestration.review_mode` is retired and ignored.
 
 ## Agents
 
@@ -91,8 +91,6 @@ mode, making the single-path guarantee measurable.
 | `test-adequacy-reviewer` | Absent coverage on new production code — untested new/changed public types (F1) and untested producers of new wire contracts/DTOs (F4) (conditional — fires on changed non-test C#/Python/TS-JS source) |
 | `latent-hazard-reviewer` | Silent-conditional hazards — a mechanism present in the diff that fails silently only under a concrete named trigger (e.g. an optional column read that blanks to a legitimate-looking value on source drift) (conditional — fires on changed non-test C#/Python/TS-JS source) |
 | `ui-reviewer` | UI/UX quality, accessibility, usability (conditional — visual component files only) |
-| `cross-reviewer` | Domain-focused cross-review — evaluates peer findings through a single domain lens |
-| `review-synthesiser` | Frontier-model synthesis — independent deep analysis, tiered report with cross-review integration |
 
 ## Skill
 

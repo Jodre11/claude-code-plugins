@@ -23,15 +23,16 @@ test_sync_base_regex_matches() {
         return
     fi
 
-    local pipeline specialist synthesiser
+    local pipeline specialist
     pipeline=$(_extract_regex "$cr/includes/review-pipeline.md" '\$BASE')
     specialist=$(_extract_regex "$cr/includes/specialist-context.md" '\$BASE')
-    synthesiser=$(_extract_regex "$cr/agents/review-synthesiser.md" '\$BASE')
 
+    if [[ -z "$pipeline" ]]; then
+        fail "BASE regex: extracted from review-pipeline.md" "no '\`\$BASE\` matches' line found"
+        return
+    fi
     assert_equals "$pipeline" "$specialist" \
         "BASE regex: review-pipeline.md matches specialist-context.md"
-    assert_equals "$pipeline" "$synthesiser" \
-        "BASE regex: review-pipeline.md matches review-synthesiser.md"
 }
 
 test_sync_head_sha_regex_matches() {
@@ -42,15 +43,16 @@ test_sync_head_sha_regex_matches() {
         return
     fi
 
-    local pipeline specialist synthesiser
+    local pipeline specialist
     pipeline=$(_extract_regex "$cr/includes/review-pipeline.md" '\$HEAD_SHA')
     specialist=$(_extract_regex "$cr/includes/specialist-context.md" '\$HEAD_SHA')
-    synthesiser=$(_extract_regex "$cr/agents/review-synthesiser.md" '\$HEAD_SHA')
 
+    if [[ -z "$pipeline" ]]; then
+        fail "HEAD_SHA regex: extracted from review-pipeline.md" "no '\`\$HEAD_SHA\` matches' line found"
+        return
+    fi
     assert_equals "$pipeline" "$specialist" \
         "HEAD_SHA regex: review-pipeline.md matches specialist-context.md"
-    assert_equals "$pipeline" "$synthesiser" \
-        "HEAD_SHA regex: review-pipeline.md matches review-synthesiser.md"
 }
 
 test_sync_path_scope_regex_matches() {
@@ -61,15 +63,16 @@ test_sync_path_scope_regex_matches() {
         return
     fi
 
-    local pipeline specialist synthesiser
+    local pipeline specialist
     pipeline=$(_extract_regex "$cr/includes/review-pipeline.md" '\$PATH_SCOPE')
     specialist=$(_extract_regex "$cr/includes/specialist-context.md" '\$PATH_SCOPE')
-    synthesiser=$(_extract_regex "$cr/agents/review-synthesiser.md" '\$PATH_SCOPE')
 
+    if [[ -z "$pipeline" ]]; then
+        fail "PATH_SCOPE regex: extracted from review-pipeline.md" "no '\`\$PATH_SCOPE\` matches' line found"
+        return
+    fi
     assert_equals "$pipeline" "$specialist" \
         "PATH_SCOPE regex: review-pipeline.md matches specialist-context.md"
-    assert_equals "$pipeline" "$synthesiser" \
-        "PATH_SCOPE regex: review-pipeline.md matches review-synthesiser.md"
 }
 
 test_sync_path_scope_traversal_check_present() {
@@ -80,7 +83,7 @@ test_sync_path_scope_traversal_check_present() {
         return
     fi
 
-    for file in includes/review-pipeline.md includes/specialist-context.md agents/review-synthesiser.md; do
+    for file in includes/review-pipeline.md includes/specialist-context.md; do
         local basename_file
         basename_file=$(basename "$file")
         if grep -q 'contains `\.\.` as a substring' "$cr/$file" 2>/dev/null; then
@@ -122,7 +125,7 @@ test_sync_pipeline_inline_matches_canonical() {
         if grep -qF "Follow these instructions exactly. Do not skip steps or reorder." "$consumer" 2>/dev/null; then
             # Extract the same range from the consumer
             local consumer_body
-            consumer_body=$(sed -n '/^Follow these instructions exactly/,/^Present the synthesiser.*formatted report to the user\.$/ p' "$consumer")
+            consumer_body=$(sed -n '/^Follow these instructions exactly/,/^Present the review report to the user\.$/ p' "$consumer")
 
             if [[ -z "$consumer_body" ]]; then
                 fail "pipeline inline sync: $basename_consumer" "pipeline body not found"
@@ -131,7 +134,7 @@ test_sync_pipeline_inline_matches_canonical() {
 
             # Compare just the canonical range from both
             local canonical_range
-            canonical_range=$(sed -n '/^Follow these instructions exactly/,/^Present the synthesiser.*formatted report to the user\.$/ p' "$canonical")
+            canonical_range=$(sed -n '/^Follow these instructions exactly/,/^Present the review report to the user\.$/ p' "$canonical")
 
             if [[ "$canonical_range" == "$consumer_body" ]]; then
                 pass "pipeline inline sync: $basename_consumer matches canonical"
@@ -289,75 +292,6 @@ test_sync_ci_status_gate_inline_matches_canonical() {
     done
 }
 
-test_sync_cross_review_mode_inline_matches_canonical() {
-    local cr
-    cr=$(_cr_dir)
-    if [[ ! -d "$cr" ]]; then
-        skip "cross-review-mode inline sync" "code-review-suite plugin not found"
-        return
-    fi
-
-    local canonical="$cr/includes/cross-review-mode.md"
-    if [[ ! -f "$canonical" ]]; then
-        skip "cross-review-mode inline sync" "canonical file not found"
-        return
-    fi
-
-    # Extract the body from canonical (skip the HTML comment header)
-    local canonical_body
-    canonical_body=$(sed -n '/^> \*\*MODE SWITCH — MANDATORY\*\*/,$ p' "$canonical")
-
-    if [[ -z "$canonical_body" ]]; then
-        fail "cross-review-mode inline sync: canonical body extracted" "no body found"
-        return
-    fi
-
-    local agent
-    for agent in \
-        "$cr/agents/alignment-reviewer.md" \
-        "$cr/agents/archaeology-reviewer.md" \
-        "$cr/agents/consistency-reviewer.md" \
-        "$cr/agents/correctness-reviewer.md" \
-        "$cr/agents/efficiency-reviewer.md" \
-        "$cr/agents/reuse-reviewer.md" \
-        "$cr/agents/security-reviewer.md" \
-        "$cr/agents/style-reviewer.md" \
-        "$cr/agents/test-quality-reviewer.md" \
-        "$cr/agents/ui-reviewer.md"; do
-
-        local basename_agent
-        basename_agent=$(basename "$agent")
-
-        if [[ ! -f "$agent" ]]; then
-            fail "cross-review-mode inline sync: $basename_agent" "file not found"
-            continue
-        fi
-
-        # Extract the inline block between the MODE SWITCH blockquote and the --- separator
-        local inline_body
-        inline_body=$(sed -n '/^> \*\*MODE SWITCH — MANDATORY\*\*/,/^---$/ p' "$agent" | sed '$ d')
-
-        if [[ -z "$inline_body" ]]; then
-            fail "cross-review-mode inline sync: $basename_agent" "inline block not found"
-            continue
-        fi
-
-        if [[ "$canonical_body" == "$inline_body" ]]; then
-            pass "cross-review-mode inline sync: $basename_agent matches canonical"
-        else
-            local tmp1 tmp2
-            tmp1=$(mktemp)
-            tmp2=$(mktemp)
-            echo "$canonical_body" > "$tmp1"
-            echo "$inline_body" > "$tmp2"
-            local diff_output
-            diff_output=$(diff -u --label "canonical" --label "$basename_agent" "$tmp1" "$tmp2" | head -30 || true)
-            rm -f "$tmp1" "$tmp2"
-            fail "cross-review-mode inline sync: $basename_agent matches canonical" "$diff_output"
-        fi
-    done
-}
-
 test_sync_changed_lines_rule_matches_canonical() {
     # The extraction below intentionally starts at the blockquote header
     # (`> **CHANGED_LINES OUTPUT FILTER — MANDATORY**`), not at the preceding HTML
@@ -414,7 +348,7 @@ test_sync_changed_lines_rule_matches_canonical() {
         fi
 
         # Each agent embeds the block bounded by the same blockquote header and the
-        # next "---" separator. Mirror the cross-review-mode extraction pattern.
+        # next "---" separator.
         local inline_body
         inline_body=$(sed -n '/^> \*\*CHANGED_LINES OUTPUT FILTER — MANDATORY\*\*/,/^---$/ p' "$agent" | sed '$ d')
 
@@ -553,118 +487,94 @@ test_sync_static_analysis_policy_literals() {
     fi
 
     local include="$cr/includes/static-analysis-context.md"
-    local synthesiser="$cr/agents/review-synthesiser.md"
+    local review_core="$cr/workflows/review-core.js"
+    local f
+    for f in "$include" "$review_core"; do
+        if [[ ! -f "$f" ]]; then
+            fail "static-analysis policy literals: inputs present" "missing: $f"
+            return
+        fi
+    done
 
-    if [[ ! -f "$include" ]]; then
-        fail "static-analysis policy literals: include exists" "missing: $include"
-        return
-    fi
-    if [[ ! -f "$synthesiser" ]]; then
-        fail "static-analysis policy literals: synthesiser exists" "missing: $synthesiser"
-        return
-    fi
-
-    # Two byte-identical literals must appear in BOTH §10 of the include AND the
-    # synthesiser carve-out. Drift in either direction would mean the policy text
-    # has diverged between its definition site and its consumer.
+    # §10 is the documentation of a contract review-core.js enforces. Each literal is a
+    # load-bearing policy claim: drift means the prose no longer describes the code.
     local literal
     for literal in \
-        'up to 5 points of confidence drop' \
-        'Confidence = max(50, 100 - Σ dissent)'; do
+        '## 10. Severity-locked policy' \
+        '**Severity is locked.**' \
+        '**Existence gate.**' \
+        'Static trust governs severity, never whether the issue is real.' \
+        '**Confidence reflects panel agreement.**' \
+        '**Critical-allow-list mechanism.**' \
+        '### Dependency Freshness'; do
         if grep -qF "$literal" "$include"; then
-            pass "static-analysis policy literals: include contains '$literal'"
+            pass "static-analysis policy literals: §10 contains '$literal'"
         else
-            fail "static-analysis policy literals: include contains '$literal'" \
+            fail "static-analysis policy literals: §10 contains '$literal'" \
                 "literal not found in $include"
         fi
-        if grep -qF "$literal" "$synthesiser"; then
-            pass "static-analysis policy literals: synthesiser contains '$literal'"
-        else
-            fail "static-analysis policy literals: synthesiser contains '$literal'" \
-                "literal not found in $synthesiser"
-        fi
     done
-}
 
-test_sync_static_analysis_severity_lock() {
-    local cr
-    cr=$(_cr_dir)
-    if [[ ! -d "$cr" ]]; then
-        skip "static-analysis severity lock" "code-review-suite plugin not found"
-        return
-    fi
-
-    local synthesiser="$cr/agents/review-synthesiser.md"
-    if [[ ! -f "$synthesiser" ]]; then
-        fail "static-analysis severity lock: synthesiser exists" "missing: $synthesiser"
-        return
-    fi
-
-    # The carve-out's anchor sentence must appear verbatim. Match the load-bearing
-    # phrase rather than the entire paragraph — paragraph-level matching is brittle
-    # against acceptable wording polish; the anchor sentence is the policy claim.
-    # NB: housekeeper is exempt from reclassification too, but has a DISTINCT delivery
-    # model (the Dependency Freshness table — see the Housekeeper carve-out), so it is
-    # no longer listed in this four-tag tier-reclassification anchor. Its tag presence
-    # is still asserted by the tag loop below.
-    local anchor='Findings tagged `[eslint]`, `[ruff]`, `[trivy]`, or `[jbinspect]` are exempt from'
-    if grep -qF "$anchor" "$synthesiser"; then
-        pass "static-analysis severity lock: synthesiser contains carve-out anchor sentence"
+    # The enforcement side: the STATIC set names all five specialists, the static branch
+    # keeps the tool's severity, and the static-tier rule blocks only on a unanimous-real
+    # Important-or-higher finding — the rule §10 documents.
+    if grep -qF "const STATIC = new Set(['jbinspect', 'eslint', 'ruff', 'trivy', 'housekeeper'])" "$review_core"; then
+        pass "static-analysis policy: review-core.js STATIC set lists all five specialists"
     else
-        fail "static-analysis severity lock: synthesiser contains carve-out anchor sentence" \
-            "anchor literal not found: $anchor"
+        fail "static-analysis policy: review-core.js STATIC set lists all five specialists" \
+            "expected const STATIC = new Set(['jbinspect', 'eslint', 'ruff', 'trivy', 'housekeeper']) in $review_core"
     fi
-
-    # Each of the four specialist tags must be listed verbatim in the carve-out.
-    # Drift here would silently re-enable reclassification for the missing specialist.
-    local tag
-    for tag in '[eslint]' '[ruff]' '[trivy]' '[jbinspect]' '[housekeeper]'; do
-        if grep -qF "\`$tag\`" "$synthesiser"; then
-            pass "static-analysis severity lock: synthesiser lists tag $tag"
-        else
-            fail "static-analysis severity lock: synthesiser lists tag $tag" \
-                "tag literal \`$tag\` not found in $synthesiser"
-        fi
-    done
+    if grep -qF 'severity = finding.severity           // severity locked' "$review_core"; then
+        pass "static-analysis policy: review-core.js locks static severity"
+    else
+        fail "static-analysis policy: review-core.js locks static severity" \
+            "the static branch of mapSpreadToTierConfidence must keep finding.severity (the '// severity locked' line)"
+    fi
+    if grep -qF "tier = (unanimousReal && SEV_TO_LEVEL[severity] >= 2) ? 'consensus' : 'contested'" "$review_core"; then
+        pass "static-analysis policy: review-core.js blocks static findings only when unanimous-real and >= Important"
+    else
+        fail "static-analysis policy: review-core.js blocks static findings only when unanimous-real and >= Important" \
+            "the static tier rule documented in §10 ('Confidence reflects panel agreement') was not found in $review_core"
+    fi
 }
 
-test_sync_static_analysis_dismissed_forbidden_literal() {
+test_sync_static_analysis_existence_gate() {
     local cr
     cr=$(_cr_dir)
     if [[ ! -d "$cr" ]]; then
-        skip "static-analysis dismissed-forbidden literal" "code-review-suite plugin not found"
+        skip "static-analysis existence gate" "code-review-suite plugin not found"
         return
     fi
 
     local include="$cr/includes/static-analysis-context.md"
-    local synthesiser="$cr/agents/review-synthesiser.md"
+    local review_core="$cr/workflows/review-core.js"
+    local f
+    for f in "$include" "$review_core"; do
+        if [[ ! -f "$f" ]]; then
+            fail "static-analysis existence gate: inputs present" "missing: $f"
+            return
+        fi
+    done
 
-    if [[ ! -f "$include" ]]; then
-        fail "static-analysis dismissed-forbidden literal: include exists" "missing: $include"
-        return
-    fi
-    if [[ ! -f "$synthesiser" ]]; then
-        fail "static-analysis dismissed-forbidden literal: synthesiser exists" "missing: $synthesiser"
-        return
-    fi
-
-    # The Dismissed-forbidden rule is verified behaviourally by the Phase 2 smoke
-    # (no Dismissed entries in tier_placements). This structural check is belt-and-
-    # braces: it catches drift in the source-of-truth wording before a behavioural
-    # run, and it survives an empty results file or a CLAUDE_CODE_E2E_TESTS=0 run.
-    # The literal must appear in BOTH §10 of the include AND the synthesiser carve-out's
-    # surrounding context (the carve-out cites "never placed in Dismissed" inline).
+    # The classic rule "Dismissed tier is forbidden" for static findings was replaced by the
+    # existence gate: a static agent can misreport tool output, so the panel may dismiss it.
+    # Reintroducing the old wording would document the opposite of what the code does.
     if grep -qF 'Dismissed tier is forbidden' "$include"; then
-        pass "static-analysis dismissed-forbidden literal: include contains 'Dismissed tier is forbidden'"
+        fail "static-analysis existence gate: retired 'Dismissed tier is forbidden' rule absent" \
+            "static-analysis-context.md reinstates the retired rule; review-core.js dismisses a static finding a panel majority votes not real"
     else
-        fail "static-analysis dismissed-forbidden literal: include contains 'Dismissed tier is forbidden'" \
-            "literal not found in $include"
+        pass "static-analysis existence gate: retired 'Dismissed tier is forbidden' rule absent"
     fi
-    if grep -qF 'never placed in Dismissed' "$synthesiser"; then
-        pass "static-analysis dismissed-forbidden literal: synthesiser contains 'never placed in Dismissed'"
+
+    # The gate must be evaluated before the static branch, or static findings bypass it.
+    local gate_line static_line
+    gate_line=$(grep -nF 'if (tally.is_real_false > tally.is_real_true) {' "$review_core" | head -1 | cut -d: -f1)
+    static_line=$(grep -nF '} else if (isStatic) {' "$review_core" | head -1 | cut -d: -f1)
+    if [[ -n "$gate_line" && -n "$static_line" ]] && (( gate_line < static_line )); then
+        pass "static-analysis existence gate: review-core.js applies the gate before the static branch"
     else
-        fail "static-analysis dismissed-forbidden literal: synthesiser contains 'never placed in Dismissed'" \
-            "literal not found in $synthesiser"
+        fail "static-analysis existence gate: review-core.js applies the gate before the static branch" \
+            "expected the majority-not-real check (line ${gate_line:-<missing>}) to precede '} else if (isStatic) {' (line ${static_line:-<missing>})"
     fi
 }
 
@@ -834,63 +744,37 @@ test_sync_phase_minus1_target_repo_present() {
     fi
 }
 
-test_sync_static_analysis_cross_feed_documented() {
+test_sync_static_analysis_panel_feed_documented() {
     local cr
     cr=$(_cr_dir)
     if [[ ! -d "$cr" ]]; then
-        skip "static-analysis cross-feed documentation" "code-review-suite plugin not found"
+        skip "static-analysis panel feed documentation" "code-review-suite plugin not found"
         return
     fi
 
-    local pipeline="$cr/includes/review-pipeline.md"
     local sa_context="$cr/includes/static-analysis-context.md"
-    local cr_mode="$cr/includes/cross-review-mode.md"
     local review_core="$cr/workflows/review-core.js"
 
     local file
-    for file in "$pipeline" "$sa_context" "$cr_mode" "$review_core"; do
+    for file in "$sa_context" "$review_core"; do
         if [[ ! -f "$file" ]]; then
-            fail "static-analysis cross-feed documentation: $(basename "$file") present" "file not found"
+            fail "static-analysis panel feed documentation: $(basename "$file") present" "file not found"
             return
         fi
     done
 
-    # Assertion 1: the cross-feed now lives in the Workflow engine (review-core.js), not
-    # inline prose. crossAndSynth must build a `peer` object over crossDomains, and the
-    # STATIC set must be EXCLUDED from RECEIVING cross-review (crossDomains filters NON_CROSS
-    # out). Both the STATIC set definition and the crossDomains filter are load-bearing.
-    if grep -qE 'const STATIC = new Set\(\[' "$review_core" \
-            && grep -qE 'const crossDomains = allSpecialists\.filter\(d => !NON_CROSS\.has\(d\)\)' "$review_core"; then
-        pass "static-analysis cross-feed: review-core.js excludes STATIC from receiving cross-review"
+    # §8 documents that static findings reach every panelist alongside the LLM findings.
+    if grep -qF 'every static-analysis finding is shown to each panelist' "$sa_context"; then
+        pass "static-analysis panel feed: §8 affirms findings shown to each panelist"
     else
-        fail "static-analysis cross-feed: review-core.js excludes STATIC from receiving cross-review" \
-            "review-core.js must define 'const STATIC = new Set([...])' and 'const crossDomains = allSpecialists.filter(d => !NON_CROSS.has(d))' — this is what excludes static-analysis specialists from receiving cross-review while still feeding their findings to the cross-reviewers (the peer object in crossAndSynth)"
+        fail "static-analysis panel feed: §8 affirms findings shown to each panelist" \
+            "static-analysis-context.md §8 must state 'every static-analysis finding is shown to each panelist'"
     fi
 
-    # Assertion 2: static-analysis-context.md §8 must affirm that findings ARE shown
-    # to cross-reviewers. The phrase "shown to the" + "cross-reviewers" is the claim.
-    if grep -qE 'findings ARE shown to .*cross-reviewers' "$sa_context"; then
-        pass "static-analysis cross-feed: §8 affirms findings shown to cross-reviewers"
-    else
-        fail "static-analysis cross-feed: §8 affirms findings shown to cross-reviewers" \
-            "static-analysis-context.md §8 must contain the affirmation 'findings ARE shown to ... cross-reviewers' — this is the consumer-side documentation of the same policy"
-    fi
-
-    # Assertion 3: cross-review-mode.md HTML header must restate the same rule for
-    # specialists reading their own inlined block.
-    if grep -qE 'findings are visible to other cross-reviewers' "$cr_mode"; then
-        pass "static-analysis cross-feed: cross-review-mode.md restates rule"
-    else
-        fail "static-analysis cross-feed: cross-review-mode.md restates rule" \
-            "cross-review-mode.md HTML header must restate that static-analysis findings are visible to cross-reviewers"
-    fi
-
-    # Assertion 4: each of the five static-analysis specialist names must appear in
-    # both review-core.js (the STATIC set — the engine excludes them from receiving
-    # cross-review) and static-analysis-context.md. We assert presence individually
-    # (not order/format) so that legitimate prose variations do not trigger false
-    # positives. The names are the load-bearing tokens: a future edit that drops one of
-    # them would silently shrink the cross-feed scope.
+    # Each of the five static-analysis specialist names must appear in both review-core.js
+    # and static-analysis-context.md. Presence is asserted individually (not order/format)
+    # so legitimate prose variations do not trigger false positives; dropping a name would
+    # silently remove that specialist from the severity-locked contract.
     local name core_missing sa_missing
     core_missing=""
     sa_missing=""
@@ -903,217 +787,10 @@ test_sync_static_analysis_cross_feed_documented() {
         fi
     done
     if [[ -z "$core_missing" && -z "$sa_missing" ]]; then
-        pass "static-analysis cross-feed: specialist enumeration consistent across canonicals"
+        pass "static-analysis panel feed: specialist enumeration consistent across canonicals"
     else
-        fail "static-analysis cross-feed: specialist enumeration consistent across canonicals" \
+        fail "static-analysis panel feed: specialist enumeration consistent across canonicals" \
             "review-core.js missing names:${core_missing:-<none>}; static-analysis-context.md missing names:${sa_missing:-<none>} — both must reference all five (jbinspect, eslint, ruff, trivy, housekeeper) static-analysis specialists"
-    fi
-}
-
-test_sync_synthesiser_dispatch_includes_review_mode() {
-    local cr
-    cr=$(_cr_dir)
-    if [[ ! -d "$cr" ]]; then
-        skip "synthesiser dispatch Review mode" "code-review-suite plugin not found"
-        return
-    fi
-
-    # The synthesiser is now dispatched only by the Workflow engine (review-core.js
-    # crossAndSynth). Its synthPrompt must include "Review mode: ${reviewMode}" so the
-    # synthesiser can suppress verdict guidance in local mode.
-    local review_core="$cr/workflows/review-core.js"
-    if [[ ! -f "$review_core" ]]; then
-        fail "synthesiser dispatch Review mode: review-core.js" "review-core.js not found"
-        return
-    fi
-
-    if grep -qE "agentType: 'code-review-suite:review-synthesiser'" "$review_core"; then
-        if grep -qE 'Review mode: \$\{reviewMode\}' "$review_core"; then
-            pass "synthesiser dispatch Review mode: review-core.js synthPrompt includes reviewMode"
-        else
-            fail "synthesiser dispatch Review mode: review-core.js synthPrompt includes reviewMode" \
-                "review-core.js's synthPrompt must include 'Review mode: \${reviewMode}' so the synthesiser can suppress verdict guidance in local mode"
-        fi
-    else
-        fail "synthesiser dispatch Review mode: review-core.js" \
-            "expected review-core.js to dispatch the synthesiser (agentType: 'code-review-suite:review-synthesiser') but none was found — was the dispatch deleted?"
-    fi
-}
-
-test_sync_synthesiser_dispatch_uses_ultrathink() {
-    local cr
-    cr=$(_cr_dir)
-    if [[ ! -d "$cr" ]]; then
-        skip "synthesiser dispatch ultrathink keyword" "code-review-suite plugin not found"
-        return
-    fi
-
-    # The synthesiser's synthPrompt (review-core.js) must START with the literal
-    # "ultrathink" keyword, followed by \n\n. The keyword is what Claude Code's keyword
-    # detector looks for to set the max thinking budget.
-    local review_core="$cr/workflows/review-core.js"
-    if [[ ! -f "$review_core" ]]; then
-        fail "synthesiser dispatch ultrathink keyword: review-core.js" "review-core.js not found"
-        return
-    fi
-
-    if grep -qE "agentType: 'code-review-suite:review-synthesiser'" "$review_core"; then
-        if grep -qE "const synthPrompt =" "$review_core" \
-                && grep -qE '`ultrathink\\n\\n`' "$review_core"; then
-            pass "synthesiser dispatch ultrathink keyword: review-core.js synthPrompt starts with ultrathink"
-        else
-            fail "synthesiser dispatch ultrathink keyword: review-core.js synthPrompt starts with ultrathink" \
-                "review-core.js's synthPrompt must begin with the literal \`ultrathink\\n\\n\` so Claude Code's keyword detector sets the max thinking budget; without it, the synthesiser runs at default effort regardless of any frontmatter declaration"
-        fi
-    else
-        fail "synthesiser dispatch ultrathink keyword: review-core.js" \
-            "expected review-core.js to dispatch the synthesiser (agentType: 'code-review-suite:review-synthesiser') but none was found — was the dispatch deleted?"
-    fi
-}
-
-test_sync_synth_dispatch_passes_intent_ledger() {
-    # The synthesiser's verdict rubric row 1 fires on "Intent-ledger states a goal AND
-    # any consensus finding indicates the goal is not achieved." Row 1 is unevaluable
-    # without the ledger, so the synthPrompt MUST include the intent ledger. The
-    # synthesiser's agent definition already has the `Intent ledger:` extraction
-    # block; this test asserts the producer side (review-core.js) is wired up too.
-    local cr
-    cr=$(_cr_dir)
-    if [[ ! -d "$cr" ]]; then
-        skip "synthesiser dispatch intent ledger" "code-review-suite plugin not found"
-        return
-    fi
-
-    local review_core="$cr/workflows/review-core.js"
-    if [[ ! -f "$review_core" ]]; then
-        fail "synthesiser dispatch intent ledger: review-core.js" "review-core.js not found"
-        return
-    fi
-
-    if grep -qE "agentType: 'code-review-suite:review-synthesiser'" "$review_core"; then
-        # The synthPrompt interpolates the intentLedger arg between the Review mode line
-        # and the trust boundary advisory.
-        if grep -qE 'intentLedger \? `\$\{intentLedger\}' "$review_core"; then
-            pass "synthesiser dispatch intent ledger: review-core.js synthPrompt passes intentLedger"
-        else
-            fail "synthesiser dispatch intent ledger: review-core.js synthPrompt passes intentLedger" \
-                "review-core.js's synthPrompt must interpolate \${intentLedger} — without it the synthesiser cannot evaluate verdict rubric row 1 (intent-ledger goal unachieved) and must infer the goal from the diff non-deterministically"
-        fi
-    else
-        fail "synthesiser dispatch intent ledger: review-core.js" \
-            "expected review-core.js to dispatch the synthesiser (agentType: 'code-review-suite:review-synthesiser') but none was found — was the dispatch deleted?"
-    fi
-}
-
-test_sync_verdict_rubric_inline_matches_canonical() {
-    local cr
-    cr=$(_cr_dir)
-    if [[ ! -d "$cr" ]]; then
-        skip "verdict-rubric inline sync" "code-review-suite plugin not found"
-        return
-    fi
-
-    local canonical="$cr/includes/verdict-rubric.md"
-    if [[ ! -f "$canonical" ]]; then
-        skip "verdict-rubric inline sync" "canonical file not found"
-        return
-    fi
-
-    # Extract canonical body from "### Verdict rubric (PR mode only" through end-of-file.
-    # The HTML maintenance comment is excluded from the inlined copies (consumers do not
-    # duplicate the canonical's maintenance metadata).
-    local canonical_body
-    canonical_body=$(sed -n '/^### Verdict rubric (PR mode only, first match wins)/,$ p' "$canonical")
-
-    if [[ -z "$canonical_body" ]]; then
-        fail "verdict-rubric inline sync: canonical body extracted" "no body found"
-        return
-    fi
-
-    # review-synthesiser.md is the sole inlining consumer. SKILL.md (Stage 6) no longer
-    # inlines the rubric: the Workflow's synthesiser applies the rubric and review-core
-    # builds the body, so the orchestrator's posting step consumes only bundle.verdict.
-    local consumer
-    for consumer in \
-        "$cr/agents/review-synthesiser.md"; do
-
-        local basename_consumer
-        basename_consumer=$(basename "$(dirname "$consumer")")/$(basename "$consumer")
-
-        if [[ ! -f "$consumer" ]]; then
-            fail "verdict-rubric inline sync: $basename_consumer" "file not found"
-            continue
-        fi
-
-        # Each consumer inlines the canonical body bounded by the same start anchor and
-        # the line "operations — no prose parsing." (last line of the Synthesiser contract
-        # section, unique in the canonical — note the body wraps so the literal
-        # "operations" begins the final line).
-        local consumer_body
-        consumer_body=$(sed -n '/^### Verdict rubric (PR mode only, first match wins)/,/^operations — no prose parsing\.$/p' "$consumer")
-
-        if [[ -z "$consumer_body" ]]; then
-            fail "verdict-rubric inline sync: $basename_consumer" "inline block not found (sed anchors may need updating)"
-            continue
-        fi
-
-        # The canonical's body extracted via the same end-anchor pattern for like-for-like comparison.
-        local canonical_range
-        canonical_range=$(sed -n '/^### Verdict rubric (PR mode only, first match wins)/,/^operations — no prose parsing\.$/p' "$canonical")
-
-        if [[ "$canonical_range" == "$consumer_body" ]]; then
-            pass "verdict-rubric inline sync: $basename_consumer matches canonical"
-        else
-            local tmp1 tmp2
-            tmp1=$(mktemp)
-            tmp2=$(mktemp)
-            echo "$canonical_range" > "$tmp1"
-            echo "$consumer_body" > "$tmp2"
-            local diff_output
-            diff_output=$(diff -u --label "canonical" --label "$basename_consumer" "$tmp1" "$tmp2" | head -30 || true)
-            rm -f "$tmp1" "$tmp2"
-            fail "verdict-rubric inline sync: $basename_consumer matches canonical" "$diff_output"
-        fi
-    done
-}
-
-test_synthesiser_verdict_output_restricted_to_two_values() {
-    local cr
-    cr=$(_cr_dir)
-    if [[ ! -d "$cr" ]]; then
-        skip "synthesiser verdict restricted" "code-review-suite plugin not found"
-        return
-    fi
-
-    local synthesiser="$cr/agents/review-synthesiser.md"
-    if [[ ! -f "$synthesiser" ]]; then
-        fail "synthesiser verdict restricted" "review-synthesiser.md not found"
-        return
-    fi
-
-    # Assert the ## Verdict Output Format block exists and the Verdict: line restricts
-    # to "APPROVE | REQUEST_CHANGES" — exactly two values, no COMMENT, no other variants.
-    if grep -qE '^Verdict: <APPROVE \| REQUEST_CHANGES>$' "$synthesiser"; then
-        pass "synthesiser verdict restricted: ## Verdict block lists exactly APPROVE | REQUEST_CHANGES"
-    else
-        fail "synthesiser verdict restricted: ## Verdict block lists exactly APPROVE | REQUEST_CHANGES" \
-            "the synthesiser's ## Verdict Output Format block must contain a 'Verdict: <APPROVE | REQUEST_CHANGES>' line — COMMENT is never a synthesiser output, only a user override"
-    fi
-
-    # Assert the synthesiser does NOT include COMMENT as a possible Verdict: value.
-    if grep -qE '^Verdict: <APPROVE \| REQUEST_CHANGES \| COMMENT' "$synthesiser"; then
-        fail "synthesiser verdict restricted: COMMENT is NOT a synthesiser output" \
-            "the synthesiser's ## Verdict Output Format block must NOT include COMMENT as a possible Verdict: value — Class B downgrade and user override are the only routes to COMMENT"
-    else
-        pass "synthesiser verdict restricted: COMMENT is NOT a synthesiser output"
-    fi
-
-    # Assert the Rubric row applied: line lists exactly the four rubric rows.
-    if grep -qE '^Rubric row applied: <1 \| 2 \| 3 \| 4>$' "$synthesiser"; then
-        pass "synthesiser verdict restricted: Rubric row applied lists exactly 1 | 2 | 3 | 4"
-    else
-        fail "synthesiser verdict restricted: Rubric row applied lists exactly 1 | 2 | 3 | 4" \
-            "the synthesiser's ## Verdict block must contain 'Rubric row applied: <1 | 2 | 3 | 4>' — the four rubric rows are the only legal values"
     fi
 }
 
@@ -1145,7 +822,7 @@ test_skill_md_step6_references_rubric_and_classes() {
     # (sense, pattern, pass_label, fail_explanation) tuples. `sense` is `present` if the
     # pattern is required to appear or `absent` if it is forbidden (the legacy decision
     # matrix). Since the Workflow is the only path, Stage 6 consumes bundle.verdict directly:
-    # the rubric is no longer inlined here (review-core's synthesiser applies it) and Class D
+    # the rubric is no longer inlined here (review-core's applyRubric applies it) and Class D
     # output filtering is gone (review-core applies it). Only Classes A/B/C remain.
     local senses=(
         absent
@@ -1169,11 +846,11 @@ test_skill_md_step6_references_rubric_and_classes() {
         "consumes bundle.verdict"
     )
     local explanations=(
-        "Stage 6 still contains the legacy decision matrix ('| **APPROVE** | No comments are blockers …') — this lets the orchestrator pick a verdict on its own initiative, conflicting with synthesiser-as-sole-authority. Delete the matrix; the rubric replaces it."
+        "Stage 6 still contains the legacy decision matrix ('| **APPROVE** | No comments are blockers …') — this lets the orchestrator pick a verdict on its own initiative, conflicting with the rubric as sole verdict authority. Delete the matrix; the rubric replaces it."
         "Stage 6 must contain a heading '### Class A — …'. The three remaining classes (A: user-confirmation, B: PR-thread state, C: submission mechanics) document the orchestrator's full decision scope on the Workflow-only path — missing one means a class of orchestrator behaviour is undocumented and may drift toward judgement-driven action"
         "Stage 6 must contain a heading '### Class B — …'. The three remaining classes (A: user-confirmation, B: PR-thread state, C: submission mechanics) document the orchestrator's full decision scope on the Workflow-only path — missing one means a class of orchestrator behaviour is undocumented and may drift toward judgement-driven action"
         "Stage 6 must contain a heading '### Class C — …'. The three remaining classes (A: user-confirmation, B: PR-thread state, C: submission mechanics) document the orchestrator's full decision scope on the Workflow-only path — missing one means a class of orchestrator behaviour is undocumented and may drift toward judgement-driven action"
-        "Stage 6 must read the verdict directly from the Workflow bundle (\$SYNTH_VERDICT = bundle.verdict) — on the Workflow-only path there is no synthesiser markdown to parse, so the orchestrator consumes bundle.verdict rather than re-deriving a verdict"
+        "Stage 6 must read the verdict directly from the Workflow bundle (\$BUNDLE_VERDICT = bundle.verdict) — on the Workflow-only path there is no prose verdict to parse, so the orchestrator consumes bundle.verdict rather than re-deriving a verdict"
     )
     local i
     for ((i = 0; i < ${#senses[@]}; i++)); do
@@ -1282,7 +959,7 @@ test_analysis_only_stage6_render_not_post() {
         pass "analysis-only Stage 6: renders the verdict line to stdout"
     else
         fail "analysis-only Stage 6: renders the verdict line to stdout" \
-            "the analysis-only render path must print '> Verdict (analysis-only, not submitted): \$SYNTH_VERDICT' so the verdict is visible without being submitted"
+            "the analysis-only render path must print '> Verdict (analysis-only, not submitted): \$BUNDLE_VERDICT' so the verdict is visible without being submitted"
     fi
 }
 
@@ -1351,7 +1028,7 @@ test_orchestrator_comment_elision_negative_presence() {
     #
     # 1. SKILL.md must not contain "Outstanding peer REQUEST_CHANGES" — Class B.3
     #    was deleted in full. Reintroduction would mean the peer-RC downgrade
-    #    path crept back, contradicting `final = synth`.
+    #    path crept back, contradicting the rubric verdict being final.
     # 2. SKILL.md must not contain `$DOWNGRADE_REASON` — the variable is retired
     #    along with Class A.3's middle template. Any reference would be dangling.
     # 3. The trivial-mode mini-review verdict bullet ("COMMENT if minor
@@ -1373,7 +1050,7 @@ test_orchestrator_comment_elision_negative_presence() {
 
     if grep -qF 'Outstanding peer REQUEST_CHANGES' "$skill"; then
         fail "orchestrator COMMENT elision: SKILL.md drops 'Outstanding peer REQUEST_CHANGES'" \
-            "Class B.3 (Outstanding peer REQUEST_CHANGES) was deleted by the 2026-05-19 spec — reintroduction reinstates the APPROVE → COMMENT downgrade path that conflicts with 'final = synth'"
+            "Class B.3 (Outstanding peer REQUEST_CHANGES) was deleted by the 2026-05-19 spec — reintroduction reinstates the APPROVE → COMMENT downgrade path that conflicts with the rubric verdict being final"
     else
         pass "orchestrator COMMENT elision: SKILL.md drops 'Outstanding peer REQUEST_CHANGES'"
     fi
@@ -1532,11 +1209,11 @@ test_sync_agent_hazard_severity_basis() {
     fi
 
     local sev="$cr/includes/severity-definitions.md"
-    local synth="$cr/agents/review-synthesiser.md"
+    local brief="$cr/includes/panel-concern-brief.md"
     local apic="$cr/agents/api-contract-reviewer.md"
 
     local f
-    for f in "$sev" "$synth" "$apic"; do
+    for f in "$sev" "$brief" "$apic"; do
         if [[ ! -f "$f" ]]; then
             fail "agent-hazard severity basis: inputs present" "missing: $f"
             return
@@ -1558,13 +1235,13 @@ test_sync_agent_hazard_severity_basis() {
         fi
     done
 
-    # Ripple lock: the synthesiser's reclassification step must reference the
-    # shared anchor, or it will silently downgrade agent-hazard findings.
-    if grep -qF 'agent-hazard basis' "$synth"; then
-        pass "agent-hazard severity basis: synthesiser references the agent-hazard basis"
+    # Ripple lock: the panel brief must name the basis, or panelists voting severity
+    # will silently downgrade agent-hazard findings to Suggestion.
+    if grep -qF 'agent-hazard basis' "$brief"; then
+        pass "agent-hazard severity basis: panel brief references the agent-hazard basis"
     else
-        fail "agent-hazard severity basis: synthesiser references the agent-hazard basis" \
-            "anchor 'agent-hazard basis' not found in $synth"
+        fail "agent-hazard severity basis: panel brief references the agent-hazard basis" \
+            "anchor 'agent-hazard basis' not found in $brief"
     fi
 
     # Additive re-point lock: comment-truth (now in api-contract) must cite the basis.

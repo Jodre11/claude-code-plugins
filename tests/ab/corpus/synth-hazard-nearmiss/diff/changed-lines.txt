@@ -1,2 +1,0 @@
-Changed lines:
-  lib/cache.py: 42

@@ -61,6 +61,11 @@ particular, do not under-rate these familiar classes to Suggestion:
 - **A silently swallowed error or dropped failure signal** where the caller needs to know it
   failed (empty `catch`, ignored return code, a fallback that masks the fault). Wrong results
   or data loss with no signal → **Important**.
+- **An artefact that will mislead the next maintainer** — the **agent-hazard basis**: a lying
+  comment or misleading name, a silently deleted workaround, an indirection nobody can safely
+  change. No runtime defect is needed: if it will predictably cause a future maintainer, human
+  or agent, to introduce a defect, it is **Important**. It must name the concrete misleading
+  mechanism and the defect it induces, and it is Important only, never Critical.
 
 **Tractability — how well-understood and contained is the fix?** One fused ordinal;
 uncertainty *is* the dominant source of risk.
@@ -126,3 +131,10 @@ disagreement is the signal that surfaces contested findings. Answer each questio
 your honest importance rating even for a finding you think is real but minor. For
 static-analysis findings (eslint, ruff, trivy, jbinspect, housekeeper) your `severity` is
 advisory only — the tool's severity is authoritative and the rubric locks it.
+
+Housekeeper findings (dependency, Action and runner freshness) render in an informational
+Dependency Freshness table and never affect the verdict, so vote them only on `is_real`. When
+you can establish that a specific upgrade genuinely matters — a known vulnerability in the
+current version, a security-critical fix, or an upgrade another finding depends on — raise it
+yourself as a net-new finding at its honest severity, anchored to the manifest line in the diff.
+That raised finding is what reaches the verdict.

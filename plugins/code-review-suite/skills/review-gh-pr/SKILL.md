@@ -73,7 +73,7 @@ so a non-open state is expected and valid.
 
 **Do not short-circuit on PR state under analysis-only.** When `$ANALYSIS_ONLY = true`, a
 `state` of `CLOSED` or `MERGED` in the PR data above MUST NOT halt the pipeline: proceed
-through every stage to synthesis exactly as for an open PR. Do not reason that "a merged PR has
+through every stage to the panel verdict exactly as for an open PR. Do not reason that "a merged PR has
 no actionable target" or that "any verdict would be refused" — under analysis-only the verdict
 is rendered to stdout, not submitted. State-based posting refusal still applies at Stage 6,
 where it belongs.
@@ -334,7 +334,7 @@ subjects fail this; this is intentional).
 ### 0.4 Halt path (insufficient)
 
 If no source passes Step 0.3, halt **before** Step 1. Do not dispatch any specialists, do
-not call the synthesiser, do not measure the diff.
+not run the panel, do not measure the diff.
 
 **Mode `pr`:**
 
@@ -565,18 +565,15 @@ Otherwise, halt the review. Print:
 
 The halt is final — there is no acknowledge-to-proceed prompt. Stop the pipeline cleanly.
 
-<!-- COUPLING: this hard halt was paired with the deletion of the synthesiser-side CI
-verdict constraint (the `## CI Status` Output block and the two `$CI_STATUS_BODY`-driven
-verdict-constraint Rules in `agents/review-synthesiser.md`, removed in PR #27). The two
-mechanisms were redundant by design when both existed (defence in depth). They are now
-collapsed into this single hard halt: if the synthesiser is reached, CI is green by
-construction.
+<!-- COUPLING: this hard halt is the only CI guard. The verdict is computed in code
+(`applyRubric` in `workflows/review-core.js`), which never reads CI state: if the panel is
+reached, CI is green by construction.
 
 If this halt is ever softened — restoring an acknowledge-to-proceed path, exempting
 specific check states such as `TIMED_OUT`, or reintroducing a transient-vs-definitive
-classification — the synthesiser-side constraint MUST be restored as defence in depth.
-A single softened gate with no synthesiser-side check would let the synthesiser emit
-APPROVE on a failing CI state, a real correctness regression. -->
+classification — add a CI rule to `applyRubric` as defence in depth. A single softened
+gate with no rubric-side check would let the panel emit APPROVE on a failing CI state, a
+real correctness regression. -->
 
 
 ### Progress line format
@@ -799,7 +796,7 @@ and stop the pipeline cleanly. Do not proceed to Step 1.
 
 ### Step 1: Determine base branch
 
-This duplicates the logic in `includes/specialist-context.md` "Determine base branch" intentionally — the pipeline orchestrator must resolve `$BASE` before dispatching specialists. Specialists also resolve `$BASE` independently so they work standalone. Step 1 items 1–5 here must match `specialist-context.md` items 1–5. Changes to any of these locations must be mirrored in the others; see also `agents/review-synthesiser.md` Context Gathering which has a parallel (but prompt-extracted) version.
+This duplicates the logic in `includes/specialist-context.md` "Determine base branch" intentionally — the pipeline orchestrator must resolve `$BASE` before dispatching specialists. Specialists also resolve `$BASE` independently so they work standalone. Step 1 items 1–5 here must match `specialist-context.md` items 1–5. Changes to any of these locations must be mirrored in the others.
 
 **If `$BASE_PINNED` is already `true`** (Phase -0.5 pinned the origin base SHA on the
 plugin-owned-worktree path), `$BASE` is a validated 40-hex SHA and `$EMPTY_TREE_MODE` is
@@ -1030,7 +1027,7 @@ The block is now ready for use in Step 2.9 when building `$AGENT_PROMPT`.
 2.7. Scan for **significant deletions:** run `git diff -w` (using the diff syntax determined by `$EMPTY_TREE_MODE`, append `-- "$PATH_SCOPE"` if set) and scan its hunks for any single hunk with 10+ contiguous deleted lines. If any such hunk exists, set `$SIGNIFICANT_DELETIONS = true`. The `-w` view drops whitespace-only differences before the deletion count is taken, so re-indents and other whitespace-only edits do not register as significant deletions. **Do NOT replace `$FULL_DIFF` with the `-w` view** — `$FULL_DIFF` (already captured in 2.2 without `-w`) remains the authoritative artifact for `$CHANGED_LINES`, `$LINE_COUNT`, specialists, and archaeology anchors. Only the deletion-detection scan uses `-w`.
 2.8. Scan changed file paths and `$FULL_DIFF` content for **security-sensitive areas** (auth, crypto, input validation, SQL, API endpoints, secrets management, deserialisation, JWT, session, token, eval, exec, spawn, certificate, CORS). If found, set `$SECURITY_SENSITIVE = true`
 
-2.85. **Materialise diff artifacts for downstream consumers.** Three files under `$RESOLVED_TEMP_DIR` (the concrete `/tmp/claude-<session-id>/` path — resolved in Phase -0.5 and re-stated in Step 2.9) let the housekeeper, round-1 specialists, the synthesiser, and the cross-review core read the diff and scope lists the orchestrator already computed instead of each re-deriving them from `git`. The artifacts are purely additive — Step 2.9 also carries the paths, and every consumer keeps its own `git diff` fallback for when those path lines are absent (standalone / direct-invocation runs) — so nothing about what any agent reviews changes.
+2.85. **Materialise diff artifacts for downstream consumers.** Three files under `$RESOLVED_TEMP_DIR` (the concrete `/tmp/claude-<session-id>/` path — resolved in Phase -0.5 and re-stated in Step 2.9) let the housekeeper, the specialists, and the panelists read the diff and scope lists the orchestrator already computed instead of each re-deriving them from `git`. The artifacts are purely additive — Step 2.9 also carries the paths, and every consumer keeps its own `git diff` fallback for when those path lines are absent (standalone / direct-invocation runs) — so nothing about what any agent reviews changes.
    - `$RESOLVED_TEMP_DIR/review-diff.patch` — the full diff. **Already written by the `review-diff` helper in Step 2.2** (pinned to `$HEAD_SHA`, so byte-identical to `$FULL_DIFF`). Do not re-run `git diff` here.
    - `$RESOLVED_TEMP_DIR/changed-files.txt` — one repo-relative changed-file path per line. **Already written by the `review-diff` helper in Step 2.2.** Do not re-run `git diff` here.
    - `$RESOLVED_TEMP_DIR/changed-lines.txt` — the `$CHANGED_LINES_BLOCK` body from Step 2.5, verbatim (including its `Changed lines:` header and trailing blank line). It is an in-memory serialised string, not the output of one git command, so write it with the Write tool. (The helper does not produce this one — it is derived from the diff walk, not from `git`.)
@@ -1117,25 +1114,23 @@ plugin updates. `/review-gh-pr` and `/pre-review` pre-approve
 turn that invoked them; a launch in a later turn (after a confirmation gate, say) shows the
 launch prompt, where "Yes, and don't ask again" records the same rule permanently.
 
-**Resolve panel orchestration.** You MUST read both config layers before resolving — do not
+**Resolve the panel size.** You MUST read both config layers before resolving — do not
 assume a value or skip a layer because you expect a particular default. Resolve
-`orchestration.review_mode` and `orchestration.panel_size` from two config layers, first match
-wins, exactly as `full_log` resolves (Step 3.6): (1) the reviewed repo's
-`.claude/code-review.toml`, then (2) the user-level `~/.claude/code-review.toml`. Read each file
-even when you believe the outcome is obvious. Treat a missing/malformed file as not setting the
-key. Only after reading both layers do you resolve the value.
-If neither layer sets `review_mode`, `$ORCHESTRATION_MODE = panel` (the built-in default);
-otherwise it is the resolved `"classic"` or `"panel"`. If neither sets `panel_size`,
-`$PANEL_SIZE = 3`.
+`orchestration.panel_size` from two config layers, first match wins, exactly as `full_log`
+resolves (Step 3.6): (1) the reviewed repo's `.claude/code-review.toml`, then (2) the
+user-level `~/.claude/code-review.toml`. Read each file even when you believe the outcome is
+obvious. Treat a missing/malformed file as not setting the key. Only after reading both layers
+do you resolve the value. If neither sets `panel_size`, `$PANEL_SIZE = 3`.
 
-**Validate `panel_size`.** When `$ORCHESTRATION_MODE = panel`, if `$PANEL_SIZE` is even or
-`< 3`, halt with: `> Panel review requires an odd panel_size >= 3 (got <value>).` Do not
-silently round.
+`orchestration.review_mode` is retired: the panel is the only orchestration. If either layer
+still sets it, print `> orchestration.review_mode is retired and ignored — remove it from
+<file>.` once per file that sets it, then continue.
+
+**Validate `panel_size`.** If `$PANEL_SIZE` is even or `< 3`, halt with:
+`> Panel review requires an odd panel_size >= 3 (got <value>).` Do not silently round.
 
 **Read the concern brief.** Set `$PANEL_BRIEF` to the verbatim contents of
 `$PLUGIN_ROOT/includes/panel-concern-brief.md`.
-When `$ORCHESTRATION_MODE = classic`, `$PANEL_BRIEF` may be the empty string — the workflow
-ignores it on the classic path.
 
 ```
 Workflow({ name: "code-review-suite:review-core", args: {
@@ -1150,50 +1145,19 @@ Workflow({ name: "code-review-suite:review-core", args: {
     base: $BASE, headSha: $HEAD_SHA, emptyTreeMode: $EMPTY_TREE_MODE,
     pathScope: $PATH_SCOPE, tempDir: $RESOLVED_TEMP_DIR,
     intentLedger: $INTENT_LEDGER, repoDir: $REPO_DIR,
-    orchestrationMode: $ORCHESTRATION_MODE, panelSize: $PANEL_SIZE, panelBrief: $PANEL_BRIEF,
+    panelSize: $PANEL_SIZE, panelBrief: $PANEL_BRIEF,
     changedLinesBlock: $CHANGED_LINES_BLOCK
 } })
 ```
 
 The Workflow returns the sealed bundle `{ verdict, bodyText, comments:[{path,line,side,body}] }`.
 Proceed to Step 4 (PR mode) / report rendering (local mode) using ONLY the bundle. Do
-NOT re-derive, re-filter, or re-render the bundle — the core already applied the Class D
-filter and rendered comment bodies. You may only POST it (PR mode) or PRINT it (local mode).
+NOT re-derive, re-filter, or re-render the bundle — the core already applied the posting
+routes and rendered comment bodies. You may only POST it (PR mode) or PRINT it (local mode).
 
 `review-core` tolerates both `args` shapes: the `workflow()` primitive delivers an
 object, while the Workflow tool (which the main agent loop uses, having no primitive)
 delivers a JSON string — the script normalises a string arg before destructuring.
-
-**Stall-recovery branch.** The returned object is normally the sealed bundle. If instead it
-carries `synthDeferred: true`, the in-sandbox synthesiser stalled on the Workflow watchdog and
-review-core deferred it rather than dying. Recover it out-of-sandbox — do NOT re-run the
-Workflow's synth path (it would re-stall):
-
-1. Dispatch `review-synthesiser` as a **standalone Agent** (`mode: auto`, name
-   `synth-standalone-recovery`) — NOT via the Workflow, so it runs under the 600s async-agent
-   watchdog instead of the 180s sandbox one. Its prompt is `bundle.synthPrompt` with a single
-   line appended:
-
-   ```
-   Envelope output path: $RESOLVED_TEMP_DIR/synth-envelope-$HEAD_SHA.json
-   ```
-
-2. When it returns, `Read` that path and `JSON.parse` it into `$RECOVERED_ENVELOPE`. If the
-   file is missing, empty, or does not parse, do NOT retry into the sandbox — present the empty
-   bundle `{ verdict: 'NONE', bodyText: '(synthesiser produced no usable output)', comments: [] }`
-   and continue to Step 4 / report rendering. The review degrades; it never hangs. (This branch
-   is model-executed prose, not deterministic code, so the fallback must be explicit.)
-
-3. Re-invoke the Workflow to seal the recovered envelope deterministically:
-
-   ```
-   Workflow({ name: "code-review-suite:review-core", args: { route: 'finalize', reviewMode: $REVIEW_MODE, envelope: $RECOVERED_ENVELOPE } })
-   ```
-
-   The `finalize` route spawns zero agents (the watchdog never engages) and runs the same
-   Class D filter + comment renderer as the normal path. Its return value is the sealed bundle;
-   use it exactly as the normal bundle below. It is the same named workflow, so whatever approved
-   the first launch also covers this one.
 
 ## Phase 9: Worktree teardown
 
@@ -1213,7 +1177,7 @@ nothing — the worktree is not ours to remove.
 
 ### Step 4: Present results
 
-Present the synthesiser's formatted report to the user.
+Present the review report to the user.
 
 **STOP — do not present the report yet. First complete Step 3.6 (Durable full log) below; the "present" instruction above must not execute until Step 3.6 has run (or been skipped because `full_log` is off).**
 
@@ -1444,22 +1408,23 @@ The file attachment provides the link to the existing code - only include the su
 
 ## Stage 6: Submit Review Verdict
 
-The synthesiser is the sole authority for the PR review verdict. The orchestrator
+The panel's deterministic rubric (`applyRubric` in `review-core.js`) is the sole authority
+for the PR review verdict. The orchestrator
 (this step) executes that verdict — it cannot alter findings, severity, confidence,
-fix text, file/line attribution, or the synthesiser-produced verdict on its own
-initiative. `$FINAL_VERDICT` equals the synthesiser's verdict for every review
+fix text, file/line attribution, or the rubric-produced verdict on its own
+initiative. `$FINAL_VERDICT` equals the rubric's verdict for every review
 path; the orchestrator never auto-emits `COMMENT`.
 
 The user is sovereign over the final action submitted. At the confirmation prompt
 the user can override the proposed action; the user's `[c]` keypress under the
 `REQUEST_CHANGES` prompt is the only path to a `COMMENT` submission. This is the
-documented caveat to synthesiser-as-sole-authority.
+documented caveat to rubric-as-sole-authority.
 
 The `review-core` Workflow (Step 3.5) returned a sealed bundle
 `{ verdict, bodyText, comments }`. The bundle is the sole input to this step — there
-is no synthesiser markdown to parse. The bundle drives the rest of Stage 6:
+is no report markdown to parse. The bundle drives the rest of Stage 6:
 
-- `$SYNTH_VERDICT = bundle.verdict` — read the verdict directly from the bundle.
+- `$BUNDLE_VERDICT = bundle.verdict` — read the verdict directly from the bundle.
 - **`bundle.verdict == 'NONE'` (lightweight PR path).** `review-core`'s
   `buildLightweightBundle` returns `verdict: 'NONE'` when Step 3.5 resolved
   `route` to `lightweight`. In that case: present `bundle.bodyText` to the user
@@ -1471,7 +1436,7 @@ is no synthesiser markdown to parse. The bundle drives the rest of Stage 6:
   prompt (A.2/A.3) STILL RUNS — the human gate is preserved (design D6). Set
   `$PROPOSED_ACTION = bundle.verdict`; the `[s]` / `[r]` / `[n]` (and `[c]` under a
   `REQUEST_CHANGES` prompt) override semantics are unchanged. The bundle does NOT
-  carry the rubric row, so `$SYNTH_RUBRIC_ROW` is unset and the prompt's
+  carry the rubric row, so `$BUNDLE_RUBRIC_ROW` is unset and the prompt's
   `Rubric row …` line renders blank — the verdict and its reason still display
   normally.
 - The bundle's `comments[]` is already the filtered, rendered post-set, and
@@ -1491,7 +1456,7 @@ entirety. Do NOT call `gh pr review`, `gh api .../comments`, or present any conf
 prompt. Instead, render the sealed bundle to stdout:
 
 - Print `bundle.bodyText` (the constructed review body).
-- Print the verdict line: `> Verdict (analysis-only, not submitted): $SYNTH_VERDICT`.
+- Print the verdict line: `> Verdict (analysis-only, not submitted): $BUNDLE_VERDICT`.
 - Print each `bundle.comments[i]` as a plain block — a `path:line (side)` header (or
   `path (file)` for a file-level entry) followed by the comment body — so the full comment
   set is visible without being posted.
@@ -1501,33 +1466,33 @@ posts regardless of PR state.
 
 ### Class A — User confirmation flow
 
-Class A renders one of two confirmation prompts based purely on `$SYNTH_VERDICT`
+Class A renders one of two confirmation prompts based purely on `$BUNDLE_VERDICT`
 (`= bundle.verdict`). There is no orchestrator-driven downgrade.
 
 #### A.2 Compute proposed action
 
-`$PROPOSED_ACTION = $SYNTH_VERDICT.`
+`$PROPOSED_ACTION = $BUNDLE_VERDICT.`
 
 #### A.3 Render confirmation prompt
 
 Render ONE of two confirmation prompts based on the proposed action:
 
-**Prompt template (synthesiser proposed APPROVE):**
+**Prompt template (panel proposed APPROVE):**
 
 ```
-> Synthesiser proposes: APPROVE
->   Rubric row $SYNTH_RUBRIC_ROW: <reason from synthesiser ## Verdict Reason: line>
+> Panel proposes: APPROVE
+>   Rubric row $BUNDLE_RUBRIC_ROW: <rubric reason from the bundle headline>
 >   <tier counts> across <N> files
 >
 > Submit as proposed [s], override to REQUEST_CHANGES [r],
 > or cancel without submitting [n]? [s/r/n]
 ```
 
-**Prompt template (synthesiser proposed REQUEST_CHANGES):**
+**Prompt template (panel proposed REQUEST_CHANGES):**
 
 ```
-> Synthesiser proposes: REQUEST_CHANGES
->   Rubric row $SYNTH_RUBRIC_ROW: <reason from synthesiser ## Verdict Reason: line>
+> Panel proposes: REQUEST_CHANGES
+>   Rubric row $BUNDLE_RUBRIC_ROW: <rubric reason from the bundle headline>
 >   <tier counts> across <N> files
 >
 > Submit as proposed [s], override to APPROVE [a], override to COMMENT [c],
@@ -1537,7 +1502,7 @@ Render ONE of two confirmation prompts based on the proposed action:
 **Behaviour:**
 - Default (Enter, no input): submit-as-proposed.
 - Override actions require explicit keypress.
-- Cancel: halt without submission. Synthesiser report has already rendered to
+- Cancel: halt without submission. The review report has already rendered to
   stdout, so the user keeps the analysis.
 
 **Audit trail (announce-line on submission):**
@@ -1547,8 +1512,8 @@ Render ONE of two confirmation prompts based on the proposed action:
 ```
 
 Where `<provenance>` is one of:
-- `synthesiser-proposed` — submitted exactly as the synthesiser proposed
-- `user override of synthesiser-proposed <ORIGINAL>` — user changed the verdict
+- `panel-proposed` — submitted exactly as the panel proposed
+- `user override of panel-proposed <ORIGINAL>` — user changed the verdict
 
 ### Class B — PR-thread state handling
 
@@ -1566,30 +1531,30 @@ If `state` is `CLOSED` or `MERGED`, refuse to submit. Print:
 
 ```
 > PR #N has been <closed|merged> since the review started. Skipping submission.
-> Synthesiser report rendered to stdout for your reference.
+> Review report rendered to stdout for your reference.
 ```
 
 Halt cleanly. Do NOT present the Class A confirmation prompt.
 
-#### B.2 New commits pushed since synthesiser ran
+#### B.2 New commits pushed since the review ran
 
 ```bash
 gh pr view "$ARGUMENTS" --json headRefOid -q '.headRefOid'
 ```
 
-Compare the result against `$HEAD_SHA` (the commit the synthesiser analysed,
+Compare the result against `$HEAD_SHA` (the commit the review analysed,
 captured in Step 2.1 of the pipeline). If different, present a warning BEFORE
 the Class A confirmation prompt:
 
 ```
 > Warning: PR head has advanced since this review was started.
->   Synthesiser analysed: <synth-sha>
+>   Review analysed: <reviewed-sha>
 >   Current HEAD:         <head-sha> (<N> new commits)
 > Findings may be stale. Continue with submission, or cancel and re-run? [s/n]
 ```
 
 On `s`: continue to the Class A confirmation prompt. Inline comments still
-anchor to `$HEAD_SHA` (the synthesiser's analysed commit), not to current HEAD
+anchor to `$HEAD_SHA` (the review's analysed commit), not to current HEAD
 — safest, no dangling anchors, reviewers can navigate to current head from the
 GitHub UI.
 

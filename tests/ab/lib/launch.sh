@@ -6,9 +6,10 @@ set -euo pipefail
 
 # Sourced by tests/ab/run.sh. Replicates the setup the user's claude() shell
 # function performs (source ~/.claudeenv, run aws-sso-preflight.sh) without
-# wrapping in tmux and without dropping the -p flag. Then exec's
-# `command claude -p <prompt>` with --permission-mode bypassPermissions and
-# the per-config --model and --effort.
+# wrapping in tmux and without dropping the -p flag. Then runs one agent per
+# trial via `command claude -p` with --permission-mode bypassPermissions, the
+# per-config --model and --effort, and the agent body as an appended system
+# prompt.
 
 # Resolve the GNU timeout binary. Linux ships it as `timeout`; macOS exposes
 # it as `gtimeout` via Homebrew coreutils. Returns the chosen name on stdout.
@@ -40,103 +41,6 @@ launch_preflight_environment() {
             return 1
         fi
     fi
-}
-
-# Build the argv to pass to `command claude`. The prompt is written to a temp
-# file by the caller and fed via stdin to keep argv short and shell-safe;
-# this function only emits flags. One element per line on stdout for testing.
-launch_build_claude_argv() {
-    local model="$1"
-    local effort="$2"
-    local prompt="$3"  # printed last as the positional prompt argument
-
-    printf '%s\n' \
-        "-p" \
-        "--permission-mode" "bypassPermissions" \
-        "--model" "$model" \
-        "--effort" "$effort" \
-        "--exclude-dynamic-system-prompt-sections" \
-        "$prompt"
-}
-
-# Run one trial. Wraps the `command claude` invocation in `timeout`, captures
-# stdout/stderr to per-trial files, and writes timing.json. Caller passes the
-# trial directory and the resolved per-trial args.
-#
-# Returns 0 on a clean run, 124 on timeout (per GNU timeout convention), or
-# the underlying exit code.
-launch_run_trial() {
-    local trial_dir="$1"
-    local timeout_seconds="$2"
-    local model="$3"
-    local effort="$4"
-    local prompt="$5"
-    local timeout_bin="$6"
-
-    local stdout="$trial_dir/stdout.log"
-    local stderr="$trial_dir/stderr.log"
-    local timing="$trial_dir/timing.json"
-
-    local start_iso
-    start_iso=$(date -u +'%Y-%m-%dT%H:%M:%SZ')
-    local start_epoch=$SECONDS
-
-    # Heartbeat: emit elapsed-time updates to stderr every 60s while the
-    # trial runs, so a 17-20 minute trial is observable. The heartbeat fires
-    # only via stderr — never the captured stdout — so verdict regex matching
-    # is unaffected. Killed in a trap when the trial returns or the harness
-    # is interrupted.
-    (
-        hb_elapsed=0
-        while sleep 60; do
-            hb_elapsed=$((hb_elapsed + 60))
-            echo "[$(date +'%H:%M:%S')] $(basename "$trial_dir"): still running (${hb_elapsed}s elapsed)" >&2
-        done
-    ) &
-    local hb_pid=$!
-    trap 'kill -TERM "$hb_pid" 2>/dev/null; wait "$hb_pid" 2>/dev/null || true' RETURN
-
-    # CLAUDE_CODE_SUBPROCESS_ENV_SCRUB=1 (set in ~/.claudeenv as a hardening
-    # default) silently downgrades --permission-mode bypassPermissions to
-    # default and emits a one-line stderr warning. The harness needs the
-    # explicit permission flag to be honoured so non-interactive trials don't
-    # stall on Class A confirmation gates. Override for this subprocess only.
-    local rc=0
-    CLAUDE_CODE_SUBPROCESS_ENV_SCRUB=0 \
-    "$timeout_bin" --foreground --signal=TERM --kill-after=30 "$timeout_seconds" \
-        command claude \
-            -p \
-            --permission-mode bypassPermissions \
-            --model "$model" \
-            --effort "$effort" \
-            --exclude-dynamic-system-prompt-sections \
-            "$prompt" \
-        > "$stdout" 2> "$stderr" || rc=$?
-
-    kill -TERM "$hb_pid" 2>/dev/null || true
-    wait "$hb_pid" 2>/dev/null || true
-    trap - RETURN
-
-    local end_epoch=$SECONDS
-    local end_iso
-    end_iso=$(date -u +'%Y-%m-%dT%H:%M:%SZ')
-    local elapsed=$((end_epoch - start_epoch))
-
-    local timed_out="false"
-    if [[ "$rc" == "124" ]]; then
-        timed_out="true"
-    fi
-
-    jq -n \
-        --arg start "$start_iso" \
-        --arg end "$end_iso" \
-        --argjson elapsed "$elapsed" \
-        --argjson rc "$rc" \
-        --arg timed_out "$timed_out" \
-        '{start: $start, end: $end, wall_clock_seconds: $elapsed, exit_code: $rc, timed_out: ($timed_out == "true")}' \
-        > "$timing"
-
-    return "$rc"
 }
 
 # Build the argv for a per-agent invocation. One element per line on stdout
@@ -284,9 +188,12 @@ launch_assert_trial_recoverable() {
     return 1
 }
 
-# Run one per-agent trial. Sibling of launch_run_trial; differs in:
+# Run one per-agent trial. Wraps the `command claude` invocation in
+# `timeout`, captures stdout/stderr to per-trial files, and writes
+# timing.json:
 #  - cwd is <working_dir>, not the marketplace root.
-#  - --append-system-prompt-file is added (file form confirmed via CLI probe).
+#  - --append-system-prompt-file carries the agent body (file form confirmed
+#    via CLI probe).
 #  - the positional argument is the user-message contents (not a slash
 #    command).
 #
@@ -322,8 +229,9 @@ launch_run_per_agent_trial() {
     local start_epoch=$SECONDS
 
     # Heartbeat: emit elapsed-time updates to stderr every 60s while the
-    # trial runs, so a long trial is observable. Mirrors launch_run_trial.
-    # Killed in a trap when the trial returns or the harness is interrupted.
+    # trial runs, so a long trial is observable. The heartbeat fires only via
+    # stderr, never the captured stdout. Killed in a trap when the trial
+    # returns or the harness is interrupted.
     (
         hb_elapsed=0
         while sleep 60; do
@@ -334,9 +242,11 @@ launch_run_per_agent_trial() {
     local hb_pid=$!
     trap 'kill -TERM "$hb_pid" 2>/dev/null; wait "$hb_pid" 2>/dev/null || true' RETURN
 
-    # CLAUDE_CODE_SUBPROCESS_ENV_SCRUB=1 silently downgrades --permission-mode
-    # bypassPermissions. Override for this subprocess only (same as
-    # launch_run_trial).
+    # CLAUDE_CODE_SUBPROCESS_ENV_SCRUB=1 (set in ~/.claudeenv as a hardening
+    # default) silently downgrades --permission-mode bypassPermissions to
+    # default. The harness needs the explicit permission flag honoured so
+    # non-interactive trials don't stall on confirmation gates. Override for
+    # this subprocess only.
     #
     # effort=default (or empty) means "let the model use its built-in default".
     # The claude CLI does not accept "default" as a valid --effort value, so we

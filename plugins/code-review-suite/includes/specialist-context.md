@@ -40,7 +40,7 @@ happen to be in. When `$REPO_DIR` is the current working directory this is a no-
 
 ### Determine base branch
 
-This duplicates the logic in `includes/review-pipeline.md` "Step 1: Determine base branch" intentionally — specialists must resolve `$BASE` independently so they work standalone. Items 1–5 here must match `review-pipeline.md` Step 1 items 1–5. Changes to any of these locations must be mirrored in the others; see also `agents/review-synthesiser.md` Context Gathering which has a parallel (but prompt-extracted) version.
+This duplicates the logic in `includes/review-pipeline.md` "Step 1: Determine base branch" intentionally — specialists must resolve `$BASE` independently so they work standalone. Items 1–5 here must match `review-pipeline.md` Step 1 items 1–5. Changes to any of these locations must be mirrored in the others.
 
 1. If `$ARGUMENTS` is provided and non-empty, extract the base branch from it. If a `Base branch: <ref>` line is present, extract the ref after the colon. Otherwise, treat the entire value of `$ARGUMENTS` as a bare branch name.
 2. `gh pr view --json baseRefName -q .baseRefName 2>/dev/null` — use if a PR already exists

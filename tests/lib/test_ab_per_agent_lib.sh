@@ -171,6 +171,13 @@ EOF
         pass "A/B agent_dispatch: omits Empty tree mode: when false"
     fi
 
+    if grep -qF "Review mode:" "$out"; then
+        fail "A/B agent_dispatch: omits Review mode: when absent" \
+            "expected the line to be omitted but it appeared in the output"
+    else
+        pass "A/B agent_dispatch: omits Review mode: when absent"
+    fi
+
     rm -rf "$fixture" "$out"
 }
 
@@ -199,6 +206,7 @@ base_sha: aaaa
 head_sha: bbbb
 path_scope: "src/python"
 empty_tree_mode: true
+review_mode: pr
 intent_ledger: |
   - Scoped fixture.
 EOF
@@ -222,6 +230,12 @@ EOF
         pass "A/B agent_dispatch: includes Empty tree mode: true when set"
     else
         fail "A/B agent_dispatch: includes Empty tree mode: true when set" "$(cat "$out")"
+    fi
+
+    if grep -qF "Review mode: pr" "$out"; then
+        pass "A/B agent_dispatch: includes Review mode: when set"
+    else
+        fail "A/B agent_dispatch: includes Review mode: when set" "$(cat "$out")"
     fi
 
     rm -rf "$fixture" "$out"

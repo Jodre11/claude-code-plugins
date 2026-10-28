@@ -4,9 +4,8 @@ description: >
   Adversarially review a written spec or design doc before it becomes an implementation plan.
   Dispatches a panel of independent reviewers with distinct lenses, verifies their findings
   against the spec and the repo, applies the unambiguous ones, and surfaces only genuine
-  trade-offs — as one batched set of options with a recommendation. Use automatically the
-  moment brainstorming has committed a spec and before invoking writing-plans. Also on
-  "review the spec", "validate the spec", "verify the spec", "adversarially review the spec",
+  trade-offs — as one batched set of options with a recommendation. Use once a spec or design
+  doc is committed and before its implementation is planned. Also on "review the spec", "validate the spec", "verify the spec", "adversarially review the spec",
   "second opinion on the spec", "/review-spec". Skip for a spec already reviewed with no
   changes since.
 argument-hint: "[spec-path]"
@@ -14,10 +13,9 @@ argument-hint: "[spec-path]"
 
 # Spec review panel
 
-Brainstorming and writing-plans both check their own output — same agent, same context, same
-blind spots, and both end "fix inline and move on". The only independent critic of a spec in
-that flow is the human. This skill adds the missing pass: reviewers who never saw the
-conversation, judging the artefact.
+An author checking their own spec shares its context and its blind spots, and usually ends
+"fix inline and move on". The only independent critic is then the human. This skill adds the
+missing pass: reviewers who never saw the conversation, judging the artefact.
 
 **You are the lead.** You wrote the spec (or inherited it). You also adjudicate the reviews,
 and you treat reviewer output as *intern findings*: plausible, must be verified, sometimes
@@ -29,9 +27,9 @@ confirmation before moving on. Decide, act, report.
 
 ## Step 1 — Resolve the spec
 
-Use `$ARGUMENTS` if given. Otherwise take the most recently modified file in
-`docs/superpowers/specs/`. If neither resolves, ask for the path — that is the one blocking
-question in this skill.
+Use `$ARGUMENTS` if given. Otherwise take the most recently modified file in `docs/specs/`,
+falling back to `docs/superpowers/specs/`. If neither resolves, ask for the path — that is the
+one blocking question in this skill.
 
 No context file is built. The spec is already the self-contained artefact, which is the whole
 reason this review is cheap. Do not summarise it into a second document.
@@ -42,9 +40,9 @@ Three lenses, ordered by marginal value in this workflow:
 
 | Lens | Asks | Notes |
 |---|---|---|
-| `subtraction` | What should be cut? Is there a simpler shape? | Highest value. Brainstorming says "YAGNI ruthlessly" but only ever self-checks it. |
-| `completeness` | What is missing or readable two ways? | Overlaps spec self-review, but from outside the authoring context. |
-| `framing` | Right problem? Right shape? | Only lens that may `REJECT`. Drop to a two-lens panel when the brainstorming dialogue interrogated framing thoroughly and the author approved the shape. |
+| `subtraction` | What should be cut? Is there a simpler shape? | Highest value. Authors rarely cut their own design. |
+| `completeness` | What is missing or readable two ways? | Overlaps the author's self-review, but from outside the authoring context. |
+| `framing` | Right problem? Right shape? | Only lens that may `REJECT`. Drop to a two-lens panel when the design dialogue interrogated framing thoroughly and the author approved the shape. |
 
 Dispatch **in parallel, in one message**, each with
 `subagent_type: "spec-review:spec-reviewer"` and a distinct `name`
@@ -107,9 +105,8 @@ If there are no Choices, skip this step silently and continue.
 
 ## Step 6 — Apply, commit, receipt
 
-Amend the spec with the applied findings and the resolved Choices. Commit it — the spec is
-already under version control from brainstorming, and the amendment belongs in the same
-history.
+Amend the spec with the applied findings and the resolved Choices. Commit it — the amendment
+belongs in the same history as the spec.
 
 Then a short receipt:
 
@@ -123,11 +120,10 @@ State only what is verifiable. **Do not claim the panel ran on a different model
 harness can silently substitute one, and a receipt asserting independence it cannot confirm is
 worse than no receipt.
 
-## Step 7 — Hand over to writing-plans
+## Step 7 — Stop
 
-The spec→plan boundary is a phase seam and a natural context reset. Invoke the `handover`
-skill so a fresh session can pick up at writing-plans, then stop. Do not invoke writing-plans
-in this session, and do not ask whether to hand over.
+The spec→plan boundary is a natural context reset. Stop after the receipt and leave planning
+to a fresh session; do not start it in this one.
 
 ## When NOT to run
 

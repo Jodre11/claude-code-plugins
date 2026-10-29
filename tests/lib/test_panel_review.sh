@@ -15,7 +15,7 @@ _pan_cr_dir() {
 _pan_run_core() {
     local wf writerBody
     wf="$(_pan_cr_dir)/workflows/review-core.js"
-    writerBody=$'## Panel Assessment\n> panel prose\n'
+    writerBody='panel prose'
     [ "$#" -ge 4 ] && writerBody="$4"
     WF="$wf" PAN_ARGS="$1" PAN_SPECIALISTS="$2" PAN_PANELISTS="$3" PAN_WRITER="$writerBody" node -e '
         const fs = require("fs");
@@ -26,7 +26,7 @@ _pan_run_core() {
         const writerBody = process.env.PAN_WRITER;
         const agent = async (prompt, opts) => {
             const label = (opts && opts.label) || "";
-            if (label === "panel-writer") return { bodyText: writerBody };
+            if (label === "panel-writer") return { assessment: writerBody };
             if (label.startsWith("panel-")) {
                 const roster = ["Cronus", "Rhea", "Oceanus", "Hyperion", "Themis"];
                 const seat = label.slice("panel-".length);
@@ -193,8 +193,9 @@ test_panel_writer_prompt_strips_numeric_confidence() {
     specs='{"correctness":[{"file":"a.cs","line":10,"severity":"Important","confidence":100,"description":"the bug","suggested_fix":"fix"}]}'
     pans='[{"votes":[{"finding_id":0,"is_real":true,"severity":"Important","tractability":"Bounded","blocks_goal":false,"rationale":"r"}],"raised":[]},{"votes":[{"finding_id":0,"is_real":true,"severity":"Important","tractability":"Bounded","blocks_goal":false,"rationale":"r"}],"raised":[]},{"votes":[{"finding_id":0,"is_real":true,"severity":"Important","tractability":"Bounded","blocks_goal":false,"rationale":"r"}],"raised":[]}]'
     prompt=$(_pan_capture_writer_prompt "$(_pan_args 3)" "$specs" "$pans")
-    # Isolate the Tiers JSON block (everything after the "Tiers (JSON):" marker).
-    tiersblock="${prompt#*Tiers (JSON):}"
+    assert_matches "Findings \(JSON\):" "$prompt" "writer prompt carries the findings block"
+    # Isolate the findings JSON block (everything after the "Findings (JSON):" marker).
+    tiersblock="${prompt#*Findings (JSON):}"
     assert_matches "confidence_flag" "$tiersblock" "writer tiers keep the confidence_flag"
     assert_not_matches '"confidence":' "$tiersblock" "writer tiers drop the numeric confidence shim"
     assert_matches "never as a number or percentage" "$prompt" "writer prompt forbids numeric/percentage confidence"
@@ -834,4 +835,59 @@ test_panel_consensus_important_verdict_relevant_without_confidence_gate() {
     assert_equals "true" "$(echo "$out" | jq -r '[.log.findings[] | select(.file=="a.cs")][0].verdict_relevant')" "consensus Important is verdict_relevant below unanimous agreement"
     assert_equals "consensus" "$(echo "$out" | jq -r '[.log.findings[] | select(.file=="a.cs")][0].tier')" "majority Important lands in consensus"
     assert_equals "false" "$(echo "$out" | jq -r '[.log.findings[] | select(.file=="b.cs")][0].verdict_relevant')" "Suggestion is not verdict_relevant"
+}
+
+# The writer sees only what it narrates: surfaced findings with their routing and a count
+# of the dismissed ones — no suggested fixes, no freshness rows, no dismissed text — and
+# in local mode no verdict at all.
+test_panel_writer_view_is_minimal() {
+    local specs pans prompt block sha40 local_args
+    specs='{"correctness":[{"file":"a.cs","line":10,"severity":"Important","confidence":100,"description":"the bug","suggested_fix":"SECRET-FIX-TEXT"},{"file":"b.cs","line":5,"severity":"Suggestion","confidence":40,"description":"DISMISSED-TEXT","suggested_fix":"x"}]}'
+    pans='[{"votes":[{"finding_id":0,"is_real":true,"severity":"Important","tractability":"Bounded","blocks_goal":false,"rationale":"r"},{"finding_id":1,"is_real":false,"severity":"Suggestion","tractability":"Bounded","blocks_goal":false,"rationale":"r"}],"raised":[]},{"votes":[{"finding_id":0,"is_real":true,"severity":"Important","tractability":"Bounded","blocks_goal":false,"rationale":"r"},{"finding_id":1,"is_real":false,"severity":"Suggestion","tractability":"Bounded","blocks_goal":false,"rationale":"r"}],"raised":[]},{"votes":[{"finding_id":0,"is_real":true,"severity":"Important","tractability":"Bounded","blocks_goal":false,"rationale":"r"},{"finding_id":1,"is_real":false,"severity":"Suggestion","tractability":"Bounded","blocks_goal":false,"rationale":"r"}],"raised":[]}]'
+    prompt=$(_pan_capture_writer_prompt "$(_pan_args 3)" "$specs" "$pans")
+    block="${prompt#*Findings (JSON):}"
+    assert_matches "the bug" "$block" "writer sees the surfaced finding"
+    assert_not_matches "SECRET-FIX-TEXT" "$block" "writer does not see suggested fixes"
+    assert_not_matches "DISMISSED-TEXT" "$block" "writer does not see dismissed findings' text"
+    assert_matches '"dismissed_count":1' "$block" "writer sees only the dismissed count"
+    assert_matches "Verdict: REQUEST_CHANGES" "$prompt" "PR-mode writer prompt states the fixed verdict"
+    local_args=$(_pan_args 3 | jq -c '.reviewMode = "local"')
+    prompt=$(_pan_capture_writer_prompt "$local_args" "$specs" "$pans")
+    assert_not_matches "Verdict:" "$prompt" "local-mode writer prompt states no verdict"
+    assert_matches "no verdict" "$prompt" "local-mode writer prompt says there is no verdict"
+}
+
+# Panelists and the writer run as dedicated plugin agents, not the default all-tools
+# subagent: the panelist type matches the host reviewer guard's *-reviewer binding, and the
+# writer's definition grants no write tools.
+test_panel_agents_dispatch_with_dedicated_types() {
+    local wf out cr
+    cr=$(_pan_cr_dir)
+    wf="$cr/workflows/review-core.js"
+    out=$(WF="$wf" PAN_ARGS="$(_pan_args 3)" node -e '
+        const fs = require("fs");
+        const src = fs.readFileSync(process.env.WF, "utf8").replace(/^export\s+const\s+meta/m, "const meta");
+        const seen = [];
+        const agent = async (prompt, opts) => {
+            seen.push({ phase: opts.phase, agentType: opts.agentType || null });
+            if (opts.phase === "panel-write") return { assessment: "ok" };
+            if (opts.phase === "panel-vote") return { votes: [], raised: [] };
+            return { status: "ok", findings: [] };
+        };
+        const parallel = (t) => Promise.all(t.map(x => x()));
+        const noop = () => {};
+        const fn = new Function("agent","parallel","pipeline","phase","log","args","workflow",
+            "return (async()=>{" + src + "\n})()");
+        fn(agent, parallel, async () => [], noop, noop, process.env.PAN_ARGS, async () => null).then(() => {
+            const types = p => [...new Set(seen.filter(s => s.phase === p).map(s => s.agentType))].join(",");
+            process.stdout.write(types("panel-vote") + "|" + types("panel-write"));
+        }).catch(e => process.stdout.write("THREW: " + e.message));
+    ' 2>&1)
+    assert_equals "code-review-suite:panel-reviewer|code-review-suite:panel-writer" "$out" \
+        "panelists and writer dispatch as their dedicated agent types"
+    local f
+    f="$cr/agents/panel-reviewer.md"
+    assert_matches "^tools: Read, Grep, Glob, Bash$" "$(grep '^tools:' "$f")" "panel-reviewer has read-only tools"
+    assert_matches "READ-ONLY MANDATE" "$(cat "$f")" "panel-reviewer carries the read-only mandate"
+    assert_matches "^tools: Read$" "$(grep '^tools:' "$cr/agents/panel-writer.md")" "panel-writer has Read only"
 }

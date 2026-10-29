@@ -12,12 +12,13 @@ _op_cr_dir() {
 # Runs review-core.js end-to-end with mock globals.
 # $1 args json; $2 specialists map json (domain → findings array, or a full
 # {status, findings} object to simulate a skipped/failed specialist); $3 panelists json
-# (array, one entry per seat; a missing entry is a dropped panelist); $4 writer bodyText as
-# a JSON string literal (optional, so '\n' escapes become real newlines).
+# (array, one entry per seat; a missing entry is a dropped panelist); $4 the writer's
+# assessment as a JSON string literal (optional, so '\n' escapes become real newlines), or
+# the JSON literal null to simulate a writer that returned nothing.
 _op_run_core() {
     local wf writer
     wf="$(_op_cr_dir)/workflows/review-core.js"
-    writer='"## Panel Assessment\n> panel prose\n"'
+    writer='"panel prose"'
     [ "$#" -ge 4 ] && writer="$4"
     WF="$wf" OP_ARGS="$1" OP_SPECIALISTS="$2" OP_PANELISTS="$3" OP_WRITER="$writer" node -e '
         const fs = require("fs");
@@ -29,7 +30,7 @@ _op_run_core() {
         const roster = ["Cronus", "Rhea", "Oceanus", "Hyperion", "Themis"];
         const agent = async (prompt, opts) => {
             const label = (opts && opts.label) || "";
-            if (label === "panel-writer") return { bodyText: writerBody };
+            if (label === "panel-writer") return writerBody === null ? null : { assessment: writerBody };
             if (label.startsWith("panel-")) {
                 const i = roster.indexOf(label.slice("panel-".length));
                 return panelists[i] === undefined ? null : panelists[i];
@@ -192,10 +193,8 @@ test_body_is_headline_and_index() {
     local specs pans writer out body
     specs='{"correctness":[{"file":"a.cs","line":42,"severity":"Important","confidence":88,"description":"the defect","suggested_fix":"fix it"},{"file":"a.cs","line":50,"severity":"Suggestion","confidence":40,"description":"DISMISSED NOISE","suggested_fix":"x"}]}'
     pans=$(_op_pans "[$(_op_v 0 true Important Bounded),$(_op_v 1 false Suggestion Bounded)]")
-    # The writer emits extra sections; only the Panel Assessment is promoted into the body.
-    # Its own Dependency Freshness section must not leak through either — review-core
-    # renders that table itself, and the housekeeper did not run here.
-    writer='"## Summary\n1 file | 1 finding\n## Panel Assessment\n> This is the centrepiece.\n> Second line.\n## Consensus Findings\n#### Finding #1 — the defect\nblah\n## Dismissed Findings\nDISMISSED NOISE\n## Dependency Freshness\n| WRITER TABLE | 1 | 2 |\n## Cost\ntokens: 999\n"'
+    # The writer contributes only the assessment; everything else is built in code.
+    writer='"This is the centrepiece.\nSecond line."'
     out=$(_op_run_core "$(_op_args)" "$specs" "$pans" "$writer")
     _op_is_bundle "$out" "body construction" || return 0
     body=$(echo "$out" | jq -r '.bodyText')
@@ -205,11 +204,11 @@ test_body_is_headline_and_index() {
     else
         fail "body opens with bold verdict headline and rubric reason" "first line: $(echo "$body" | head -1)"
     fi
-    # Assessment promoted: the centrepiece text present WITHOUT a leading '>'.
-    if echo "$body" | grep -qF "This is the centrepiece." && ! echo "$body" | grep -qE "^> This is the centrepiece"; then
-        pass "Panel Assessment promoted out of block-quote"
+    # The assessment follows the headline verbatim.
+    if echo "$body" | sed -n 3,4p | grep -qF "This is the centrepiece." && echo "$body" | grep -qxF "Second line."; then
+        pass "Panel Assessment follows the headline verbatim"
     else
-        fail "Panel Assessment promoted out of block-quote" "assessment still quoted or missing"
+        fail "Panel Assessment follows the headline verbatim" "body: ${body:0:200}"
     fi
     # Finding index: one summary line pointing inline; NOT the full prose block.
     if echo "$body" | grep -qE "the defect.*a\.cs:42.*↳ inline"; then
@@ -217,11 +216,7 @@ test_body_is_headline_and_index() {
     else
         fail "finding index summary line present" "expected compact index line for finding"
     fi
-    # Writer-only sections are absent from the body.
     assert_not_matches "DISMISSED NOISE" "$body" "dismissed finding absent from body"
-    assert_not_matches "tokens: 999" "$body" "writer Cost section dropped from body"
-    assert_not_matches "## Summary" "$body" "writer Summary counts dropped from body"
-    assert_not_matches "WRITER TABLE" "$body" "writer-rendered freshness table dropped from body"
     assert_not_matches "Dependency Freshness" "$body" "no freshness section when the housekeeper did not run"
 }
 
@@ -240,12 +235,7 @@ test_log_payload_flattens_all_tiers() {
     # Only the consensus Important drives REQUEST_CHANGES (rubric row 3).
     assert_equals "1" "$(echo "$out" | jq '[.log.findings[] | select(.verdict_relevant == true)] | length')" \
         "exactly the rubric-driving finding marked verdict_relevant"
-    # Full verbatim writer prose retained in the log.
-    if echo "$out" | jq -r '.log.bodyText' | grep -qF "## Panel Assessment"; then
-        pass "log.bodyText retains verbatim panel-writer prose"
-    else
-        fail "log.bodyText retains verbatim panel-writer prose" "prose missing from log payload"
-    fi
+    assert_equals "panel prose" "$(echo "$out" | jq -r '.log.bodyText')" "log.bodyText retains the writer's assessment verbatim"
 }
 
 # --- Dependency Freshness section -------------------------------------------------------
@@ -367,21 +357,25 @@ test_freshness_findings_never_post_or_block() {
 
 test_local_mode_emits_log() {
     local specs pans out
-    specs='{"correctness":[{"file":"a.cs","line":42,"severity":"Important","confidence":88,"description":"d","suggested_fix":"f"}],"style":[{"file":"b.cs","line":5,"severity":"Suggestion","confidence":60,"description":"s","suggested_fix":"f"}],"efficiency":[{"file":"a.cs","line":30,"severity":"Suggestion","confidence":40,"description":"x","suggested_fix":"f"}]}'
+    specs='{"correctness":[{"file":"a.cs","line":42,"severity":"Important","confidence":88,"description":"the blocking defect","suggested_fix":"guard it"}],"style":[{"file":"b.cs","line":5,"severity":"Suggestion","confidence":60,"description":"tidy name","suggested_fix":"rename"}],"efficiency":[{"file":"a.cs","line":30,"severity":"Suggestion","confidence":40,"description":"dismissed-noise","suggested_fix":"f"}]}'
     pans=$(_op_pans "[$(_op_v 0 true Important Bounded),$(_op_v 1 true Suggestion Mechanical),$(_op_v 2 false Suggestion Bounded)]")
     out=$(_op_run_core "$(_op_args local)" "$specs" "$pans")
     _op_is_bundle "$out" "local mode" || return 0
+    local body
+    body=$(echo "$out" | jq -r '.bodyText')
     # Local mode: no verdict, no comments — but the durable log MUST be present.
     assert_equals "NONE" "$(echo "$out" | jq -r '.verdict')" "local mode verdict is NONE"
     assert_equals "0" "$(echo "$out" | jq '.comments | length')" "local mode posts no comments"
     assert_equals "3" "$(echo "$out" | jq '.log.findings | length')" "local mode bundle carries the durable log payload (all tiers)"
-    if echo "$out" | jq -r '.log.bodyText' | grep -qF "## Panel Assessment"; then
-        pass "local mode log.bodyText retains verbatim prose"
-    else
-        fail "local mode log.bodyText retains verbatim prose" "prose missing from local-mode log payload"
-    fi
-    # Local mode returns the writer prose verbatim (no headline/index rewrite).
-    assert_matches "## Panel Assessment" "$(echo "$out" | jq -r '.bodyText')" "local mode bodyText is the writer prose"
+    assert_equals "panel prose" "$(echo "$out" | jq -r '.log.bodyText')" "local mode log.bodyText retains the assessment"
+    # The report is built in code: assessment first, then every surfaced finding in full.
+    assert_equals "panel prose" "$(echo "$body" | head -1)" "local report opens with the assessment"
+    assert_not_matches "REQUEST_CHANGES" "$body" "local report carries no verdict headline"
+    assert_matches '#### `a.cs:42`' "$body" "local report heads each finding with its location"
+    assert_matches "the blocking defect" "$body" "local report renders the blocking finding"
+    assert_matches "Suggested fix:\*\* guard it" "$body" "local report renders the suggested fix in full"
+    assert_matches "tidy name" "$body" "local report renders the Mechanical Suggestion"
+    assert_not_matches "dismissed-noise" "$body" "local report omits the dismissed finding"
 }
 
 test_host_documents_file_level_comments() {
@@ -460,18 +454,85 @@ test_end_to_end_pr80_shape() {
     votes="[$(_op_v 0 true Important Bounded),$(_op_v 1 true Suggestion Mechanical),$(_op_v 2 false Suggestion Mechanical),$(_op_v 3 true Suggestion Mechanical)]"
     raised='[{"file":"RightToWorkStatusWire.cs","line":11,"severity":"Suggestion","confidence":55,"description":"missing XML docs.","suggested_fix":"add summary","tractability":"Mechanical"}]'
     pans=$(_op_pans "$votes" "$raised")
-    out=$(_op_run_core "$(_op_args pr '{"housekeeping":true}')" "$specs" "$pans" '"## Summary\n16 files\n## Panel Assessment\n> Intent vs implementation analysis.\n## Cost\ntokens 999\n"')
+    out=$(_op_run_core "$(_op_args pr '{"housekeeping":true}')" "$specs" "$pans" '"Intent vs implementation analysis."')
     _op_is_bundle "$out" "end-to-end PR shape" || return 0
     body=$(echo "$out" | jq -r '.bodyText')
     assert_equals "3" "$(echo "$out" | jq '.comments | length')" "3 inline comments (consensus Important, Mechanical Suggestion, panel raise)"
     assert_matches "REQUEST_CHANGES" "$(echo "$body" | head -1)" "headline verdict"
-    assert_matches "Intent vs implementation analysis." "$body" "Panel Assessment promoted"
+    assert_matches "Intent vs implementation analysis." "$body" "Panel Assessment in the body"
     assert_not_matches "var doc" "$body" "dismissed finding not in body"
-    assert_not_matches "tokens 999" "$body" "cost not in body"
     if echo "$body" | grep -qF '| AWSSDK.Core | 4.0.4 | 4.0.5 |'; then
         pass "dependency drift row in the freshness table"
     else
         fail "dependency drift row in the freshness table" "AWSSDK.Core row missing"
     fi
     assert_equals "5" "$(echo "$out" | jq '.log.findings | length')" "log retains all 5 findings across tiers"
+}
+
+# --- Co-located findings ------------------------------------------------------------------
+# Several specialists flagging the same spot must reach the author as ONE thread: posted
+# findings on the same file within three lines merge into one comment, anchored at the most
+# severe, with every member's text kept, and one index line. Rendering only.
+test_colocated_findings_merge_into_one_comment() {
+    local specs pans out body first
+    specs='{"correctness":[{"file":"a.cs","line":11,"severity":"Important","confidence":90,"description":"null deref on retry.","suggested_fix":"guard"},{"file":"a.cs","line":40,"severity":"Important","confidence":90,"description":"separate defect.","suggested_fix":"fix"}],"api-contract":[{"file":"a.cs","line":10,"severity":"Suggestion","confidence":70,"description":"same retry path, api view.","suggested_fix":"check"}],"style":[{"file":"a.cs","line":13,"severity":"Suggestion","confidence":70,"description":"same retry path, style view.","suggested_fix":"tidy"}]}'
+    pans=$(_op_pans "[$(_op_v 0 true Important Bounded),$(_op_v 1 true Important Bounded),$(_op_v 2 true Suggestion Mechanical),$(_op_v 3 true Suggestion Mechanical)]")
+    out=$(_op_run_core "$(_op_args)" "$specs" "$pans")
+    _op_is_bundle "$out" "co-located merge" || return 0
+    body=$(echo "$out" | jq -r '.bodyText')
+    assert_equals "REQUEST_CHANGES" "$(echo "$out" | jq -r '.verdict')" "merging never changes the verdict"
+    assert_equals "2" "$(echo "$out" | jq '.comments | length')" "three co-located findings + one distant → 2 comments"
+    first=$(echo "$out" | jq -c '[.comments[] | select(.line < 20)][0]')
+    assert_equals "11" "$(echo "$first" | jq -r '.line')" "merged comment anchored at the most severe member"
+    assert_matches "^\*\*Important\*\* — 3 findings at this location" "$(echo "$first" | jq -r '.body')" \
+        "merged comment opens with the top severity and the member count"
+    local b
+    b=$(echo "$first" | jq -r '.body')
+    assert_matches "null deref on retry" "$b" "merged comment keeps the correctness text"
+    assert_matches "api view" "$b" "merged comment keeps the api-contract text"
+    assert_matches "style view" "$b" "merged comment keeps the style text"
+    assert_equals "2" "$(echo "$body" | grep -c '^- \*\*\[')" "index has one line per comment"
+    assert_matches "\(\+2 more here\) — \`a.cs:11\`" "$body" "merged index line counts the extra members"
+    assert_equals "4" "$(echo "$out" | jq '.log.findings | length')" "the log keeps every member separately"
+}
+
+# Findings at the same spot but on different routes stay apart: an inline fix-now finding
+# and a body-routed follow-up must not share a comment, or the follow-up would post inline.
+test_colocated_findings_on_different_routes_stay_separate() {
+    local specs pans out
+    specs='{"correctness":[{"file":"a.cs","line":10,"severity":"Important","confidence":90,"description":"blocker.","suggested_fix":"fix"}],"style":[{"file":"a.cs","line":11,"severity":"Suggestion","confidence":70,"description":"follow-up idea.","suggested_fix":"later"}]}'
+    pans=$(_op_pans "[$(_op_v 0 true Important Bounded),$(_op_v 1 true Suggestion Bounded)]")
+    out=$(_op_run_core "$(_op_args)" "$specs" "$pans")
+    _op_is_bundle "$out" "co-located different routes" || return 0
+    assert_equals "1" "$(echo "$out" | jq '.comments | length')" "only the inline finding posts a comment"
+    assert_not_matches "follow-up idea" "$(echo "$out" | jq -r '.comments[0].body')" "the body-routed finding is not merged into it"
+    assert_matches "follow-up idea.*in body \(follow-up\)" "$(echo "$out" | jq -r '.bodyText')" \
+        "the body-routed finding keeps its own index line"
+}
+
+# Local mode groups co-located findings the same way.
+test_local_report_groups_colocated_findings() {
+    local specs pans out body
+    specs='{"correctness":[{"file":"a.cs","line":11,"severity":"Important","confidence":90,"description":"null deref on retry.","suggested_fix":"guard"}],"style":[{"file":"a.cs","line":12,"severity":"Important","confidence":70,"description":"same spot, style view.","suggested_fix":"tidy"}]}'
+    pans=$(_op_pans "[$(_op_v 0 true Important Bounded),$(_op_v 1 true Important Bounded)]")
+    out=$(_op_run_core "$(_op_args local)" "$specs" "$pans")
+    _op_is_bundle "$out" "local co-located" || return 0
+    body=$(echo "$out" | jq -r '.bodyText')
+    assert_equals "1" "$(echo "$body" | grep -c '^#### ')" "one heading for the co-located pair"
+    assert_matches "2 findings at this location" "$body" "local group shows the member count"
+}
+
+# A writer that returns nothing must not leak a placeholder into the posted body; the log
+# records that the writer produced no prose.
+test_missing_assessment_omitted_from_body() {
+    local specs pans out body
+    specs='{"correctness":[{"file":"a.cs","line":10,"severity":"Important","confidence":90,"description":"d","suggested_fix":"f"}]}'
+    pans=$(_op_pans "[$(_op_v 0 true Important Bounded)]")
+    out=$(_op_run_core "$(_op_args)" "$specs" "$pans" 'null')
+    _op_is_bundle "$out" "missing assessment" || return 0
+    body=$(echo "$out" | jq -r '.bodyText')
+    assert_not_matches "produced no prose" "$body" "no placeholder in the posted body"
+    assert_matches "### Findings" "$body" "the index still renders without an assessment"
+    assert_equals "(panel writer produced no prose)" "$(echo "$out" | jq -r '.log.bodyText')" \
+        "the log records the missing assessment"
 }

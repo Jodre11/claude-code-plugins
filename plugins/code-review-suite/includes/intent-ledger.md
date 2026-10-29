@@ -31,14 +31,18 @@ the first that is **sufficient**.
 **Source 1 — In-diff prose document.**
 
 Run `git diff --name-only --diff-filter=AM` (using the same diff syntax as the rest of the
-pipeline) and inspect added/modified files. A file is a candidate prose document if any of
-these match:
+pipeline) and inspect added/modified files. A file is a candidate prose document only if
+BOTH of these match:
 
-- Path begins with `docs/`, `design/`, `specs/`, `rfcs/`, `proposals/`, or `adr/`.
-- Path matches a repo-configured override (read `.claude/code-review.toml` if it exists; key
+- Its path begins with `docs/`, `design/`, `specs/`, `rfcs/`, `proposals/`, or `adr/`, or
+  matches a repo-configured override (read `.claude/code-review.toml` if it exists; key
   `intent.doc_paths` is an array of glob patterns. Skip silently if the file is missing or
   malformed — this is optional configuration).
-- Extension is `.md`, `.markdown`, `.rst`, `.txt`, or `.org`.
+- Its extension is `.md`, `.markdown`, `.rst`, `.txt`, or `.org`.
+
+A prose file anywhere else — a README, a CHANGELOG, an agent or prompt definition — is never
+a candidate: it describes the project or the tool, not this change, and a goal taken from it
+can block the merge (rubric row 1).
 
 For each candidate, read the **added** content (lines starting with `+` in the diff,
 excluding the file-header lines). Concatenate all added prose from all candidates as a
@@ -116,9 +120,32 @@ Before review, please add a paragraph at the top of the PR body explaining what 
 
 **Under `$ANALYSIS_ONLY = true`:** do not post. Print the canned body above to stdout,
 prefixed with `> Phase 0 halt (analysis-only, not posted): no narrative description`, and
-stop the pipeline cleanly. Skip the duplicate-check and the `gh pr review` submission below.
+stop the pipeline cleanly. Skip the halt-action resolution, the duplicate-check and the
+`gh pr review` submission below.
 
-Before posting, fetch the most recent review by the current user:
+**Resolve the halt action.** Never post on a halt without either the user's say-so or an
+explicit configured choice. Resolve `intent.halt_action` from two config layers, first match
+wins: (1) the reviewed repo's `.claude/code-review.toml`, then (2) the user-level
+`~/.claude/code-review.toml`. A missing or malformed file, or a value other than `prompt`,
+`request_changes`, `comment` or `print`, does not set the key. If neither layer sets it,
+`$HALT_ACTION = prompt`.
+
+If `$HALT_ACTION` is `prompt`, show the canned body above and ask:
+
+```
+> Phase 0 halt: this PR has no narrative description. Post the message above as a review?
+>   [r] REQUEST_CHANGES   [c] COMMENT   [p] print only — post nothing
+```
+
+Read one answer: `r` sets `$HALT_ACTION = request_changes`, `c` sets
+`$HALT_ACTION = comment`, and anything else sets `$HALT_ACTION = print`.
+
+If `$HALT_ACTION` is `print`: print the canned body prefixed with
+`> Phase 0 halt (not posted): no narrative description` and stop the pipeline cleanly. Skip
+the duplicate-check and the submission below.
+
+Otherwise set `$HALT_EVENT` to `REQUEST_CHANGES` (for `request_changes`) or `COMMENT` (for
+`comment`). Before posting, fetch the most recent review by the current user:
 
 ```
 gh api user --jq .login                            # capture as $CURRENT_USER
@@ -127,13 +154,15 @@ gh pr view "$ARGUMENTS" --json reviews \
        '.reviews | map(select(.author.login == $user)) | sort_by(.submittedAt) | reverse | .[0]'
 ```
 
-If the most recent review by `$CURRENT_USER` exists, has `state == "CHANGES_REQUESTED"`,
-and its `body` matches the canned text above verbatim, do NOT post a duplicate. Announce
-`> Phase 0 halt: existing REQUEST_CHANGES review still active — no new review posted` and
-stop the pipeline cleanly. Otherwise, submit using
-`gh pr review "$ARGUMENTS" --request-changes --input -` with the body above via heredoc.
-Do not post any inline comments. Announce
-`> Phase 0 halt: REQUEST_CHANGES posted (no narrative description)` and stop the pipeline
+If the most recent review by `$CURRENT_USER` exists, has `state == "CHANGES_REQUESTED"`
+(for `REQUEST_CHANGES`) or `state == "COMMENTED"` (for `COMMENT`), and its `body` matches the
+canned text above verbatim, do NOT post a duplicate. Announce
+`> Phase 0 halt: existing $HALT_EVENT review still active — no new review posted` and stop
+the pipeline cleanly. Otherwise, submit using
+`gh pr review "$ARGUMENTS" --request-changes --input -` (for `REQUEST_CHANGES`) or
+`gh pr review "$ARGUMENTS" --comment --input -` (for `COMMENT`) with the body above via
+heredoc. Do not post any inline comments. Announce
+`> Phase 0 halt: $HALT_EVENT posted (no narrative description)` and stop the pipeline
 cleanly.
 
 **Mode `local`:**

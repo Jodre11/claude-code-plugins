@@ -57,7 +57,7 @@ _pe_run_core() {
         const roster = ["Cronus", "Rhea", "Oceanus", "Hyperion", "Themis"];
         const agent = async (prompt, opts) => {
             const label = (opts && opts.label) || "";
-            if (label === "panel-writer") return { bodyText: "## Panel Assessment\n> ok\n" };
+            if (label === "panel-writer") return { assessment: "ok" };
             if (label.startsWith("panel-")) {
                 const p = panelists[roster.indexOf(label.slice("panel-".length))];
                 return p === undefined ? null : p;

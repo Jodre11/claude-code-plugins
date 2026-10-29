@@ -1252,3 +1252,48 @@ test_sync_agent_hazard_severity_basis() {
             "anchor 'agent-hazard basis' not found in $apic"
     fi
 }
+
+# Phase 0.2 Source 1: a prose file is an intent candidate only inside a doc directory (or a
+# configured intent.doc_paths glob). An extension match alone — a README, CHANGELOG or agent
+# prompt edit — must never become the goal, because a goal can block the merge (row 1).
+test_sync_intent_source1_requires_doc_dir() {
+    local canonical="$REPO_ROOT/plugins/code-review-suite/includes/intent-ledger.md"
+    if grep -qF 'candidate prose document only if' "$canonical" \
+        && grep -qF 'BOTH of these match' "$canonical" \
+        && grep -qF 'A prose file anywhere else' "$canonical"; then
+        pass "intent Source 1 requires a doc directory AND a prose extension"
+    else
+        fail "intent Source 1 requires a doc directory AND a prose extension" \
+            "intent-ledger.md Source 1 must require both a doc path and a prose extension"
+    fi
+    if grep -qE '^- Extension is `\.md`' "$canonical"; then
+        fail "intent Source 1 has no extension-only rule" "the standalone extension bullet is back"
+    else
+        pass "intent Source 1 has no extension-only rule"
+    fi
+}
+
+# Phase 0.4: a narrative-less PR must never be reviewed on GitHub without the user's say-so
+# or an explicit configured choice.
+test_sync_intent_halt_action_gated() {
+    local canonical="$REPO_ROOT/plugins/code-review-suite/includes/intent-ledger.md"
+    local literal
+    for literal in 'intent.halt_action' '`$HALT_ACTION = prompt`' '[r] REQUEST_CHANGES   [c] COMMENT   [p] print only' \
+        'Phase 0 halt (not posted): no narrative description' 'gh pr review "$ARGUMENTS" --comment --input -' \
+        '~/.claude/code-review.toml'; do
+        if grep -qF -- "$literal" "$canonical"; then
+            pass "intent halt gate documents: $literal"
+        else
+            fail "intent halt gate documents: $literal" "missing from includes/intent-ledger.md Phase 0.4"
+        fi
+    done
+    # The resolution must sit before the duplicate check and the submission.
+    local resolve submit
+    resolve=$(grep -nF '**Resolve the halt action.**' "$canonical" | cut -d: -f1)
+    submit=$(grep -nF 'gh pr review "$ARGUMENTS" --request-changes --input -' "$canonical" | cut -d: -f1)
+    if [[ -n "$resolve" && -n "$submit" && "$resolve" -lt "$submit" ]]; then
+        pass "intent halt action resolved before any submission"
+    else
+        fail "intent halt action resolved before any submission" "resolve=$resolve submit=$submit"
+    fi
+}

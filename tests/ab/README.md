@@ -156,7 +156,11 @@ Score each arm's `trial-NNN/stdout.log` with
 output (`flat_findings.json`, `panelists.json`, `writer_body.md`) through
 the real `review-core.js` with model calls stubbed, and prints the review
 body and inline comments a PR would show. It re-runs no model, so it is for
-tuning presentation, not model prose.
+tuning presentation, not model prose. `writer_body.md` is the writer's
+assessment; an older capture holding a whole writer report replays only its
+`## Panel Assessment` section. An optional `changed-lines.txt` supplies the
+run's `Changed lines:` block; without it every anchor the fixture cites counts
+as changed, so the line guards do not demote the replayed findings.
 
 ## Implementation notes
 

@@ -105,14 +105,14 @@ const PANEL_SCHEMA = {
     },
 }
 
-// WRITER_SCHEMA — the sonnet writer's only model output is bodyText prose. The
-// verdict + tiers are computed deterministically in panelWrite, never by the writer.
+// WRITER_SCHEMA — the writer's only model output is the assessment narrative. The
+// verdict, the tiers and every other part of the body are computed in code, never by it.
 const WRITER_SCHEMA = {
     type: 'object',
     additionalProperties: false,
-    required: ['bodyText'],
+    required: ['assessment'],
     properties: {
-        bodyText: { type: 'string', description: "Markdown report. MUST include a '## Panel Assessment' heading so buildBody can promote it." },
+        assessment: { type: 'string', description: 'The Panel Assessment: one to three short paragraphs of markdown prose, no headings.' },
     },
 }
 
@@ -282,26 +282,24 @@ function finalizeBundle(envelope, reviewMode, phaseLog) {
         return { verdict: 'NONE', bodyText: '(panel produced no usable output)', comments: [], log: logPayload }
     }
 
-    // Local mode: no verdict, no GitHub filter — return the prose (plus the freshness table)
-    // and the durable log payload. The host writes the log to disk only when
-    // orchestration.full_log is on (default off); pre-review documents the log as its sole
-    // persisted artefact, so it MUST be carried on this path too — not just the PR path below.
+    // Contested carries fix-now/optional/judgement-call findings routed via `posting`.
+    const candidates = [...(envelope.tiers.consensus ?? []), ...(envelope.tiers.contested ?? [])]
+    const bodySet = candidates.filter(f => f.posting === 'inline' || f.posting === 'body')
+    // Open-ended Suggestions are routed to the dismissed tier (dropped:true) and never enter
+    // `candidates`. Count them so the disclosure line can fire.
+    const suppressedCount = (envelope.tiers.dismissed ?? []).filter(f => f.dropped).length
+
+    // Local mode: no verdict, nothing posted — return the full report and the durable log
+    // payload. The host writes the log to disk only when orchestration.full_log is on
+    // (default off); pre-review documents the log as its sole persisted artefact, so it MUST
+    // be carried on this path too — not just the PR path below.
     if (reviewMode === 'local') {
         const logPayload = buildLogPayload(envelope, phaseLog)
-        const bodyText = [envelope.bodyText, envelope.freshnessSection].filter(Boolean).join('\n\n')
-        return { verdict: 'NONE', bodyText, comments: [], log: logPayload }
+        return { verdict: 'NONE', bodyText: buildLocalReport(envelope, bodySet, suppressedCount), comments: [], log: logPayload }
     }
 
     const verdict = envelope.verdict  // APPROVE | REQUEST_CHANGES (the rubric never emits COMMENT)
-    // Contested carries fix-now/optional/judgement-call findings routed via `posting`.
-    const candidates = [...(envelope.tiers.consensus ?? []), ...(envelope.tiers.contested ?? [])]
-    const commentSet = candidates.filter(isPosted)
-    const bodySet = candidates.filter(f => f.posting === 'inline' || f.posting === 'body')
-    // Open-ended Suggestions are routed to the dismissed tier (dropped:true) and never enter
-    // `candidates`. Count them so the APPROVE disclosure line can fire.
-    const suppressedCount = (envelope.tiers.dismissed ?? []).filter(f => f.dropped).length
-
-    const comments = renderComments(commentSet)
+    const comments = renderComments(candidates.filter(isPosted))
     const bodyText = buildBody(envelope, bodySet, suppressedCount)
     const logPayload = buildLogPayload(envelope, phaseLog)
 
@@ -657,8 +655,9 @@ function applyRubric(tiers, hasGoal) {
 // Stage 2: dispatch N identical opus panelists in parallel. Each gets the concern
 // brief, the repo dir and the pinned diff file the host materialised (pipeline Step 2.85),
 // the flattened Stage-1 findings, which domains ran, and the intent ledger.
-// No agentType — the brief supplies the Principal-Engineer framing; the default
-// workflow subagent + model:'opus' is the panelist. Null/failed panelists are dropped.
+// Each seat runs as the read-only panel-reviewer agent (inspection Bash, no Write or Edit,
+// and a `*-reviewer` type the host's reviewer guard binds); the brief in the prompt supplies
+// the Principal-Engineer framing. Null/failed panelists are dropped.
 async function panelVote(flat, panelBrief, ranDomains, phaseLog) {
     const n = panelSize ?? 3
     const fullDiffFile = tempDir ? `${tempDir.replace(/\/+$/, '')}/review-diff.patch` : ''
@@ -684,6 +683,7 @@ async function panelVote(flat, panelBrief, ranDomains, phaseLog) {
         agent(panelSeatPrefix(i) + body, {
             label: `panel-${panelSeatName(i)}`,
             phase: 'panel-vote',
+            agentType: 'code-review-suite:panel-reviewer',
             model: 'opus',
             schema: PANEL_SCHEMA,
             stallMs: 600000,
@@ -696,22 +696,32 @@ async function panelVote(flat, panelBrief, ranDomains, phaseLog) {
     return surviving
 }
 
-// Project the tier map to the writer's view: drop the numeric `confidence` shim from
-// every finding, keeping `confidence_flag`. The original `tiers` is untouched (the log
-// payload still reads the number); only the writer prompt consumes this projection.
-function stripNumericConfidence(tiers) {
-    const out = {}
-    for (const [tier, arr] of Object.entries(tiers)) {
-        out[tier] = (arr ?? []).map(f => {
-            const { confidence, ...rest } = f
-            return rest
-        })
+// Project the tiers to what the writer needs to narrate: the surfaced findings with their
+// routing, and only a count of the dismissed ones. It drops the numeric `confidence` shim
+// (the writer must use the discrete flag, never a percentage), suggested fixes, annotations
+// and the freshness-table rows review-core renders itself, keeping the writer's turn small.
+// The original `tiers` is untouched; only the writer prompt consumes this projection.
+function writerView(tiers) {
+    const pick = f => ({
+        domain: f.domain,
+        severity: f.severity,
+        confidence_flag: f.confidence_flag,
+        tractability: f.tractability,
+        posting: f.posting,
+        ...(f.judgement_call ? { judgement_call: true } : {}),
+        file: f.file,
+        line: f.line,
+        description: f.description,
+    })
+    return {
+        consensus: (tiers.consensus ?? []).map(pick),
+        contested: (tiers.contested ?? []).filter(f => f.posting !== 'table').map(pick),
+        dismissed_count: (tiers.dismissed ?? []).length,
     }
-    return out
 }
 
 // Stage 3: deterministic tally. Below quorum → reuse finalizeBundle's Category-C guard
-// (no envelope). Otherwise tally → tiers → rubric → a sonnet prose turn → sealed bundle.
+// (no envelope). Otherwise tally → tiers → rubric → a short assessment turn → sealed bundle.
 async function panelWrite(panelists, flat, phaseLog) {
     const n = panelSize ?? 3
     const s = panelists.length
@@ -724,38 +734,38 @@ async function panelWrite(panelists, flat, phaseLog) {
     const tiers = mapSpreadToTierConfidence(voteTallies, raisedClusters, s)
     const hasGoal = /(^|\n)\s*goal:\s*\S/.test(intentLedger || '')
     const { verdict, rubricRowApplied, rubricReason } = applyRubric(tiers, hasGoal)
-    // The writer sees confidence ONLY as the discrete flag (high/medium/low). The numeric
-    // `confidence` (FLAG_TO_NUM shim) stays in `tiers` for the durable log, but is stripped
-    // from the writer's view so it cannot be echoed back as a false-precision percentage
-    // ("90 %") in the prose. Confidence is a discrete flag.
-    const writerTiers = stripNumericConfidence(tiers)
+    const verdictLine = reviewMode === 'local'
+        ? `This is a local pre-review: there is no verdict, so do not mention one.\n\n`
+        : `Verdict: ${verdict} (rubric row ${rubricRowApplied}: ${rubricReason})\n\n`
     const writerPrompt =
         `Mode: panel-write\n\n` +
-        `Write the review report body (markdown) for this deterministically-tallied panel result. ` +
-        `Include a '## Panel Assessment' heading with your narrative. Do NOT change the verdict ` +
-        `or tiers — they are fixed. Confidence is a discrete flag (high/medium/low); refer to it by ` +
-        `that word and never as a number or percentage. Do NOT assert exact finding counts (e.g. ` +
-        `"twelve suggestions") — the deterministic index carries the authoritative tally; describe ` +
-        `groups qualitatively ("several suggestions", "the static-analysis findings") instead. ` +
-        `Do NOT render a dependency-freshness table — review-core appends it.\n\n` +
-        `Verdict: ${verdict} (rubric row ${rubricRowApplied}: ${rubricReason})\n\n` +
-        `Tiers (JSON):\n${JSON.stringify(writerTiers)}\n\n` +
-        `Use ${tempDir} for temporary files.`
-    // Same in-sandbox watchdog exposure as the panelists: the sonnet writer renders the
-    // full report body in one turn and can exceed the 180s default on a large tier set.
-    // Match the panelists' 600s budget so a complex review does not strand the writer.
+        `Write the Panel Assessment for this deterministically-tallied panel result: one to ` +
+        `three short paragraphs of markdown prose, no headings, telling the author what matters ` +
+        `most and why. review-core renders the verdict headline, the finding index, the inline ` +
+        `comments and the dependency-freshness table itself, so do not repeat them or walk ` +
+        `through every finding. Do NOT change the verdict or tiers — they are fixed. Confidence ` +
+        `is a discrete flag (high/medium/low); refer to it by that word and never as a number or ` +
+        `percentage. Do NOT assert exact finding counts (e.g. "twelve suggestions") — the ` +
+        `deterministic index carries the authoritative tally; describe groups qualitatively ` +
+        `("several suggestions", "the static-analysis findings") instead.\n\n` +
+        verdictLine +
+        `Findings (JSON):\n${JSON.stringify(writerView(tiers))}`
+    // Same in-sandbox watchdog exposure as the panelists: keep the 600s budget so a large
+    // tier set cannot strand the writer.
     const w = await agent(writerPrompt, {
         label: 'panel-writer',
         phase: 'panel-write',
+        agentType: 'code-review-suite:panel-writer',
         model: 'sonnet',
         schema: WRITER_SCHEMA,
         stallMs: 600000,
     })
-    const bodyText = (w && w.bodyText) ? w.bodyText : '(panel writer produced no prose)'
+    const assessment = (w && typeof w.assessment === 'string') ? w.assessment.trim() : ''
+    const bodyText = assessment || '(panel writer produced no prose)'
     const freshnessSection = buildFreshnessSection(
         (tiers.contested ?? []).filter(f => f.posting === 'table'),
         housekeeperRan)
-    const envelope = { verdict, rubricRowApplied, rubricReason, tiers, bodyText, freshnessSection }
+    const envelope = { verdict, rubricRowApplied, rubricReason, tiers, assessment, bodyText, freshnessSection }
     return finalizeBundle(envelope, reviewMode, phaseLog)
 }
 
@@ -809,45 +819,68 @@ function isFileless(f) {
     return !file || file === '<n/a>'
 }
 
-// Anchor ladder (spec "Anchor Ladder"): route each posted finding to the most
-// specific GitHub anchor it can carry. A line-0 finding WITH a file is a
-// deletion/file-level anchor → file-level comment; a finding with NO file is
-// fileless → no comment (its detail goes to the body, handled in buildBody).
+// Co-located findings: several specialists often flag the same issue at the same spot (about
+// one Stage-1 finding in five across the durable logs), and posting each one buries the
+// author in near-identical threads. Group anchorable findings that share a file and a
+// posting route and whose lines sit within CLUSTER_WINDOW of a neighbour (single-link, so a
+// run of adjacent findings forms one group); file-level findings (line <= 0) group per file.
+// Each group is ordered most-severe first, then by line, so g[0] is the anchor; groups keep
+// the order of their earliest member. Rendering only: the verdict is computed before this
+// runs, and every member stays visible in the merged text.
+function groupColocated(findings) {
+    const sevRank = { Critical: 3, Important: 2, Suggestion: 1 }
+    const buckets = new Map()
+    findings.forEach((f, idx) => {
+        const key = `${f.file}\u0000${f.posting}\u0000${f.line > 0 ? 'line' : 'file'}`
+        if (!buckets.has(key)) buckets.set(key, [])
+        buckets.get(key).push({ f, idx })
+    })
+    const groups = []
+    for (const members of buckets.values()) {
+        if (members[0].f.line <= 0) { groups.push(members); continue }
+        const byLine = [...members].sort((a, b) => a.f.line - b.f.line)
+        let cur = [byLine[0]]
+        for (const m of byLine.slice(1)) {
+            if (m.f.line - cur[cur.length - 1].f.line <= CLUSTER_WINDOW) cur.push(m)
+            else { groups.push(cur); cur = [m] }
+        }
+        groups.push(cur)
+    }
+    return groups
+        .sort((a, b) => Math.min(...a.map(m => m.idx)) - Math.min(...b.map(m => m.idx)))
+        .map(g => g.map(m => m.f).sort((a, b) =>
+            (sevRank[b.severity] ?? 0) - (sevRank[a.severity] ?? 0) || a.line - b.line))
+}
+
+// One comment body for a co-located group: a single finding renders as before; several
+// render under a one-line header, each separated by a rule.
+function renderGroupBody(g) {
+    if (g.length === 1) return renderCommentBody(g[0])
+    const head = `**${g[0].severity}** — ${g.length} findings at this location`
+    return [head, ...g.map(renderCommentBody)].join('\n\n---\n\n')
+}
+
+// `file:line`, or just the file for a file-level anchor.
+function locOf(f) {
+    return f.line > 0 ? `${f.file}:${f.line}` : f.file
+}
+
+// Anchor ladder (spec "Anchor Ladder"): route each posted group to the most specific
+// GitHub anchor it can carry. A line-0 group WITH a file is a deletion/file-level anchor →
+// file-level comment; a finding with NO file is fileless → no comment (its detail goes to
+// the body, handled in buildBody).
 function renderComments(postedFindings) {
     const comments = []
-    for (const f of postedFindings) {
-        if (isFileless(f)) continue                            // fileless (incl. <n/a>) → body only
+    for (const g of groupColocated(postedFindings.filter(f => !isFileless(f)))) {
+        const f = g[0]
         if (f.line > 0) {
-            comments.push({ path: f.file, line: f.line, side: sideFor(f.line), body: renderCommentBody(f) })
+            comments.push({ path: f.file, line: f.line, side: sideFor(f.line), body: renderGroupBody(g) })
         } else {
             // file present, no usable positive line → file-level comment.
-            comments.push({ path: f.file, subjectType: 'file', body: renderCommentBody(f) })
+            comments.push({ path: f.file, subjectType: 'file', body: renderGroupBody(g) })
         }
     }
     return comments
-}
-
-// Extract the body of a `## <heading>` section (text up to the next `## `
-// heading or EOF). Returns '' when the heading is absent. Pure string op.
-function extractSection(bodyText, heading) {
-    const lines = bodyText.split('\n')
-    const out = []
-    let capturing = false
-    for (const line of lines) {
-        if (capturing) {
-            if (line.startsWith('## ')) break
-            out.push(line)
-            continue
-        }
-        if (line.trim() === `## ${heading}`) capturing = true
-    }
-    return out.join('\n').trim()
-}
-
-// Strip a leading '> ' (or '>') block-quote prefix from every line. Promotes
-// the Panel Assessment from greyed quote to first-class prose.
-function unquote(text) {
-    return text.split('\n').map(l => l.replace(/^>\s?/, '')).join('\n')
 }
 
 // One compact index line per posted, anchorable finding. Fileless findings are
@@ -859,13 +892,13 @@ function indexPointer(f) {
     return f.posting === 'body' ? '↳ in body (follow-up)' : '↳ inline'
 }
 function renderFindingIndex(postedSet) {
-    const lines = []
-    for (const f of postedSet) {
-        if (isFileless(f)) continue                            // fileless → the Body notes section
-        const loc = f.line > 0 ? `${f.file}:${f.line}` : f.file
-        lines.push(`- **[${f.severity}]** ${shortTitle(f.description)} — \`${loc}\` ${indexPointer(f)}`)
-    }
-    return lines.join('\n')
+    // fileless → the Body notes section; co-located findings share one line, as they share
+    // one comment.
+    return groupColocated(postedSet.filter(f => !isFileless(f))).map(g => {
+        const f = g[0]
+        const more = g.length > 1 ? ` (+${g.length - 1} more here)` : ''
+        return `- **[${f.severity}]** ${shortTitle(f.description)}${more} — \`${locOf(f)}\` ${indexPointer(f)}`
+    }).join('\n')
 }
 
 // Fileless findings (body-improvement notes with no code anchor, e.g. the alignment
@@ -894,7 +927,7 @@ function buildBody(envelope, postedSet, suppressedCount) {
     const reason = envelope.rubricReason || ''
     const headline = `**${envelope.verdict}**${reason ? ` — ${reason}` : ''}`
 
-    const assessment = unquote(extractSection(envelope.bodyText, 'Panel Assessment'))
+    const assessment = envelope.assessment || ''
     const index = renderFindingIndex(postedSet)
     const bodyNotes = renderBodyNotes(postedSet)
 
@@ -906,10 +939,32 @@ function buildBody(envelope, postedSet, suppressedCount) {
     // cleaner than the run was. Disclosure only — the tractability-dropped open-ended
     // suggestions are still not surfaced.
     if (envelope.verdict === 'APPROVE' && suppressedCount > 0) {
-        parts.push(`${suppressedCount} finding(s) pruned (open-ended suggestions not surfaced).`)
+        parts.push(prunedLine(suppressedCount))
     }
     if (envelope.freshnessSection) parts.push(envelope.freshnessSection)
     return parts.join('\n\n')
+}
+
+function prunedLine(count) {
+    return `${count} finding(s) pruned (open-ended suggestions not surfaced).`
+}
+
+// Local (pre-review) report. There is no verdict and no inline thread to point to, so every
+// surfaced finding renders in full after the assessment, co-located findings grouped as on
+// the PR path. Built in code like the PR body, so the writer only ever writes the assessment.
+function buildLocalReport(envelope, surfaced, suppressedCount) {
+    const parts = []
+    if (envelope.assessment) parts.push(envelope.assessment)
+    const groups = groupColocated(surfaced.filter(f => !isFileless(f)))
+    if (groups.length) {
+        const blocks = groups.map(g => `#### \`${locOf(g[0])}\`\n\n${renderGroupBody(g)}`)
+        parts.push(`### Findings\n\n${blocks.join('\n\n')}`)
+    }
+    const bodyNotes = renderBodyNotes(surfaced)
+    if (bodyNotes) parts.push(`### Body notes\n\n${bodyNotes}`)
+    if (suppressedCount > 0) parts.push(prunedLine(suppressedCount))
+    if (envelope.freshnessSection) parts.push(envelope.freshnessSection)
+    return parts.length ? parts.join('\n\n') : 'No findings.'
 }
 
 // Render the housekeeper's table-routed findings as the Dependency Freshness section.

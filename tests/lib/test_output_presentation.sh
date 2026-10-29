@@ -522,6 +522,20 @@ test_local_report_groups_colocated_findings() {
     assert_matches "2 findings at this location" "$body" "local group shows the member count"
 }
 
+# The local report shows no route, so co-located findings on different routes share one
+# heading there; each member keeps its own fix-now / follow-up label.
+test_local_report_groups_across_routes() {
+    local specs pans out body
+    specs='{"correctness":[{"file":"a.cs","line":10,"severity":"Important","confidence":90,"description":"blocker.","suggested_fix":"fix"}],"style":[{"file":"a.cs","line":11,"severity":"Suggestion","confidence":70,"description":"follow-up idea.","suggested_fix":"later"}]}'
+    pans=$(_op_pans "[$(_op_v 0 true Important Bounded),$(_op_v 1 true Suggestion Bounded)]")
+    out=$(_op_run_core "$(_op_args local)" "$specs" "$pans")
+    _op_is_bundle "$out" "local across routes" || return 0
+    body=$(echo "$out" | jq -r '.bodyText')
+    assert_equals "1" "$(echo "$body" | grep -c '^#### ')" "one heading for the pair despite different routes"
+    assert_matches "fix in this PR" "$body" "the inline member keeps its label"
+    assert_matches "raise as a follow-up" "$body" "the body-routed member keeps its label"
+}
+
 # A writer that returns nothing must not leak a placeholder into the posted body; the log
 # records that the writer produced no prose.
 test_missing_assessment_omitted_from_body() {

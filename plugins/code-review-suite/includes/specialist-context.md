@@ -145,10 +145,9 @@ The pipeline orchestrator has already measured the diff once and written it to f
 ### Output line filter
 
 <!-- CHANGED_LINES OUTPUT FILTER — this is the canonical source.
-Edit this file first, then propagate to all specialist agents that inline
-this block: archaeology-reviewer.md, code-analysis.md, consistency-reviewer.md,
-correctness-reviewer.md, efficiency-reviewer.md, latent-hazard-reviewer.md,
-reuse-reviewer.md, security-reviewer.md, style-reviewer.md, ui-reviewer.md.
+The text between the SOURCE markers below is copied into a generated region in every judgement
+specialist that inlines it. Edit it here, never a generated copy, then run
+scripts/render-includes.py; tests/run.sh fails while any copy is stale.
 
 alignment-reviewer.md does NOT inline this block — alignment findings
 legitimately span pre-existing lines (intent drift is rare but can manifest
@@ -156,6 +155,7 @@ on lines the diff doesn't touch). Other static-analysis specialists
 (jbinspect, eslint, ruff, trivy) inline their own scope rules per
 includes/static-analysis-context.md. -->
 
+<!-- BEGIN SOURCE: copied into BEGIN GENERATED regions; after editing, run scripts/render-includes.py -->
 > **CHANGED_LINES OUTPUT FILTER — MANDATORY**
 >
 > Only report findings on lines listed in `$CHANGED_LINES` for that file
@@ -166,3 +166,4 @@ includes/static-analysis-context.md. -->
 > appears in `$CHANGED_LINES[file]`. Files appearing in the `Changed lines:`
 > block with `(empty — rename only)` accept no findings at all (the rename
 > itself is the only change).
+<!-- END SOURCE -->

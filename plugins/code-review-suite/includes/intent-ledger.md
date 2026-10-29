@@ -1,18 +1,18 @@
 ## Phase 0: Intent Ledger
 
 <!-- CANONICAL SOURCE — do not delete.
-This file is the single source of truth for the Phase 0 intent ledger logic. Its content is
-inlined verbatim into both consumer files:
-  - skills/review-gh-pr/SKILL.md
-  - commands/pre-review.md
+This file is the single source of truth for the Phase 0 intent ledger logic. The text between
+its SOURCE markers is copied into a generated region in review-pipeline.md, and from there
+into skills/review-gh-pr/SKILL.md and commands/pre-review.md.
 
 WHY INLINED: same rationale as review-pipeline.md — agents skip file-path references and
 must see the rule in context. PR #10 incident, 2026-05-05.
 
-MAINTENANCE: Edit this file first, then propagate changes to both consumers. The test suite
-verifies the inlined copies match this canonical source. Heading levels are relative — H2
-here renders as H2 in consumers; do not change without auditing both. -->
+MAINTENANCE: Edit this file, never a generated copy, then run scripts/render-includes.py;
+tests/run.sh fails while any copy is stale. Heading levels are relative — H3 here renders as
+H3 in consumers. -->
 
+<!-- BEGIN SOURCE: copied into BEGIN GENERATED regions; after editing, run scripts/render-includes.py -->
 Run Phase 0 BEFORE Step 1 (Determine base branch). The pipeline must not enter Step 1
 unless Phase 0 succeeds.
 
@@ -208,3 +208,4 @@ source: <in_diff_doc | prompt_block | pr_body | commit_subjects | user_paste>
   `pr_body`, `commit_subjects`, or `user_paste`).
 
 Announce `> Phase 0: ledger built (source: $SOURCE)` and continue to Phase 0.55.
+<!-- END SOURCE -->

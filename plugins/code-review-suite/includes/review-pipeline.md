@@ -1,19 +1,20 @@
 ## Review Pipeline
 
 <!-- CANONICAL SOURCE — do not delete.
-This file is the single source of truth for the review pipeline logic. Its content is
-inlined verbatim into both consumer files:
-  - skills/review-gh-pr/SKILL.md
-  - commands/pre-review.md
+This file is the single source of truth for the review pipeline logic. The text between its
+SOURCE markers is copied into a generated region in skills/review-gh-pr/SKILL.md and
+commands/pre-review.md.
 
 WHY INLINED (intentional DRY violation): Agents reliably skip file-path references ("follow
 instructions in X") by rationalising that they already know the content, then selectively
 dispatch only the specialists they deem relevant. Content that is already in the loaded
 skill context cannot be skipped. This was confirmed empirically (PR #10 incident, 2026-05-05).
 
-MAINTENANCE: Edit this file first, then propagate changes to both consumers. The test suite
-should verify the inlined copies match this canonical source. -->
+MAINTENANCE: Edit this file, never a generated copy, then run scripts/render-includes.py.
+Its own Phase 0 and Phase 0.6 are generated from intent-ledger.md and ci-status-gate.md.
+tests/run.sh fails while any copy is stale. -->
 
+<!-- BEGIN SOURCE: copied into BEGIN GENERATED regions; after editing, run scripts/render-includes.py -->
 Follow these instructions exactly. Do not skip steps or reorder.
 
 ## Phase -1: Target repository
@@ -119,6 +120,7 @@ otherwise, and continue to Phase 0.
 
 ## Phase 0: Intent Ledger
 
+<!-- BEGIN GENERATED from includes/intent-ledger.md: edit that file, then run scripts/render-includes.py -->
 Run Phase 0 BEFORE Step 1 (Determine base branch). The pipeline must not enter Step 1
 unless Phase 0 succeeds.
 
@@ -314,6 +316,7 @@ source: <in_diff_doc | prompt_block | pr_body | commit_subjects | user_paste>
   `pr_body`, `commit_subjects`, or `user_paste`).
 
 Announce `> Phase 0: ledger built (source: $SOURCE)` and continue to Phase 0.55.
+<!-- END GENERATED from includes/intent-ledger.md -->
 
 ## Phase 0.55: Local branch freshness check
 
@@ -417,6 +420,7 @@ and continue to Phase 0.6.
 
 ## Phase 0.6: CI Status Gate
 
+<!-- BEGIN GENERATED from includes/ci-status-gate.md: edit that file, then run scripts/render-includes.py -->
 ### 0.6.1 Skip in local mode
 
 If `$REVIEW_MODE` is `local`, skip this entire section and continue to Step 1.
@@ -475,6 +479,7 @@ specific check states such as `TIMED_OUT`, or reintroducing a transient-vs-defin
 classification — add a CI rule to `applyRubric` as defence in depth. A single softened
 gate with no rubric-side check would let the panel emit APPROVE on a failing CI state, a
 real correctness regression. -->
+<!-- END GENERATED from includes/ci-status-gate.md -->
 
 
 ### Progress line format
@@ -1079,5 +1084,6 @@ nothing — the worktree is not ours to remove.
 ### Step 4: Present results
 
 Present the review report to the user.
+<!-- END SOURCE -->
 
 **Optional Playwright verification:** If the ui-reviewer produced a "Findings Requiring Visual Verification" section AND the `playwright-cli` skill is available, verify those specific findings in the browser. Append verification results to the report.

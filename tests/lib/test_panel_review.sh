@@ -96,7 +96,7 @@ _pan_capture_writer_prompt() {
 # far.cs and ghost.cs — those fixtures test guard demotion and must stay out of the diff.
 # Threaded into every panel args helper. Serialised with literal \n so the JSON string
 # parses to a real newline-delimited block.
-_PAN_CHANGED_BLOCK='Changed lines:\na.cs: 1-40\nb.cs: 1-40\na.js: 1-40\napi.cs: 1-40\nmain.tf: 1-40\nn.cs: 18-24\ns.cs: 3-7\nd.cs: 3-7, 97-101\n'
+_PAN_CHANGED_BLOCK='Changed lines:\na.cs: 1-40\nb.cs: 1-40\na.js: 1-40\napi.cs: 1-40\nmain.tf: 1-40\nn.cs: 18-24\ns.cs: 3-7\nd.cs: 3-7, 97-101\narch.cs: 5, near 70\n'
 
 # args for a PR-mode panel run of size N (default 3). No intent ledger (goal absent).
 _pan_args() {
@@ -327,9 +327,9 @@ b.cs: 5
 r.txt: (empty — rename only)
 d.cs (deleted): near 1
 ')
-    assert_equals '[12,13,14,17]' "$(echo "$out" | jq -c '.["a.cs"]')" "N-M range expands, bare int kept, near skipped"
+    assert_equals '[12,13,14,17,22]' "$(echo "$out" | jq -c '.["a.cs"]')" "N-M range expands, bare int and near anchor kept"
     assert_equals '[5]' "$(echo "$out" | jq -c '.["b.cs"]')" "bare integer parsed"
-    # A (deleted) file contributes an empty set (its only token is a skipped `near`).
+    # A (deleted) file contributes an empty set: it has no new-side line to anchor to.
     assert_equals '[]' "$(echo "$out" | jq -c '.["d.cs"] // []')" "deleted-file near anchor yields no postable lines"
     # An (empty — rename only) file has no colon-token list → absent from the map.
     assert_equals 'null' "$(echo "$out" | jq -c '.["r.txt"]')" "rename-only file absent from map"
@@ -441,6 +441,18 @@ test_panel_voted_valid_line_kept_inline() {
     assert_equals "1" "$(echo "$out" | jq '.comments | length')" "valid-line voted finding posts inline"
     assert_equals "10" "$(echo "$out" | jq -r '.comments[0].line')" "valid line kept unchanged"
     assert_equals "null" "$(echo "$out" | jq -r '.comments[0].subjectType')" "valid line → line comment, not file-level"
+}
+
+# archaeology-reviewer cites a removal at its `near N` anchor (arch.cs: near 70 in the block,
+# not an added line). The guard must keep that line, not demote it to a file-level comment.
+test_panel_voted_near_anchor_kept_inline() {
+    local specs pans out
+    specs='{"archaeology":[{"file":"arch.cs","line":70,"severity":"Important","confidence":85,"description":"removed guard","suggested_fix":"restore it"}]}'
+    pans='[{"votes":[{"finding_id":0,"is_real":true,"severity":"Important","tractability":"Mechanical","blocks_goal":false,"rationale":"r"}],"raised":[]},{"votes":[{"finding_id":0,"is_real":true,"severity":"Important","tractability":"Mechanical","blocks_goal":false,"rationale":"r"}],"raised":[]},{"votes":[{"finding_id":0,"is_real":true,"severity":"Important","tractability":"Mechanical","blocks_goal":false,"rationale":"r"}],"raised":[]}]'
+    out=$(_pan_run_core "$(_pan_args 3)" "$specs" "$pans")
+    assert_equals "1" "$(echo "$out" | jq '.comments | length')" "near-anchored voted finding posts inline"
+    assert_equals "70" "$(echo "$out" | jq -r '.comments[0].line')" "near anchor line kept"
+    assert_equals "null" "$(echo "$out" | jq -r '.comments[0].subjectType')" "near anchor → line comment, not file-level"
 }
 
 # A static (jbinspect) finding with a valid line passes through inline unchanged — the guard

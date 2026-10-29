@@ -1,10 +1,9 @@
 ## Phase 0.6: CI Status Gate
 
 <!-- CANONICAL SOURCE — do not delete.
-This file is the single source of truth for the CI-status gate. Its content is inlined
-verbatim into both consumer files:
-  - skills/review-gh-pr/SKILL.md
-  - commands/pre-review.md
+This file is the single source of truth for the CI-status gate. The text between its SOURCE
+markers is copied into a generated region in review-pipeline.md, and from there into
+skills/review-gh-pr/SKILL.md and commands/pre-review.md.
 
 WHY INLINED: same rationale as review-pipeline.md — agents skip file-path references and
 must see the rule in context. PR #10 incident, 2026-05-05.
@@ -14,10 +13,11 @@ review on any non-green-and-settled CI state. The implementer is responsible for
 ensuring CI is green before requesting review; if there is doubt, that is itself a
 review failure. The plugin enforces this by refusing to spend tokens on a doomed run.
 
-MAINTENANCE: Edit this file first, then propagate to both consumers. The test suite verifies
-the inlined copies match this canonical source. Heading levels are relative — H2 here
-renders as H2 in consumers; do not change without auditing both. -->
+MAINTENANCE: Edit this file, never a generated copy, then run scripts/render-includes.py;
+tests/run.sh fails while any copy is stale. Heading levels are relative — H3 here renders as
+H3 in consumers. -->
 
+<!-- BEGIN SOURCE: copied into BEGIN GENERATED regions; after editing, run scripts/render-includes.py -->
 ### 0.6.1 Skip in local mode
 
 If `$REVIEW_MODE` is `local`, skip this entire section and continue to Step 1.
@@ -76,4 +76,5 @@ specific check states such as `TIMED_OUT`, or reintroducing a transient-vs-defin
 classification — add a CI rule to `applyRubric` as defence in depth. A single softened
 gate with no rubric-side check would let the panel emit APPROVE on a failing CI state, a
 real correctness regression. -->
+<!-- END SOURCE -->
 

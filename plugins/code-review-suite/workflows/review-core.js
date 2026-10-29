@@ -381,16 +381,17 @@ function tallyVotes(panelists, flat) {
 }
 
 // Parse the compact $CHANGED_LINES_BLOCK serialisation (review-pipeline.md Step 2.5)
-// into { [repoRelativePath]: Set<int> } of postable added/context lines. This is the
-// scope authority the panel-raised posting path otherwise lacks (every other path applies
-// a §5 $CHANGED_LINES filter; raised findings did not). Token grammar per that spec:
-//   path: 12-14, 17, near 22        → expand N-M ranges, keep bare ints, SKIP `near N`
+// into { [repoRelativePath]: Set<int> } of postable lines. This is the scope authority the
+// line guards on the voted and raised paths check anchors against. Token grammar per that
+// spec:
+//   path: 12-14, 17, near 22        → expand N-M ranges, keep bare ints and `near N`
 //   path (deleted): near 1          → deletion-only file, no postable lines
 //   path: (empty — rename only)     → zero-hunk file, no postable lines
-// `near N` anchors are deletion markers (archaeology), never added lines a raised finding
-// should anchor to, so they are skipped. A missing/empty block yields {} — the guard then
-// treats every raised finding as out-of-scope and demotes it to the body. That is the
-// deliberate fail-safe direction: demote rather than risk a 422 on a bad anchor.
+// A `near N` anchor names the still-present line beside a deletion, which is where
+// archaeology-reviewer is told to cite a removal, so it is postable; only a deleted file's
+// anchor is not, as that file has no new-side lines. A missing/empty block yields {} — the
+// guard then treats every finding as out-of-scope and demotes it. That is the deliberate
+// fail-safe direction: demote rather than risk a 422 on a bad anchor.
 function parseChangedLines(block) {
     const changed = {}
     if (!block || typeof block !== 'string') return changed
@@ -400,16 +401,18 @@ function parseChangedLines(block) {
         const colon = line.indexOf(':')
         if (colon < 0) continue
         // The path may carry a ` (deleted)` sentinel before the colon — strip it; such a
-        // file has only a `near N` anchor after the colon, which the token loop skips anyway,
-        // so it correctly contributes no postable lines.
-        const path = line.slice(0, colon).replace(/\s*\(deleted\)\s*$/, '').trim()
+        // file contributes an empty set, since it has no new-side line to anchor to.
+        const head = line.slice(0, colon)
+        const deleted = /\(deleted\)\s*$/.test(head)
+        const path = head.replace(/\s*\(deleted\)\s*$/, '').trim()
         if (!path) continue
         const rest = line.slice(colon + 1).trim()
         if (!rest || rest.startsWith('(')) continue   // (empty — rename only) etc. → no lines
         const set = changed[path] ?? (changed[path] = new Set())
+        if (deleted) continue
         for (const tokRaw of rest.split(',')) {
-            const tok = tokRaw.trim()
-            if (!tok || tok.startsWith('near')) continue      // deletion anchor → skip
+            const tok = tokRaw.trim().replace(/^near\s+/, '')
+            if (!tok) continue
             const range = tok.match(/^(\d+)-(\d+)$/)
             if (range) {
                 const lo = parseInt(range[1], 10)
@@ -826,12 +829,14 @@ function isFileless(f) {
 // run of adjacent findings forms one group); file-level findings (line <= 0) group per file.
 // Each group is ordered most-severe first, then by line, so g[0] is the anchor; groups keep
 // the order of their earliest member. Rendering only: the verdict is computed before this
-// runs, and every member stays visible in the merged text.
-function groupColocated(findings) {
+// runs, and every member stays visible in the merged text. The local report passes
+// byRoute: false: it shows no route, so a route split there reads as a duplicate heading.
+function groupColocated(findings, { byRoute = true } = {}) {
     const sevRank = { Critical: 3, Important: 2, Suggestion: 1 }
     const buckets = new Map()
     findings.forEach((f, idx) => {
-        const key = `${f.file}\u0000${f.posting}\u0000${f.line > 0 ? 'line' : 'file'}`
+        const route = byRoute ? f.posting : ''
+        const key = `${f.file}\u0000${route}\u0000${f.line > 0 ? 'line' : 'file'}`
         if (!buckets.has(key)) buckets.set(key, [])
         buckets.get(key).push({ f, idx })
     })
@@ -955,7 +960,7 @@ function prunedLine(count) {
 function buildLocalReport(envelope, surfaced, suppressedCount) {
     const parts = []
     if (envelope.assessment) parts.push(envelope.assessment)
-    const groups = groupColocated(surfaced.filter(f => !isFileless(f)))
+    const groups = groupColocated(surfaced.filter(f => !isFileless(f)), { byRoute: false })
     if (groups.length) {
         const blocks = groups.map(g => `#### \`${locOf(g[0])}\`\n\n${renderGroupBody(g)}`)
         parts.push(`### Findings\n\n${blocks.join('\n\n')}`)

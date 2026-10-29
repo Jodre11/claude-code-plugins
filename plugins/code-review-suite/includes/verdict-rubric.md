@@ -66,6 +66,11 @@ line the diff did not touch becomes a file-level comment.
 ### Body construction
 
 The body is built by `review-core.js` `buildBody` from parts: the verdict headline with the
-rubric reason, the promoted Panel Assessment written by the panel writer, a compact finding
-index, body notes for findings with no file, the pruned-findings disclosure, and the
-Dependency Freshness table.
+rubric reason, the Panel Assessment written by the panel writer (its only contribution), a
+compact finding index, body notes for findings with no file, the pruned-findings disclosure,
+and the Dependency Freshness table. The local pre-review report (`buildLocalReport`) uses the
+same parts without the verdict headline, with every finding rendered in full.
+
+Findings that share a file and a posting route and sit within three lines of each other
+(`groupColocated`) render as ONE inline comment — headed by the most severe, every member's
+text kept — and one index line. This is rendering only: the verdict is computed first.

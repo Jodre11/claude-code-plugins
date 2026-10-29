@@ -37,7 +37,7 @@ const capturePanel = async (args) => {
     const agent = async (prompt, opts) => {
         if (opts && opts.agentType) agentTypes.push(opts.agentType);
         if (opts && opts.phase === "panel-vote") { votePrompts.push(prompt); return { votes: [], raised: [] }; }
-        if (opts && opts.phase === "panel-write") { writerPrompt = prompt; return { bodyText: "## Panel Assessment\nok\n" }; }
+        if (opts && opts.phase === "panel-write") { writerPrompt = prompt; return { assessment: "ok" }; }
         return { status: "ok", findings: [] };
     };
     const bundle = await run(agent, args);
@@ -630,7 +630,7 @@ test_panel_calls_set_stall_budget() {
             let writeOpts = null;
             const agent = async (prompt, opts) => {
                 if (opts && opts.phase === "panel-vote") { voteOpts.push(opts); return { votes: [], raised: [] }; }
-                if (opts && opts.phase === "panel-write") { writeOpts = opts; return { bodyText: "## Panel Assessment\nok\n" }; }
+                if (opts && opts.phase === "panel-write") { writeOpts = opts; return { assessment: "ok" }; }
                 return { status: "ok", findings: [] };
             };
             try { await run(agent, baseArgs); }
@@ -689,7 +689,7 @@ test_housekeeper_findings_bypass_line_guard_and_route_to_table() {
                     raised: [],
                 };
             }
-            if (opts && opts.phase === "panel-write") return { bodyText: "## Panel Assessment\nok\n" };
+            if (opts && opts.phase === "panel-write") return { assessment: "ok" };
             if (opts && opts.agentType === "code-review-suite:housekeeper-reviewer") return { status: "ok", findings: HK };
             if (opts && opts.agentType === "code-review-suite:correctness-reviewer") return { status: "ok", findings: CORR };
             return { status: "ok", findings: [] };

@@ -8,14 +8,19 @@ comments.
 
 Before any specialists run, the pipeline captures the change's intent and CI status.
 
-**Intent ledger:** the pipeline reads (in priority order) any in-diff prose document
-(`docs/`, `design/`, `specs/`, `rfcs/`, `proposals/`, `adr/`, or repo-configured paths via
-`.claude/code-review.toml`), a verbatim prompt block (`Prompt:` section in the PR body or
+**Intent ledger:** the pipeline reads (in priority order) any in-diff prose document under
+`docs/`, `design/`, `specs/`, `rfcs/`, `proposals/`, `adr/`, or repo-configured paths
+(`intent.doc_paths` in `.claude/code-review.toml`) — a README, CHANGELOG or prompt file
+elsewhere never counts — then a verbatim prompt block (`Prompt:` section in the PR body or
 commit message), the PR body itself, and (for local pre-review only) the branch commit
 subjects. The first source containing a narrative paragraph (≥ 2 sentences, > 7 words,
 not a verbatim PR template) becomes the ledger. Without a sufficient source, the pipeline
-halts with `REQUEST_CHANGES` (PR mode) or an inline prompt (local mode) — no specialists
-fan out and the panel does not run.
+halts before any specialist fans out. In local mode it asks you to paste an intent
+paragraph. In PR mode it asks whether to post a canned "please describe this PR" review as
+`REQUEST_CHANGES`, as `COMMENT`, or not at all; `intent.halt_action` (`prompt`,
+`request_changes`, `comment` or `print`, read from the reviewed repo's
+`.claude/code-review.toml` and then `~/.claude/code-review.toml`) preselects the answer for
+unattended use.
 
 **CI status (PR mode only):** after the body check, the pipeline fetches `gh pr checks`.
 Any check that is not green and settled — a failure, a time-out, or one still pending or in
@@ -67,6 +72,7 @@ mode, making the single-path guarantee measurable.
 3. **Classification** — Step 3 computes the route (`lightweight` for small diffs: ≤5 files, ≤150 lines, no significant deletions, no security-sensitive areas; `full` otherwise) and Step 3.5 passes it to the Workflow.
 4. **Workflow core** — the lightweight route runs a single `code-analysis` pass inside the Workflow; the full route dispatches 9 core specialists plus up to 9 conditional specialists (C#, UI, JS/TS, Python, IaC, dependency freshness, test quality, test adequacy, latent hazard) in parallel (slowest first). A panel of independent opus reviewers then votes on every finding (is it real, how severe, how tractable, does it block the stated goal) and may raise net-new findings; code tallies the votes into consensus, contested and dismissed tiers and applies the verdict rubric (`includes/verdict-rubric.md`); a writer agent produces the prose assessment. All of this is implemented in `review-core.js`.
 5. **Panel size** — `orchestration.panel_size` in `.claude/code-review.toml` (the reviewed repo first, then `~/.claude/code-review.toml`) sets the number of panelists. It must be odd and at least 3; the default is 3. `orchestration.review_mode` is retired and ignored.
+6. **Output** — the review body (PR mode) and the pre-review report (local mode) are assembled in code from the tiers; the writer contributes only the short Panel Assessment. Findings from several specialists on the same file within three lines are merged into one inline comment and one index line, so the author sees one thread per issue.
 
 ## Agents
 
@@ -91,6 +97,8 @@ mode, making the single-path guarantee measurable.
 | `test-adequacy-reviewer` | Absent coverage on new production code — untested new/changed public types (F1) and untested producers of new wire contracts/DTOs (F4) (conditional — fires on changed non-test C#/Python/TS-JS source) |
 | `latent-hazard-reviewer` | Silent-conditional hazards — a mechanism present in the diff that fails silently only under a concrete named trigger (e.g. an optional column read that blanks to a legitimate-looking value on source drift) (conditional — fires on changed non-test C#/Python/TS-JS source) |
 | `ui-reviewer` | UI/UX quality, accessibility, usability (conditional — visual component files only) |
+| `panel-reviewer` | One independent panel seat: votes on every Stage-1 finding and raises net-new ones (read-only; dispatched by `review-core` only) |
+| `panel-writer` | Writes the short Panel Assessment for a verdict already fixed in code (no tools beyond `Read`; dispatched by `review-core` only) |
 
 ## Skill
 

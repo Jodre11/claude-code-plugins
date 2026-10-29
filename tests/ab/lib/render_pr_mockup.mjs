@@ -6,7 +6,7 @@
 //
 // This does NOT re-run any model. It exists so panel PRESENTATION (routing,
 // comment wording, body assembly) can be tuned and reviewed in ~1s instead of a
-// ~50-min live review. Prose written by the model (bodyText) is replayed verbatim
+// ~50-min live review. Prose written by the model (the assessment) is replayed verbatim
 // from the fixture — edits to model prose still require a live/writer replay.
 //
 // Usage:
@@ -28,7 +28,11 @@ const WF = path.join(REPO_ROOT, 'plugins', 'code-review-suite', 'workflows', 're
 
 const flat = JSON.parse(fs.readFileSync(path.join(fixtureDir, 'flat_findings.json'), 'utf8'))
 const panelists = JSON.parse(fs.readFileSync(path.join(fixtureDir, 'panelists.json'), 'utf8'))
-const writerBody = fs.readFileSync(path.join(fixtureDir, 'writer_body.md'), 'utf8')
+// writer_body.md is the writer's assessment. A fixture captured before the writer was
+// slimmed holds a whole report: replay only its Panel Assessment section, unquoted.
+const rawWriter = fs.readFileSync(path.join(fixtureDir, 'writer_body.md'), 'utf8')
+const section = rawWriter.match(/^## Panel Assessment[ \t]*\n([\s\S]*?)(?=^## |(?![\s\S]))/m)
+const writerBody = section ? section[1].replace(/^>\s?/gm, '').trim() : rawWriter.trim()
 
 // Rebuild findingsByDomain in the SAME iteration order the run used, so
 // flattenFindings reassigns identical finding_ids and the captured votes align.
@@ -46,16 +50,38 @@ const domainOrder = Object.keys(byDomain)
 
 const src = fs.readFileSync(WF, 'utf8').replace(/^export\s+const\s+meta/m, 'const meta')
 
+// The line-hallucination guards demote any finding whose file:line is outside the
+// `Changed lines:` block, so the replay needs the run's block. Use the fixture's
+// changed-lines.txt when present; otherwise treat every anchor the fixture cites (Stage-1
+// findings and panelist raises) as changed, so the mockup shows what the run posted.
+const changedFile = path.join(fixtureDir, 'changed-lines.txt')
+let changedLinesBlock
+if (fs.existsSync(changedFile)) {
+    changedLinesBlock = fs.readFileSync(changedFile, 'utf8')
+} else {
+    const anchors = {}
+    const cite = f => {
+        if (!f.file || !(f.line > 0)) return
+        if (!anchors[f.file]) anchors[f.file] = new Set()
+        anchors[f.file].add(f.line)
+    }
+    flat.forEach(cite)
+    panelists.forEach(p => (p?.raised ?? []).forEach(cite))
+    changedLinesBlock = 'Changed lines:\n' + Object.entries(anchors)
+        .map(([file, lines]) => `${file}: ${[...lines].sort((a, b) => a - b).join(', ')}`)
+        .join('\n') + '\n'
+}
+
 const args = JSON.stringify({
     agentPrompt: 'x', flags: {}, route: 'full', selfReReview: false,
     reviewMode: 'pr', base: 'main', headSha: 'a'.repeat(40), emptyTreeMode: false,
     pathScope: '', tempDir: '/tmp/claude-test/x', intentLedger: '',
-    panelSize: panelists.length, panelBrief: 'BRIEF',
+    panelSize: panelists.length, panelBrief: 'BRIEF', changedLinesBlock,
 })
 
 const agent = async (_prompt, opts) => {
     const label = (opts && opts.label) || ''
-    if (label === 'panel-writer') return { bodyText: writerBody }
+    if (label === 'panel-writer') return { assessment: writerBody }
     if (label.startsWith('panel-')) {
         // Labels are `panel-<seatName>` (roster names, else `Seat N`) — map back to index.
         const roster = ['Cronus', 'Rhea', 'Oceanus', 'Hyperion', 'Themis']

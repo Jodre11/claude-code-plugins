@@ -7,15 +7,14 @@ allowed-tools: Workflow(code-review-suite:review-core)
 
 Before analysing, run `git fetch` and check whether the current branch is behind its remote tracking branch. If local is behind remote, warn me and ask whether to proceed — reviewing stale code may be wasted effort.
 
-<!-- DRY violation: intentional. This pipeline content is inlined (not referenced via
-includes/review-pipeline.md) because agents reliably skip file-path references — they
-rationalise that they "know" what the file contains and selectively dispatch only the
-specialists they deem relevant. Inlined content cannot be skipped as it's in context the
-moment the skill is loaded. Canonical source: includes/review-pipeline.md. Edits must be
-propagated to both consumers (skills/review-gh-pr/SKILL.md, commands/pre-review.md). -->
+<!-- Inlined, not referenced: agents reliably skip a file-path reference, rationalising that
+they "know" what the file contains, and then dispatch only the specialists they deem relevant.
+Inlined content is in context the moment the skill loads. The generated region below is
+rendered from includes/review-pipeline.md. -->
 
 ## Review Pipeline
 
+<!-- BEGIN GENERATED from includes/review-pipeline.md: edit that file, then run scripts/render-includes.py -->
 Follow these instructions exactly. Do not skip steps or reorder.
 
 ## Phase -1: Target repository
@@ -121,6 +120,7 @@ otherwise, and continue to Phase 0.
 
 ## Phase 0: Intent Ledger
 
+<!-- BEGIN GENERATED from includes/intent-ledger.md: edit that file, then run scripts/render-includes.py -->
 Run Phase 0 BEFORE Step 1 (Determine base branch). The pipeline must not enter Step 1
 unless Phase 0 succeeds.
 
@@ -316,6 +316,7 @@ source: <in_diff_doc | prompt_block | pr_body | commit_subjects | user_paste>
   `pr_body`, `commit_subjects`, or `user_paste`).
 
 Announce `> Phase 0: ledger built (source: $SOURCE)` and continue to Phase 0.55.
+<!-- END GENERATED from includes/intent-ledger.md -->
 
 ## Phase 0.55: Local branch freshness check
 
@@ -419,6 +420,7 @@ and continue to Phase 0.6.
 
 ## Phase 0.6: CI Status Gate
 
+<!-- BEGIN GENERATED from includes/ci-status-gate.md: edit that file, then run scripts/render-includes.py -->
 ### 0.6.1 Skip in local mode
 
 If `$REVIEW_MODE` is `local`, skip this entire section and continue to Step 1.
@@ -477,6 +479,7 @@ specific check states such as `TIMED_OUT`, or reintroducing a transient-vs-defin
 classification — add a CI rule to `applyRubric` as defence in depth. A single softened
 gate with no rubric-side check would let the panel emit APPROVE on a failing CI state, a
 real correctness regression. -->
+<!-- END GENERATED from includes/ci-status-gate.md -->
 
 
 ### Progress line format
@@ -1081,6 +1084,7 @@ nothing — the worktree is not ours to remove.
 ### Step 4: Present results
 
 Present the review report to the user.
+<!-- END GENERATED from includes/review-pipeline.md -->
 
 **STOP — do not present the report yet. First complete Step 3.6 (Durable full log) below; the "present" instruction above must not execute until Step 3.6 has run (or been skipped because `full_log` is off).**
 

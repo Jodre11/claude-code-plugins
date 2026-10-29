@@ -100,9 +100,7 @@ If no significant deletions or all deletions are clearly safe:
 
 ## Rules
 
-<!-- CHANGED_LINES OUTPUT FILTER — inlined from includes/specialist-context.md (canonical source).
-Edit the include first, then propagate to all listed specialists. -->
-
+<!-- BEGIN GENERATED from includes/specialist-context.md: edit that file, then run scripts/render-includes.py -->
 > **CHANGED_LINES OUTPUT FILTER — MANDATORY**
 >
 > Only report findings on lines listed in `$CHANGED_LINES` for that file
@@ -113,6 +111,7 @@ Edit the include first, then propagate to all listed specialists. -->
 > appears in `$CHANGED_LINES[file]`. Files appearing in the `Changed lines:`
 > block with `(empty — rename only)` accept no findings at all (the rename
 > itself is the only change).
+<!-- END GENERATED from includes/specialist-context.md -->
 
 ---
 

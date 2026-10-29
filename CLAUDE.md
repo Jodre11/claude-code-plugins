@@ -87,12 +87,23 @@ Body content starts here.
 - Update the plugin table in `README.md` when adding a new plugin.
 - Update the prerequisites table in `README.md` if the plugin depends on external tooling.
 
+### Generated regions
+
+Prose that several prompt files must carry inline (agents skip a "follow the instructions in
+<file>" reference) has one source. The source marks the shared text with `BEGIN SOURCE` /
+`END SOURCE` comment lines; each copy sits between `BEGIN GENERATED from <path>` /
+`END GENERATED from <path>` lines, where `<path>` is relative to the plugin root. Edit the
+source, never a copy, then run `scripts/render-includes.py`. A source may contain generated
+regions of its own (`review-pipeline.md` carries Phase 0 and Phase 0.6). To add a copy,
+paste the two marker lines where it belongs and run the script.
+
 ## Testing
 
 Run `tests/run.sh` to validate plugin structure. The test suite checks:
 - Manifest schema (marketplace.json + plugin.json fields, no version field)
 - Conventions (LF line endings, indentation, final newlines, executable bits)
 - Cross-references (include paths resolve, expected directories populated)
+- Generated regions are current (`scripts/render-includes.py --check`) and every expected copy exists
 - Sync-note consistency (validation regexes and base-branch steps match across files)
 
 ## Secret Scanning

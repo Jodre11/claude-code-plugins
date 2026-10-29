@@ -127,61 +127,39 @@ Zero-findings case (after `$CHANGED_LINES` filtering): `## <Tool name> Findings\
 Report ALL findings whose mapped severity is not `omit`. Specialists may add a `Reference:` field
 when the tool emits a stable URL.
 
-## 8. Cross-review opt-out
-
-Static-analysis specialists do NOT participate in cross-review mode. They are never re-invoked
-with `Mode: cross-review`. Their findings ARE shown to the eight cross-reviewers (per Step 5.2
-of the pipeline) — `security-cross-review` etc. may flag a static-analysis finding from another
-angle — but the static-analysis specialist itself sits out the cross-review phase. The exclusion
-generalises the existing jbinspect carve-out to the new specialists.
+## 8. Scope of a static-analysis specialist
 
 Specialists report only their tool's findings. Leave security, style, and correctness judgement
-to peer reviewers — the cross-review machinery in Step 5 of the pipeline already triangulates
-those domains.
+to the LLM specialists and the panel: every static-analysis finding is shown to each panelist
+alongside the other specialists' findings, and a panelist may raise a related issue from another
+angle as its own finding.
 
 ## 9. Cleanup
 
 Remove the tool's intermediate output files from the resolved temp-dir path after parsing. Skip cleanup
 if the run was aborted (PATH miss, temp-dir absent) — there is nothing to clean.
 
-## 10. Severity-locked + capped-confidence policy
+## 10. Severity-locked policy
 
-Findings from static-analysis specialists are tool-derived, deterministic data. The
-synthesiser must not reclassify their severity, must not silently dismiss them, and
-must not adjust their confidence outside a hard envelope. This section codifies that
-contract. The synthesiser cites it from `agents/review-synthesiser.md` under its
-"Severity Reclassification" section.
+Findings from static-analysis specialists are tool-derived data. The panel votes only on
+whether each one is real; it never reclassifies its severity. `review-core.js`
+(`mapSpreadToTierConfidence`) enforces this contract in code.
 
 **Severity is locked.** Each specialist's mapped severity (per its per-tool table —
 ESLint mapping in `agents/eslint-reviewer.md`, Ruff in `agents/ruff-reviewer.md`,
 Trivy in `agents/trivy-reviewer.md`, JetBrains InspectCode in
-`agents/jbinspect-reviewer.md`) is authoritative. The synthesiser's "Severity
-Reclassification" pass skips findings tagged `[eslint]`, `[ruff]`, `[trivy]`,
-`[jbinspect]`, or `[housekeeper]`. There is no LLM override on severity for these findings.
+`agents/jbinspect-reviewer.md`) is authoritative. Panelist severity votes on findings from
+`eslint`, `ruff`, `trivy`, `jbinspect`, or `housekeeper` are ignored. There is no LLM
+override on severity for these findings.
 
-**Confidence starts at 100.** Every static-analysis finding emits the literal
-`Confidence: 100` (per §6). The synthesiser may cap it down within a bounded envelope
-based on cross-reviewer dissent, but cannot raise it above 100.
+**Existence gate.** A static-analysis specialist is an LLM relaying tool output, so it can
+misreport a result. A finding that a panel majority votes not real is dismissed, exactly as
+for an LLM specialist. Static trust governs severity, never whether the issue is real.
 
-**Per-source dissent budget.** The synthesiser examines the qualitative
-`agree/disagree/supplement` text from each of 8 cross-reviewers (`security`,
-`correctness`, `consistency`, `style`, `archaeology`, `reuse`, `efficiency`,
-`alignment`) plus its own independent analysis as a 9th source. For each source it
-decides whether that source dissented and how strongly, allocating
-up to 5 points of confidence drop per source. Silence is not agreement —
-silent sources contribute 0. Agreement also contributes 0; there is no "credit"
-mechanism — confidence cannot exceed 100.
-
-**Floor 50.** The clamp is `Confidence = max(50, 100 - Σ dissent)`. With 9 sources ×
-5 points each, the maximum drop is 45, giving a hard floor of 50. The synthesiser
-must not breach this floor — even if it judges every source maximally dissenting,
-the rendered confidence stays at 50.
-
-**Dismissed tier is forbidden.** Static-analysis findings from `[eslint]`, `[ruff]`,
-`[trivy]`, and `[jbinspect]` only land in Consensus or Contested. A floor-50 finding
-with substantial cross-review pushback lands in Contested with the synthesiser's
-reasoning. Findings cannot be silently suppressed into Dismissed. (`[housekeeper]`
-findings follow a distinct delivery model — see the housekeeper paragraph below.)
+**Confidence reflects panel agreement.** A finding every panelist votes real carries
+confidence `high` and, when its locked severity is Important or Critical, lands in Consensus
+and blocks. A finding only a majority votes real carries confidence `low` and lands in
+Contested, where it never blocks.
 
 **Critical-allow-list mechanism.** Each specialist's per-tool severity mapping caps
 its highest tier at `Important` by default (Trivy `CRITICAL` → Important,
@@ -196,25 +174,13 @@ The `housekeeper` specialist emits a uniform `Suggestion` severity (staleness is
 
 **Housekeeper delivery model (distinct from the other static analysers).** Because
 housekeeper findings routinely target manifest lines outside the diff hunk (it audits
-the whole touched project, not just changed lines), they are NOT delivered through the
-tier mechanism by default. The synthesiser renders all default housekeeper findings into
-a single `## Dependency Freshness` table — informational, never verdict-affecting, never
-producing an inline comment. The one exception is the **escalation break-out**: when the
-synthesiser's analysis or a cross-review escalation establishes a specific upgrade is
-genuinely Important (a known CVE in the current version, a security-critical fix, or an
-upgrade another finding depends on), that single item is promoted into Consensus as an
-Important finding — verdict-eligible and postable — and the locked `Suggestion` severity
-is raised for that item only. This is the sole sanctioned severity raise for housekeeper,
-and it is driven by an established cause, not by reclassification. See the "Housekeeper
-carve-out" section of `agents/review-synthesiser.md`.
-
-**Rendered output.** When the synthesiser adjusts confidence (`C < 100`), render the
-adjusted value with this literal:
-
-```
-- **Confidence:** <C>  *(adjusted from 100 — <D> of 9 sources dissented)*
-```
-
-`C` is the final confidence (50–100); `D` is the number of dissenting sources
-(0–9). When `C == 100` (no adjustment), the parenthetical is omitted entirely. Most
-findings will not be adjusted, so the noise stays low.
+the whole touched project, not just changed lines), they are NOT delivered as comments.
+Every housekeeper finding the panel does not dismiss is rendered by `review-core.js` into a
+single `### Dependency Freshness` table in the review body — informational, never
+verdict-affecting, never producing an inline comment. When the housekeeper ran cleanly and
+nothing survived, the section reads "all current"; when it did not run, the section is
+omitted. The one route to the verdict is the **escalation break-out**: when a panelist
+establishes that a specific upgrade is genuinely Important (a known CVE in the current
+version, a security-critical fix, or an upgrade another finding depends on), it raises that
+upgrade as its own finding, which is tallied, posted and verdict-eligible like any other
+panel-raised finding. The table row stays as well.

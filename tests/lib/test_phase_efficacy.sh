@@ -23,7 +23,7 @@ _pe_build_log_payload() {
 
 test_buildlogpayload_omits_cogs_when_no_phaselog() {
     local env out
-    env='{"verdict":"APPROVE","rubricReason":"clean","tiers":{"consensus":[{"file":"a.cs","line":10,"severity":"Important","confidence":72,"description":"d","suggested_fix":"f"}],"synthesiser":[],"contested":[],"dismissed":[]},"bodyText":"## Synthesiser Assessment\n> x\n"}'
+    env='{"verdict":"APPROVE","rubricReason":"clean","tiers":{"consensus":[{"file":"a.cs","line":10,"severity":"Important","confidence":75,"description":"d","suggested_fix":"f"}],"contested":[],"dismissed":[]},"bodyText":"## Panel Assessment\n> x\n"}'
     out=$(_pe_build_log_payload "$env")
     # Back-compat: no phaseLog → findings present, cogs/meta omitted.
     assert_equals "1" "$(echo "$out" | jq '.findings | length')" "findings still flattened with no phaseLog"
@@ -33,7 +33,7 @@ test_buildlogpayload_omits_cogs_when_no_phaselog() {
 
 test_buildlogpayload_emits_meta_and_cogs() {
     local env pl out
-    env='{"verdict":"APPROVE","rubricReason":"clean","tiers":{"consensus":[],"synthesiser":[],"contested":[],"dismissed":[]},"bodyText":"## Synthesiser Assessment\n> x\n"}'
+    env='{"verdict":"APPROVE","rubricReason":"clean","tiers":{"consensus":[],"contested":[],"dismissed":[]},"bodyText":"## Panel Assessment\n> x\n"}'
     pl='{"meta":{"base":"main","head_sha":"abc123","empty_tree_mode":false,"path_scope":""},"cogs":[{"phase":"round1","domain":"correctness","output":{"findings":[]}}]}'
     out=$(_pe_build_log_payload "$env" "$pl")
     assert_equals "main" "$(echo "$out" | jq -r '.meta.base')" "meta.base passed through"
@@ -42,23 +42,26 @@ test_buildlogpayload_emits_meta_and_cogs() {
     assert_equals "round1" "$(echo "$out" | jq -r '.cogs[0].phase')" "cog phase passed through"
 }
 
-# Runs review-core.js end-to-end. $1 = args json, $2 = synth envelope json,
-# $3 = round-1 specialist findings map (domain -> findings[]), optional.
+# Runs review-core.js end-to-end on the panel path. $1 = args json, $2 = round-1
+# specialist findings map (domain -> findings[]), $3 = panelists json array (one entry per
+# seat; a null entry is a dropped panelist). The panel writer returns minimal prose.
 _pe_run_core() {
-    local wf r1
+    local wf
     wf="$(_pe_cr_dir)/workflows/review-core.js"
-    r1='{}'
-    [ "$#" -ge 3 ] && r1="$3"
-    WF="$wf" PE_ARGS="$1" PE_ENV="$2" PE_R1="$r1" node -e '
+    WF="$wf" PE_ARGS="$1" PE_R1="$2" PE_PANELISTS="$3" node -e '
         const fs = require("fs");
         const src = fs.readFileSync(process.env.WF, "utf8")
             .replace(/^export\s+const\s+meta/m, "const meta");
-        const env = JSON.parse(process.env.PE_ENV);
         const r1 = JSON.parse(process.env.PE_R1);
+        const panelists = JSON.parse(process.env.PE_PANELISTS);
+        const roster = ["Cronus", "Rhea", "Oceanus", "Hyperion", "Themis"];
         const agent = async (prompt, opts) => {
             const label = (opts && opts.label) || "";
-            if (label === "review-synthesiser") return env;
-            if (label.startsWith("cross-")) return { status: "ok", opinionsMarkdown: "op-" + label, escalations: [] };
+            if (label === "panel-writer") return { bodyText: "## Panel Assessment\n> ok\n" };
+            if (label.startsWith("panel-")) {
+                const p = panelists[roster.indexOf(label.slice("panel-".length))];
+                return p === undefined ? null : p;
+            }
             return { status: "ok", findings: r1[label] || [] };  // specialists
         };
         const parallel = (thunks) => Promise.all(thunks.map(t => t()));
@@ -78,16 +81,20 @@ _pe_run_core() {
     ' 2>&1
 }
 
+# $1 = panel size (default 3).
 _pe_args() {
+    local n="${1:-3}"
     local sha40="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-    echo "{\"agentPrompt\":\"x\",\"flags\":{},\"route\":\"full\",\"selfReReview\":false,\"reviewMode\":\"pr\",\"base\":\"main\",\"headSha\":\"${sha40}\",\"emptyTreeMode\":false,\"pathScope\":\"\",\"tempDir\":\"/tmp/claude-test/x\",\"orchestrationMode\":\"classic\"}"
+    echo "{\"agentPrompt\":\"x\",\"flags\":{},\"route\":\"full\",\"selfReReview\":false,\"reviewMode\":\"pr\",\"base\":\"main\",\"headSha\":\"${sha40}\",\"emptyTreeMode\":false,\"pathScope\":\"\",\"tempDir\":\"/tmp/claude-test/x\",\"intentLedger\":\"\",\"panelSize\":${n},\"panelBrief\":\"BRIEF\",\"changedLinesBlock\":\"Changed lines:\\na.cs: 1-40\\n\"}"
 }
 
+# One correctness finding, and the panelist ballot that votes it real.
+_PE_R1='{"correctness":[{"file":"a.cs","line":10,"severity":"Important","confidence":90,"description":"d","suggested_fix":"f"}]}'
+_PE_BALLOT='{"votes":[{"finding_id":0,"is_real":true,"severity":"Important","tractability":"Bounded","blocks_goal":false,"rationale":"r"}],"raised":[]}'
+
 test_phaselog_captures_round1_and_meta() {
-    local args env out
-    args=$(_pe_args)
-    env='{"verdict":"APPROVE","rubricRowApplied":4,"rubricReason":"clean","tiers":{"consensus":[],"synthesiser":[],"contested":[],"dismissed":[]},"bodyText":"## Synthesiser Assessment\n> ok\n"}'
-    out=$(_pe_run_core "$args" "$env")
+    local out
+    out=$(_pe_run_core "$(_pe_args)" '{}' "[${_PE_BALLOT},${_PE_BALLOT},${_PE_BALLOT}]")
     # meta carries the four reconstruction keys.
     assert_equals "main" "$(echo "$out" | jq -r '.log.meta.base')" "log.meta.base captured"
     assert_equals "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" "$(echo "$out" | jq -r '.log.meta.head_sha')" "log.meta.head_sha captured"
@@ -98,51 +105,26 @@ test_phaselog_captures_round1_and_meta() {
     assert_equals "null" "$(echo "$out" | jq -r '[.log.cogs[] | select(.phase=="round1")][0].input // "null"')" "round-1 cog omits input"
 }
 
-test_phaselog_captures_cross_io() {
-    local args env out
-    args=$(_pe_args)
-    env='{"verdict":"APPROVE","rubricRowApplied":4,"rubricReason":"clean","tiers":{"consensus":[],"synthesiser":[],"contested":[],"dismissed":[]},"bodyText":"## Synthesiser Assessment\n> ok\n"}'
-    out=$(_pe_run_core "$args" "$env")
-    # Cross cogs: one per cross-eligible domain (9 core minus api-contract in NON_CROSS = 8; none static here).
-    assert_equals "8" "$(echo "$out" | jq '[.log.cogs[] | select(.phase=="cross")] | length')" "8 cross cogs"
-    # Each cross cog carries its peer-set input and opinions output.
-    local first
-    first=$(echo "$out" | jq -c '[.log.cogs[] | select(.phase=="cross")][0]')
-    assert_equals "false" "$(echo "$first" | jq -r '(.input.peer == null)')" "cross cog carries peer input"
-    assert_equals "false" "$(echo "$first" | jq -r '(.output.opinionsMarkdown == null)')" "cross cog carries opinions output"
-    # Peer set excludes the reviewer's own domain.
-    local dom hasself
-    dom=$(echo "$first" | jq -r '.domain')
-    hasself=$(echo "$first" | jq -r --arg d "$dom" '.input.peer | has($d)')
-    assert_equals "false" "$hasself" "cross cog peer set excludes own domain"
+test_phaselog_captures_one_panel_cog_per_surviving_panelist() {
+    local out
+    # Panel of 5 with seat 2 dropped (null): 4 panel cogs, each carrying that seat's ballot.
+    out=$(_pe_run_core "$(_pe_args 5)" "$_PE_R1" "[${_PE_BALLOT},${_PE_BALLOT},null,${_PE_BALLOT},${_PE_BALLOT}]")
+    assert_equals "4" "$(echo "$out" | jq '[.log.cogs[] | select(.phase=="panel")] | length')" "dropped panelist leaves no panel cog (4 of 5)"
+    assert_equals "true" "$(echo "$out" | jq -r '[.log.cogs[] | select(.phase=="panel")][0].output.votes[0].is_real')" "panel cog carries the panelist's votes"
+    assert_equals "[]" "$(echo "$out" | jq -c '[.log.cogs[] | select(.phase=="panel")][0].output.raised')" "panel cog carries the panelist's raised list"
+    assert_equals "null" "$(echo "$out" | jq -r '[.log.cogs[] | select(.phase=="panel")][0].input // "null"')" "panel cog omits input (prompt reconstructable from meta)"
 }
 
-test_phaselog_captures_synth_cog() {
-    local args env out
-    args=$(_pe_args)
-    env='{"verdict":"APPROVE","rubricRowApplied":4,"rubricReason":"clean","tiers":{"consensus":[],"synthesiser":[],"contested":[],"dismissed":[]},"bodyText":"## Synthesiser Assessment\n> ok\n"}'
-    out=$(_pe_run_core "$args" "$env")
-    assert_equals "1" "$(echo "$out" | jq '[.log.cogs[] | select(.phase=="synth")] | length')" "one synth cog (no gate fire)"
-    # Synth cog input carries the findingsByDomain it synthesised from.
-    assert_equals "false" "$(echo "$out" | jq -r '[.log.cogs[] | select(.phase=="synth")][0].input.findingsByDomain == null')" "synth cog carries findingsByDomain input"
-    # No round-2 / union records when the gate did not fire.
-    assert_equals "0" "$(echo "$out" | jq '[.log.cogs[] | select(.phase=="round2" or .phase=="union")] | length')" "no round2/union records when gate quiet"
-}
-
-test_phaselog_captures_round2_union_when_gate_fires() {
-    local args env out
-    args=$(_pe_args)
-    # B1: APPROVE with a consensus Important in [60,80) → gate fires, round 2 runs.
-    env='{"verdict":"APPROVE","rubricRowApplied":4,"rubricReason":"clean","tiers":{"consensus":[{"file":"a.cs","line":10,"severity":"Important","confidence":72,"description":"d","suggested_fix":"f"}],"synthesiser":[],"contested":[],"dismissed":[]},"bodyText":"## Synthesiser Assessment\n> r1\n"}'
-    out=$(_pe_run_core "$args" "$env")
-    # Round-2 cogs present (one per stochastic domain).
-    assert_equals "8" "$(echo "$out" | jq '[.log.cogs[] | select(.phase=="round2")] | length')" "8 round-2 cogs when gate fires"
-    # Exactly one union record.
-    assert_equals "1" "$(echo "$out" | jq '[.log.cogs[] | select(.phase=="union")] | length')" "one union record when gate fires"
-    # Two synth cogs (round 1 + round 2) — both draws captured.
-    assert_equals "2" "$(echo "$out" | jq '[.log.cogs[] | select(.phase=="synth")] | length')" "two synth cogs when gate fires"
-    # cross2 namespace populated and distinct from cross.
-    assert_equals "8" "$(echo "$out" | jq '[.log.cogs[] | select(.phase=="cross2")] | length')" "8 cross2 cogs (round-2 cross-review)"
+test_phaselog_phases_match_schema_enum() {
+    local out schema emitted
+    schema="$(_pe_cr_dir)/includes/finding-schema.json"
+    out=$(_pe_run_core "$(_pe_args)" "$_PE_R1" "[${_PE_BALLOT},${_PE_BALLOT},${_PE_BALLOT}]")
+    emitted=$(echo "$out" | jq -c '[.log.cogs[].phase] | unique')
+    # Only the specialist and panelist phases are recorded.
+    assert_equals '["panel","round1"]' "$emitted" "cogs record only round1 and panel phases"
+    assert_equals '["panel","round1"]' \
+        "$(jq -c '.["$defs"].sealedBundle.properties.log.properties.cogs.items.properties.phase.enum | sort' "$schema")" \
+        "schema cog phase enum is exactly round1 + panel"
 }
 
 # ---------------------------------------------------------------------------

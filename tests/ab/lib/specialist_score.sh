@@ -3,8 +3,8 @@ set -euo pipefail
 # tests/ab/lib/specialist_score.sh — severity scorer for a single specialist's
 # `## <Domain> Review Findings` block. Specialist output is flat: `### Finding`
 # blocks, each carrying `- **File:** path:line` (or a separate `- **Line:**`
-# bullet) and `- **Severity:** <tier>`. No tier sub-headings (unlike the
-# synthesiser). Emits the severity of the finding that cites the planted
+# bullet) and `- **Severity:** <tier>`. No tier sub-headings. Emits the
+# severity of the finding that cites the planted
 # file:line, or ABSENT when none does.
 
 # specialist_score_severity <report.md> <file> <line>

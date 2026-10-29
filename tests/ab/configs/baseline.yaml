@@ -1,6 +1,0 @@
-name: baseline
-description: Production defaults — no mutations applied. Used as the control arm.
-session:
-  model: opus
-  effort: max
-agents: {}

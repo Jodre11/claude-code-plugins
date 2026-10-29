@@ -50,7 +50,7 @@ const args = JSON.stringify({
     agentPrompt: 'x', flags: {}, route: 'full', selfReReview: false,
     reviewMode: 'pr', base: 'main', headSha: 'a'.repeat(40), emptyTreeMode: false,
     pathScope: '', tempDir: '/tmp/claude-test/x', intentLedger: '',
-    orchestrationMode: 'panel', panelSize: panelists.length, panelBrief: 'BRIEF',
+    panelSize: panelists.length, panelBrief: 'BRIEF',
 })
 
 const agent = async (_prompt, opts) => {
@@ -63,8 +63,6 @@ const agent = async (_prompt, opts) => {
         const i = roster.indexOf(seat) !== -1 ? roster.indexOf(seat) : parseInt(seat.replace(/^Seat /, ''), 10)
         return panelists[i] === undefined ? null : panelists[i]
     }
-    if (label.startsWith('cross-')) return { status: 'ok', opinionsMarkdown: '', escalations: [] }
-    if (label === 'review-synthesiser') return null
     return { status: 'ok', findings: byDomain[label] || [] }  // specialist dispatch
 }
 const parallel = (thunks) => Promise.all(thunks.map(t => t()))

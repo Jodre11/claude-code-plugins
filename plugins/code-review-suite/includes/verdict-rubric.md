@@ -1,96 +1,71 @@
 ## Verdict Rubric
 
-<!-- CANONICAL SOURCE — do not delete.
-This file is the single source of truth for the PR review verdict rubric, the
-orchestrator's posting policy, and the body construction rules. Its content is
-inlined verbatim into both consumer files:
-  - agents/review-synthesiser.md
-  - skills/review-gh-pr/SKILL.md (Stage 6)
+<!-- REFERENCE — describes behaviour implemented in code. The verdict rubric, the
+tier mapping and the posting routes are computed by `workflows/review-core.js`
+(`mapSpreadToTierConfidence`, `routeFinding`, `applyRubric`, `finalizeBundle`). No
+agent reads this file at runtime; keep it in step with the code when either changes. -->
 
-WHY INLINED: same rationale as review-pipeline.md and ci-status-gate.md — agents
-skip file-path references and must see the rule in context. The synthesiser
-applies the rubric to compute the verdict; Stage 6 of SKILL.md (the orchestrator)
-applies the posting policy and body construction transforms.
+### Tiers (panel tally, per finding)
 
-MAINTENANCE: Edit this file first, then propagate to both consumers. The test
-suite verifies the inlined copies match this canonical source. Heading levels
-are relative — H2 here renders as H2 in consumers; do not change without
-auditing both. -->
+Each Stage-1 specialist finding is voted on by every panelist (`is_real`, `severity`,
+`tractability`, `blocks_goal`). Net-new findings a panelist raises are clustered across
+panelists by file and a three-line window.
+
+| Finding | Tier |
+|---|---|
+| A panel majority votes it not real (any domain, static included) | Dismissed |
+| Static analyser (eslint, ruff, trivy, jbinspect), unanimous real, locked severity ≥ Important | Consensus |
+| Static analyser, otherwise | Contested |
+| Housekeeper, not dismissed | Contested, rendered in the Dependency Freshness table |
+| LLM specialist, severity majority Critical or Important | Consensus |
+| LLM specialist, severity majority Suggestion | Contested |
+| LLM specialist, no severity majority | Contested, marked as a judgement call |
+| Panel-raised cluster corroborated by at least ⌈2s/3⌉ raises (s = surviving panelists) | Consensus |
+| Panel-raised cluster, otherwise | Contested |
+
+Confidence is the discrete agreement flag (`high`, `medium` or `low`), never a number.
 
 ### Verdict rubric (PR mode only, first match wins)
 
 | # | Condition | Verdict |
 |---|---|---|
-| 1 | Intent-ledger states a `goal` AND any consensus finding indicates the goal is not achieved | `REQUEST_CHANGES` |
-| 2 | Any consensus **Critical** finding (at any confidence) | `REQUEST_CHANGES` |
-| 3 | Any consensus **Important** finding with confidence ≥ 70 | `REQUEST_CHANGES` |
+| 1 | The intent ledger states a `goal` AND a panel majority says a consensus or contested finding shows the goal is not achieved (`blocks_goal`) | `REQUEST_CHANGES` |
+| 2 | Any consensus **Critical** finding | `REQUEST_CHANGES` |
+| 3 | Any consensus **Important** finding (a severity majority — there is no confidence gate) | `REQUEST_CHANGES` |
 | 4 | Otherwise | `APPROVE` |
 
-The synthesiser produces only `APPROVE` or `REQUEST_CHANGES`. `COMMENT` is
-never a synthesiser output, and the orchestrator never auto-downgrades a synth
-verdict to `COMMENT`. The only route to a `COMMENT` verdict is an explicit user
+The rubric produces only `APPROVE` or `REQUEST_CHANGES`. The orchestrator never
+auto-downgrades a verdict to `COMMENT`; the only route to `COMMENT` is an explicit user
 override at the Class A confirmation prompt.
 
-By construction under `APPROVE`:
-- Either no `goal` was stated in the intent ledger, or no consensus finding
-  indicates the goal is not achieved (row 1 did not fire).
-- No Critical findings exist (row 2 caught them).
-- Important findings only exist below confidence 70 (row 3 caught the rest).
-- Suggestions exist at any confidence.
+In `local` (pre-review) mode the rubric does not apply: pre-review produces no verdict —
+the human reader decides what (if anything) to act on.
 
-In `local` (pre-review) mode the rubric does not apply: pre-review produces no
-verdict — the human reader decides what (if anything) to act on. The synthesiser
-emits no `Verdict:` line in local mode.
+### Posting routes
 
-### Posting policy (orchestrator, mechanical)
+Every finding carries an explicit `posting` route, so which findings post is decided in
+code, not by the orchestrator.
 
-The orchestrator filters which consensus findings get posted to GitHub based on
-the synthesiser's verdict. The filter is deterministic — same input, same
-output, no model judgement. It does not constitute "altering findings" because
-the synthesiser's sealed report (severity, confidence, body, fix text) is
-unchanged; only which subset gets posted is decided.
-
-| Verdict path | Filter |
+| Finding | Route |
 |---|---|
-| `REQUEST_CHANGES` | Post **every** consensus finding. No filter. The implementer needs the full picture; an under-powered orchestrator must not dilute what a max-effort synthesiser produced. Verbose by design. |
-| `APPROVE` | Post consensus findings with **confidence ≥ 75**. Sub-threshold findings remain visible in the synthesiser's stdout report but are not posted to GitHub. |
+| Consensus Critical or Important (blocking) | Inline comment, "fix in this PR". An Open-ended remedy also carries a do-not-dispatch-a-fix-agent note. |
+| Suggestion (any tier), Mechanical | Inline comment, "fix in this PR" |
+| Suggestion (any tier), Bounded | Review body, "raise as a follow-up" |
+| Suggestion (any tier), Open-ended | Dropped (Dismissed tier) |
+| Judgement call | Review body |
+| Contested Critical or Important (not blocking) | Review body |
+| Housekeeper | Dependency Freshness table in the review body |
 
-The 75 threshold is intentionally above the rubric's 70 cutoff for Important
-findings. Below 70: don't block. Above 75: surface under APPROVE. The 70-75
-band is judged not-confident-enough to distract an author who is already
-getting an APPROVE.
+Under `APPROVE`, when open-ended Suggestions were dropped, the posted body carries a single
+disclosure line — `N finding(s) pruned (open-ended suggestions not surfaced).` — so an
+APPROVE never looks cleaner than the run actually was.
 
-Under `APPROVE`, when one or more consensus or synthesiser findings are suppressed by
-the confidence filter, the Workflow path's posted body carries a single disclosure line
-— `N finding(s) below the posting threshold — see synthesiser report.` — so an APPROVE
-never looks cleaner than the run actually was. This is disclosure only: the sub-threshold
-findings are still NOT posted as inline comments (the 75-bar's noise suppression is
-preserved).
+A finding anchored to a file outside the diff moves to the review body; one anchored to a
+line the diff did not touch becomes a file-level comment.
 
-### Body construction (orchestrator)
+### Body construction
 
-The body is built by `review-core.js` `buildBody` from parts — headline +
-promoted Synthesiser Assessment + compact finding index + reformatted Dependency
-Freshness.
-
-### Synthesiser contract
-
-For the orchestrator's filtering to be mechanical, the synthesiser MUST produce
-a body where every consensus finding is tagged with a stable `[#N]` token in
-its section header, and EVERY reference to that finding elsewhere in the body
-(Synthesiser Assessment, Summary, cross-references) carries the same `[#N]`
-token. The orchestrator filters by stripping paragraphs and bullets that
-contain a filtered-out finding's `[#N]` token via deterministic string
-operations — no prose parsing.
-
-<!-- TEST SYNC ANCHOR: the literal "operations — no prose parsing." (start of the
-final line of the Synthesiser contract section above) is used as a `sed` end-anchor
-in `tests/lib/test_sync_notes.sh::test_sync_verdict_rubric_inline_matches_canonical`
-to extract the inlined block from consumer files. Do NOT rephrase the final sentence
-without updating the test's sed pattern in lockstep — a partial-phrase rephrase
-would silently truncate the extracted body, and the diff-based comparison would
-either pass vacuously or fail with an obscure "extracted body was empty" error.
-
-This comment is intentionally placed AFTER the end-anchor line so it sits outside
-the extraction window — adding it inside would invalidate the sync test. -->
-
+The body is built by `review-core.js` `buildBody` from parts: the verdict headline with the
+rubric reason, the promoted Panel Assessment written by the panel writer, a compact finding
+index, body notes for findings with no file, the pruned-findings disclosure, and the
+Dependency Freshness table.

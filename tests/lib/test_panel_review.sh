@@ -2,9 +2,9 @@
 # Panel-review path tests. Drives review-core.js end-to-end with mock globals:
 # specialist dispatch returns PAN_SPECIALISTS[label]; each `panel-<i>` agent returns
 # PAN_PANELISTS[i] (null when absent → a dropped panelist); the `panel-writer` agent
-# returns {bodyText}. The pure helpers are exercised through the returned bundle,
-# mirroring test_variance_resampling.sh (review-core.js cannot export them — the
-# sandbox evals the stripped source, so an `export function` would break it).
+# returns {bodyText}. The pure helpers are exercised through the returned bundle
+# (review-core.js cannot export them — the sandbox evals the stripped source, so an
+# `export function` would break it).
 
 _pan_cr_dir() {
     echo "$REPO_ROOT/plugins/code-review-suite"
@@ -12,23 +12,18 @@ _pan_cr_dir() {
 
 # $1 args json, $2 specialists-map json (domain→findings), $3 panelists json (array),
 # $4 writer bodyText string (optional, defaults to a minimal valid body).
-# $5 synth envelope json (optional, defaults to null → classic path hits Category-C).
 _pan_run_core() {
-    local wf writerBody synthEnvJson
+    local wf writerBody
     wf="$(_pan_cr_dir)/workflows/review-core.js"
-    writerBody="## Synthesiser Assessment\n> panel prose\n"
-    synthEnvJson=""
+    writerBody=$'## Panel Assessment\n> panel prose\n'
     [ "$#" -ge 4 ] && writerBody="$4"
-    [ "$#" -ge 5 ] && synthEnvJson="$5"
-    WF="$wf" PAN_ARGS="$1" PAN_SPECIALISTS="$2" PAN_PANELISTS="$3" PAN_WRITER="$writerBody" PAN_SYNTH_ENV="$synthEnvJson" node -e '
+    WF="$wf" PAN_ARGS="$1" PAN_SPECIALISTS="$2" PAN_PANELISTS="$3" PAN_WRITER="$writerBody" node -e '
         const fs = require("fs");
         const src = fs.readFileSync(process.env.WF, "utf8")
             .replace(/^export\s+const\s+meta/m, "const meta");
         const specialists = JSON.parse(process.env.PAN_SPECIALISTS);
         const panelists = JSON.parse(process.env.PAN_PANELISTS);
         const writerBody = process.env.PAN_WRITER;
-        const synthEnvRaw = process.env.PAN_SYNTH_ENV;
-        const synthEnv = synthEnvRaw ? JSON.parse(synthEnvRaw) : null;
         const agent = async (prompt, opts) => {
             const label = (opts && opts.label) || "";
             if (label === "panel-writer") return { bodyText: writerBody };
@@ -38,8 +33,6 @@ _pan_run_core() {
                 const i = roster.indexOf(seat) !== -1 ? roster.indexOf(seat) : parseInt(seat.replace(/^Seat /, ""), 10);
                 return panelists[i] === undefined ? null : panelists[i];
             }
-            if (label.startsWith("cross-")) return { status: "ok", opinionsMarkdown: "", escalations: [] };
-            if (label === "review-synthesiser") return synthEnv;
             return { status: "ok", findings: specialists[label] || [] };  // specialist dispatch
         };
         const parallel = (thunks) => Promise.all(thunks.map(t => t()));
@@ -81,8 +74,6 @@ _pan_capture_writer_prompt() {
                 const i = roster.indexOf(seat) !== -1 ? roster.indexOf(seat) : parseInt(seat.replace(/^Seat /, ""), 10);
                 return panelists[i] === undefined ? null : panelists[i];
             }
-            if (label.startsWith("cross-")) return { status: "ok", opinionsMarkdown: "", escalations: [] };
-            if (label === "review-synthesiser") return null;
             return { status: "ok", findings: specialists[label] || [] };
         };
         const parallel = (thunks) => Promise.all(thunks.map(t => t()));
@@ -111,21 +102,21 @@ _PAN_CHANGED_BLOCK='Changed lines:\na.cs: 1-40\nb.cs: 1-40\na.js: 1-40\napi.cs: 
 _pan_args() {
     local n="${1:-3}"
     local sha40="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-    echo "{\"agentPrompt\":\"x\",\"flags\":{},\"route\":\"full\",\"selfReReview\":false,\"reviewMode\":\"pr\",\"base\":\"main\",\"headSha\":\"${sha40}\",\"emptyTreeMode\":false,\"pathScope\":\"\",\"tempDir\":\"/tmp/claude-test/x\",\"intentLedger\":\"\",\"orchestrationMode\":\"panel\",\"panelSize\":${n},\"panelBrief\":\"BRIEF\",\"changedLinesBlock\":\"${_PAN_CHANGED_BLOCK}\"}"
+    echo "{\"agentPrompt\":\"x\",\"flags\":{},\"route\":\"full\",\"selfReReview\":false,\"reviewMode\":\"pr\",\"base\":\"main\",\"headSha\":\"${sha40}\",\"emptyTreeMode\":false,\"pathScope\":\"\",\"tempDir\":\"/tmp/claude-test/x\",\"intentLedger\":\"\",\"panelSize\":${n},\"panelBrief\":\"BRIEF\",\"changedLinesBlock\":\"${_PAN_CHANGED_BLOCK}\"}"
 }
 
 # args with flags.js=true — enables the eslint specialist (Track B test E).
 _pan_args_js() {
     local n="${1:-3}"
     local sha40="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-    echo "{\"agentPrompt\":\"x\",\"flags\":{\"js\":true},\"route\":\"full\",\"selfReReview\":false,\"reviewMode\":\"pr\",\"base\":\"main\",\"headSha\":\"${sha40}\",\"emptyTreeMode\":false,\"pathScope\":\"\",\"tempDir\":\"/tmp/claude-test/x\",\"intentLedger\":\"\",\"orchestrationMode\":\"panel\",\"panelSize\":${n},\"panelBrief\":\"BRIEF\",\"changedLinesBlock\":\"${_PAN_CHANGED_BLOCK}\"}"
+    echo "{\"agentPrompt\":\"x\",\"flags\":{\"js\":true},\"route\":\"full\",\"selfReReview\":false,\"reviewMode\":\"pr\",\"base\":\"main\",\"headSha\":\"${sha40}\",\"emptyTreeMode\":false,\"pathScope\":\"\",\"tempDir\":\"/tmp/claude-test/x\",\"intentLedger\":\"\",\"panelSize\":${n},\"panelBrief\":\"BRIEF\",\"changedLinesBlock\":\"${_PAN_CHANGED_BLOCK}\"}"
 }
 
 # args with flags.iac=true — enables the trivy specialist (Track B test F).
 _pan_args_iac() {
     local n="${1:-3}"
     local sha40="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-    echo "{\"agentPrompt\":\"x\",\"flags\":{\"iac\":true},\"route\":\"full\",\"selfReReview\":false,\"reviewMode\":\"pr\",\"base\":\"main\",\"headSha\":\"${sha40}\",\"emptyTreeMode\":false,\"pathScope\":\"\",\"tempDir\":\"/tmp/claude-test/x\",\"intentLedger\":\"\",\"orchestrationMode\":\"panel\",\"panelSize\":${n},\"panelBrief\":\"BRIEF\",\"changedLinesBlock\":\"${_PAN_CHANGED_BLOCK}\"}"
+    echo "{\"agentPrompt\":\"x\",\"flags\":{\"iac\":true},\"route\":\"full\",\"selfReReview\":false,\"reviewMode\":\"pr\",\"base\":\"main\",\"headSha\":\"${sha40}\",\"emptyTreeMode\":false,\"pathScope\":\"\",\"tempDir\":\"/tmp/claude-test/x\",\"intentLedger\":\"\",\"panelSize\":${n},\"panelBrief\":\"BRIEF\",\"changedLinesBlock\":\"${_PAN_CHANGED_BLOCK}\"}"
 }
 
 # args with a goal-bearing intent ledger (matches the /(^|\n)\s*goal:\s*\S/ detector).
@@ -133,7 +124,7 @@ _pan_args_goal() {
     local n="${1:-3}"
     local sha40="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
     local ledger="Intent ledger:\ngoal: ship the widget end to end.\nnon_goals: none\nsource: pr_body\n"
-    echo "{\"agentPrompt\":\"x\",\"flags\":{},\"route\":\"full\",\"selfReReview\":false,\"reviewMode\":\"pr\",\"base\":\"main\",\"headSha\":\"${sha40}\",\"emptyTreeMode\":false,\"pathScope\":\"\",\"tempDir\":\"/tmp/claude-test/x\",\"intentLedger\":\"${ledger}\",\"orchestrationMode\":\"panel\",\"panelSize\":${n},\"panelBrief\":\"BRIEF\",\"changedLinesBlock\":\"${_PAN_CHANGED_BLOCK}\"}"
+    echo "{\"agentPrompt\":\"x\",\"flags\":{},\"route\":\"full\",\"selfReReview\":false,\"reviewMode\":\"pr\",\"base\":\"main\",\"headSha\":\"${sha40}\",\"emptyTreeMode\":false,\"pathScope\":\"\",\"tempDir\":\"/tmp/claude-test/x\",\"intentLedger\":\"${ledger}\",\"panelSize\":${n},\"panelBrief\":\"BRIEF\",\"changedLinesBlock\":\"${_PAN_CHANGED_BLOCK}\"}"
 }
 
 # One Important consensus finding, unanimously voted real by 3 panelists → RC via rubric row 3.
@@ -552,32 +543,30 @@ test_panel_log_carries_cogs_and_meta() {
     assert_equals "3" "$(echo "$out" | jq -r '.log.meta.panel_size')" "log meta records panel_size=3"
 }
 
-# orchestrationMode absent → panel path (panel is the built-in default). With neither
-# orchestrationMode nor panelSize set, the engine normalises mode→panel and panel_size→3.
-# Proves default-panel routing distinctly from a classic run (which sets
-# orchestration_mode="classic", panel_size=null).
-test_absent_mode_takes_panel_path() {
+# panelSize absent → panel_size defaults to 3 (orchestration_mode is always the constant
+# "panel"; it is kept only so logs stay comparable with pre-retirement ones).
+test_absent_panel_size_defaults_to_3() {
     local args specs pans out
     local sha40="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-    # Note: no orchestrationMode key and no panelSize key at all.
+    # Note: no panelSize key at all.
     args="{\"agentPrompt\":\"x\",\"flags\":{},\"route\":\"full\",\"selfReReview\":false,\"reviewMode\":\"pr\",\"base\":\"main\",\"headSha\":\"${sha40}\",\"emptyTreeMode\":false,\"pathScope\":\"\",\"tempDir\":\"/tmp/claude-test/x\",\"intentLedger\":\"\"}"
     specs='{"correctness":[{"file":"a.cs","line":10,"severity":"Important","confidence":50,"description":"b","suggested_fix":"f"}]}'
     pans='[{"votes":[{"finding_id":0,"is_real":true,"severity":"Important","tractability":"Bounded","blocks_goal":false,"rationale":"r"}],"raised":[]},{"votes":[{"finding_id":0,"is_real":true,"severity":"Important","tractability":"Bounded","blocks_goal":false,"rationale":"r"}],"raised":[]},{"votes":[{"finding_id":0,"is_real":true,"severity":"Important","tractability":"Bounded","blocks_goal":false,"rationale":"r"}],"raised":[]}]'
     out=$(_pan_run_core "$args" "$specs" "$pans")
-    assert_equals "panel" "$(echo "$out" | jq -r '.log.meta.orchestration_mode')" "absent mode → panel path (meta proves it)"
-    assert_equals "3" "$(echo "$out" | jq -r '.log.meta.panel_size')" "absent mode → panel_size defaults to 3"
+    assert_equals "3" "$(echo "$out" | jq '[.log.cogs[] | select(.phase=="panel")] | length')" "absent panelSize → 3 panelists dispatched"
+    assert_equals "3" "$(echo "$out" | jq -r '.log.meta.panel_size')" "absent panelSize → panel_size defaults to 3"
 }
 
-# route lightweight ignores orchestrationMode=panel (panel only replaces the full middle).
-test_panel_mode_ignored_on_lightweight_route() {
+# route lightweight runs a single code-analysis pass; the panel runs only on the full route.
+test_panel_skipped_on_lightweight_route() {
     local args out
     local sha40="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-    args="{\"agentPrompt\":\"x\",\"flags\":{},\"route\":\"lightweight\",\"selfReReview\":false,\"reviewMode\":\"pr\",\"base\":\"main\",\"headSha\":\"${sha40}\",\"emptyTreeMode\":false,\"pathScope\":\"\",\"tempDir\":\"/tmp/claude-test/x\",\"intentLedger\":\"\",\"orchestrationMode\":\"panel\",\"panelSize\":3,\"panelBrief\":\"BRIEF\"}"
+    args="{\"agentPrompt\":\"x\",\"flags\":{},\"route\":\"lightweight\",\"selfReReview\":false,\"reviewMode\":\"pr\",\"base\":\"main\",\"headSha\":\"${sha40}\",\"emptyTreeMode\":false,\"pathScope\":\"\",\"tempDir\":\"/tmp/claude-test/x\",\"intentLedger\":\"\",\"panelSize\":3,\"panelBrief\":\"BRIEF\"}"
     # The lightweight mock: the code-analysis agent (label 'code-analysis') returns findings.
-    # _pan_run_core's mock returns specialists[label] for non-panel/cross labels, so
+    # _pan_run_core's mock returns specialists[label] for non-panel labels, so
     # 'code-analysis' → specialists["code-analysis"].
     out=$(_pan_run_core "$args" '{"code-analysis":[{"file":"a.cs","line":1,"severity":"Suggestion","confidence":90,"description":"lw","suggested_fix":"f"}]}' "[]")
-    assert_equals "NONE" "$(echo "$out" | jq -r '.verdict')" "lightweight route → verdict NONE regardless of panel mode"
+    assert_equals "NONE" "$(echo "$out" | jq -r '.verdict')" "lightweight route → verdict NONE (no panel)"
     assert_equals "1" "$(echo "$out" | jq '.comments | length')" "lightweight route still posts its code-analysis finding"
 }
 
@@ -827,25 +816,22 @@ test_panel_dropped_openended_approve_discloses_prune() {
     assert_matches "pruned" "$(echo "$out" | jq -r '.bodyText')" "APPROVE with dropped finding discloses prune count in bodyText"
 }
 
-# Finding #2 regression: classic path must keep the >=70 gate on consensus Important for
-# verdict_relevant. A sub-70 consensus Important alongside a Critical (which drives RC via
-# row 2) must NOT be flagged verdict_relevant on the classic path.
-test_classic_sub70_important_not_verdict_relevant() {
-    local args specs synth_env out
-    local sha40="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-    # Classic path: explicit orchestrationMode=classic (panel is the built-in default now).
-    args="{\"agentPrompt\":\"x\",\"flags\":{},\"route\":\"full\",\"selfReReview\":false,\"reviewMode\":\"pr\",\"base\":\"main\",\"headSha\":\"${sha40}\",\"emptyTreeMode\":false,\"pathScope\":\"\",\"tempDir\":\"/tmp/claude-test/x\",\"intentLedger\":\"\",\"orchestrationMode\":\"classic\"}"
-    specs='{"correctness":[]}'
-    # Synth envelope: consensus Critical (drives RC row 2) + consensus Important confidence 50
-    # (sub-70, does not independently drive row 3). No confidence_flag on classic findings.
-    synth_env='{"verdict":"REQUEST_CHANGES","rubricRowApplied":2,"rubricReason":"Critical finding present","tiers":{"consensus":[{"file":"a.cs","line":1,"severity":"Critical","confidence":90,"description":"critical bug","suggested_fix":"fix it"},{"file":"b.cs","line":5,"severity":"Important","confidence":50,"description":"marginal issue","suggested_fix":"maybe fix"}],"synthesiser":[],"contested":[],"dismissed":[]},"bodyText":"## Synthesiser Assessment\n> critical issue\n"}'
-    out=$(_pan_run_core "$args" "$specs" "[]" "" "$synth_env")
+# verdict_relevant on the panel path has no confidence gate: a consensus Important blocks
+# (rubric row 3) whatever its agreement flag, so it is verdict-relevant even at low
+# confidence; a contested Suggestion alongside it is not.
+test_panel_consensus_important_verdict_relevant_without_confidence_gate() {
+    local specs pans out
+    # Finding 0: 2 of 3 vote Important (majority) → consensus Important, below-unanimous
+    # agreement. Finding 1: unanimous Suggestion, Mechanical → contested inline Suggestion.
+    specs='{"correctness":[{"file":"a.cs","line":5,"severity":"Important","confidence":50,"description":"marginal issue","suggested_fix":"fix"},{"file":"b.cs","line":7,"severity":"Suggestion","confidence":80,"description":"nit","suggested_fix":"tidy"}]}'
+    pans='[{"votes":[{"finding_id":0,"is_real":true,"severity":"Important","tractability":"Bounded","blocks_goal":false,"rationale":"r"},{"finding_id":1,"is_real":true,"severity":"Suggestion","tractability":"Mechanical","blocks_goal":false,"rationale":"r"}],"raised":[]},{"votes":[{"finding_id":0,"is_real":true,"severity":"Important","tractability":"Bounded","blocks_goal":false,"rationale":"r"},{"finding_id":1,"is_real":true,"severity":"Suggestion","tractability":"Mechanical","blocks_goal":false,"rationale":"r"}],"raised":[]},{"votes":[{"finding_id":0,"is_real":true,"severity":"Suggestion","tractability":"Bounded","blocks_goal":false,"rationale":"r"},{"finding_id":1,"is_real":true,"severity":"Suggestion","tractability":"Mechanical","blocks_goal":false,"rationale":"r"}],"raised":[]}]'
+    out=$(_pan_run_core "$(_pan_args 3)" "$specs" "$pans")
     if ! echo "$out" | jq -e . >/dev/null 2>&1; then
-        fail "classic sub-70 Important verdict_relevant: valid JSON bundle" "probe: ${out:0:200}"
+        fail "panel verdict_relevant: valid JSON bundle" "probe: ${out:0:200}"
         return
     fi
-    assert_equals "REQUEST_CHANGES" "$(echo "$out" | jq -r '.verdict')" "classic RC driven by Critical"
-    # The Critical (confidence 90 ≥ 70) is verdict_relevant. The Important (confidence 50 < 70) is NOT.
-    assert_equals "false" "$(echo "$out" | jq -r '[.log.findings[] | select(.severity=="Important")][0].verdict_relevant')" "classic sub-70 Important must NOT be verdict_relevant"
-    assert_equals "true" "$(echo "$out" | jq -r '[.log.findings[] | select(.severity=="Critical")][0].verdict_relevant')" "classic Critical (>=70) IS verdict_relevant"
+    assert_equals "REQUEST_CHANGES" "$(echo "$out" | jq -r '.verdict')" "2/3 Important majority → consensus Important → RC"
+    assert_equals "true" "$(echo "$out" | jq -r '[.log.findings[] | select(.file=="a.cs")][0].verdict_relevant')" "consensus Important is verdict_relevant below unanimous agreement"
+    assert_equals "consensus" "$(echo "$out" | jq -r '[.log.findings[] | select(.file=="a.cs")][0].tier')" "majority Important lands in consensus"
+    assert_equals "false" "$(echo "$out" | jq -r '[.log.findings[] | select(.file=="b.cs")][0].verdict_relevant')" "Suggestion is not verdict_relevant"
 }

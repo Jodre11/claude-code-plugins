@@ -13,7 +13,7 @@ log="${CLAUDE_REVIEW_OBSERVE_LOG:-${TMPDIR:-/tmp}/code-review-observe.log}"
 # Only main-session (agent_type empty) reviewer dispatches are of interest.
 if [[ -z "$agent_type" ]]; then
     case "${subagent_type##*:}" in
-        *-reviewer|code-analysis|review-synthesiser)
+        *-reviewer|code-analysis)
             printf '{"event":"main_session_reviewer_dispatch","subagent_type":"%s"}\n' \
                 "$subagent_type" >> "$log"
             ;;

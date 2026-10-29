@@ -1,6 +1,6 @@
 ## Severity Definitions
 
-Use these definitions when assigning severity to findings. They are listed from most to least severe. When in doubt, choose the lower severity — over-classification wastes the author's time; under-classification is caught by the synthesiser.
+Use these definitions when assigning severity to findings. They are listed from most to least severe. When in doubt, choose the lower severity — over-classification wastes the author's time; under-classification is caught by the panel.
 
 ### Critical
 
@@ -23,7 +23,7 @@ Examples: wrong boolean condition that inverts a filter, unclosed resource in a 
 Agent-hazard guardrails (these prevent severity inflation — apply them strictly):
 - The finding MUST name a *concrete misleading mechanism* and the *specific future defect it induces*. A vague "could confuse someone" does NOT clear the bar.
 - This basis reaches **Important only, never Critical**. The Critical bar above is untouched — it stays outage / breach / data-loss.
-- The verdict rubric's confidence ≥ 70 gate still applies (`includes/verdict-rubric.md` row 3): a low-confidence agent-hazard finding does not block.
+- The panel still governs whether it blocks (`includes/verdict-rubric.md`): an agent-hazard finding blocks only when a panel majority votes it real and Important.
 
 **Not Important** (downgrade to Suggestion): documentation wording, naming improvements *that do not mislead*, defensive hardening against unreachable conditions, stylistic consistency, cross-reference maintenance, missing comments, redundant-but-harmless code. A naming or comment issue clears the Important bar ONLY via the agent-hazard basis above — that is, only when it *actively misleads*, never when it is merely absent, vague, or imperfect.
 

@@ -35,3 +35,6 @@ tests/fixtures/static-analysis/jbinspect/obj/
 
 # A/B test harness output
 tests/ab/runs/
+
+# Claude Code personal settings
+**/.claude/settings.local.json

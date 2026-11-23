@@ -56,6 +56,18 @@ picks a winner. This PR set adds only the hybrid arm's adapter.
 
 S1 runs on a throwaway fixture repo, never a live PR.
 
+**S1 result (2026-11-23): fallback.** With `skillOverrides.code-review = "user-invocable-only"` (the PR 3 setting),
+a Workflow `agent()` worker that calls Skill on `code-review` gets an immediate tool error: "Skill code-review is
+disabled for model invocation in skillOverrides settings". No review runs and nothing is posted.
+
+The `on` leg was not run. It would only matter if the bundled skill were made model-invocable, which reopens the
+routing risk this spec closes.
+
+The adapter therefore follows the plugin's `commands/code-review.md` from the marketplace clone, which needs the
+plugin disabled, not uninstalled. Its own pipeline (haiku gate, 2× sonnet CLAUDE.md, 2× opus bug, validation) runs
+as subagents of the adapter, within the three-level nesting limit. If the file is absent (the official marketplace
+is not added), the adapter returns `skipped`. The hybrid arm is labelled `anthropic (plugin pipeline)`; the step-4 comparator stays the bundled `/code-review high`, run natively.
+
 ## PR 1: `reply-fit` plugin
 
 The new marketplace plugin `plugins/reply-fit/` contains:

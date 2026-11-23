@@ -82,7 +82,7 @@ mode, making the single-path guarantee measurable.
 | `security-reviewer` | Injection, auth bypass, secrets, OWASP top 10, version safety/pinning, SSRF, path traversal |
 | `correctness-reviewer` | Logic errors, off-by-one, null derefs, race conditions, async/await pitfalls |
 | `api-contract-reviewer` | Hallucinated/nonexistent APIs, wrong signatures/versions, deprecated API usage, and comment-truth (comments that misdescribe the code) — always-on core |
-| `consistency-reviewer` | Violations of project conventions (CLAUDE.md, .editorconfig, linting configs) |
+| `consistency-reviewer` | Violations of project conventions (the repo's committed CLAUDE.md, .editorconfig, linting configs) |
 | `style-reviewer` | Readability, unnecessary complexity, dead code, naming clarity |
 | `archaeology-reviewer` | Investigates deleted/modified code for hidden historical intent |
 | `reuse-reviewer` | Missed reuse of existing utilities, helpers, and patterns |

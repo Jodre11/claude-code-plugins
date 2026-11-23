@@ -12,6 +12,8 @@ Personal plugin marketplace for [Claude Code](https://docs.anthropic.com/en/docs
 | [md-to-clipboard](plugins/md-to-clipboard/) | Convert Markdown to rich text on the macOS clipboard for pasting into Teams, Slack, Outlook |
 | [pdf-reader](plugins/pdf-reader/) | Extract text from any PDF — native text via poppler, scanned/image via tesseract OCR |
 | [roslyn-lsp](plugins/roslyn-lsp/) | Solution-aware C# LSP via Microsoft Roslyn + ClaudeCodeRoslynLspProxy — re-host of unsafePtr/ClaudeCodeRoslynLspProxy (MIT) with locally-tuned defaults |
+| [spec-review](plugins/spec-review/) | Adversarial review panel for a written spec — independent subtraction, completeness and framing reviewers between design and implementation planning |
+| [reply-fit](plugins/reply-fit/) | Fit a PR, issue or chat reply to what was asked, then strip AI tells — independent fit reviewer plus a vendored humanizer ([blader/humanizer](https://github.com/blader/humanizer), MIT); embedded mode for other plugins |
 
 ## Installation
 

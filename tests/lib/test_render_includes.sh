@@ -52,6 +52,18 @@ test_render_includes_expected_consumers_present() {
         pairs+=("agents/$agent-reviewer.md includes/specialist-context.md")
     done
     pairs+=("agents/code-analysis.md includes/specialist-context.md")
+    # Every agent that judges or writes about a change, and the orchestrator's pipeline, must
+    # carry the rule-sources block, or the reviewer's personal instructions leak into findings.
+    for agent in api-contract alignment archaeology consistency correctness efficiency latent-hazard reuse \
+        security style test-adequacy test-quality ui; do
+        pairs+=("agents/$agent-reviewer.md includes/rule-sources.md")
+    done
+    pairs+=(
+        "agents/code-analysis.md includes/rule-sources.md"
+        "agents/panel-reviewer.md includes/rule-sources.md"
+        "agents/panel-writer.md includes/rule-sources.md"
+        "includes/review-pipeline.md includes/rule-sources.md"
+    )
     local pair
     for pair in "${pairs[@]}"; do
         file="${pair%% *}"

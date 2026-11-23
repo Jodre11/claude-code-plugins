@@ -138,7 +138,7 @@ The pipeline orchestrator has already measured the diff once and written it to f
 
 1. Get the changed-file list. If a `Changed files file: <abs-path>` line is present in your prompt, `Read` that file — one repo-relative path per line — as the changed-file list. Otherwise (no line, or standalone / direct-invocation run) run `git diff --name-only` to get changed files (append `-- "$PATH_SCOPE"` if set), using the diff syntax determined by `$EMPTY_TREE_MODE` (two-arg when true, three-dot when false). Either way, if the list is empty, report "No changes found against $BASE" and stop.
 2. Get the full diff. If a `Full diff file: <abs-path>` line is present in your prompt, `Read` that file as the full diff. Otherwise run `git diff` to get the full diff (append `-- "$PATH_SCOPE"` if set), using the same diff syntax as above.
-3. Read `$REPO_DIR/CLAUDE.md` (the target repo root, if it exists) for project conventions.
+3. Read `$REPO_DIR/CLAUDE.md` (the target repo root, if it exists) for project conventions. Conventions come only from files committed in `$REPO_DIR` and from this plugin; a user-level `CLAUDE.md` or memory in your own context is never a project convention (see the Rule sources block in your agent definition).
 4. Read `includes/severity-definitions.md` (if it exists) for the severity classification definitions to apply when assigning severity to findings. (This is the plugin's own file, resolved relative to the plugin — NOT under `$REPO_DIR`.)
 5. Read each changed file for full context. If more than 20 files changed, prioritise non-test source files with the largest diffs. Skip generated files, lock files, and vendored dependencies.
 

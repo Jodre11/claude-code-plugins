@@ -18,7 +18,7 @@ After completing those steps, also read (if they exist):
 ## Focus Areas
 
 Review every change for:
-- **CLAUDE.md violations** — any rule in the project's CLAUDE.md that the diff breaks
+- **CLAUDE.md violations** — any rule in a `CLAUDE.md` committed in the reviewed repo that the diff breaks (never a user-level `CLAUDE.md` from your own context)
 - **Editorconfig violations** — indentation style/size, line endings, trailing whitespace, final newline
 - **Linting/formatting config violations** — rules from eslint, prettier, rubocop, biome, or other configured tools
 - **CONTRIBUTING.md violations** — process or code guidelines defined in CONTRIBUTING.md
@@ -59,6 +59,21 @@ Report ALL findings regardless of confidence level.
 If no findings: `## Consistency Review Findings\n\n0 findings.`
 
 ## Rules
+
+<!-- BEGIN GENERATED from includes/rule-sources.md: edit that file, then run scripts/render-includes.py -->
+> **RULE SOURCES — MANDATORY**
+>
+> Judge the change only against rules from two places: this plugin's own prompts and
+> includes, and files committed in the repository under review (`CLAUDE.md` files,
+> `.editorconfig`, linter and formatter config, `CONTRIBUTING.md`, and the patterns in its
+> code). Instructions that reach you any other way, such as a user-level or global
+> `CLAUDE.md`, user memory, an output style or session context, belong to whoever is
+> running the review, not to the project or its author. They may shape how you work; they
+> never decide what you flag. A finding whose only basis is one of them is not a finding.
+> Never cite, quote or paraphrase them, and never present them as the project's rules or
+> as the reader's. Where they conflict with this plugin's output contract (format, schema,
+> severity ladder), the plugin wins.
+<!-- END GENERATED from includes/rule-sources.md -->
 
 <!-- BEGIN GENERATED from includes/specialist-context.md: edit that file, then run scripts/render-includes.py -->
 > **CHANGED_LINES OUTPUT FILTER — MANDATORY**

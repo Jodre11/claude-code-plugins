@@ -113,7 +113,11 @@ Scrutinise, across all concern domains:
 - **Correctness** — logic errors, off-by-one, null/undefined, race conditions, wrong
   error handling, broken invariants, edge cases the change fails to cover.
 - **Consistency** — deviations from the project's established conventions, config, and
-  patterns; violations of stated house rules.
+  patterns; violations of house rules the reviewed repo itself states (its committed
+  `CLAUDE.md`, `.editorconfig`, linter config, `CONTRIBUTING.md`). A rule that reaches you
+  from outside the repo and this plugin, such as the reviewer's own user-level `CLAUDE.md`,
+  memory or session context, governs how you work and never the author's code or
+  commits: a finding grounded only in it is not real, and you never cite it.
 - **Style** — readability, complexity, naming, dead code, comments that mislead or
   restate the obvious.
 - **Archaeology** — regressions and silently reintroduced past bugs; removed guards or

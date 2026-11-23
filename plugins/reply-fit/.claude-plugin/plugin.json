@@ -1,0 +1,15 @@
+{
+  "name": "reply-fit",
+  "description": "Fit a conversational reply to what was asked, then strip AI tells — independent fit reviewer plus a vendored humanizer (blader/humanizer, MIT)",
+  "author": {
+    "name": "Christian Haddrell"
+  },
+  "license": "MIT",
+  "keywords": [
+    "writing",
+    "replies",
+    "humanizer",
+    "pr-review",
+    "tone"
+  ]
+}

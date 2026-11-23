@@ -38,6 +38,11 @@
       "name": "spec-review",
       "description": "Adversarial review panel for a written spec — independent reviewers with subtraction/completeness/framing lenses, between design and implementation planning",
       "source": "./plugins/spec-review"
+    },
+    {
+      "name": "reply-fit",
+      "description": "Fit a conversational reply to what was asked, then strip AI tells — independent fit reviewer plus a vendored humanizer",
+      "source": "./plugins/reply-fit"
     }
   ]
 }

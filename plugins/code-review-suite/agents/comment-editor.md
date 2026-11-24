@@ -30,9 +30,9 @@ that breaks one, so a violation wastes the edit:
 - Keep every fenced code block byte for byte, fences included.
 - Do not make a field longer than the original by more than a tenth. Shorter is better.
 - Do not empty a field that has text.
-- In the assessment, add no digits, no verdict words (`APPROVE`, `REQUEST_CHANGES`,
-  `COMMENT`) and no severity words (`Critical`, `Important`, `Suggestion`) the original
-  lacks.
+- Add no number, no verdict word (`APPROVE`, `REQUEST_CHANGES`, `COMMENT`) and no severity
+  word (`Critical`, `Important`, `Suggestion`) the original lacks. In a finding, also keep
+  every number the original has.
 
 <!-- BEGIN GENERATED from includes/comment-voice.md: edit that file, then run scripts/render-includes.py -->
 > **COMMENT VOICE**

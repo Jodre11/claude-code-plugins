@@ -108,6 +108,18 @@ test_voice_rejects_growth_over_ten_percent() {
         '^grew by more than 10%$'
 }
 
+test_voice_rejects_number_change_in_finding() {
+    _cv_description_case "added number" \
+        '`order.Customer` is null for 3 guest users, so a.cs:10 crashes checkout. See https://example.com/issue.' false \
+        '^added the number 3$'
+}
+
+test_voice_rejects_severity_word_in_finding() {
+    _cv_description_case "added severity word" \
+        'Critical: `order.Customer` is null for guests, so a.cs:10 crashes checkout. See https://example.com/issue.' false \
+        'critical'
+}
+
 test_voice_rejects_emptied_field() {
     local out
     out=$(_cv_run "$(_cv_args)" "$(_cv_specs)" "$(_cv_pans 2)" "$(_cv_edit '')")
@@ -115,6 +127,17 @@ test_voice_rejects_emptied_field() {
     assert_equals "false" "$(echo "$out" | jq -r '.bundle.log.voice[0].accepted')" "voice guard: emptied field rejected"
     assert_equals 1 "$(echo "$out" | jq -r '.bundle.comments[] | select(.path == "a.cs") | .body' | grep -cF -- "$_CV_DESC")" \
         "voice guard: emptied field keeps the original"
+}
+
+test_voice_rejects_dropped_number_in_finding() {
+    local specs out
+    specs=$(jq -cn '{correctness: [{file: "a.cs", line: 10, severity: "Important", confidence: 90,
+        description: "The retry loop runs 5 times with no back-off, so an outage triples the load.", suggested_fix: ""}]}')
+    out=$(_cv_run "$(_cv_args)" "$specs" "$(_cv_pans 1)" \
+        "$(_cv_edit 'The retry loop has no back-off, so an outage triples the load.' '')")
+    _cv_ok "$out" "dropped number" || return 0
+    assert_equals "dropped the number 5" "$(echo "$out" | jq -r '.bundle.log.voice[0].reason')" \
+        "voice guard: a finding may not drop a number"
 }
 
 test_voice_fenced_block_must_be_byte_identical() {

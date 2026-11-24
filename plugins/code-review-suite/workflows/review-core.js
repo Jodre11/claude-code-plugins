@@ -893,11 +893,12 @@ function applyVoiceEdits(findings, assessment, out) {
 // The guards a rewrite must pass. Returns '' when the rewrite is acceptable, otherwise a
 // short reason (logged, never posted). Every check keeps facts the reader relies on:
 // nothing emptied, code blocks byte-identical, every backticked token, `path:line`
-// reference and URL kept, and no more than 10% longer. For the assessment, also no digit,
-// verdict word or severity word the original lacked, since the verdict and the counts are
-// rendered in code and the prose must not contradict them. Regexes are built inside the
-// function: voicePass runs on the lightweight path before any module-level const below
-// this point is initialised.
+// reference and URL kept, no more than 10% longer, and no number, verdict word or severity
+// word the original lacked (the verdict, severities and counts are rendered in code and the
+// prose must not contradict them). A finding may not drop a number either. The editor reads
+// text that can quote the reviewed code, so these checks also bound what a steered rewrite
+// can change. Regexes are built inside the function: voicePass runs on the lightweight path
+// before any module-level const below this point is initialised.
 function voiceGuard(original, edited, isAssessment) {
     if (original.trim() && !edited.trim()) return 'emptied a non-empty field'
     const fenceRe = () => /^[ \t]*(`{3,}|~{3,})[^\n]*\n[\s\S]*?^[ \t]*\1[ \t]*$/gm
@@ -914,17 +915,19 @@ function voiceGuard(original, edited, isAssessment) {
         if (!editedProse.includes(tok)) return `dropped ${tok}`
     }
     if (wordCount(edited) > wordCount(original) * 1.1) return 'grew by more than 10%'
-    if (isAssessment) {
-        const numbers = s => new Set(s.match(/\d+/g) ?? [])
-        const had = numbers(original)
-        for (const n of numbers(edited)) if (!had.has(n)) return `added the number ${n}`
-        const words = [
-            /\bapprov(?:e|es|ed|al)\b/i, /\brequest[_ ]changes\b/i, /\bCOMMENT\b/,
-            /\bcritical\b/i, /\bimportant\b/i, /\bsuggestions?\b/i,
-        ]
-        for (const re of words) {
-            if (re.test(edited) && !re.test(original)) return `added a verdict or severity word (${re.source})`
-        }
+    const numbers = s => new Set(s.match(/\d+/g) ?? [])
+    const had = numbers(original)
+    const has = numbers(edited)
+    for (const n of has) if (!had.has(n)) return `added the number ${n}`
+    // A finding's numbers are facts (limits, versions, counts); the assessment's are not,
+    // since the writer is told to give none, so only a finding may not lose one.
+    if (!isAssessment) for (const n of had) if (!has.has(n)) return `dropped the number ${n}`
+    const words = [
+        /\bapprov(?:e|es|ed|al)\b/i, /\brequest[_ ]changes\b/i, /\bCOMMENT\b/,
+        /\bcritical\b/i, /\bimportant\b/i, /\bsuggestions?\b/i,
+    ]
+    for (const re of words) {
+        if (re.test(edited) && !re.test(original)) return `added a verdict or severity word (${re.source})`
     }
     return ''
 }

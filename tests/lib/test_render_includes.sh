@@ -62,6 +62,8 @@ test_render_includes_expected_consumers_present() {
         "agents/code-analysis.md includes/rule-sources.md"
         "agents/panel-reviewer.md includes/rule-sources.md"
         "agents/panel-writer.md includes/rule-sources.md"
+        "agents/comment-editor.md includes/rule-sources.md"
+        "agents/comment-editor.md includes/comment-voice.md"
         "includes/review-pipeline.md includes/rule-sources.md"
     )
     local pair

@@ -73,6 +73,7 @@ mode, making the single-path guarantee measurable.
 4. **Workflow core** — the lightweight route runs a single `code-analysis` pass inside the Workflow; the full route dispatches 9 core specialists plus up to 9 conditional specialists (C#, UI, JS/TS, Python, IaC, dependency freshness, test quality, test adequacy, latent hazard) in parallel (slowest first). A panel of independent opus reviewers then votes on every finding (is it real, how severe, how tractable, does it block the stated goal) and may raise net-new findings; code tallies the votes into consensus, contested and dismissed tiers and applies the verdict rubric (`includes/verdict-rubric.md`); a writer agent produces the prose assessment. All of this is implemented in `review-core.js`.
 5. **Panel size** — `orchestration.panel_size` in `.claude/code-review.toml` (the reviewed repo first, then `~/.claude/code-review.toml`) sets the number of panelists. It must be odd and at least 3; the default is 3. `orchestration.review_mode` is retired and ignored.
 6. **Output** — the review body (PR mode) and the pre-review report (local mode) are assembled in code from the tiers; the writer contributes only the short Panel Assessment. Findings from several specialists on the same file within three lines are merged into one inline comment and one index line, so the author sees one thread per issue.
+7. **Wording pass** — once the verdict and tiers are fixed, a `comment-editor` agent rewords the surfaced findings and the assessment to the rules in `includes/comment-voice.md`. Code guards keep the original text of any field whose rewrite drops a code span, `path:line` reference, URL, code block or (in a finding) number, grows by more than 10%, or adds a number, verdict word or severity word. Static-analysis findings keep the tool's text. Every comment and review body the suite posts ends with the hidden marker `<!-- code-review-suite -->`, which `/address-pr-comments` and self-re-review detection use to tell the suite's posts from the user's own.
 
 ## Agents
 
@@ -99,6 +100,7 @@ mode, making the single-path guarantee measurable.
 | `ui-reviewer` | UI/UX quality, accessibility, usability (conditional — visual component files only) |
 | `panel-reviewer` | One independent panel seat: votes on every Stage-1 finding and raises net-new ones (read-only; dispatched by `review-core` only) |
 | `panel-writer` | Writes the short Panel Assessment for a verdict already fixed in code (no tools beyond `Read`; dispatched by `review-core` only) |
+| `comment-editor` | Rewords surfaced findings and the Panel Assessment to the comment-voice rules without changing what they say; guarded in code (no tools beyond `Read`; dispatched by `review-core` only) |
 
 ## Skill
 
@@ -108,8 +110,11 @@ mode, making the single-path guarantee measurable.
 ## Commands
 
 - **pre-review** — Analyse local changes before creating a PR. Usage: `/pre-review [base-branch | EMPTY_TREE] [Path scope: <pathspec>]`
-- **address-pr-comments** — Fetch unresolved PR comments and address them systematically.
-  Usage: `/address-pr-comments <pr-number-or-url>`
+- **address-pr-comments** — Fetch unresolved PR comments and address them systematically. Each
+  reply is fitted with the `reply-fit` plugin before anything is posted. The suite's own
+  marker-bearing comments are addressed even though they are posted under your login; add
+  `--include-self` to address every comment and review body you posted.
+  Usage: `/address-pr-comments <pr-number-or-url> [--include-self]`
 
 ## Known Limitations
 
@@ -121,6 +126,7 @@ mode, making the single-path guarantee measurable.
 
 ## Prerequisites
 
+- `reply-fit` plugin (same marketplace) — declared in `plugin.json` `dependencies`, so it installs with the suite; the suite does not load while it is disabled
 - `gh` (GitHub CLI) — required for PR interactions; graceful fallback for base branch if absent
 - `jb` (JetBrains CLI) — optional, only needed for C# InspectCode analysis
 - `eslint` or `biome` — optional, only needed for JS/TS projects. The reviewer prefers project-local binaries (`<project>/node_modules/.bin/`) over global; install via the project's own `npm install` rather than globally.

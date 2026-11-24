@@ -48,7 +48,7 @@ manual reinstall required. Each plugin's `bin/` directory is added to PATH autom
 
 | Plugin | Dependencies |
 |---|---|
-| code-review-suite | `jb` (JetBrains CLI) — optional, only for C# projects; `eslint` or `biome` (project-local via `npm install`) — optional, only for JS/TS projects; `ruff` (`brew install ruff`) — optional, only for Python projects (`nbqa` only if Ruff < 0.6.0); `trivy` (`brew install trivy`) — optional, only for IaC repos |
+| code-review-suite | `reply-fit` plugin (installed with it as a declared dependency); `jb` (JetBrains CLI) — optional, only for C# projects; `eslint` or `biome` (project-local via `npm install`) — optional, only for JS/TS projects; `ruff` (`brew install ruff`) — optional, only for Python projects (`nbqa` only if Ruff < 0.6.0); `trivy` (`brew install trivy`) — optional, only for IaC repos |
 | web-search | Docker Desktop + SearXNG container (`searxng-ctl.sh start`), `jq` (`brew install jq`) |
 | playwright-cli | `playwright-cli` (`brew install playwright-cli` or `npx playwright-cli`) |
 | md-to-clipboard | `pandoc` (`brew install pandoc`), `md2clip` (ships with plugin — see [setup](plugins/md-to-clipboard/README.md)) |

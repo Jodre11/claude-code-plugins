@@ -5,6 +5,7 @@
     "name": "Christian Haddrell"
   },
   "license": "MIT",
+  "dependencies": ["reply-fit"],
   "keywords": [
     "code-review",
     "agents",

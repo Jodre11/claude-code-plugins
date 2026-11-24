@@ -71,6 +71,12 @@ compact finding index, body notes for findings with no file, the pruned-findings
 and the Dependency Freshness table. The local pre-review report (`buildLocalReport`) uses the
 same parts without the verdict headline, with every finding rendered in full.
 
+Before either is built, the voice phase (`voicePass`) rewords the surfaced findings and the
+assessment to `includes/comment-voice.md`; a code guard keeps the original of any field whose
+rewrite changes a fact. The wording pass never touches the verdict, the tiers or a
+static-analysis finding. In PR mode every comment body and the review body end with the hidden
+marker line `<!-- code-review-suite -->`.
+
 Findings that share a file and a posting route and sit within three lines of each other
 (`groupColocated`) render as ONE inline comment — headed by the most severe, every member's
 text kept — and one index line. This is rendering only: the verdict is computed first.

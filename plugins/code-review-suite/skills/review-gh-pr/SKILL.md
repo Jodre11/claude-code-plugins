@@ -83,11 +83,11 @@ where it belongs.
 Determine the current GitHub user, then check for prior reviews. Run these two commands **sequentially** — the second depends on the output of the first:
 
 1. Run `gh api user --jq .login` and capture the output as the current user's login. If this call fails, warn the user that GitHub authentication may be required and stop.
-2. Run `gh pr view "$ARGUMENTS" --json reviews --jq '.reviews[]'` and filter the results to entries where `.author.login` matches the captured login. Extract `{state, submittedAt, commit: .commit.oid, body}` from any matches. Discard any entries where `.commit` is null or `.commit.oid` is null — these are reviews submitted before any commit existed or on force-pushed branches where the original commit is gone. **Also discard any entry whose `state` is `CHANGES_REQUESTED` and whose `body` matches the canonical Phase 0.4 halt body verbatim** (the `This PR has no narrative description. ...` review composed in Phase 0.4 below). These are intent-halt placeholders — the substantive review never ran, so the next invocation must be a full review, not a re-review of changes that no prior pass actually evaluated. From the remaining entries, sort by `submittedAt` descending and take the first entry. Store its `commit` value as `$LAST_REVIEW_SHA`. Validate that `$LAST_REVIEW_SHA` matches `^[0-9a-f]{40}$` — if it does not, warn and fall back to full review (do not enter self-re-review mode).
+2. Run `gh pr view "$ARGUMENTS" --json reviews --jq '.reviews[]'` and filter the results to entries where `.author.login` matches the captured login. Extract `{state, submittedAt, commit: .commit.oid, body}` from any matches. **Keep only the suite's own reviews:** an entry whose `body` contains the review marker `<!-- code-review-suite -->` (every review body this suite posts ends with it), or, for reviews posted before the marker existed, whose `body` starts with the suite's verdict headline (matches `^\*\*(APPROVE|REQUEST_CHANGES|COMMENT)\*\*`). Discard every other entry: the same login may have posted it by hand or through another tool (for example a standalone `/code-review --comment` run), and re-reviewing it as this suite's prior pass would "verify fixes" against feedback the suite never wrote. Discard any entries where `.commit` is null or `.commit.oid` is null — these are reviews submitted before any commit existed or on force-pushed branches where the original commit is gone. **Also discard any entry whose `state` is `CHANGES_REQUESTED` and whose `body` matches the canonical Phase 0.4 halt body verbatim, ignoring a trailing marker line** (the `This PR has no narrative description. ...` review composed in Phase 0.4 below). These are intent-halt placeholders — the substantive review never ran, so the next invocation must be a full review, not a re-review of changes that no prior pass actually evaluated. From the remaining entries, sort by `submittedAt` descending and take the first entry. Store its `commit` value as `$LAST_REVIEW_SHA`. Validate that `$LAST_REVIEW_SHA` matches `^[0-9a-f]{40}$` — if it does not, warn and fall back to full review (do not enter self-re-review mode).
 
 If no matching reviews are found, `$LAST_REVIEW_SHA` is unset — this is not a self-re-review; proceed with standard full review.
 
-If a prior review by the current user exists, this is a **self-re-review**. Switch to re-review mode (see below). Otherwise, proceed with standard full review.
+If a prior suite review by the current user remains, this is a **self-re-review**. Switch to re-review mode (see below). Otherwise, proceed with standard full review.
 
 ### Self-re-review mode
 
@@ -365,7 +365,12 @@ This PR has no narrative description.
 Before review, please add a paragraph at the top of the PR body explaining what this change is for and why. Two or more sentences, written as you would explain it to a teammate.
 
 (This is a structural check — no AI was used to evaluate the body's quality. Any narrative paragraph that meets the bar will let the review proceed.)
+
+<!-- code-review-suite -->
 ```
+
+The last line is the review marker every body this suite posts ends with; GitHub does not
+display it. Leave it out wherever the body is printed instead of posted.
 
 **Under `$ANALYSIS_ONLY = true`:** do not post. Print the canned body above to stdout,
 prefixed with `> Phase 0 halt (analysis-only, not posted): no narrative description`, and
@@ -405,7 +410,8 @@ gh pr view "$ARGUMENTS" --json reviews \
 
 If the most recent review by `$CURRENT_USER` exists, has `state == "CHANGES_REQUESTED"`
 (for `REQUEST_CHANGES`) or `state == "COMMENTED"` (for `COMMENT`), and its `body` matches the
-canned text above verbatim, do NOT post a duplicate. Announce
+canned text above verbatim (with or without the trailing marker line, which older halts lack), do
+NOT post a duplicate. Announce
 `> Phase 0 halt: existing $HALT_EVENT review still active — no new review posted` and stop
 the pipeline cleanly. Otherwise, submit using
 `gh pr review "$ARGUMENTS" --request-changes --input -` (for `REQUEST_CHANGES`) or
@@ -780,7 +786,8 @@ Draft a structured mini-review:
   to a specific `file:line`. If you would naturally have more than 3 issues, do NOT
   truncate silently — instead, fail the bar (announce `> Trivial-mode aborted: more
   than 3 issues warrant comment — falling through to Step 1` and continue to Step 1).
-  Same tone guidelines as full reviews (use "Consider…", "Would it be worth…", etc).
+  Read `includes/comment-voice.md` before drafting and write the body and every comment to its
+  rules.
 
 ### 0.7.8 User confirmation
 
@@ -826,6 +833,10 @@ EOF
 
 Use `RIGHT` side for additions and modifications, `LEFT` for deletions. The
 `--input -` heredoc carries the comment body to avoid shell-quoting issues.
+
+End every posted body, each inline comment and the review body alike, with a blank line and then
+the review marker line `<!-- code-review-suite -->`, so later runs can tell the suite's posts
+from the user's own. Leave the marker out of anything printed instead of posted.
 
 After all inline comments post, submit the verdict via `gh pr review` using
 `--approve`, `--request-changes`, or `--comment` per the verdict, with `--input -`
@@ -1289,6 +1300,11 @@ The Workflow's bundle already filtered and rendered the comment set (`bundle.com
 
 Before adding comments, cross-reference findings against existing comments from other reviewers.
 
+Every reply and standalone comment you write in this stage follows the comment voice rules: read
+`includes/comment-voice.md` before drafting. End a new standalone comment with a blank line and the
+review marker line `<!-- code-review-suite -->`, as the bundle's comments do; replies on other
+reviewers' threads do not carry it.
+
 **Handling existing comments — check resolution status first:**
 
 Resolved threads are hidden on the PR conversation page. Replying to a resolved thread will not make it visible again, so replies to resolved threads will likely be ignored by the author.
@@ -1300,8 +1316,8 @@ Resolved threads are hidden on the PR conversation page. Replying to a resolved 
 
 **Open (unresolved) threads:**
 - **If an existing comment covers the same point**: Do NOT create a duplicate. Instead, reply to the existing thread if you have supporting evidence, additional context, or a different perspective.
-- **If you agree with an existing comment**: Reply with supporting information (e.g., "Agreed - this also affects X and Y")
-- **If you disagree or the comment is inaccurate**: Reply with a respectful contradiction explaining your reasoning. It is important to correct misleading feedback so the author isn't sent on a wild goose chase.
+- **If you agree with an existing comment**: Reply with the supporting information only (e.g., "This also affects `X` and `Y`.")
+- **If you disagree or the comment is inaccurate**: Reply with the correction and the evidence for it. It is important to correct misleading feedback so the author isn't sent on a wild goose chase.
 - **If the point is already well-covered**: Skip it entirely
 
 **IMPORTANT:** Always check open comments for accuracy. Inaccurate or misleading comments must be disputed - do not let incorrect feedback stand unchallenged.
@@ -1421,13 +1437,12 @@ Use the original comment's `side` field (`'LEFT'` for deleted lines, `'RIGHT'` f
 - Use `in_reply_to` to add to existing threads - do NOT create duplicates
 - Do NOT copy existing code into comments - the line attachment provides the code context
 - Keep comments concise and actionable
-- Prefix optional suggestions with `(optional)` or `(nitpick)`
 
-**Tone:** Comments represent the user publicly. Be polite, suggestive, and requesting:
-- Use "Consider...", "Would it be worth...", "Could we...", "It might be better to..."
-- Avoid directive language like "You should...", "Change this to...", "This is wrong"
-- Thank the author for good patterns or improvements where appropriate
-- Frame issues as questions or suggestions, not demands
+**Voice:** Comments represent the user publicly. The bundle's comments have already been through
+review-core's wording pass; post them as-is. Anything you write yourself (replies and standalone
+comments from Stage 3) follows the rules in `includes/comment-voice.md`: read it before drafting.
+The severity line the bundle renders says how much a finding matters, so do not add `(optional)`,
+`(nitpick)` or similar prefixes.
 
 ## Comment Format Guidelines
 
@@ -1437,7 +1452,7 @@ Use the original comment's `side` field (`'LEFT'` for deleted lines, `'RIGHT'` f
 
 Good comment:
 ```
-This path appears to be specific to a local development environment. Consider reverting to:
+This path only exists on one developer's machine, so the launch profile fails for everyone else. Revert to:
 \`\`\`json
 "commandLineArgs": "-fs NTFS -cf SourceData/TestingConfig/testConfig.json -e Local",
 \`\`\`

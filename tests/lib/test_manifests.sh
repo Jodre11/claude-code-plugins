@@ -125,3 +125,26 @@ test_plugin_name_matches_marketplace() {
         assert_equals "$mp_name" "$pj_name" "$mp_name: marketplace name matches plugin.json name"
     done
 }
+
+# A bare dependency name resolves within this marketplace, so each one must name a plugin in it.
+test_plugin_dependencies_resolve_in_marketplace() {
+    local mp="$REPO_ROOT/.claude-plugin/marketplace.json"
+    local -a names sources
+    mapfile -t names < <(jq -r '.plugins[].name' "$mp")
+    mapfile -t sources < <(jq -r '.plugins[].source' "$mp")
+
+    local src pj dep
+    for src in "${sources[@]}"; do
+        pj="$REPO_ROOT/${src#./}/.claude-plugin/plugin.json"
+        while IFS= read -r dep; do
+            [[ -n "$dep" ]] || continue
+            if printf '%s\n' "${names[@]}" | grep -qxF -- "$dep"; then
+                pass "$(basename "$src"): dependency $dep is in the marketplace"
+            else
+                fail "$(basename "$src"): dependency $dep is in the marketplace" "no plugin named $dep"
+            fi
+        done < <(jq -r '(.dependencies // [])[] | if type == "string" then . else .name end' "$pj")
+    done
+    assert_equals "reply-fit" "$(jq -r '.dependencies | join(",")' "$REPO_ROOT/plugins/code-review-suite/.claude-plugin/plugin.json")" \
+        "code-review-suite depends on reply-fit"
+}

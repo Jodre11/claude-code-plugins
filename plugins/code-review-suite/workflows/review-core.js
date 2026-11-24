@@ -63,33 +63,75 @@ const SPECIALIST_SCHEMA = {
     },
 }
 
-// ANTHROPIC_SCHEMA — the hybrid adapter's raw output (agents/anthropic-reviewer.md). It reports
-// issues in the official code-review plugin's own terms; normalizeAnthropic maps them to
-// SPECIALIST_SCHEMA findings in code, so the anchor parsing and the fixed severity and
-// confidence never depend on the model.
-const ANTHROPIC_SCHEMA = {
+// Hybrid arm (agents/anthropic-reviewer.md): review-core runs steps 2-6 of Anthropic's official
+// code-review plugin itself, one restricted anthropic-reviewer agent per agent the plugin asks
+// for, so no agent ever launches another and untrusted diff content never reaches an agent with
+// write tools. Each agent reads the plugin's command file at runtime and runs only its own step;
+// these schemas fix only the shape of what each step hands back. normalizeAnthropic maps the
+// validated issues to findings in code, so the anchor, severity and confidence never depend on
+// the model.
+const ANTHROPIC_PLUGIN_FILE = '~/.claude/plugins/marketplaces/claude-plugins-official/plugins/code-review/commands/code-review.md'
+
+const ANTHROPIC_ISSUE_SHAPE = {
     type: 'object',
     additionalProperties: false,
-    required: ['status', 'issues'],
+    required: ['description', 'kind', 'link', 'suggested_fix'],
     properties: {
-        status: { enum: ['ok', 'skipped', 'failed'], description: 'ok = steps 2-6 finished; skipped = plugin absent or review declined; failed = error.' },
-        statusReason: { type: 'string', description: 'One-line reason when status is skipped or failed.' },
-        issues: {
-            type: 'array',
-            items: {
-                type: 'object',
-                additionalProperties: false,
-                required: ['description', 'link', 'suggested_fix'],
-                properties: {
-                    description: { type: 'string' },
-                    link: { type: 'string', description: '<repo-relative path>#L<start>-L<end> over the issue\'s own lines, or a GitHub blob link.' },
-                    suggested_fix: { type: 'string' },
-                    claude_md_link: { type: 'string', description: 'Link to the CLAUDE.md rule a compliance issue breaks.' },
-                },
-            },
+        description: { type: 'string', description: 'The issue in one or two sentences, as the plugin would post it.' },
+        kind: { enum: ['bug', 'claude-md'], description: 'bug = a bug or logic issue; claude-md = a CLAUDE.md adherence issue.' },
+        link: { type: 'string', description: "<repo-relative path>#L<start>-L<end> over the issue's own lines, or a GitHub blob link." },
+        suggested_fix: { type: 'string', description: 'The committable suggestion or described fix, per the plugin; "" when there is none.' },
+        claude_md_link: { type: 'string', description: 'For a claude-md issue, the link to the CLAUDE.md rule it breaks.' },
+    },
+}
+
+const ANTHROPIC_SCHEMAS = {
+    claudeMd: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['plugin_found', 'claude_md_files'],
+        properties: {
+            plugin_found: { type: 'boolean' },
+            claude_md_files: { type: 'array', items: { type: 'string' }, description: 'Repo-relative paths of the relevant CLAUDE.md files.' },
+        },
+    },
+    summary: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['plugin_found', 'summary'],
+        properties: {
+            plugin_found: { type: 'boolean' },
+            summary: { type: 'string' },
+        },
+    },
+    review: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['plugin_found', 'issues'],
+        properties: {
+            plugin_found: { type: 'boolean' },
+            issues: { type: 'array', items: ANTHROPIC_ISSUE_SHAPE },
+        },
+    },
+    validate: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['plugin_found', 'validated', 'rationale'],
+        properties: {
+            plugin_found: { type: 'boolean' },
+            validated: { type: 'boolean', description: 'True only when the issue is confirmed with high confidence.' },
+            rationale: { type: 'string' },
         },
     },
 }
+
+// The plugin's step 4: two sonnet CLAUDE.md-compliance agents and two opus bug agents.
+const ANTHROPIC_REVIEWERS = [
+    { n: 1, model: 'sonnet', focus: 'CLAUDE.md compliance' },
+    { n: 2, model: 'sonnet', focus: 'CLAUDE.md compliance' },
+    { n: 3, model: 'opus', focus: 'obvious bugs in the diff' },
+    { n: 4, model: 'opus', focus: 'problems in the introduced code' },
+]
 
 // RAISED_SHAPE — a panel-raised finding is a FINDING_SHAPE plus a required tractability
 // (the raiser's own fix-risk read). Panel-local: PANEL_SCHEMA is NOT in the finding-schema
@@ -321,18 +363,16 @@ return panelWrite(panelists, flat, phaseLog)
 // Dispatch the specialists in parallel. A null result OR null `out` becomes a failed
 // status so the pipeline degrades gracefully.
 async function dispatchSpecialists(domains) {
-    const results = await parallel(domains.map(domain => () => {
-        const isAnthropic = domain === 'anthropic'
-        return agent(agentPrompt, {
-            label: domain,
-            phase: 'dispatch',
-            agentType: `code-review-suite:${domain}-reviewer`,
-            schema: isAnthropic ? ANTHROPIC_SCHEMA : SPECIALIST_SCHEMA,
-            // The adapter waits on its own subagents (opus bug and validation agents) through
-            // long silent windows; the default 180s no-progress watchdog would drop it.
-            ...(isAnthropic ? { stallMs: 1800000 } : {}),
-        }).then(out => ({ domain, out: isAnthropic ? normalizeAnthropic(out) : out }))
-    }))
+    const results = await parallel(domains.map(domain => () =>
+        (domain === 'anthropic'
+            ? runAnthropicPipeline()
+            : agent(agentPrompt, {
+                label: domain,
+                phase: 'dispatch',
+                agentType: `code-review-suite:${domain}-reviewer`,
+                schema: SPECIALIST_SCHEMA,
+            })).then(out => ({ domain, out }))
+    ))
     return results.map((r, i) =>
         (r && r.out)
             ? r
@@ -340,11 +380,66 @@ async function dispatchSpecialists(domains) {
     )
 }
 
-// Map the hybrid adapter's issues to specialist findings. Anthropic's pipeline posts only
+// Run the hybrid arm: steps 2-6 of the official plugin, orchestrated here. Steps 2 (CLAUDE.md
+// discovery, haiku) and 3 (summary, sonnet) run together; the four step-4 reviewers then run in
+// parallel, and each reviewer's issues go to their step-5 validators (opus for bugs, sonnet for
+// CLAUDE.md) as soon as that reviewer finishes. Step 6 keeps the validated issues. Returns a
+// specialist result: skipped when the plugin file is absent, failed when any step's agent did
+// not return, never an ok for a run that did not finish.
+async function runAnthropicPipeline() {
+    const header = `Plugin command file: ${ANTHROPIC_PLUGIN_FILE}\n${agentPrompt}\n`
+    const step = (label, model, schema, task) => agent(`${header}\n${task}`, {
+        label,
+        phase: 'dispatch',
+        agentType: 'code-review-suite:anthropic-reviewer',
+        model,
+        effort: 'high',
+        schema,
+        stallMs: 600000,
+    }).catch(() => null)
+    const failed = why => ({ status: 'failed', statusReason: why, findings: [] })
+
+    const [claudeMd, summary] = await Promise.all([
+        step('anthropic-claude-md', 'haiku', ANTHROPIC_SCHEMAS.claudeMd,
+            'You are the step 2 agent. Return the relevant CLAUDE.md file paths.'),
+        step('anthropic-summary', 'sonnet', ANTHROPIC_SCHEMAS.summary,
+            'You are the step 3 agent. Return a summary of the changes.'),
+    ])
+    if (claudeMd && claudeMd.plugin_found === false) {
+        return { status: 'skipped', statusReason: 'official code-review plugin not found in the marketplace clone', findings: [] }
+    }
+    if (!claudeMd || !Array.isArray(claudeMd.claude_md_files)) return failed('step 2 (CLAUDE.md discovery) did not return')
+    if (!summary || typeof summary.summary !== 'string') return failed('step 3 (summary) did not return')
+
+    const context =
+        `Relevant CLAUDE.md files: ${claudeMd.claude_md_files.join(', ') || '(none)'}\n` +
+        `Summary of the changes (step 3):\n${summary.summary}\n`
+    // Each item resolves to { issues } (its validated issues) or null when its reviewer or any of
+    // its validators did not return. A rejected issue is a verdict, not a failure.
+    const reviewed = await pipeline(
+        ANTHROPIC_REVIEWERS,
+        r => step(`anthropic-review-${r.n}`, r.model, ANTHROPIC_SCHEMAS.review,
+            `You are step 4's agent ${r.n} (${r.focus}). Return the issues you find.\n\n${context}`),
+        (review, r) => {
+            if (!review || !Array.isArray(review.issues)) return null
+            return parallel(review.issues.map((issue, j) => () =>
+                step(`anthropic-validate-${r.n}-${j}`, issue.kind === 'bug' ? 'opus' : 'sonnet', ANTHROPIC_SCHEMAS.validate,
+                    `You are a step 5 validation agent. Validate this issue from step 4's agent ${r.n}:\n` +
+                    `${JSON.stringify(issue)}\n\n${context}`)
+                    .then(v => (v && typeof v.validated === 'boolean' ? { issue, validated: v.validated } : null))))
+                .then(verdicts => (verdicts.every(Boolean)
+                    ? { issues: verdicts.filter(v => v.validated).map(v => v.issue) }
+                    : null))
+        },
+    )
+    if (reviewed.some(item => !item)) return failed('a step 4 reviewer or step 5 validator did not return')
+    return normalizeAnthropic({ status: 'ok', issues: reviewed.flatMap(item => item.issues) })
+}
+
+// Map the hybrid arm's validated issues to specialist findings. Anthropic's pipeline posts only
 // issues it has validated as high-signal, so each one enters at Important and confidence 90;
-// the panel can still vote it down, and the voted line guard checks its anchor. A null result
-// stays null (dispatchSpecialists turns it into failed); a malformed one becomes failed, and
-// skipped or failed carry no findings.
+// the panel can still vote it down, and the voted line guard checks its anchor. A malformed
+// result becomes failed, and skipped or failed carry no findings.
 function normalizeAnthropic(out) {
     if (!out) return out
     if (!Array.isArray(out.issues) || !['ok', 'skipped', 'failed'].includes(out.status)) {

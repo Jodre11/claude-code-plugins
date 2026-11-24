@@ -7,7 +7,7 @@
 //   CV_PANELISTS   array, one entry per seat; a missing entry is a dropped panelist
 //   CV_WRITER      the writer's assessment as a JSON string literal
 //   CV_EDITOR      the comment-editor's result as JSON, or the bare word THROW to reject
-// Prints {bundle, editorCalls: [{prompt, opts}], dispatches: [{label, opts}], logs: [string]} as JSON.
+// Prints {bundle, editorCalls: [{prompt, opts}], dispatches: [{label, prompt, opts}], logs: [string]} as JSON.
 'use strict';
 const fs = require('fs');
 
@@ -33,7 +33,7 @@ const agent = async (prompt, opts) => {
         const i = roster.indexOf(label.slice('panel-'.length));
         return panelists[i] === undefined ? null : panelists[i];
     }
-    dispatches.push({ label, opts: { ...opts, schema: undefined, schemaRequired: opts && opts.schema && opts.schema.required } });
+    dispatches.push({ label, prompt, opts: { ...opts, schema: undefined, schemaRequired: opts && opts.schema && opts.schema.required } });
     const s = specialists[label];
     if (Array.isArray(s)) return { status: 'ok', findings: s };
     if (s && typeof s === 'object') return s;
@@ -41,6 +41,17 @@ const agent = async (prompt, opts) => {
     return { status: 'ok', findings: [] };
 };
 const parallel = (thunks) => Promise.all(thunks.map((t) => t()));
+// The runtime's semantics: each item runs through every stage as (prevResult, originalItem, index),
+// the first stage getting the item itself; a stage that throws drops the item to null.
+const pipeline = (items, ...stages) => Promise.all(items.map(async (item, i) => {
+    let r = item;
+    try {
+        for (const stage of stages) r = await stage(r, item, i);
+        return r;
+    } catch {
+        return null;
+    }
+}));
 const noop = () => {};
 const timeoutId = setTimeout(() => { process.stdout.write('TIMEOUT'); process.exit(1); }, 10000);
 
@@ -48,7 +59,7 @@ const timeoutId = setTimeout(() => { process.stdout.write('TIMEOUT'); process.ex
     const fn = new Function('agent', 'parallel', 'pipeline', 'phase', 'log', 'args', 'workflow',
         'return (async()=>{' + src + '\n})()');
     const log = (m) => { logs.push(String(m)); };
-    const bundle = await fn(agent, parallel, async () => [], noop, log, process.env.CV_ARGS, async () => null);
+    const bundle = await fn(agent, parallel, pipeline, noop, log, process.env.CV_ARGS, async () => null);
     clearTimeout(timeoutId);
     process.stdout.write(JSON.stringify({ bundle, editorCalls, dispatches, logs }));
     process.exit(0);

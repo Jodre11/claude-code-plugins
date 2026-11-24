@@ -34,7 +34,7 @@
       "required": ["verdict", "bodyText", "comments"],
       "properties": {
         "verdict": { "enum": ["APPROVE", "REQUEST_CHANGES", "COMMENT", "NONE"], "description": "NONE in local mode (pre-review produces no verdict)." },
-        "bodyText": { "type": "string", "description": "Rendered GitHub body, built by review-core buildBody(): verdict headline, Panel Assessment, finding index, body notes, pruned-findings disclosure, Dependency Freshness table." },
+        "bodyText": { "type": "string", "description": "Rendered GitHub body, built by review-core buildBody(): verdict headline, Panel Assessment, finding index, body notes, pruned-findings disclosure, Dependency Freshness table, then the review marker line (PR mode only)." },
         "comments": {
           "type": "array",
           "items": {
@@ -80,6 +80,23 @@
                   "description": { "type": "string" },
                   "suggested_fix": { "type": "string" },
                   "verdict_relevant": { "type": "boolean" }
+                }
+              }
+            },
+            "voice": {
+              "type": "array",
+              "description": "Wording-pass records: one per field the comment-editor changed, accepted or not. Absent when it changed nothing or did not run.",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["index", "field", "original", "edited", "accepted"],
+                "properties": {
+                  "index": { "type": ["integer", "null"], "minimum": 0, "description": "Position in the item list sent to the editor; null for the assessment." },
+                  "field": { "enum": ["description", "suggested_fix", "assessment"] },
+                  "original": { "type": "string" },
+                  "edited": { "type": "string" },
+                  "accepted": { "type": "boolean", "description": "True when every guard passed and the rewrite replaced the original." },
+                  "reason": { "type": ["string", "null"], "description": "Why a guard rejected the rewrite; null when accepted." }
                 }
               }
             },

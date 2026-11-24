@@ -116,7 +116,12 @@ This PR has no narrative description.
 Before review, please add a paragraph at the top of the PR body explaining what this change is for and why. Two or more sentences, written as you would explain it to a teammate.
 
 (This is a structural check — no AI was used to evaluate the body's quality. Any narrative paragraph that meets the bar will let the review proceed.)
+
+<!-- code-review-suite -->
 ```
+
+The last line is the review marker every body this suite posts ends with; GitHub does not
+display it. Leave it out wherever the body is printed instead of posted.
 
 **Under `$ANALYSIS_ONLY = true`:** do not post. Print the canned body above to stdout,
 prefixed with `> Phase 0 halt (analysis-only, not posted): no narrative description`, and
@@ -156,7 +161,8 @@ gh pr view "$ARGUMENTS" --json reviews \
 
 If the most recent review by `$CURRENT_USER` exists, has `state == "CHANGES_REQUESTED"`
 (for `REQUEST_CHANGES`) or `state == "COMMENTED"` (for `COMMENT`), and its `body` matches the
-canned text above verbatim, do NOT post a duplicate. Announce
+canned text above verbatim (with or without the trailing marker line, which older halts lack), do
+NOT post a duplicate. Announce
 `> Phase 0 halt: existing $HALT_EVENT review still active — no new review posted` and stop
 the pipeline cleanly. Otherwise, submit using
 `gh pr review "$ARGUMENTS" --request-changes --input -` (for `REQUEST_CHANGES`) or

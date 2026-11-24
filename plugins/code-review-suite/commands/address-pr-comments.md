@@ -1,7 +1,7 @@
 ---
 name: address-pr-comments
 description: Address unresolved review comments on a GitHub PR
-argument-hint: "[pr-number-or-url]"
+argument-hint: "[pr-number-or-url] [--include-self]"
 ---
 
 # Address PR Comments
@@ -10,8 +10,19 @@ Examine a GitHub PR for unresolved review comments and address them systematical
 
 ## Input
 - PR URL or number: $ARGUMENTS
+- Optional flag `--include-self`: if `$ARGUMENTS` contains it as a whitespace-delimited word, set
+  `$INCLUDE_SELF = true` and remove it from `$ARGUMENTS`; otherwise `$INCLUDE_SELF = false`. Do this
+  before validation.
 
 Follow the PR argument validation instructions in `includes/pr-arg-validation.md`.
+
+**The review marker.** code-review-suite ends every comment and review body it posts with the line
+`<!-- code-review-suite -->` (an HTML comment, so GitHub does not show it). A body is
+*marker-bearing* when it contains that text. Comments by `$CURRENT_USER` are normally
+skipped, because they are the user's own replies; a marker-bearing one is the suite's review
+feedback posted under the user's login, so it is kept. `$INCLUDE_SELF` widens this to every
+comment and review body by `$CURRENT_USER`, for example the comments a standalone
+`/code-review --comment` run posts, which carry no marker.
 
 ## Instructions
 
@@ -46,6 +57,7 @@ gh api graphql -f query='
             nodes {
               databaseId
               isMinimized
+              body
               author { login }
             }
           }
@@ -57,15 +69,18 @@ gh api graphql -f query='
 ```
 
 <!-- Sync note: this query has two variants that must be kept in sync:
-     - skills/review-gh-pr/SKILL.md Stage 1 GraphQL query — omits `isOutdated`, `isMinimized` on comment nodes, and `totalCount` on the `reviewThreads` edge; adds path and body on inner comments
+     - skills/review-gh-pr/SKILL.md Stage 1 GraphQL query — omits `isOutdated`, `isMinimized` on comment nodes, and `totalCount` on the `reviewThreads` edge; adds path on inner comments
      - skills/review-gh-pr/SKILL.md Stage 4 GraphQL query — omits path from inner comments (only needs resolution state and reply content)
      When modifying the schema in any of these three locations, update the other two. -->
 
 - Collect **actionable threads** — keep a thread if ALL of the following are true:
   - `isResolved == false`
   - Root comment `isMinimized == false`
-  - Root comment author is not `$CURRENT_USER`
-  - `$CURRENT_USER` has not already replied (check `author.login` values in `comments.nodes`)
+  - Root comment author is not `$CURRENT_USER`, **or** the root is by `$CURRENT_USER` and is
+    marker-bearing, **or** `$INCLUDE_SELF` is true
+  - `$CURRENT_USER` has not already replied: no comment in `comments.nodes` **after the root**
+    (index 1 onwards) has `author.login == $CURRENT_USER`. The root itself never counts, so a
+    self-authored root that is kept above is not mistaken for a reply
   - Thread's inner `comments.pageInfo.hasNextPage` is false (if true, treat conservatively — assume the current user may have already replied and exclude it). This is stricter than the review-gh-pr skill's equivalent check, which includes truncated threads with a warning — the difference is intentional: acting on a thread (replying, making code changes) carries higher risk than passively reviewing it, so the address workflow excludes ambiguous threads.
 - Also note which actionable threads have `isOutdated == true` — these need special handling in step 4 (the diff position no longer exists, but the concern may still be valid).
 - If `pageInfo.hasNextPage == true`, paginate using `after: "{endCursor}"` until all threads are fetched.
@@ -81,14 +96,18 @@ Inline comments are attached to diff lines. Reviewers can also leave feedback in
 ```bash
 gh api repos/{owner}/{repo}/pulls/{number}/reviews --paginate \
   --jq '[.[] | select(.body == null | not) | select(.body == "" | not)]' \
-  | jq --arg user "$CURRENT_USER" '[.[] | select(.state != "APPROVED") | select(.user.login != $user)]'
+  | jq --arg user "$CURRENT_USER" --argjson self "$INCLUDE_SELF" \
+      '[.[] | select(.state != "APPROVED")
+            | select(.user.login != $user or $self or (.body | contains("<!-- code-review-suite -->")))]'
 ```
+This keeps review bodies from other users, marker-bearing review bodies by `$CURRENT_USER`, and,
+when `$INCLUDE_SELF` is true, every review body by `$CURRENT_USER`.
 Never interpolate `$CURRENT_USER` directly into a jq filter string — always use the `--arg` pattern for shell jq invocations. This avoids both the shell interpolation problem inside single-quoted `--jq` and jq injection risk from unexpected characters in the username. Include these as additional actionable items (they won't have a `path` or `line` — treat them as general feedback).
 
 ### 3. Filter to actionable comments
 - If either step 2.1 or step 2.2 returned zero results, warn the user before proceeding — a PR with review comments should have data from both sources; an empty result likely indicates an API failure or pagination issue.
 - From the REST comments (step 2.2), keep only root comments (`in_reply_to_id: null`) whose `id` is in the actionable set from step 2.1. (REST `id` and GraphQL `databaseId` are the same integer identifier.) If the join yields no matches despite both queries returning data, warn the user about the discrepancy rather than silently proceeding with zero comments.
-- From the review bodies (step 2.3), keep non-empty bodies from other users on non-approved reviews.
+- From the review bodies (step 2.3), keep the non-empty bodies on non-approved reviews that step 2.3's filter kept.
 - Present a summary to the user: **"Found N actionable inline threads (M outdated) and K review-level comments. Proceed?"** Wait for confirmation before continuing. This prevents wasted effort on PRs with many comments where manual triage may be preferred.
 
 ### 4. Analyse each actionable comment
@@ -116,6 +135,31 @@ Never interpolate `$CURRENT_USER` directly into a jq filter string — always us
 
 ### 8. Reply to each comment thread
 Reply **after** pushing so that references to committed code are accurate.
+
+#### 8.1. Fit every reply before posting any
+Compose the replies one at a time, in order, never in parallel. For each actionable comment:
+
+1. Create a work directory of its own, `${CLAUDE_TEMP_DIR}/address-pr-comments/reply-<n>/` (`<n>` counts
+   from 1), so no two replies share files.
+2. Write `<work-dir>/brief.md`:
+   - **Question:** the root comment's body, verbatim. For a review-level comment, the review body.
+   - **Asker:** the root comment's `author.login`.
+   - **Medium:** PR review reply.
+   - **Need:** `re-review` when the reply reports a change the asker should check, otherwise `none`.
+   - **Sources:** save the pushed commit's diff for this comment's file
+     (`git show <sha> -- <path>`, or the whole commit for a review-level comment) and the thread's
+     comments to files in `<work-dir>/`, and list those paths.
+3. Write the draft reply to `<work-dir>/draft.md`. If addressed: what was changed, with the commit
+   SHA if it helps. If skipped: the reason (e.g. "dev-only code", "implementation detail", "low value").
+4. Invoke the `reply-fit:reply-fit` skill with `mode: embedded <work-dir>`. It returns
+   `FINAL: <path>`, `WORDS: <n> / <budget>` and an `ASK-AUTHOR:` list. Keep all three.
+
+When every reply is fitted, collect the ASK-AUTHOR items from all of them. If there are any, ask
+the user **once**, listing each item with the comment it belongs to, and wait for the answers. Add
+each answer to its reply's `final.md`; an item the user declines is left out. Only then post.
+
+#### 8.2. Post the fitted replies
+Post each reply's `final.md` text as written. Do not reword it after the fit.
 
 Before posting a reply, check the comment's `line` and `original_line` fields to determine which template to use. The `commit_id`, `path`, `line`, `side`, `original_line`, and `original_commit_id` values are available from the comment data fetched in steps 2.1 and 2.2. Use `--input -` with a heredoc for the body to avoid shell quoting issues.
 
@@ -150,9 +194,8 @@ EOF_COMMENT_BODY
 Use the comment's `side` field (not hardcoded 'RIGHT') — comments on deleted lines have `side: 'LEFT'`.
 
 **If both `line` and `original_line` are null** — post a general PR comment instead of an inline reply.
-- If addressed: explain what was changed, reference the commit if helpful
-- If skipped: explain the rationale (e.g., "dev-only code", "implementation detail", "low value")
-- Do NOT resolve/dismiss comments — leave that decision to the developer
+
+Do NOT resolve/dismiss comments — leave that decision to the developer.
 
 **NOTE**: Do NOT use the `/comments/{id}/replies` sub-resource endpoint — it can return 200 but silently fail to persist the reply. Always use `POST /comments` with the `in_reply_to` field as shown above.
 

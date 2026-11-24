@@ -239,7 +239,12 @@ This PR has no narrative description.
 Before review, please add a paragraph at the top of the PR body explaining what this change is for and why. Two or more sentences, written as you would explain it to a teammate.
 
 (This is a structural check — no AI was used to evaluate the body's quality. Any narrative paragraph that meets the bar will let the review proceed.)
+
+<!-- code-review-suite -->
 ```
+
+The last line is the review marker every body this suite posts ends with; GitHub does not
+display it. Leave it out wherever the body is printed instead of posted.
 
 **Under `$ANALYSIS_ONLY = true`:** do not post. Print the canned body above to stdout,
 prefixed with `> Phase 0 halt (analysis-only, not posted): no narrative description`, and
@@ -279,7 +284,8 @@ gh pr view "$ARGUMENTS" --json reviews \
 
 If the most recent review by `$CURRENT_USER` exists, has `state == "CHANGES_REQUESTED"`
 (for `REQUEST_CHANGES`) or `state == "COMMENTED"` (for `COMMENT`), and its `body` matches the
-canned text above verbatim, do NOT post a duplicate. Announce
+canned text above verbatim (with or without the trailing marker line, which older halts lack), do
+NOT post a duplicate. Announce
 `> Phase 0 halt: existing $HALT_EVENT review still active — no new review posted` and stop
 the pipeline cleanly. Otherwise, submit using
 `gh pr review "$ARGUMENTS" --request-changes --input -` (for `REQUEST_CHANGES`) or
@@ -654,7 +660,8 @@ Draft a structured mini-review:
   to a specific `file:line`. If you would naturally have more than 3 issues, do NOT
   truncate silently — instead, fail the bar (announce `> Trivial-mode aborted: more
   than 3 issues warrant comment — falling through to Step 1` and continue to Step 1).
-  Same tone guidelines as full reviews (use "Consider…", "Would it be worth…", etc).
+  Read `includes/comment-voice.md` before drafting and write the body and every comment to its
+  rules.
 
 ### 0.7.8 User confirmation
 
@@ -700,6 +707,10 @@ EOF
 
 Use `RIGHT` side for additions and modifications, `LEFT` for deletions. The
 `--input -` heredoc carries the comment body to avoid shell-quoting issues.
+
+End every posted body, each inline comment and the review body alike, with a blank line and then
+the review marker line `<!-- code-review-suite -->`, so later runs can tell the suite's posts
+from the user's own. Leave the marker out of anything printed instead of posted.
 
 After all inline comments post, submit the verdict via `gh pr review` using
 `--approve`, `--request-changes`, or `--comment` per the verdict, with `--input -`

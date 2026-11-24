@@ -110,7 +110,8 @@
                 "empty_tree_mode": { "type": "boolean" },
                 "path_scope": { "type": "string" },
                 "orchestration_mode": { "const": "panel", "description": "Constant kept so logs written before classic orchestration was retired stay comparable." },
-                "panel_size": { "type": "integer", "minimum": 3 }
+                "panel_size": { "type": "integer", "minimum": 3 },
+                "anthropic_specialist": { "type": "boolean", "description": "True when the opt-in hybrid arm (anthropic-reviewer, Anthropic's plugin pipeline) was dispatched." }
               }
             },
             "cogs": {

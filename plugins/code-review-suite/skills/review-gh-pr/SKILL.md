@@ -1,6 +1,6 @@
 ---
 name: review-gh-pr
-description: Review a GitHub pull request with inline comments
+description: Multi-agent panel review of a GitHub pull request, posted as inline comments
 argument-hint: "[pr-number-or-url]"
 allowed-tools: Workflow(code-review-suite:review-core)
 ---
@@ -1187,6 +1187,16 @@ still sets it, print `> orchestration.review_mode is retired and ignored — rem
 **Validate `panel_size`.** If `$PANEL_SIZE` is even or `< 3`, halt with:
 `> Panel review requires an odd panel_size >= 3 (got <value>).` Do not silently round.
 
+**Resolve the hybrid arm.** Resolve `review.anthropic_specialist` (the `anthropic_specialist`
+key in the `[review]` table) from the same two config layers, first match wins, exactly as
+`full_log` resolves (Step 3.6): (1) the reviewed repo's `.claude/code-review.toml`, then (2) the
+user-level `~/.claude/code-review.toml`. Treat a missing/malformed file, or a value that is not a
+boolean, as not setting the key. If neither layer sets it, `$ANTHROPIC_SPECIALIST = false`; an
+explicit `false` in the repo-level file wins over a `true` in the user-level file. When `true`,
+review-core also dispatches `anthropic-reviewer`, which runs Anthropic's official code-review
+plugin pipeline as one more specialist; announce `> Hybrid arm on: adding anthropic (plugin
+pipeline)` once. The lightweight route ignores the flag.
+
 **Read the concern brief.** Set `$PANEL_BRIEF` to the verbatim contents of
 `$PLUGIN_ROOT/includes/panel-concern-brief.md`.
 
@@ -1204,7 +1214,8 @@ Workflow({ name: "code-review-suite:review-core", args: {
     pathScope: $PATH_SCOPE, tempDir: $RESOLVED_TEMP_DIR,
     intentLedger: $INTENT_LEDGER, repoDir: $REPO_DIR,
     panelSize: $PANEL_SIZE, panelBrief: $PANEL_BRIEF,
-    changedLinesBlock: $CHANGED_LINES_BLOCK
+    changedLinesBlock: $CHANGED_LINES_BLOCK,
+    anthropicSpecialist: $ANTHROPIC_SPECIALIST
 } })
 ```
 

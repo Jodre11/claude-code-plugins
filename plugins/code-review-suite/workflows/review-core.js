@@ -63,6 +63,34 @@ const SPECIALIST_SCHEMA = {
     },
 }
 
+// ANTHROPIC_SCHEMA — the hybrid adapter's raw output (agents/anthropic-reviewer.md). It reports
+// issues in the official code-review plugin's own terms; normalizeAnthropic maps them to
+// SPECIALIST_SCHEMA findings in code, so the anchor parsing and the fixed severity and
+// confidence never depend on the model.
+const ANTHROPIC_SCHEMA = {
+    type: 'object',
+    additionalProperties: false,
+    required: ['status', 'issues'],
+    properties: {
+        status: { enum: ['ok', 'skipped', 'failed'], description: 'ok = steps 2-6 finished; skipped = plugin absent or review declined; failed = error.' },
+        statusReason: { type: 'string', description: 'One-line reason when status is skipped or failed.' },
+        issues: {
+            type: 'array',
+            items: {
+                type: 'object',
+                additionalProperties: false,
+                required: ['description', 'link', 'suggested_fix'],
+                properties: {
+                    description: { type: 'string' },
+                    link: { type: 'string', description: '<repo-relative path>#L<start>-L<end> over the issue\'s own lines, or a GitHub blob link.' },
+                    suggested_fix: { type: 'string' },
+                    claude_md_link: { type: 'string', description: 'Link to the CLAUDE.md rule a compliance issue breaks.' },
+                },
+            },
+        },
+    },
+}
+
 // RAISED_SHAPE — a panel-raised finding is a FINDING_SHAPE plus a required tractability
 // (the raiser's own fix-risk read). Panel-local: PANEL_SCHEMA is NOT in the finding-schema
 // parity set, so this does not touch the canonical schema.
@@ -170,7 +198,7 @@ if (resolvedArgs === null || typeof resolvedArgs !== 'object' || typeof resolved
 const {
     agentPrompt, flags, route, selfReReview, reviewMode,
     base, headSha, emptyTreeMode, pathScope, tempDir, intentLedger, repoDir,
-    panelSize, panelBrief, changedLinesBlock,
+    panelSize, panelBrief, changedLinesBlock, anthropicSpecialist,
 } = resolvedArgs
 
 // Per-cog capture accumulator (full_log corpus). Write-only during the run;
@@ -186,6 +214,7 @@ const phaseLog = {
     path_scope: pathScope || '',
     orchestration_mode: 'panel',
     panel_size: panelSize ?? 3,
+    anthropic_specialist: anthropicSpecialist === true,
   },
   cogs: [],
 }
@@ -228,6 +257,8 @@ const CONDITIONAL = [
     ['test-quality', flags.tests],
     ['test-adequacy', flags.production],
     ['latent-hazard', flags.production],
+    // Opt-in hybrid arm ([review] anthropic_specialist): Anthropic's plugin pipeline as one more specialist.
+    ['anthropic', anthropicSpecialist === true],
 ]
 const condList = CONDITIONAL.filter(([, on]) => on).map(([d]) => d)
 
@@ -241,11 +272,13 @@ const condList = CONDITIONAL.filter(([, on]) => on).map(([d]) => d)
 // = slower = dispatched earlier. Order-only: reordering permutes the internal
 // finding_id index but changes no verdict. An unlisted domain sorts last (rank Infinity) — safe default for any
 // future specialist until it has timing data. Re-derive periodically as models/tools drift.
+// anthropic's rank is provisional (it runs a whole multi-agent pipeline, so assumed slowest)
+// until its durations are measured.
 const DISPATCH_RANK = {
-    correctness: 0, 'api-contract': 1, 'latent-hazard': 2, ui: 3, consistency: 4,
-    style: 5, 'test-quality': 6, 'test-adequacy': 7, archaeology: 8, efficiency: 9,
-    alignment: 10, reuse: 11, security: 12, jbinspect: 13, ruff: 14, eslint: 15,
-    trivy: 16, housekeeper: 17,
+    anthropic: 0, correctness: 1, 'api-contract': 2, 'latent-hazard': 3, ui: 4,
+    consistency: 5, style: 6, 'test-quality': 7, 'test-adequacy': 8, archaeology: 9,
+    efficiency: 10, alignment: 11, reuse: 12, security: 13, jbinspect: 14, ruff: 15,
+    eslint: 16, trivy: 17, housekeeper: 18,
 }
 const allSpecialists = [...coreList, ...condList].sort(
     (a, b) => (DISPATCH_RANK[a] ?? Infinity) - (DISPATCH_RANK[b] ?? Infinity)
@@ -269,8 +302,11 @@ const findingsByDomain = Object.fromEntries(
     specialists.map(s => [s.domain, s.out.findings ?? []])
 )
 
-for (const [domain, fs] of Object.entries(findingsByDomain)) {
-  phaseLog.cogs.push({ phase: 'round1', domain, output: { findings: fs } })
+// The status lets the log tell a specialist that ran clean from one that was skipped or failed.
+for (const s of specialists) {
+  const output = { status: s.out.status, findings: findingsByDomain[s.domain] }
+  if (s.out.statusReason) output.statusReason = s.out.statusReason
+  phaseLog.cogs.push({ phase: 'round1', domain: s.domain, output })
 }
 
 // N-panelist vote, then a deterministic tally + rubric and a writer turn for the prose.
@@ -285,19 +321,79 @@ return panelWrite(panelists, flat, phaseLog)
 // Dispatch the specialists in parallel. A null result OR null `out` becomes a failed
 // status so the pipeline degrades gracefully.
 async function dispatchSpecialists(domains) {
-    const results = await parallel(domains.map(domain => () =>
-        agent(agentPrompt, {
+    const results = await parallel(domains.map(domain => () => {
+        const isAnthropic = domain === 'anthropic'
+        return agent(agentPrompt, {
             label: domain,
             phase: 'dispatch',
             agentType: `code-review-suite:${domain}-reviewer`,
-            schema: SPECIALIST_SCHEMA,
-        }).then(out => ({ domain, out }))
-    ))
+            schema: isAnthropic ? ANTHROPIC_SCHEMA : SPECIALIST_SCHEMA,
+            // The adapter waits on its own subagents (opus bug and validation agents) through
+            // long silent windows; the default 180s no-progress watchdog would drop it.
+            ...(isAnthropic ? { stallMs: 1800000 } : {}),
+        }).then(out => ({ domain, out: isAnthropic ? normalizeAnthropic(out) : out }))
+    }))
     return results.map((r, i) =>
         (r && r.out)
             ? r
             : { domain: (r && r.domain) || domains[i], out: { status: 'failed', statusReason: 'subagent returned null', findings: [] } }
     )
+}
+
+// Map the hybrid adapter's issues to specialist findings. Anthropic's pipeline posts only
+// issues it has validated as high-signal, so each one enters at Important and confidence 90;
+// the panel can still vote it down, and the voted line guard checks its anchor. A null result
+// stays null (dispatchSpecialists turns it into failed); a malformed one becomes failed, and
+// skipped or failed carry no findings.
+function normalizeAnthropic(out) {
+    if (!out) return out
+    if (!Array.isArray(out.issues) || !['ok', 'skipped', 'failed'].includes(out.status)) {
+        return { status: 'failed', statusReason: 'anthropic adapter returned a malformed result', findings: [] }
+    }
+    const reason = out.statusReason ? { statusReason: out.statusReason } : {}
+    if (out.status !== 'ok') return { status: out.status, ...reason, findings: [] }
+    const findings = out.issues.map(issue => {
+        const { file, line } = parseIssueLink(issue.link)
+        const ref = typeof issue.claude_md_link === 'string' ? issue.claude_md_link.trim() : ''
+        return {
+            file,
+            line,
+            severity: 'Important',
+            confidence: 90,
+            description: issue.description ?? '',
+            suggested_fix: issue.suggested_fix ?? '',
+            ...(ref ? { reference: ref } : {}),
+        }
+    })
+    return { status: 'ok', ...reason, findings }
+}
+
+// Parse an issue link into an anchor. Accepts `path#L<start>-L<end>`, `path#L<n>` and the
+// plugin's GitHub form `https://github.com/<owner>/<repo>/blob/<sha>/<path>#L<start>-L<end>`.
+// A single-line link anchors on its line, a range on its end line (where GitHub anchors a
+// multi-line comment). An unparsable line range gives a file-level anchor (line 0); an
+// unparsable path gives no file, so the finding goes to the review body.
+function parseIssueLink(link) {
+    if (typeof link !== 'string') return { file: '', line: 0 }
+    const text = link.trim()
+    const hash = text.indexOf('#')
+    let path = hash >= 0 ? text.slice(0, hash) : text
+    const fragment = hash >= 0 ? text.slice(hash + 1) : ''
+    const blob = path.match(/^https?:\/\/[^/]+\/[^/]+\/[^/]+\/blob\/[^/]+\/(.+)$/)
+    if (blob) {
+        path = blob[1]
+    } else if (/^[a-z][a-z0-9+.-]*:/i.test(path)) {
+        return { file: '', line: 0 }
+    }
+    try { path = decodeURIComponent(path) } catch { return { file: '', line: 0 } }
+    path = path.replace(/^\.\//, '').replace(/^\/+/, '')
+    if (!path) return { file: '', line: 0 }
+    const m = fragment.match(/^L(\d+)(?:-L(\d+))?$/)
+    if (!m) return { file: path, line: 0 }
+    const start = parseInt(m[1], 10)
+    const end = m[2] === undefined ? start : parseInt(m[2], 10)
+    if (start < 1 || end < start) return { file: path, line: 0 }
+    return { file: path, line: end }
 }
 
 // The deterministic tail: the Category-C guard, the local-mode branch, and the PR-mode

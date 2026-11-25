@@ -63,5 +63,5 @@
       "class": "bug"
     }
   ],
-  "intent": "closes [GVA-605](https://linear.app/ghost/issue/GVA-605/adjust-the-warmup-numbers-to-reflect-joeys-suggestions)\n\nOur initial scaling factors were based on some preliminary research, and were designed to be as simple as possible. After further discussions, we've decided to avoid having such a fast ramp-up at the early stage, and limit the growth at the later stages to 75k+ per send. That should still prevent any large sites from going back into warm-up between sends, but is more likely to avoid damaging the reputation by scaling too aggressively."
+  "intent": "This change: Updated the scaling factors for domain warmup. The original description follows as written.\n\ncloses [GVA-605](https://linear.app/ghost/issue/GVA-605/adjust-the-warmup-numbers-to-reflect-joeys-suggestions)\n\nOur initial scaling factors were based on some preliminary research, and were designed to be as simple as possible. After further discussions, we've decided to avoid having such a fast ramp-up at the early stage, and limit the growth at the later stages to 75k+ per send. That should still prevent any large sites from going back into warm-up between sends, but is more likely to avoid damaging the reputation by scaling too aggressively."
 }

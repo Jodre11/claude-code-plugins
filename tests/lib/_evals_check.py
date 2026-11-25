@@ -10,6 +10,8 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 FIXTURES = REPO_ROOT / 'evals' / 'fixtures'
+sys.path.insert(0, str(REPO_ROOT / 'evals' / 'tools'))
+from port_qodo import has_narrative  # noqa: E402  (the porter owns the rule)
 LICENCES = {'MIT', 'Apache-2.0'}
 CLASSES = {'bug', 'rule', 'quality'}
 
@@ -28,8 +30,8 @@ def check_fixtures():
         if f.get('id') != fid:
             problems.append(f'{fid}: id {f.get("id")} does not match its directory')
         sets[f.get('set')] = sets.get(f.get('set'), 0) + 1
-        if len(f.get('intent', '').split()) <= 7:
-            problems.append(f'{fid}: intent is too short for the suite\'s intent rule')
+        if not has_narrative(f.get('intent', '')):
+            problems.append(f'{fid}: intent does not open with the prose paragraph the suite\'s intent rule needs')
         for issue in f.get('issues', []):
             if issue.get('class') not in CLASSES:
                 problems.append(f'{fid}/{issue.get("key")}: class {issue.get("class")!r}')

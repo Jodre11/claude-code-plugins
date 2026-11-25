@@ -85,6 +85,18 @@ def render_rules(repo, rules):
     return '\n'.join(lines)
 
 
+def has_narrative(text):
+    """Approximate /pre-review's intent rule: the first block is prose, with two sentences and over seven words."""
+    for block in re.split(r'\n\s*\n', text.strip()):
+        block = block.strip()
+        if not block:
+            continue
+        if re.match(r'(#|[-*+] |\d+\. |\||```|<details)', block):
+            return False
+        return len(re.findall(r'[^.!?]+[.!?](?=\s|$)', block)) >= 2 and len(block.split()) > 7
+    return False
+
+
 def describe(pr):
     """Return (title, intent) from a benchmark PR, as the original author wrote them.
 
@@ -105,6 +117,10 @@ def describe(pr):
         # The suite's intent rule needs two sentences; say plainly that upstream gave no more.
         quoted = f' beyond "{desc}"' if desc else ''
         desc = f'{title.rstrip(".")}. The original pull request gave no other description{quoted}.'
+    elif not has_narrative(desc):
+        # A bot body or a bullet list would halt the suite's intent check at random, which the eval must not
+        # measure; lead with a plain statement and keep the original text unchanged below it.
+        desc = f'This change: {title.rstrip(".")}. The original description follows as written.\n\n{desc}'
     return title, desc
 
 

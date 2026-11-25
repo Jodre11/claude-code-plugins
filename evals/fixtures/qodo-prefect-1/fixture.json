@@ -63,5 +63,5 @@
       "class": "bug"
     }
   ],
-  "intent": "## Summary\n\n- Add auto-generated CLI reference for `prefect sdk` command\n- Add comprehensive how-to guide for generating typed SDKs from deployments\n- Update navigation in docs.json for both new pages\n- Regenerate CLI docs to include new --output options\n\n\ud83e\udd16 Generated with [Claude Code](https://claude.ai/code)"
+  "intent": "This change: Add documentation for prefect sdk generate CLI. The original description follows as written.\n\n## Summary\n\n- Add auto-generated CLI reference for `prefect sdk` command\n- Add comprehensive how-to guide for generating typed SDKs from deployments\n- Update navigation in docs.json for both new pages\n- Regenerate CLI docs to include new --output options\n\n\ud83e\udd16 Generated with [Claude Code](https://claude.ai/code)"
 }

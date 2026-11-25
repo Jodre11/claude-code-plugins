@@ -95,5 +95,5 @@
       "class": "rule"
     }
   ],
-  "intent": "github makes it easy to dislike it again. completely unreasonable \"rate limiting\" (without a rate) of requests to raw.githubusercontent, see https://github.com/orgs/community/discussions/177971 and https://github.com/orgs/community/discussions/157887"
+  "intent": "This change: fix(bundler): inline linuxdeploy plugin scripts. The original description follows as written.\n\ngithub makes it easy to dislike it again. completely unreasonable \"rate limiting\" (without a rate) of requests to raw.githubusercontent, see https://github.com/orgs/community/discussions/177971 and https://github.com/orgs/community/discussions/157887"
 }

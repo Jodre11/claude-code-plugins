@@ -82,5 +82,5 @@
       "class": "rule"
     }
   ],
-  "intent": "ref. https://linear.app/ghost/issue/FEA-465/allow-individual-banning-and-moderation-of-commenters\n\n- Rearranged list so it resembles more like a list of comments than a table so that it's easier to scan and manage."
+  "intent": "This change: Redesigned comment moderation list layout. The original description follows as written.\n\nref. https://linear.app/ghost/issue/FEA-465/allow-individual-banning-and-moderation-of-commenters\n\n- Rearranged list so it resembles more like a list of comments than a table so that it's easier to scan and manage."
 }

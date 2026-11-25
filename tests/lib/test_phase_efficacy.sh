@@ -85,7 +85,7 @@ _pe_run_core() {
 _pe_args() {
     local n="${1:-3}"
     local sha40="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-    echo "{\"agentPrompt\":\"x\",\"flags\":{},\"route\":\"full\",\"selfReReview\":false,\"reviewMode\":\"pr\",\"base\":\"main\",\"headSha\":\"${sha40}\",\"emptyTreeMode\":false,\"pathScope\":\"\",\"tempDir\":\"/tmp/claude-test/x\",\"intentLedger\":\"\",\"panelSize\":${n},\"panelBrief\":\"BRIEF\",\"changedLinesBlock\":\"Changed lines:\\na.cs: 1-40\\n\"}"
+    echo "{\"agentPrompt\":\"x\",\"flags\":{},\"route\":\"full\",\"selfReReview\":false,\"reviewMode\":\"pr\",\"base\":\"main\",\"headSha\":\"${sha40}\",\"emptyTreeMode\":false,\"pathScope\":\"\",\"tempDir\":\"/tmp/claude-test/x\",\"intentLedger\":\"\",\"panelSize\":${n},\"changedLinesBlock\":\"Changed lines:\\na.cs: 1-40\\n\"}"
 }
 
 # One correctness finding, and the panelist ballot that votes it real.

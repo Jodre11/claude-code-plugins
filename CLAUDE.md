@@ -95,7 +95,10 @@ Prose that several prompt files must carry inline (agents skip a "follow the ins
 `END GENERATED from <path>` lines, where `<path>` is relative to the plugin root. Edit the
 source, never a copy, then run `scripts/render-includes.py`. A source may contain generated
 regions of its own (`review-pipeline.md` carries Phase 0 and Phase 0.6). To add a copy,
-paste the two marker lines where it belongs and run the script.
+paste the two marker lines where it belongs and run the script. A workflow script cannot read
+plugin files at run time, so it embeds a whole markdown file as a constant between
+`// BEGIN GENERATED from <path> as <NAME>: ...` and `// END GENERATED from <path>` lines
+(`review-core.js` carries the panel concern brief as `PANEL_BRIEF`).
 
 ## Testing
 

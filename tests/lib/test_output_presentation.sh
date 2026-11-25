@@ -68,7 +68,7 @@ _op_args() {
     local mode="${1:-pr}" flags="${2:-}"
     [ -n "$flags" ] || flags='{}'
     local sha40="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-    echo "{\"agentPrompt\":\"x\",\"flags\":${flags},\"route\":\"full\",\"selfReReview\":false,\"reviewMode\":\"${mode}\",\"base\":\"main\",\"headSha\":\"${sha40}\",\"emptyTreeMode\":false,\"pathScope\":\"\",\"tempDir\":\"/tmp/claude-test/x\",\"intentLedger\":\"\",\"panelSize\":3,\"panelBrief\":\"BRIEF\",\"changedLinesBlock\":\"${_OP_CHANGED_BLOCK}\"}"
+    echo "{\"agentPrompt\":\"x\",\"flags\":${flags},\"route\":\"full\",\"selfReReview\":false,\"reviewMode\":\"${mode}\",\"base\":\"main\",\"headSha\":\"${sha40}\",\"emptyTreeMode\":false,\"pathScope\":\"\",\"tempDir\":\"/tmp/claude-test/x\",\"intentLedger\":\"\",\"panelSize\":3,\"changedLinesBlock\":\"${_OP_CHANGED_BLOCK}\"}"
 }
 
 # One vote. $1 finding_id, $2 is_real, $3 severity, $4 tractability.

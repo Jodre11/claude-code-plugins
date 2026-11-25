@@ -16,7 +16,7 @@ names it as a cost, and SWITCH is only ever a candidate the user confirms.
 - **`claude plugin eval`** (CLI 2.1.332) runs each case in a headless child (`-p`, `dontAsk`) with a temporary
   home and no network. Its only arms are with-plugin and without-plugin, so **each arm here is a separate case**
   run with `--ablation none`. Graders are `tool_used`, `regex` and `llm` (three judge votes per grader, haiku by
-  default, `--judge-model` to change it). There are no custom-code graders; a grader's `weight` may be 0.
+  default, `--judge-model` to change it). There are no custom-code graders, and a grader's `weight` must be positive.
 - **Plugins load only from under the eval target**, so the suite lives at the repo root (`evals/`, target `.`) and
   every case lists `plugins: ["../../plugins/code-review-suite", "../../plugins/reply-fit"]`; without `reply-fit`
   the suite fails to load, silently.
@@ -52,14 +52,23 @@ names it as a cost, and SWITCH is only ever a candidate the user confirms.
 All arms load the same plugins, so the child's tool surface and system prompt are identical; only the prompt and
 the fixture config differ. Every case sets `allowed_tools: [Read, Glob, Grep, Skill, Agent, Workflow, Bash,
 Write]`. The hybrid config is untracked and listed in `.git/info/exclude`, so it never appears in the diff under
-review. The child runs on the session's default model (recorded in results). Every case appends the spike's
+review. The child runs on the session's default model (recorded in results). Every case sets `max_turns: 200` and
+`timeout_seconds: 3600` (the defaults, 10 turns and 300 s, would cut a review short) and appends the spike's
 unattended-run instruction, plus: "Use a directory under `$TMPDIR` for temp files", "End with the complete list of
-findings, each with its severity", and, for suite and hybrid only, "Before the findings, print one line per
-specialist: `<name>: <status>`".
+findings, each with its severity", for suite and hybrid only, "Before the findings, print one line per specialist:
+`<name>: <status>`", and the fixture's intent (see below).
+
+**Intent.** In local mode `/pre-review` halts before any specialist runs unless it finds a narrative description
+(an in-diff doc, a `Prompt:` block, or a commit subject of more than seven words), and most fixture subjects fail
+that rule. Each fixture therefore carries an `intent` paragraph, which goes into the head commit body and into the
+appended prompt as the text to give if the review asks for one. All three arms get it identically. For Qodo it is
+the original PR description, with the benchmark's wrapper, the Cursor Bugbot summary (another reviewer's output)
+and presigned image URLs stripped; a description under eight words becomes the title plus a note that upstream gave
+no more. For the corpus it is the A/B intent ledger's goal.
 
 ## Cases
 
-**Qodo PR-Review-Bench: the decision set (12 cases, about 70 issues).** MIT dataset: 100 real merged PRs from eight
+**Qodo PR-Review-Bench: the decision set (12 cases, 76 issues: 39 bug, 37 rule).** MIT dataset: 100 real merged PRs from eight
 repos with 580 injected issues. Each issue has `title`, `description`, `file_path`, `start_line`, `end_line`,
 `problematic_code_snippet` and, for rule violations, `rule_name`; a companion `rules_for_repo.jsonl` lists each
 repo's rules. Use only the four repos with permissive licences, three PRs each: Ghost (JS), aspnetcore (C#),
@@ -83,8 +92,10 @@ silent-failure, reuse, style, test-quality, test-adequacy, api-contract and late
 They are **not** in the decision rule. The suite's prompts were tuned on exactly these fixtures, and their near-miss
 expectations encode the suite's own policy. They are also small enough to take the lightweight route, where hybrid
 equals suite. They serve as a regression and breakage check, and their suite-vs-native result is reported
-separately with that bias stated. Each `source.yaml` `setup.command` is rewritten so the head commit lands on a
-feature branch (the originals commit both on `main`, which would leave an empty diff). The static smoke fixtures are
+separately with that bias stated. Each `source.yaml` setup moves the planted files aside, commits the rest, then
+commits the planted files, all on `main`; `port_corpus.py` reads that base/head split (asserting it covers the
+fixture directory) and the scaffold commits the head on a feature branch instead. The corpus READMEs name the planted
+defect, so the scaffold replaces each with a neutral one built from the base commit subject. The static smoke fixtures are
 cut, because their outcome is known in advance (the suite runs the linter; native does not). The housekeeper
 fixtures are cut too: they need network or the A/B harness's recorded registries.
 
@@ -94,28 +105,31 @@ fixtures are cut too: they need network or the A/B harness's recorded registries
 
 ```
 evals/
-  fixtures/<id>/fixture.yaml   # source of truth (schema below)
-  fixtures/<id>/files/         # vendored Qodo files; corpus fixtures point at tests/fixtures/** instead
+  fixtures/<id>/fixture.json   # source of truth (schema below)
+  fixtures/<id>/files/{base,head}/  # vendored Qodo files; corpus fixtures point at tests/fixtures/** instead
   vendor/anthropic-code-review/{code-review.md,LICENSE}
   tools/build_cases.py         # renders cases/ from fixtures/, checks the vendored sha256
   tools/port_qodo.py
-  tools/port_corpus.py         # writes fixture.yaml only; files stay in tests/fixtures/**
+  tools/port_corpus.py         # writes fixture.json only; files stay in tests/fixtures/**
   tools/aggregate.py           # reads --json results, writes the comparison table
   README.md
-  cases/                       # GENERATED, gitignored: <id>-<arm>/{case.yaml,fixture.sh,files/}
+  cases/                       # GENERATED, gitignored: <id>-<arm>/{case.yaml,fixture.sh}
 ```
 
-`build_cases.py` renders `cases/` immediately before each run, copying each fixture's files (from `files/` or from
-`tests/fixtures/**`) into the generated case directory. `cases/` and `results/` are gitignored, so there is no
+`build_cases.py` renders `cases/` immediately before each run. Each `fixture.sh` is self-contained: it embeds every
+file as base64, because the scaffold runs in the eval workspace, not the case directory. `case.yaml` is written as
+JSON, which YAML accepts, so every tool is stdlib-only. `cases/` and `results/` are gitignored, so there is no
 committed generated tree and no `--check` hook. `evals-spike/` is deleted (it is untracked).
 
-`fixture.yaml` schema:
+`fixture.json` schema (shown as YAML for brevity):
 
 ```yaml
 id: qodo-ghost-1
 set: decision | sanity
 source: qodo | corpus
 upstream: {repo: Ghost, pr: 1, licence: MIT}   # qodo only
+commit_title: Removed xmlrpc/pingomatic ping service
+intent: Pingomatic is a legacy blog ping service ...
 issues:                                         # hits; empty for a near-miss
   - title: NPM referenced instead of Yarn
     description: ...
@@ -128,27 +142,35 @@ near_miss:                                      # near-miss fixtures only
 ```
 
 For Qodo, `title`, `description` and `lines` come from the dataset, and `class` is `rule` when `rule_name` is set,
-otherwise `bug`. For the corpus, `port_corpus.py` writes the title and description from the `index.yaml`
-description (and `expected/report.md` where one exists), and I review them by hand. Bug class covers
+otherwise `bug`. Seven dataset issues carry no location; they get `file` and `lines` of `null` and are graded on
+their description alone. For the corpus, the titles, descriptions and near-miss patterns are hand-written from the
+`index.yaml` description (and `expected/report.md` where one exists) and kept in `port_corpus.py`, so a rerun
+reproduces them. Bug class covers
 silent-failure, latent-hazard, api-contract and test-adequacy; quality covers reuse, style and test-quality. A single
 `planted.line` becomes `[line-3, line+3]`; `line: 0` means file-level. A near-miss fixture gets only the near-miss
 grader.
 
 ## Graders
 
+The eval schema requires a positive `weight`, so every grader keeps the default of 1. `aggregate.py` reads each
+grader's pass or fail by name and never uses the tool's composite score, so no grader needs to be marked
+informational. Names: `valid-*`, `route-full`, `diag-*`, `detect-<key>`, `mustfix-<key>`, `noise`, `near-miss`.
+
 Per case:
 
-- **Validity (weight 0).**
+- **Validity.**
   - suite and hybrid: `tool_used` `Workflow`, `input_match: 'review-core'`;
-  - hybrid also: `regex` on the final message for `anthropic: ok`. This proves the arm ran rather than skipped or
-    fell to the lightweight route;
-  - native: `tool_used` `Skill`, `input_match: 'code-review'`.
-- **Route (weight 0, suite and hybrid).** `regex` for `using full review pipeline`. It is recorded, so a Qodo run
+  - hybrid also: `regex` on the final message for `anthropic: ok` (also accepting `anthropic-reviewer`). This
+    proves the arm ran rather than skipped or fell to the lightweight route;
+  - native: `llm`, "the reply reports the outcome of a code review", because a typed slash command may not appear
+    as a `Skill` tool call. A `regex` on the trace for a `code-review` Skill call is recorded as
+    `diag-native-skill`; the pilot shows which one holds.
+- **Route (suite and hybrid).** `regex` on the trace for `using full review pipeline`. It is recorded, so a Qodo run
   that fell to lightweight is visible.
 - **Detection (`llm`, one per issue).** "PASS if the review's findings include this defect: <title>, in <file> near
   lines <start>–<end>: <description>. Wording, severity and format do not matter; a finding counts if a reader
   acting on it would fix this defect. FAIL otherwise."
-- **Must-fix detection (`llm`, weight 0, Qodo bug issues).** As above, but the finding must be presented as needing
+- **Must-fix detection (`llm`, Qodo bug issues, reported only).** As above, but the finding must be presented as needing
   a fix (Important or higher in the suite, any reported bug in native). This shows severity under-calling, the
   panel's known failure mode, which plain recall cannot see.
 - **Noise (`llm`, Qodo cases).** "Count the distinct issues the review says must be fixed, treating near-duplicates

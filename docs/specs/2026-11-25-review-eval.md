@@ -159,14 +159,21 @@ informational. Names: `valid-*`, `route-full`, `diag-*`, `detect-<key>`, `mustfi
 Per case:
 
 - **Validity.**
+  - every arm: `valid-plugin-under-test`, a `not_contains` `regex` on the trace for `/.claude/plugins/cache/`. The
+    child inherits the host's `PATH`, which in a Claude Code session carries the installed plugins' `bin/`
+    directories, so the pilot's first runs called the installed suite's `review-diff`. The run command strips
+    those entries; this grader rejects a run that still reaches one;
   - suite and hybrid: `tool_used` `Workflow`, `input_match: 'review-core'`;
-  - hybrid also: `regex` on the final message for `anthropic: ok` (also accepting `anthropic-reviewer`). This
-    proves the arm ran rather than skipped or fell to the lightweight route;
-  - native: `llm`, "the reply reports the outcome of a code review", because a typed slash command may not appear
-    as a `Skill` tool call. A `regex` on the trace for a `code-review` Skill call is recorded as
-    `diag-native-skill`; the pilot shows which one holds.
-- **Route (suite and hybrid).** `regex` on the trace for `using full review pipeline`. It is recorded, so a Qodo run
-  that fell to lightweight is visible.
+  - hybrid on the decision set: `regex` on the final message for `anthropic: ok` (also accepting
+    `anthropic-reviewer`). This proves the arm ran rather than skipped or fell to the lightweight route. The
+    sanity set's small diffs often take the lightweight route, where the hybrid arm is the suite, so it is not
+    required there;
+  - native: `llm`, "the reply reports the outcome of a code review". The typed slash command is not a `Skill`
+    tool call; the pilot showed the forked skill's calls carry `parent_tool_use_id:
+    "forked-command-code-review"`, which a trace `regex` records as `diag-native-skill`.
+- **Route (suite and hybrid).** `tool_used` `Workflow` whose input carries `route: "full"`: the pilot showed the
+  model does not reliably print the route announcement, but every host call passes the route to review-core. It
+  is recorded, so a Qodo run that fell to lightweight is visible.
 - **Detection (`llm`, one per issue).** "PASS if the review's findings include this defect: <title>, in <file> near
   lines <start>–<end>: <description>. Wording, severity and format do not matter; a finding counts if a reader
   acting on it would fix this defect. FAIL otherwise."

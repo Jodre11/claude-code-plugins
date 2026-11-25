@@ -1,0 +1,86 @@
+{
+  "id": "qodo-ghost-4",
+  "set": "decision",
+  "source": "qodo",
+  "upstream": {
+    "repo": "Ghost",
+    "pr": 4,
+    "url": "https://github.com/agentic-review-benchmarks/Ghost/pull/4",
+    "licence": "MIT",
+    "base_sha": "8281bbf2b93e5150658ab534de1eaaa00443d80e",
+    "head_sha": "5a73fdce3bf061b434c46c6852648befc6f990d0"
+  },
+  "commit_title": "Redesigned comment moderation list layout",
+  "removed": [],
+  "skipped_binary": [],
+  "diff": {
+    "files": 5,
+    "lines": 378
+  },
+  "issues": [
+    {
+      "key": "i1",
+      "title": "Missing semicolons in variable declarations",
+      "description": "The rule requires all JavaScript and TypeScript statements to end with explicit semicolons, but lines 88-90 rely on automatic semicolon insertion (ASI) instead",
+      "file": "apps/posts/src/views/comments/components/comments-list.tsx",
+      "lines": [
+        88,
+        90
+      ],
+      "class": "rule"
+    },
+    {
+      "key": "i2",
+      "title": "Missing dependency in useEffect causes stale clamp detection",
+      "description": "The CommentContent component's useEffect hook has an empty dependency array, but it uses item.html to determine if content should be clamped. When a comment's HTML content changes (e.g., after an edit or when new data is loaded), the clamp detection won't re-run. This means the 'Show more' button may appear when it shouldn't or disappear when it should still be visible, creating a poor user experience. The dependency array should include item.html to ensure the clamp detection re-runs whenever the content changes.",
+      "file": "apps/posts/src/views/comments/components/comments-list.tsx",
+      "lines": [
+        92,
+        104
+      ],
+      "class": "bug"
+    },
+    {
+      "key": "i3",
+      "title": "Filter button becomes non-functional when onAddFilter is undefined",
+      "description": "The conditional check for rendering the post title button was changed from `item.post?.id && item.post?.title && onAddFilter` to `item.post?.id && item.post?.title`, removing the onAddFilter null check. However, the button's onClick handler still calls onAddFilter('post', item.post!.id). Since onAddFilter is now a required prop in the TypeScript signature but the runtime check was removed, if onAddFilter is ever undefined or null at runtime, clicking the post title button will throw an error and crash the component. The original three-part condition was protecting against this scenario.",
+      "file": "apps/posts/src/views/comments/components/comments-list.tsx",
+      "lines": [
+        236,
+        248
+      ],
+      "class": "bug"
+    },
+    {
+      "key": "i4",
+      "title": "Inconsistent conditional rendering pattern for feature image",
+      "description": "The feature image rendering logic was changed from a ternary expression with explicit null return (`condition ? <img /> : null`) to a logical AND operator (`condition && <img />`). While functionally similar in most cases, this creates an inconsistency: when item.post?.feature_image is falsy (like an empty string ''), the logical AND will render the falsy value (empty string) instead of rendering nothing. This could lead to unexpected DOM nodes or React warnings. The original ternary with explicit null was more defensive and clearer about the intent to render nothing when the condition is false.",
+      "file": "apps/posts/src/views/comments/components/comments-list.tsx",
+      "lines": [
+        350,
+        358
+      ],
+      "class": "bug"
+    },
+    {
+      "key": "i5",
+      "title": "Delete comment functionality completely removed from UI",
+      "description": "The PR removes the dropdown menu item that allowed users to delete comments, making the delete functionality completely inaccessible through the UI. While all the backend infrastructure remains intact (AlertDialog component, confirmDelete function, deleteComment mutation, commentToDelete state), there is no button or menu item that calls setCommentToDelete to trigger the deletion flow. This is a critical functional regression that removes an essential moderation capability for administrators. Users can no longer delete comments through the interface, even though the API endpoint and confirmation dialog are still present in the code.",
+      "file": null,
+      "lines": null,
+      "class": "bug"
+    },
+    {
+      "key": "i6",
+      "title": "Missing semicolons in CommentContent hook declarations",
+      "description": "The added variable/state declarations rely on automatic semicolon insertion (ASI). The codebase rule requires explicit semicolons at the end of all statements.",
+      "file": "apps/posts/src/views/comments/components/comments-list.tsx",
+      "lines": [
+        84,
+        88
+      ],
+      "class": "rule"
+    }
+  ],
+  "intent": "ref. https://linear.app/ghost/issue/FEA-465/allow-individual-banning-and-moderation-of-commenters\n\n- Rearranged list so it resembles more like a list of comments than a table so that it's easier to scan and manage."
+}

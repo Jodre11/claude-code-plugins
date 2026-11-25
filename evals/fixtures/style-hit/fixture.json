@@ -1,0 +1,29 @@
+{
+  "id": "style-hit",
+  "set": "sanity",
+  "source": "corpus",
+  "files_from": "tests/fixtures/style/hit",
+  "base": [
+    "README.md"
+  ],
+  "head": [
+    "lib/user_settings.py"
+  ],
+  "readme": "# Project\n\nUser settings scaffold.\n",
+  "base_title": "base: user settings scaffold",
+  "commit_title": "feat: add user settings helpers",
+  "intent": "This change will add user settings helpers for reading and persisting per-user preferences. Nothing else in the repository changes.",
+  "issues": [
+    {
+      "key": "i1",
+      "title": "get_user_settings writes to the database",
+      "description": "The name promises a pure read, but the function performs a database write on first call.",
+      "file": "lib/user_settings.py",
+      "lines": [
+        29,
+        35
+      ],
+      "class": "quality"
+    }
+  ]
+}

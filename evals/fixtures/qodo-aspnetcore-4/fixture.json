@@ -1,0 +1,185 @@
+{
+  "id": "qodo-aspnetcore-4",
+  "set": "decision",
+  "source": "qodo",
+  "upstream": {
+    "repo": "aspnetcore",
+    "pr": 4,
+    "url": "https://github.com/agentic-review-benchmarks/aspnetcore/pull/4",
+    "licence": "MIT",
+    "base_sha": "a4cc9344595fc3cb37c9fd78ee174ed8062c9ff6",
+    "head_sha": "6d720c560e5d68f9d9cafa4f89255f111716d776"
+  },
+  "commit_title": "Blazor supports `DisplayName` for models",
+  "removed": [],
+  "skipped_binary": [],
+  "diff": {
+    "files": 16,
+    "lines": 531
+  },
+  "issues": [
+    {
+      "key": "i1",
+      "title": "Traditional namespace declaration used",
+      "description": "The rule requires C# files to use file-scoped namespace declarations (ending with semicolon without braces), but this file uses traditional namespace declarations with opening and closing braces.",
+      "file": "src/Components/Web/src/Forms/DisplayName.cs",
+      "lines": [
+        8,
+        67
+      ],
+      "class": "rule"
+    },
+    {
+      "key": "i2",
+      "title": "Unnecessary re-rendering on every parameter update with same display name",
+      "description": "The DisplayName component removed the check that prevents re-rendering when the display name hasn't changed (line 50-51). This means that every time SetParametersAsync is called with a changed expression (even if it results in the same display name), the component will trigger a render. This causes performance degradation in scenarios with frequent parameter updates, such as forms with dynamic field expressions, leading to unnecessary DOM updates and potential flickering in the UI.",
+      "file": "src/Components/Web/src/Forms/DisplayName.cs",
+      "lines": [
+        46,
+        54
+      ],
+      "class": "bug"
+    },
+    {
+      "key": "i3",
+      "title": "Missing display name caching causes performance degradation",
+      "description": "The GetDisplayName(MemberInfo) method in ExpressionMemberAccessor no longer uses the _displayNameCache dictionary to cache display names (lines 53-74). Instead, it performs reflection operations (GetCustomAttribute) on every call. Since this method is called frequently during component rendering and the DisplayName component can be used extensively throughout forms, this creates a significant performance bottleneck. The cache was specifically designed to avoid repeated reflection calls, and its removal will cause measurable slowdowns in forms with many DisplayName components.",
+      "file": "src/Components/Web/src/Forms/ExpressionMemberAccessor.cs",
+      "lines": [
+        53,
+        74
+      ],
+      "class": "bug"
+    },
+    {
+      "key": "i4",
+      "title": "Incomplete cache clearing during hot reload causes stale display names",
+      "description": "The ClearCache method only clears _memberInfoCache but fails to clear _displayNameCache (line 85). During hot reload scenarios when metadata updates occur, the HotReloadManager triggers ClearCache to ensure fresh metadata is loaded. However, with _displayNameCache not being cleared, the component will continue to display stale display names from cached MemberInfo objects even after the attributes have been modified in code. This breaks the hot reload functionality for DisplayAttribute and DisplayNameAttribute changes, requiring developers to restart the application to see attribute changes take effect.",
+      "file": "src/Components/Web/src/Forms/ExpressionMemberAccessor.cs",
+      "lines": [
+        84,
+        86
+      ],
+      "class": "bug"
+    },
+    {
+      "key": "i5",
+      "title": "Test method missing required AAA pattern comments",
+      "description": "The test method 'SupportsLocalizationWithResourceType' violates AGENTS.md Rule 6 which requires all test methods to include explicit '// Arrange', '// Act', and '// Assert' comments. This rule was explicitly defined in the AGENTS.md file added in this same PR. All other test methods in DisplayNameTest.cs correctly follow this pattern with proper AAA comments, but this test method has none of the required comments, making it inconsistent with repository standards and harder to maintain.",
+      "file": null,
+      "lines": null,
+      "class": "bug"
+    },
+    {
+      "key": "i6",
+      "title": "Test method missing Arrange/Act/Assert comments",
+      "description": "This test method does not include the required '// Arrange', '// Act', and '// Assert' (or '// Act & Assert') comments to delineate phases.",
+      "file": "src/Components/Web/test/Forms/DisplayNameTest.cs",
+      "lines": [
+        145,
+        164
+      ],
+      "class": "rule"
+    },
+    {
+      "key": "i7",
+      "title": "Async test method name missing Async suffix",
+      "description": "This method returns Task but its name does not end with 'Async' as required.",
+      "file": "src/Components/Web/test/Forms/DisplayNameTest.cs",
+      "lines": [
+        13,
+        13
+      ],
+      "class": "rule"
+    },
+    {
+      "key": "i8",
+      "title": "Async test method name missing Async suffix",
+      "description": "This method returns Task but its name does not end with 'Async' as required.",
+      "file": "src/Components/Web/test/Forms/DisplayNameTest.cs",
+      "lines": [
+        38,
+        38
+      ],
+      "class": "rule"
+    },
+    {
+      "key": "i9",
+      "title": "Async test method name missing Async suffix",
+      "description": "This method returns Task but its name does not end with 'Async' as required.",
+      "file": "src/Components/Web/test/Forms/DisplayNameTest.cs",
+      "lines": [
+        64,
+        64
+      ],
+      "class": "rule"
+    },
+    {
+      "key": "i10",
+      "title": "Async test method name missing Async suffix",
+      "description": "This method returns Task but its name does not end with 'Async' as required.",
+      "file": "src/Components/Web/test/Forms/DisplayNameTest.cs",
+      "lines": [
+        90,
+        90
+      ],
+      "class": "rule"
+    },
+    {
+      "key": "i11",
+      "title": "Async test method name missing Async suffix",
+      "description": "This method returns Task but its name does not end with 'Async' as required.",
+      "file": "src/Components/Web/test/Forms/DisplayNameTest.cs",
+      "lines": [
+        116,
+        116
+      ],
+      "class": "rule"
+    },
+    {
+      "key": "i12",
+      "title": "Async test method name missing Async suffix",
+      "description": "This method returns Task but its name does not end with 'Async' as required.",
+      "file": "src/Components/Web/test/Forms/DisplayNameTest.cs",
+      "lines": [
+        143,
+        143
+      ],
+      "class": "rule"
+    },
+    {
+      "key": "i13",
+      "title": "Async test method name missing Async suffix",
+      "description": "This method returns Task but its name does not end with 'Async' as required.",
+      "file": "src/Components/Web/test/Forms/DisplayNameTest.cs",
+      "lines": [
+        145,
+        145
+      ],
+      "class": "rule"
+    },
+    {
+      "key": "i14",
+      "title": "Async helper method name missing Async suffix",
+      "description": "This helper returns Task<string> but its name does not end with 'Async' as required.",
+      "file": "src/Components/Web/test/Forms/DisplayNameTest.cs",
+      "lines": [
+        166,
+        166
+      ],
+      "class": "rule"
+    },
+    {
+      "key": "i15",
+      "title": "E2E test method missing Arrange/Act/Assert comments",
+      "description": "This test method does not include the required '// Arrange', '// Act', and '// Assert' (or '// Act & Assert') comments to delineate phases.",
+      "file": "src/Components/test/E2ETest/Tests/FormsTest.cs",
+      "lines": [
+        560,
+        586
+      ],
+      "class": "rule"
+    }
+  ],
+  "intent": "# Summary\n\nThis PR adds the `DisplayName<TValue>` component to enable displaying property display names from `[Display]` and `[DisplayName]` attributes in Blazor applications, addressing the feature gap identified in issue #49147.\n\n## Background\n\nBlazor currently lacks a built-in mechanism to display property names from metadata attributes like MVC's `@Html.DisplayNameFor()` helper. This forces developers to either:\n- Hardcode label text (violating DRY principles and making localization difficult)\n- Build custom reflection-based solutions\n- Duplicate display name information across models and views\n\nThe new `DisplayName<TValue>` component provides an attribute-based solution that follows the same familiar pattern as other Blazor form components like `ValidationMessage<TValue>`.\n\nFixes #49147\n\n## Changes\n\n### Public API\n```c#\nnamespace Microsoft.AspNetCore.Components.Forms;\n\npublic class DisplayName<TValue> : ComponentBase\n{\n    [Parameter]\n    [EditorRequired]\n    public Expression<Func<TValue>>? For { get; set; }\n}\n```\n\n## Implementation Details\n\nThe component extracts the property name from the expression and reads display metadata:\n1. First checks for `DisplayAttribute.Name` (System.ComponentModel.DataAnnotations)\n2. Falls back to `DisplayNameAttribute.DisplayName` (System.ComponentModel)\n3. Uses the property name itself if no attributes are present\n\n### Tests\n\n**Unit tests** in `src/Components/Web/test/Forms/DisplayNameTest.cs`:\n- \u2705 Throws when `For` parameter is missing\n- \u2705 Reads `DisplayAttribute.Name` correctly\n- \u2705 Reads `DisplayNameAttribute.DisplayName` correctly\n- \u2705 `DisplayAttribute` takes precedence over `DisplayNameAttribute`\n- \u2705 Falls back to property name when no attributes present\n- \u2705 Works with different property types (string, decimal, DateTime, int)\n\n**E2E test** in `src/Components/test/E2ETest/Tests/FormsTest.cs`:\n- \u2705 `DisplayNamelReadsAttributesCorrectly()` - Verifies the component renders correctly in a browser with all attribute scenarios\n\n## API usage\n\n**Basic form usage:**\n```razor\n<EditForm Model=\"@product\">\n    <div class=\"mb-3\">\n        <label class=\"form-label\">\n            <DisplayName For=\"@(() => product.Name)\" />\n        </label>\n        <InputText @bind-Value=\"product.Name\" class=\"form-control\" />\n        <ValidationMessage For=\"@(() => product.Name)\" />\n    </div>\n</EditForm>\n```\n\nrenders e.g. as:\n```\n<label class=\"form-label\">Product Name</label>\n```\n\n**Table headers:**\n```razor\n<table class=\"table\">\n    <thead>\n        <tr>\n            <th><DisplayName For=\"@(() => product.Name)\" /></th>\n            <th><DisplayName For=\"@(() => product.Price)\" /></th>\n            <th><DisplayName For=\"@(() => product.ReleaseDate)\" /></th>\n        </tr>\n    </thead>\n</table>\n```\n\nrenders e.g. as:\n```\n<table class=\"table\">\n    <thead>\n        <tr>\n            <th>Product Name</th>\n            <th>Product Price</th>\n            <th>Release Date</th>\n        </tr>\n    </thead>\n</table>\n```\n\n**Model example:**\n```csharp\npublic class Product\n{\n    [Display(Name = \"Product Name\")]\n    public string Name { get; set; }\n    \n    [DisplayName(\"Unit Price\")]\n    public decimal Price { get; set; }\n    \n    [Display(Name = \"Release Date\")]\n    public DateTime ReleaseDate { get; set; }\n}\n```"
+}

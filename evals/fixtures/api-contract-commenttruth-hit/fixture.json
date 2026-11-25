@@ -1,0 +1,29 @@
+{
+  "id": "api-contract-commenttruth-hit",
+  "set": "sanity",
+  "source": "corpus",
+  "files_from": "tests/fixtures/api-contract/commenttruth-hit",
+  "base": [
+    "README.md"
+  ],
+  "head": [
+    "lib/cache_helper.py"
+  ],
+  "readme": "# Project\n\nCache helper scaffold.\n",
+  "base_title": "base: cache helper scaffold",
+  "commit_title": "feat: add get_value cache lookup",
+  "intent": "This change will add a cache lookup helper that retrieves values from an in-memory store. Nothing else in the repository changes.",
+  "issues": [
+    {
+      "key": "i1",
+      "title": "Docstring contradicts the behaviour of get_value",
+      "description": "The docstring says get_value returns None for an absent key, but the code indexes the dict directly and raises KeyError.",
+      "file": "lib/cache_helper.py",
+      "lines": [
+        8,
+        14
+      ],
+      "class": "bug"
+    }
+  ]
+}

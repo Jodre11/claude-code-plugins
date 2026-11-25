@@ -1,0 +1,67 @@
+{
+  "id": "qodo-ghost-3",
+  "set": "decision",
+  "source": "qodo",
+  "upstream": {
+    "repo": "Ghost",
+    "pr": 3,
+    "url": "https://github.com/agentic-review-benchmarks/Ghost/pull/3",
+    "licence": "MIT",
+    "base_sha": "91d969440b995ff050c46f37e795700f20105050",
+    "head_sha": "71f56480360617f8632fda9cc062723f5b0f03bd"
+  },
+  "commit_title": "Updated the scaling factors for domain warmup",
+  "removed": [],
+  "skipped_binary": [],
+  "diff": {
+    "files": 3,
+    "lines": 195
+  },
+  "issues": [
+    {
+      "key": "i1",
+      "title": "Non-strict inequality operator used",
+      "description": "The rule requires using strict equality operators (=== or !==) for all comparisons, but the code uses != instead of !== to check if count is null",
+      "file": "ghost/core/core/server/services/email-service/DomainWarmingService.ts",
+      "lines": [
+        111,
+        112
+      ],
+      "class": "rule"
+    },
+    {
+      "key": "i2",
+      "title": "Date filter includes today's emails instead of excluding them",
+      "description": "The filter in #getHighestCount() uses `created_at:<=` which includes today's date, but the docstring explicitly states it should exclude today. This causes the method to potentially return today's partial email count instead of the previous day's complete count. When emails are sent early in the day, this will result in a lower base count for warmup limit calculations, causing the domain warming progression to restart or regress unexpectedly. This breaks the intended day-over-day scaling behavior where each day's limit should be based on the previous day's complete sending volume.",
+      "file": "ghost/core/core/server/services/email-service/DomainWarmingService.ts",
+      "lines": [
+        101,
+        105
+      ],
+      "class": "bug"
+    },
+    {
+      "key": "i3",
+      "title": "High-volume threshold boundary applies wrong scaling factor at 400k",
+      "description": "The condition uses `>=` instead of `>` when checking if lastCount qualifies for high-volume capping at exactly 400,000 emails. According to the documented scaling table, 400k should use the 2\u00d7 multiplier from the thresholds array, but with this bug it immediately applies the high-volume cap of 1.2\u00d7 or +75k absolute increase. For a site hitting exactly 400k messages, this means getting a limit of 480k (1.2\u00d7) or 475k (+75k) instead of the expected 800k (2\u00d7). This creates a significant bottleneck at a critical growth milestone and breaks the documented warmup progression.",
+      "file": "ghost/core/core/server/services/email-service/DomainWarmingService.ts",
+      "lines": [
+        124,
+        129
+      ],
+      "class": "bug"
+    },
+    {
+      "key": "i4",
+      "title": "Threshold boundary values skip their designated scaling tier",
+      "description": "The loop uses `<` instead of `<=` when comparing lastCount to threshold limits. This causes exact boundary values (1000, 5000, 100000, 400000) to incorrectly skip their tier and fall through to the next scaling factor or the fallback logic. For example, a site with exactly 1000 previous emails will bypass the 1.25\u00d7 tier and incorrectly use 1.5\u00d7 scaling (getting 1500 instead of 1250). Similarly, 5000 will use 1.75\u00d7 instead of 1.5\u00d7, and 100000 will use 2\u00d7 instead of 1.75\u00d7. This creates unexpected jumps in scaling at precisely the documented threshold boundaries.",
+      "file": "ghost/core/core/server/services/email-service/DomainWarmingService.ts",
+      "lines": [
+        131,
+        135
+      ],
+      "class": "bug"
+    }
+  ],
+  "intent": "closes [GVA-605](https://linear.app/ghost/issue/GVA-605/adjust-the-warmup-numbers-to-reflect-joeys-suggestions)\n\nOur initial scaling factors were based on some preliminary research, and were designed to be as simple as possible. After further discussions, we've decided to avoid having such a fast ramp-up at the early stage, and limit the growth at the later stages to 75k+ per send. That should still prevent any large sites from going back into warm-up between sends, but is more likely to avoid damaging the reputation by scaling too aggressively."
+}

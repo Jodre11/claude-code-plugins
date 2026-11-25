@@ -1,0 +1,67 @@
+{
+  "id": "qodo-tauri-3",
+  "set": "decision",
+  "source": "qodo",
+  "upstream": {
+    "repo": "tauri",
+    "pr": 3,
+    "url": "https://github.com/agentic-review-benchmarks/tauri/pull/3",
+    "licence": "Apache-2.0",
+    "base_sha": "4593412cc81111d8dd664e1b7d9a9eb5d3ab7c42",
+    "head_sha": "5e98b884c2635a6b6f6e1be358c739d2adad675d"
+  },
+  "commit_title": "chore(deps): update rust crate toml to 0.9",
+  "removed": [],
+  "skipped_binary": [],
+  "diff": {
+    "files": 7,
+    "lines": 122
+  },
+  "issues": [
+    {
+      "key": "i1",
+      "title": "Schema not regenerated after config change",
+      "description": "The rule requires that when source files like crates/tauri-utils/src/config.rs change, the corresponding generated schema files must be updated by running the schema generator build command. The code adds a new Flatpak bundle type to the BundleType enum without regenerating the schema files.",
+      "file": "crates/tauri-utils/src/config.rs",
+      "lines": [
+        128,
+        149
+      ],
+      "class": "rule"
+    },
+    {
+      "key": "i2",
+      "title": "TOML parsing errors incorrectly wrapped as JSON errors",
+      "description": "The do_parse_toml function wraps TOML parsing errors as ConfigError::FormatJson instead of ConfigError::FormatToml. This causes misleading error messages when TOML configuration files fail to parse - users will be told there's a JSON parsing error when the actual issue is with TOML syntax. This breaks the error handling contract established by the ConfigError enum and will confuse developers trying to debug configuration issues. The error type conversion using serde_json::Error::custom also loses the detailed TOML error context that would normally be preserved in ConfigError::FormatToml.",
+      "file": "crates/tauri-utils/src/config/parse.rs",
+      "lines": [
+        384,
+        391
+      ],
+      "class": "bug"
+    },
+    {
+      "key": "i3",
+      "title": "Case mismatch between BundleType serialization and deserialization for Flatpak",
+      "description": "The Display implementation for BundleType::Flatpak returns \"Flatpak\" with capital 'F', while the Deserialize implementation expects lowercase \"flatpak\". This creates a serialization round-trip bug where serializing a Flatpak bundle type and then deserializing it will fail. Any code that serializes bundle configurations to strings (for CLI output, config files, or API responses) and then attempts to parse them back will encounter deserialization errors. This inconsistency breaks the expected behavior that Display and Deserialize should be compatible with each other.",
+      "file": "crates/tauri-utils/src/config.rs",
+      "lines": [
+        167,
+        183
+      ],
+      "class": "bug"
+    },
+    {
+      "key": "i4",
+      "title": "User-facing change added without a corresponding .changes entry",
+      "description": "This PR introduces a user-facing functionality change (adding a new `Flatpak` bundle type to the public config surface) but the diff does not include any new markdown change file under the `.changes/` directory (covector format) to document the change and version bump. Rule 13 requires such a change file for releasable functionality changes.",
+      "file": "crates/tauri-utils/src/config.rs",
+      "lines": [
+        144,
+        147
+      ],
+      "class": "rule"
+    }
+  ],
+  "intent": "This PR contains the following updates:\n\n| Package | Type | Update | Change |\n|---|---|---|---|\n| [toml](https://redirect.github.com/toml-rs/toml) | dependencies | minor | `0.8` -> `0.9` |\n\n---\n\n### Release Notes\n\n<details>\n<summary>toml-rs/toml (toml)</summary>\n\n### [`v0.9.4`](https://redirect.github.com/toml-rs/toml/compare/toml-v0.9.3...toml-v0.9.4)\n\n[Compare Source](https://redirect.github.com/toml-rs/toml/compare/toml-v0.9.3...toml-v0.9.4)\n\n### [`v0.9.3`](https://redirect.github.com/toml-rs/toml/compare/toml-v0.9.2...toml-v0.9.3)\n\n[Compare Source](https://redirect.github.com/toml-rs/toml/compare/toml-v0.9.2...toml-v0.9.3)\n\n### [`v0.9.2`](https://redirect.github.com/toml-rs/toml/compare/toml-v0.9.1...toml-v0.9.2)\n\n[Compare Source](https://redirect.github.com/toml-rs/toml/compare/toml-v0.9.1...toml-v0.9.2)\n\n### [`v0.9.1`](https://redirect.github.com/toml-rs/toml/compare/toml-v0.9.0...toml-v0.9.1)\n\n[Compare Source](https://redirect.github.com/toml-rs/toml/compare/toml-v0.9.0...toml-v0.9.1)\n\n### [`v0.9.0`](https://redirect.github.com/toml-rs/toml/compare/toml-v0.8.23...toml-v0.9.0)\n\n[Compare Source](https://redirect.github.com/toml-rs/toml/compare/toml-v0.8.23...toml-v0.9.0)\n\n### [`v0.8.23`](https://redirect.github.com/toml-rs/toml/compare/toml-v0.8.22...toml-v0.8.23)\n\n[Compare Source](https://redirect.github.com/toml-rs/toml/compare/toml-v0.8.22...toml-v0.8.23)\n\n### [`v0.8.22`](https://redirect.github.com/toml-rs/toml/compare/toml-v0.8.21...toml-v0.8.22)\n\n[Compare Source](https://redirect.github.com/toml-rs/toml/compare/toml-v0.8.21...toml-v0.8.22)\n\n### [`v0.8.21`](https://redirect.github.com/toml-rs/toml/compare/toml-v0.8.20...toml-v0.8.21)\n\n[Compare Source](https://redirect.github.com/toml-rs/toml/compare/toml-v0.8.20...toml-v0.8.21)\n\n### [`v0.8.20`](https://redirect.github.com/toml-rs/toml/compare/toml-v0.8.19...toml-v0.8.20)\n\n[Compare Source](https://redirect.github.com/toml-rs/toml/compare/toml-v0.8.19...toml-v0.8.20)\n\n</details>\n\n---\n\n### Configuration\n\n\ud83d\udcc5 **Schedule**: Branch creation - At any time (no schedule defined), Automerge - At any time (no schedule defined).\n\n\ud83d\udea6 **Automerge**: Disabled by config. Please merge this manually once you are satisfied.\n\n\u267b **Rebasing**: Whenever PR is behind base branch, or you tick the rebase/retry checkbox.\n\n\ud83d\udd15 **Ignore**: Close this PR and you won't be reminded about this update again.\n\n---\n\n - [ ] If you want to rebase/retry this PR, check this box\n\n---\n\nThis PR was generated by [Mend Renovate](https://mend.io/renovate/). View the [repository job log](https://developer.mend.io/github/tauri-apps/tauri)."
+}

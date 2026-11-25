@@ -1,0 +1,99 @@
+{
+  "id": "qodo-tauri-2",
+  "set": "decision",
+  "source": "qodo",
+  "upstream": {
+    "repo": "tauri",
+    "pr": 2,
+    "url": "https://github.com/agentic-review-benchmarks/tauri/pull/2",
+    "licence": "Apache-2.0",
+    "base_sha": "86b375cfa54e23f13971dcd21d308ec07bd79d5b",
+    "head_sha": "2fe07c92a3a31f447668ef4ac66ba1e15c784a05"
+  },
+  "commit_title": "fix(bundler): inline linuxdeploy plugin scripts",
+  "removed": [
+    "crates/tauri-bundler/src/bundle/linux/appimage.rs"
+  ],
+  "skipped_binary": [],
+  "diff": {
+    "files": 4,
+    "lines": 542
+  },
+  "issues": [
+    {
+      "key": "i1",
+      "title": "Manual error trait implementation used",
+      "description": "The rule requires all custom error types to use #[derive(thiserror::Error)] with appropriate #[error(...)] attributes for descriptive error messages, but FileWriteError manually implements Display and Error traits instead",
+      "file": "crates/tauri-bundler/src/bundle/linux/appimage/mod.rs",
+      "lines": [
+        285,
+        307
+      ],
+      "class": "rule"
+    },
+    {
+      "key": "i2",
+      "title": "Inverted existence check prevents GTK plugin installation",
+      "description": "The condition for writing the GTK plugin script was changed from `if !gtk.exists()` to `if gtk.exists()`, inverting the logic. This causes the plugin to only be written when it already exists, and to be skipped when it doesn't exist - the opposite of the intended behavior. Applications using GTK will fail to bundle correctly on systems where the plugin hasn't been previously cached, as the required linuxdeploy-plugin-gtk.sh script won't be created. This breaks the PR's main purpose of inlining the GTK plugin to avoid download failures.",
+      "file": "crates/tauri-bundler/src/bundle/linux/appimage/mod.rs",
+      "lines": [
+        242,
+        246
+      ],
+      "class": "bug"
+    },
+    {
+      "key": "i3",
+      "title": "File permissions set before file creation causes failure",
+      "description": "In the `write_and_make_executable` function, the order of operations was reversed - `fs::set_permissions` is now called before `fs::write`. This attempts to set Unix permissions on a file that doesn't exist yet, which will fail with a \"file not found\" error. Every call to this function will fail, breaking the entire bundling process for AppImage. All tools (AppRun, linuxdeploy, GTK plugin, GStreamer plugin) that rely on this function to be written and made executable will fail to be prepared, making AppImage bundling completely non-functional.",
+      "file": "crates/tauri-bundler/src/bundle/linux/appimage/mod.rs",
+      "lines": [
+        309,
+        316
+      ],
+      "class": "bug"
+    },
+    {
+      "key": "i4",
+      "title": "Architecture mapping bypassed in linuxdeploy download URL",
+      "description": "The download URL for linuxdeploy now uses the raw `arch` variable instead of `linuxdeploy_arch`, bypassing the critical i686\u2192i383 architecture translation that happens on line 235. When building for i686 architecture, the code will attempt to download from a URL containing \"i686\" instead of \"i383\", which will fail because the binary is not available at that URL. This breaks AppImage bundling specifically for 32-bit x86 systems, an architecture that requires special handling in the tauri-apps binary releases repository.",
+      "file": "crates/tauri-bundler/src/bundle/linux/appimage/mod.rs",
+      "lines": [
+        235,
+        240
+      ],
+      "class": "bug"
+    },
+    {
+      "key": "i5",
+      "title": "Missing From<FileWriteError> implementation causes compilation failure",
+      "description": "The write_and_make_executable function now returns Result<(), FileWriteError> instead of std::io::Result<()>, but there is no From<FileWriteError> implementation for the crate::Error type. All five call sites in prepare_tools use the ? operator which requires this conversion. The crate's Error enum has #[from] for io::Error but not for FileWriteError. This will cause compilation to fail with 'the trait From<FileWriteError> is not implemented for Error' at lines 232, 239, 245, 251, and 259, making the entire AppImage bundling functionality fail to compile.",
+      "file": null,
+      "lines": null,
+      "class": "bug"
+    },
+    {
+      "key": "i6",
+      "title": "New shell script does not follow 2-space indentation (EditorConfig)",
+      "description": "EditorConfig requires 2-space indentation across source files, but this newly added script uses 4-space indentation (e.g., inside conditionals and case arms).",
+      "file": "crates/tauri-bundler/src/bundle/linux/appimage/linuxdeploy-plugin-gstreamer.sh",
+      "lines": [
+        7,
+        10
+      ],
+      "class": "rule"
+    },
+    {
+      "key": "i7",
+      "title": "New shell script does not follow 2-space indentation (EditorConfig)",
+      "description": "EditorConfig requires 2-space indentation across source files, but this newly added script uses 4-space indentation in multiple blocks (e.g., the DEBUG conditional, functions, loops, and case arms).",
+      "file": "crates/tauri-bundler/src/bundle/linux/appimage/linuxdeploy-plugin-gtk.sh",
+      "lines": [
+        11,
+        15
+      ],
+      "class": "rule"
+    }
+  ],
+  "intent": "github makes it easy to dislike it again. completely unreasonable \"rate limiting\" (without a rate) of requests to raw.githubusercontent, see https://github.com/orgs/community/discussions/177971 and https://github.com/orgs/community/discussions/157887"
+}

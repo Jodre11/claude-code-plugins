@@ -105,8 +105,10 @@ def graders(fixture, arm):
         out.append({
             'name': 'valid-anthropic-ok',
             'type': 'regex',
-            'pattern': 'anthropic(?:-reviewer)?\\W{0,4}\\s*ok\\b',
-            'flags': 'i',
+            # Models word the status line freely ("anthropic (plugin pipeline: ...): ok", "anthropic-summary: ok"),
+            # so accept any line naming anthropic that ends its label with ": ok".
+            'pattern': '^[^\\n]*\\banthropic[^\\n]*:\\s*ok\\b',
+            'flags': 'im',
         })
     if arm == 'native':
         out.append({'name': 'valid-native-ran', 'type': 'llm', 'criteria': NATIVE_RAN})

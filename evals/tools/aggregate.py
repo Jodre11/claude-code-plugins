@@ -217,13 +217,17 @@ def main():
         out.append(f'- dropped from the paired comparison (invalid in some arm): {", ".join(dropped)}')
     out.append('')
 
-    votes = [unanimous(g) for case_runs in valid.values() for r in case_runs for g in r.get('graders', [])
-             if g.get('type', 'llm') == 'llm' or 'judgeVotes' in g]
-    votes = [v for v in votes if v is not None]
-    if votes:
-        share = sum(votes) / len(votes)
-        flag = '' if share >= UNANIMITY_FLOOR else f' (below {UNANIMITY_FLOOR:.0%}: re-examine the criteria first)'
-        out += [f'Judge unanimity: {share:.1%} of {len(votes)} llm verdicts{flag}.', '']
+    agreement = []
+    for a in ARMS:
+        votes = [unanimous(g) for (_, arm), case_runs in valid.items() if arm == a
+                 for r in case_runs for g in r.get('graders', [])]
+        votes = [v for v in votes if v is not None]
+        if votes:
+            share = sum(votes) / len(votes)
+            flag = '' if share >= UNANIMITY_FLOOR else f' (below {UNANIMITY_FLOOR:.0%}: re-examine the criteria)'
+            agreement.append(f'- {a}: {share:.1%} of {len(votes)} llm verdicts unanimous{flag}')
+    if agreement:
+        out += ['## Judge agreement', ''] + agreement + ['']
 
     stats = {a: {i: per_fixture(fixtures[i], valid[(i, a)]) for i in decision_ids} for a in arms}
     if decision_ids:

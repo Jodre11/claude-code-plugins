@@ -40,10 +40,14 @@ tools/aggregate.py               metrics, cluster bootstrap and the decision
 
 ## Running
 
-Render the cases, then run from the repo root. Each case is one arm, so `--ablation none`.
+Render the cases, then run from the repo root. Each case is one arm, so `--ablation none`. The eval child
+inherits `PATH`, and a Claude Code session puts its installed plugins' `bin/` directories on it, which would
+let the child call the installed suite's tools instead of this tree's; the `PATH=` prefix drops them, and the
+`valid-plugin-under-test` grader rejects any run that still reaches one.
 
 ```bash
 python3 -I evals/tools/build_cases.py
+PATH=$(printf %s "$PATH" | tr ':' '\n' | grep -v '/\.claude/plugins/cache/' | paste -sd: -) \
 claude plugin eval . --eval-dir evals --runs 3 --ablation none --allow-tools Workflow Bash Write --scaffold \
     --judge-model sonnet --max-cost-usd <usd> --no-publish --trust-plugin -j 3 \
     --output-dir "$CLAUDE_TEMP_DIR/run" --json "$CLAUDE_TEMP_DIR/run/result.json" \
@@ -51,7 +55,8 @@ claude plugin eval . --eval-dir evals --runs 3 --ablation none --allow-tools Wor
 python3 -I evals/tools/aggregate.py "$CLAUDE_TEMP_DIR/run/result.json"
 ```
 
-Filter with `--tag suite|native|hybrid|decision|sanity` or `--case <glob>`. Rerun an invalid `(case, arm)` pair
+Filter with `--tag suite|native|hybrid|decision|sanity` (a case runs if any tag matches) or `--case <glob>` (it
+rejects `[...]` classes), or render a subset with `build_cases.py --fixture <id>... --arm <arm>...`. Rerun an invalid `(case, arm)` pair
 once with `--case <id>-<arm>`, then pass both result files to `aggregate.py`; a pair still invalid is dropped from
 every arm's comparison.
 

@@ -82,17 +82,26 @@ def where(issue):
 
 
 def graders(fixture, arm):
-    out = []
+    # A host session puts its installed plugins' bin/ on PATH, and the child inherits it, so a run could
+    # call the installed suite's tools instead of the working tree's. Such a run measures the wrong code.
+    out = [{
+        'name': 'valid-plugin-under-test',
+        'type': 'regex',
+        'pattern': '/\\.claude/plugins/cache/',
+        'match': 'not_contains',
+        'target': 'trace',
+    }]
     if arm in ('suite', 'hybrid'):
         out.append({'name': 'valid-review-core', 'type': 'tool_used', 'tool': 'Workflow', 'input_match': 'review-core'})
+        # The host passes the chosen route to review-core; the model's own announcement is not reliably printed.
         out.append({
             'name': 'route-full',
-            'type': 'regex',
-            'pattern': 'using full review pipeline',
-            'flags': 'i',
-            'target': 'trace',
+            'type': 'tool_used',
+            'tool': 'Workflow',
+            'input_match': '\\broute\\W{1,8}full\\b',
         })
-    if arm == 'hybrid':
+    # Only the full route runs the hybrid specialist; the sanity set's small diffs often take the lightweight one.
+    if arm == 'hybrid' and fixture['set'] == 'decision':
         out.append({
             'name': 'valid-anthropic-ok',
             'type': 'regex',
@@ -104,7 +113,8 @@ def graders(fixture, arm):
         out.append({
             'name': 'diag-native-skill',
             'type': 'regex',
-            'pattern': '"skill"\\s*:\\s*"code-review"',
+            # The bundled skill runs forked; its tool calls carry this parent id in the trace.
+            'pattern': 'forked-command-code-review',
             'target': 'trace',
         })
     for issue in fixture['issues']:

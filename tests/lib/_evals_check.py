@@ -82,8 +82,10 @@ def check_cases(cases_dir):
             problems.append(f'{name}: no validity grader')
         if any('weight' in g for g in case['graders']):
             problems.append(f'{name}: weight is set; aggregate.py reads each grader on its own')
-        if arm == 'hybrid' and 'valid-anthropic-ok' not in names:
-            problems.append(f'{name}: hybrid arm without the anthropic validity grader')
+        if arm == 'hybrid' and 'decision' in case['tags'] and 'valid-anthropic-ok' not in names:
+            problems.append(f'{name}: hybrid decision case without the anthropic validity grader')
+        if 'valid-plugin-under-test' not in names:
+            problems.append(f'{name}: nothing checks the run used the working tree\'s plugin')
         if not (path.parent / 'fixture.sh').is_file():
             problems.append(f'{name}: no fixture.sh')
     return problems

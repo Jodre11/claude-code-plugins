@@ -10,8 +10,9 @@ exits 1 when any region is stale. A source may itself contain generated regions:
 rendered first, so a nested copy is always current.
 
 A workflow script (*.js) cannot read plugin files at run time, so it embeds a whole markdown
-file instead: a `// BEGIN GENERATED from <path> as <NAME>` line, a `const <NAME>` holding the
-rendered file text as an array of lines, and a `// END GENERATED from <path>` line. A
+file instead, between a `// BEGIN GENERATED from <path> as <NAME>: edit that file, then run
+scripts/render-includes.py` line and a `// END GENERATED from <path>` line. The region holds
+`const <NAME>`: the rendered file text as one string, joined from its JSON-escaped lines. A
 whole-file source needs no SOURCE markers.
 """
 
@@ -21,6 +22,7 @@ import json
 import re
 import sys
 from pathlib import Path
+from typing import NamedTuple
 
 REPO = Path(__file__).resolve().parent.parent
 SOURCE_BEGIN = (
@@ -29,11 +31,27 @@ SOURCE_BEGIN = (
 )
 SOURCE_END = '<!-- END SOURCE -->'
 GEN_BEGIN = re.compile(
-    r'<!-- BEGIN GENERATED from (\S+): edit that file, then run scripts/render-includes\.py -->')
+    r'<!-- BEGIN GENERATED from (?P<source>\S+): edit that file, then run scripts/render-includes\.py -->')
 GEN_END = '<!-- END GENERATED from {} -->'
 JS_GEN_BEGIN = re.compile(
-    r'// BEGIN GENERATED from (\S+) as ([A-Z][A-Z0-9_]*): edit that file, then run scripts/render-includes\.py')
+    r'// BEGIN GENERATED from (?P<source>\S+) as (?P<name>[A-Z][A-Z0-9_]*): '
+    r'edit that file, then run scripts/render-includes\.py')
 JS_GEN_END = '// END GENERATED from {}'
+
+
+class Syntax(NamedTuple):
+    """How one consumer file type marks a generated region and fills it."""
+
+    begin: re.Pattern
+    end: str
+    prefix: str
+    expand: str
+
+
+SYNTAX = {
+    '.md': Syntax(GEN_BEGIN, GEN_END, '<!--', 'source_region'),
+    '.js': Syntax(JS_GEN_BEGIN, JS_GEN_END, '//', 'embedded_file'),
+}
 
 
 class RenderError(Exception):
@@ -41,7 +59,7 @@ class RenderError(Exception):
 
 
 class Renderer:
-    """Renders markdown files, memoising each so a shared source is rendered once."""
+    """Renders markdown and workflow files, memoising each so a shared source is rendered once."""
 
     def __init__(self, plugins_dir):
         self.plugins_dir = plugins_dir
@@ -62,31 +80,27 @@ class Renderer:
             chain = ' -> '.join(self.rel(p) for p in self.active + [path])
             raise RenderError(f'include cycle: {chain}')
         self.active.append(path)
-        is_js = path.suffix == '.js'
-        begin_re, end_fmt, prefix = (JS_GEN_BEGIN, JS_GEN_END, '//') if is_js else (GEN_BEGIN, GEN_END, '<!--')
+        syntax = SYNTAX[path.suffix]
+        markers = (f'{syntax.prefix} BEGIN GENERATED', f'{syntax.prefix} END GENERATED')
         lines = path.read_text(encoding='utf-8').split('\n')
         out = []
         i = 0
         while i < len(lines):
             line = lines[i]
-            match = begin_re.fullmatch(line)
+            match = syntax.begin.fullmatch(line)
             if not match:
-                if line.startswith(f'{prefix} BEGIN GENERATED') or line.startswith(f'{prefix} END GENERATED'):
+                if line.startswith(markers):
                     raise RenderError(f'{self.rel(path)}:{i + 1}: malformed or unmatched marker: {line}')
                 out.append(line)
                 i += 1
                 continue
-            source = match.group(1)
-            end = end_fmt.format(source)
+            end = syntax.end.format(match['source'])
             try:
                 j = lines.index(end, i + 1)
             except ValueError:
                 raise RenderError(f'{self.rel(path)}:{i + 1}: no matching "{end}"') from None
             out.append(line)
-            if is_js:
-                out.extend(self.embedded_file(path, source, match.group(2), i + 1))
-            else:
-                out.extend(self.source_region(path, source, i + 1))
+            out.extend(getattr(self, syntax.expand)(path, match, i + 1))
             out.append(end)
             i = j + 1
         self.active.pop()
@@ -102,16 +116,18 @@ class Renderer:
             raise RenderError(f'{self.rel(consumer)}:{lineno}: source {source} is not a file inside {self.rel(root)}')
         return path
 
-    def embedded_file(self, consumer, source, name, lineno):
-        """Return JS lines declaring name as the whole rendered source file, one array item per line."""
+    def embedded_file(self, consumer, match, lineno):
+        """Return JS lines declaring the marker's name as the whole rendered source file."""
+        source = match['source']
         path = self.source_path(consumer, source, lineno)
         if path.suffix != '.md':
             raise RenderError(f'{self.rel(consumer)}:{lineno}: embedded source {source} must be markdown')
         items = [f'    {json.dumps(line, ensure_ascii=False)},' for line in self.render(path).split('\n')]
-        return [f'const {name} = ['] + items + ["].join('\\n')"]
+        return [f"const {match['name']} = ["] + items + ["].join('\\n')"]
 
-    def source_region(self, consumer, source, lineno):
+    def source_region(self, consumer, match, lineno):
         """Return the rendered lines between the source file's SOURCE markers."""
+        source = match['source']
         path = self.source_path(consumer, source, lineno)
         where = f'{self.rel(consumer)}:{lineno}'
         lines = self.render(path).split('\n')

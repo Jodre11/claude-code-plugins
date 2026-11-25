@@ -25,10 +25,9 @@ export const meta = {
 // same login posted. An HTML comment, so GitHub does not display it.
 const REVIEW_MARKER = '<!-- code-review-suite -->'
 
-// The Principal-Engineer concern brief every panelist reads. Embedded at build time because the
-// sandbox cannot read plugin files and the host's plugin cache may be unreadable to the session
-// (an eval child, for one), and so the host no longer copies 10 KB verbatim into the args.
-// Declared before panelVote first runs: a later top-level const would throw (temporal dead zone).
+// The Principal-Engineer concern brief every panelist reads. Embedded by scripts/render-includes.py
+// because the sandbox cannot read plugin files at run time. Declared before panelVote first runs:
+// a later top-level const would throw (temporal dead zone).
 // BEGIN GENERATED from includes/panel-concern-brief.md as PANEL_BRIEF: edit that file, then run scripts/render-includes.py
 const PANEL_BRIEF = [
     "# Panel review — Principal Engineer concern brief",

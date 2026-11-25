@@ -6,16 +6,16 @@ _pw_cr_dir() {
 }
 
 # Both call-sites must thread the panel size into the workflow invocation.
-test_panel_params_threaded_in_both_call_sites() {
+test_panel_size_threaded_in_both_call_sites() {
     local cr skill prerev
     cr=$(_pw_cr_dir)
     skill="$cr/skills/review-gh-pr/SKILL.md"
     prerev="$cr/commands/pre-review.md"
     for f in "$skill" "$prerev"; do
         if grep -q "panelSize: \$PANEL_SIZE" "$f"; then
-            pass "panel params threaded in $(basename "$(dirname "$f")")/$(basename "$f")"
+            pass "panelSize threaded in $(basename "$(dirname "$f")")/$(basename "$f")"
         else
-            fail "panel params threaded in $(basename "$f")" "missing panelSize"
+            fail "panelSize threaded in $(basename "$f")" "missing panelSize"
         fi
     done
 }
@@ -36,40 +36,22 @@ test_panel_brief_not_threaded_through_args() {
     done
 }
 
-# Every panelist prompt must open with the embedded brief, verbatim.
+# Every panel-vote prompt carries the whole embedded brief, verbatim, straight after the mode
+# line (the seat prefix comes first). Uses the shared harness from test_workflow_migration.sh.
 test_panel_prompt_carries_embedded_brief() {
-    local cr out brief_head
+    local cr result
     cr=$(_pw_cr_dir)
-    brief_head=$(head -1 "$cr/includes/panel-concern-brief.md")
-    out=$(WF="$cr/workflows/review-core.js" node -e '
-        const fs = require("fs");
-        const src = fs.readFileSync(process.env.WF, "utf8").replace(/^export\s+const\s+meta/m, "const meta");
-        const brief = fs.readFileSync(process.env.WF.replace(/workflows\/review-core\.js$/,
-            "includes/panel-concern-brief.md"), "utf8");
-        const finding = { file: "a.cs", line: 3, severity: "Important", confidence: 90,
-            description: "d", suggested_fix: "f" };
-        const agent = async (prompt, opts) => {
-            const label = (opts && opts.label) || "";
-            if (label.startsWith("panel-") && label !== "panel-writer") {
-                const at = prompt.indexOf(brief);
-                process.stdout.write(at === -1 ? "BRIEF_ABSENT" : "BRIEF_AT_" + prompt.slice(0, at).length);
-                process.exit(0);
-            }
-            return { status: "ok", findings: label === "correctness" ? [finding] : [] };
-        };
-        const parallel = (thunks) => Promise.all(thunks.map(t => t()));
-        const noop = () => {};
-        const args = JSON.stringify({ agentPrompt: "x", flags: {}, route: "full", selfReReview: false,
-            reviewMode: "pr", base: "main", headSha: "a".repeat(40), emptyTreeMode: false, pathScope: "",
-            tempDir: "/tmp/claude-test/x", intentLedger: "", panelSize: 3,
-            changedLinesBlock: "Changed lines:\na.cs: 1-40\n" });
-        const fn = new Function("agent", "parallel", "pipeline", "phase", "log", "args", "workflow",
-            "return (async()=>{" + src + "\n})()");
-        fn(agent, parallel, async () => [], noop, noop, args, async () => null)
-            .then(() => process.stdout.write("NO_PANELIST"))
-            .catch(e => process.stdout.write("THREW: " + e.message));
-    ' 2>&1)
-    assert_matches "^BRIEF_AT_" "$out" "panelist prompt contains the whole embedded brief (${brief_head})"
+    result=$(BRIEF_FILE="$cr/includes/panel-concern-brief.md" node -e "$_WM_JS_PRELUDE"'
+        (async () => {
+            const brief = fs.readFileSync(process.env.BRIEF_FILE, "utf8");
+            let cap;
+            try { cap = await capturePanel(baseArgs); } catch (e) { console.log("THREW: " + e.message); return; }
+            if (cap.votePrompts.length !== 3) { console.log("VOTE_COUNT: " + cap.votePrompts.length); return; }
+            const anchored = "Mode: panel-review\n\n" + brief;
+            console.log(cap.votePrompts.every(p => p.includes(anchored)) ? "OK" : "BRIEF_ABSENT_OR_MOVED");
+        })();
+    ' "$cr/workflows/review-core.js" 2>&1)
+    assert_equals "OK" "$result" "every panel-vote prompt carries the whole brief after the mode line"
 }
 
 # Classic orchestration is retired: no host may still pass an orchestration mode, and

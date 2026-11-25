@@ -175,9 +175,21 @@ test_render_includes_embeds_whole_file_in_js() {
     out=$(python3 "$(_ri_script)" --plugins-dir "$tmp/plugins" --check 2>&1) || rc=$?
     assert_equals "1" "$rc" "--check exits 1 on a stale JS embed"
     python3 "$(_ri_script)" --plugins-dir "$tmp/plugins" > /dev/null
-    assert_equals "$(printf 'const a = 1\n%s\nconst BRIEF = [\n    "# Brief",\n    "",\n    "say \\"hi\\" \\\\ there",\n    "",\n].join('"'"'\\n'"'"')\n%s\nrun(BRIEF)' \
-        "$(_ri_js_gb includes/brief.md BRIEF)" "$(_ri_js_ge includes/brief.md)")" \
-        "$(cat "$tmp/plugins/p/workflows/w.js")" "render embeds the whole file as a JSON-escaped line array"
+    # Quoted heredoc: every escape below appears exactly as it must in the rendered file.
+    cat > "$tmp/expected.js" <<'EOF_EXPECTED'
+const a = 1
+// BEGIN GENERATED from includes/brief.md as BRIEF: edit that file, then run scripts/render-includes.py
+const BRIEF = [
+    "# Brief",
+    "",
+    "say \"hi\" \\ there",
+    "",
+].join('\n')
+// END GENERATED from includes/brief.md
+run(BRIEF)
+EOF_EXPECTED
+    assert_equals "$(cat "$tmp/expected.js")" "$(cat "$tmp/plugins/p/workflows/w.js")" \
+        "render embeds the whole file as a string joined from JSON-escaped lines"
     out=$(WF="$tmp/plugins/p/workflows/w.js" node -e '
         const fs = require("fs");
         const src = fs.readFileSync(process.env.WF, "utf8").replace("run(BRIEF)", "return BRIEF");

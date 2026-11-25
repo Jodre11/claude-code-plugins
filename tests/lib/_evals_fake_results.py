@@ -6,6 +6,7 @@ Scenarios (argv[1]):
   hybrid  only the hybrid finds the bugs, at 1.2x the suite cost -> HYBRID
   switch  every arm finds everything; native costs a quarter     -> SWITCH candidate
   invalid as same, but one decision case's native run is invalid -> that PR is dropped
+  curate  as same, but every hybrid status line fails an old pattern -> fixed by curate.py
 """
 
 import json
@@ -18,6 +19,7 @@ COST = {
     'hybrid': {'suite': 2.0, 'native': 2.0, 'hybrid': 2.4},
     'switch': {'suite': 2.0, 'native': 0.5, 'hybrid': 2.0},
     'invalid': {'suite': 2.0, 'native': 2.0, 'hybrid': 2.0},
+    'curate': {'suite': 2.0, 'native': 2.0, 'hybrid': 2.0},
 }
 
 
@@ -39,6 +41,13 @@ def run(fixture, arm, scenario, invalid):
         graders.append(grader('noise', True))
     if 'near_miss' in fixture:
         graders.append(grader('near-miss', True))
+    if arm == 'hybrid' and fixture['set'] == 'decision':
+        # 'curate': the review ran the arm but worded its status line in a way an older pattern rejected.
+        graders.append(grader('valid-anthropic-ok', scenario != 'curate', llm=False))
+        if scenario == 'curate':
+            for g in graders:
+                if g['type'] == 'llm':
+                    g['evidence'] = 'correctness: ok\nanthropic (plugin pipeline: review-1..4): ok\n\nFindings: none.'
     return {'graders': graders, 'costUsd': COST[scenario][arm], 'judgeCostUsd': 0.1, 'durationSeconds': 600}
 
 

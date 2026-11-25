@@ -58,7 +58,10 @@ python3 -I evals/tools/aggregate.py "$CLAUDE_TEMP_DIR/run/result.json"
 Filter with `--tag suite|native|hybrid|decision|sanity` (a case runs if any tag matches) or `--case <glob>` (it
 rejects `[...]` classes), or render a subset with `build_cases.py --fixture <id>... --arm <arm>...`. Rerun an
 invalid `(case, arm)` pair once with `--case <id>-<arm>`, then pass both result files to `aggregate.py`; a pair
-still invalid is dropped from every arm's comparison.
+still invalid is dropped from every arm's comparison. When a fixture's prompt or a last-message regex grader is
+fixed after a run, `tools/curate.py <result.json>... --drop <fixture>... --regrade <grader>...` writes
+`*.curated.json` copies with the stale fixtures' runs removed and the grader re-applied; record its use in the
+results doc.
 
 Every grader is scored by the eval tool, but `aggregate.py` reads each one by name, so the tool's composite score
 is not used: `valid-*` decides whether a run counts, `route-full` and `diag-*` are recorded, `detect-*`,

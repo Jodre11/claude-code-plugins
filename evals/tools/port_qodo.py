@@ -30,6 +30,7 @@ ALLOWED_LICENCES = ('MIT', 'Apache-2.0')
 # The suite's lightweight route takes diffs with at most this many files and lines.
 LIGHTWEIGHT_MAX_FILES = 5
 LIGHTWEIGHT_MAX_LINES = 150
+PRIVATE_KEY = re.compile(rb'-{5}BEGIN [A-Z ]*PRIVATE KEY-{5}')
 
 
 class PortError(Exception):
@@ -128,6 +129,9 @@ def write_file(root, rel, data):
     target = (root / rel).resolve()
     if root.resolve() not in target.parents:
         raise PortError(f'path escapes the fixture: {rel}')
+    if PRIVATE_KEY.search(data):
+        # Upstream test keys are public, but the repo's secret scan rightly refuses any key material.
+        raise PortError(f'{rel} carries private-key material, which must not be vendored')
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_bytes(data)
 
@@ -214,7 +218,7 @@ def full_route(pr):
 
 def main():
     parser = argparse.ArgumentParser(description='Port Qodo PR-Review-Bench PRs into evals/fixtures/.')
-    parser.add_argument('--per-repo', type=int, default=3, help='PRs to port per repo (default 3)')
+    parser.add_argument('--per-repo', type=int, default=7, help='PRs to port per repo (default 7)')
     parser.add_argument('--cache-dir', type=Path, required=True, help='where the dataset files are cached')
     parser.add_argument('--repos', nargs='*', default=list(REPOS), help='repos to port (default: all four)')
     parser.add_argument(

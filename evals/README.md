@@ -14,9 +14,10 @@ switch to Anthropic's bundled `/code-review`. The design, the decision rule and 
 
 ## Cases
 
-- **Decision set**: 12 PRs from [Qodo PR-Review-Bench](https://huggingface.co/datasets/Qodo/PR-Review-Bench)
-  (MIT), three each from Ghost (MIT), aspnetcore (MIT), prefect (Apache-2.0) and tauri (Apache-2.0): the
-  lowest-numbered PRs large enough for the suite's full route. Each fixture vendors the base and head versions of
+- **Decision set**: 28 PRs from [Qodo PR-Review-Bench](https://huggingface.co/datasets/Qodo/PR-Review-Bench)
+  (MIT), seven each from Ghost (MIT), aspnetcore (MIT), prefect (Apache-2.0) and tauri (Apache-2.0): the
+  lowest-numbered PRs large enough for the suite's full route. The first 12 (three per repo) ran in all three
+  arms; the 16 added to narrow the suite-versus-native interval ran in those two arms only. Each fixture vendors the base and head versions of
   the touched files, the upstream licence (`UPSTREAM-LICENSE`) and the repo's extracted rules as `CLAUDE.md`.
 - **Sanity set**: the 17 judgement fixtures from `tests/ab/corpus`, read from `tests/fixtures/**`. They are not in
   the decision rule: the suite was tuned on them.
@@ -61,7 +62,8 @@ invalid `(case, arm)` pair once with `--case <id>-<arm>`, then pass both result 
 still invalid is dropped from every arm's comparison. When a fixture's prompt or a last-message regex grader is
 fixed after a run, `tools/curate.py <result.json>... --drop <fixture>... --regrade <grader>...` writes
 `*.curated.json` copies with the stale fixtures' runs removed and the grader re-applied; record its use in the
-results doc.
+results doc. A PR pairs only if every arm compared has a valid run, so to compare arms over PRs not run in all
+three, pass `aggregate.py --arms suite native`.
 
 Every grader is scored by the eval tool, but `aggregate.py` reads each one by name, so the tool's composite score
 is not used: `valid-*` decides whether a run counts, `route-full` and `diag-*` are recorded, `detect-*`,

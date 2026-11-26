@@ -191,10 +191,16 @@ def main():
     parser = argparse.ArgumentParser(description='Aggregate review eval results into the decision table.')
     parser.add_argument('results', nargs='+', type=Path, help='result.json files (first run, then reruns)')
     parser.add_argument('--out', type=Path, help='write the markdown report here instead of stdout')
+    parser.add_argument(
+        '--arms',
+        nargs='+',
+        choices=ARMS,
+        default=list(ARMS),
+        help='compare only these arms, so PRs run without the others still pair (default: all three)')
     args = parser.parse_args()
 
     fixtures = load_fixtures()
-    runs = collect_runs(args.results)
+    runs = {k: v for k, v in collect_runs(args.results).items() if k[1] in args.arms}
     out = ['# Review eval results', '']
 
     valid, invalid = {}, []

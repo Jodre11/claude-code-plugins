@@ -1,0 +1,67 @@
+{
+  "id": "qodo-prefect-4",
+  "set": "decision",
+  "source": "qodo",
+  "upstream": {
+    "repo": "prefect",
+    "pr": 4,
+    "url": "https://github.com/agentic-review-benchmarks/prefect/pull/4",
+    "licence": "Apache-2.0",
+    "base_sha": "ce5d682800ba796339e2fa00d579380bcbc109de",
+    "head_sha": "18b14dce7a06d6650e47b3aad56c201416b3f8cf"
+  },
+  "commit_title": "Add block document reference support to schema form",
+  "intent": "Implements block document reference support for schema form properties. When a schema property has a `blockTypeSlug` field, it now renders a block document selector with optional inline creation instead of throwing a \"not implemented\" error.\n\nThis adds three new components:\n- **BlockDocumentCombobox**: A searchable combobox for selecting block documents filtered by block type slug, with an optional \"Create new\" button\n- **BlockDocumentCreateDialog**: A dialog for inline block document creation using the existing schema form and block creation patterns\n- **SchemaFormInputBlockDocument**: A wrapper that integrates the combobox and dialog, outputting values in `{ $ref: blockDocumentId }` format\n\nThe integration in `schema-form-input.tsx` replaces the previous `throw new Error(\"not implemented\")` with the new component.\n\nRelated to #15512\n\n### Updates since last revision\n- Added `reactQueryDecorator` to `properties.stories.tsx` to fix Storybook error for blockTypeSlug stories (they require QueryClientProvider for TanStack Query)\n\n### Screenshots\n\n\n\n### Human Review Checklist\n- [ ] Verify the `{ $ref: blockDocumentId }` format is the correct structure for block document references in Prefect schemas\n- [ ] The type assertion in `schema-form-input.tsx` (line 82) casts `value as { $ref: string } | undefined` - confirm this is safe\n- [ ] The `as unknown as PrefectSchemaObject` cast in `block-document-create-dialog.tsx` for `blockSchema.fields` - confirm this is safe\n- [ ] The combobox does both server-side filtering (`like_` in API query) and client-side filtering (`filteredData`) - this may be redundant\n\n### Checklist\n\n- [x] This pull request references any related issue by including \"closes `<link to issue>`\"\n  - If no issue exists and your change is not a small fix, please [create an issue](https://github.com/PrefectHQ/prefect/issues/new/choose) first.\n- [x] If this pull request adds new functionality, it includes unit tests that cover the changes\n- [ ] If this pull request removes docs files, it includes redirect settings in `mint.json`.\n- [ ] If this pull request adds functions or classes, it includes helpful docstrings.\n\n---\nLink to Devin run: https://app.devin.ai/sessions/36e0160cacd7477db78917771f4b27f4\nRequested by: @desertaxle",
+  "removed": [],
+  "skipped_binary": [],
+  "diff": {
+    "files": 12,
+    "lines": 955
+  },
+  "issues": [
+    {
+      "key": "i1",
+      "title": "TypeScript using space indentation",
+      "description": "The rule requires TypeScript files to use tab characters for indentation, but this code uses spaces instead of tabs",
+      "file": "ui-v2/src/components/blocks/block-document-combobox/block-document-combobox.tsx",
+      "lines": [
+        67,
+        71
+      ],
+      "class": "rule"
+    },
+    {
+      "key": "i2",
+      "title": "Selected block document not found when search filter is active",
+      "description": "The `selectedBlockDocument` memo is incorrectly using `filteredData` instead of the original `data` array. When a user performs a search that doesn't match the currently selected block's name, the selected block will not be found in the filtered results, causing it to become undefined. This breaks the UI by displaying 'Select a block...' placeholder instead of showing the actual selected block name, even though a block is selected.",
+      "file": "ui-v2/src/components/blocks/block-document-combobox/block-document-combobox.tsx",
+      "lines": [
+        73,
+        77
+      ],
+      "class": "bug"
+    },
+    {
+      "key": "i3",
+      "title": "Regex validation rejects valid uppercase characters in block names",
+      "description": "The `BLOCK_NAME_REGEX` pattern was changed to only accept lowercase letters (`/^[a-z0-9-]+$/`), but the error message still claims to accept both 'lowercase letters, numbers, and dashes'. This creates a functional bug where users cannot create blocks with uppercase letters in the name, even though the validation message suggests they should be able to. This breaks backward compatibility if existing blocks have uppercase names and will confuse users trying to follow naming conventions.",
+      "file": "ui-v2/src/components/blocks/block-document-create-dialog/block-document-create-dialog.tsx",
+      "lines": [
+        41,
+        46
+      ],
+      "class": "bug"
+    },
+    {
+      "key": "i4",
+      "title": "Race condition: dialog closes before parent callback executes",
+      "description": "In the block creation success handler, `onOpenChange(false)` is called before `onCreated(res.id)`. This creates a timing issue where the dialog closes and unmounts before the parent component's `onCreated` callback can properly execute. If the parent component relies on the dialog context or performs async operations in the callback, they may fail or cause errors. The proper sequence should close the dialog after the parent has finished handling the creation event.",
+      "file": "ui-v2/src/components/blocks/block-document-create-dialog/block-document-create-dialog.tsx",
+      "lines": [
+        174,
+        177
+      ],
+      "class": "bug"
+    }
+  ]
+}

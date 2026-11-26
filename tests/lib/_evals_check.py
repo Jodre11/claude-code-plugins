@@ -56,8 +56,8 @@ def check_fixtures():
             for rel in f['base'] + f['head']:
                 if not (src / rel).is_file():
                     problems.append(f'{fid}: {f["files_from"]}/{rel} is missing')
-    if sets != {'decision': 12, 'sanity': 17}:
-        problems.append(f'expected 12 decision and 17 sanity fixtures, found {sets}')
+    if sets != {'decision': 28, 'sanity': 17}:
+        problems.append(f'expected 28 decision and 17 sanity fixtures, found {sets}')
     return problems
 
 

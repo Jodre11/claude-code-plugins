@@ -1,0 +1,100 @@
+{
+  "id": "qodo-tauri-5",
+  "set": "decision",
+  "source": "qodo",
+  "upstream": {
+    "repo": "tauri",
+    "pr": 5,
+    "url": "https://github.com/agentic-review-benchmarks/tauri/pull/5",
+    "licence": "Apache-2.0",
+    "base_sha": "50901ebda46033346b1b11bf6e453dad2d51479e",
+    "head_sha": "26a6cebd57ddb4621fb4fd3cbae556dd12d672be"
+  },
+  "commit_title": "Less statics",
+  "intent": "Work on refactoring the globals in tauri-cli. I think this is beneficial as-is, ~~but it is not quite finished~~.\n\n~~This still is missing a full transition towards lazy initialized `tauri_dir` and `frontend_dir` while guaranteeing not to break anything, as discussed in this [comment](https://github.com/tauri-apps/tauri/pull/14632#issuecomment-3627361907).~~\nCompleted.\n\nRead commit-by-commit.",
+  "removed": [],
+  "skipped_binary": [],
+  "diff": {
+    "files": 36,
+    "lines": 1444
+  },
+  "issues": [
+    {
+      "key": "i1",
+      "title": "Unsafe block lacks safety documentation",
+      "description": "The rule requires unsafe code blocks to include comprehensive comments explaining why the code is safe, what invariants must be maintained, and under what conditions the code is valid. This unsafe block uses mem::zeroed() and calls libc::ioctl() without documenting the safety invariants.",
+      "file": "crates/tauri-cli/src/interface/rust/desktop.rs",
+      "lines": [
+        350,
+        361
+      ],
+      "class": "rule"
+    },
+    {
+      "key": "i2",
+      "title": "Missing tauri_dir parameter causes workspace resolution to use wrong directory",
+      "description": "The `get_workspace_dir()` function is called without the required `tauri_dir` parameter in `cargo_manifest_and_lock()`. This function now requires `tauri_dir` to correctly resolve the workspace directory after the refactoring. Without it, the code will fail to compile since `get_workspace_dir()` signature was changed to require a `&Path` parameter throughout the codebase. This breaks the Cargo.lock resolution logic which is critical for determining package versions and dependencies.",
+      "file": "crates/tauri-cli/src/helpers/cargo_manifest.rs",
+      "lines": [
+        59,
+        59
+      ],
+      "class": "bug"
+    },
+    {
+      "key": "i3",
+      "title": "Configuration merge bypasses validation when merging with empty configs",
+      "description": "The `merge_config_with` function returns early with `Ok(())` when `merge_configs.is_empty()`, but this skips critical validation and state updates that should occur even when no merge is performed. The original code in `merge_with` returned the handle, maintaining the contract that callers could safely use the config. This early return can cause downstream code to operate on stale or unvalidated configuration state, particularly affecting build and dev commands that rely on properly initialized config metadata.",
+      "file": "crates/tauri-cli/src/helpers/config.rs",
+      "lines": [
+        258,
+        261
+      ],
+      "class": "bug"
+    },
+    {
+      "key": "i4",
+      "title": "Missing directory parameter breaks WiX upgrade code validation",
+      "description": "In `wix_settings`, the environment variable check `std::env::var_os(\"TAURI_BUNDLER_WIX_FIPS_COMPLIANT\")` was changed but the subsequent check incorrectly compares `OsString` with a string literal \"true\". The original code used `std::env::var()` which returns a `String`, but `var_os()` returns `OsString` which cannot be directly compared with `==` against a string slice. This breaks FIPS compliance detection for WiX installers, potentially creating non-compliant Windows builds when FIPS mode is required.",
+      "file": "crates/tauri-cli/src/helpers/config.rs",
+      "lines": [
+        73,
+        75
+      ],
+      "class": "bug"
+    },
+    {
+      "key": "i5",
+      "title": "New public struct and function lack rustdoc comments",
+      "description": "`Dirs` and `resolve_dirs` are newly introduced public API items but have no `///` documentation comments as required.",
+      "file": "crates/tauri-cli/src/helpers/app_paths.rs",
+      "lines": [
+        28,
+        147
+      ],
+      "class": "rule"
+    },
+    {
+      "key": "i6",
+      "title": "New public config functions lack rustdoc comments",
+      "description": "The newly introduced public functions `get_config`, `reload_config`, and `merge_config_with` have no `///` documentation comments, violating the requirement that public APIs be documented.",
+      "file": "crates/tauri-cli/src/helpers/config.rs",
+      "lines": [
+        245,
+        330
+      ],
+      "class": "rule"
+    },
+    {
+      "key": "i7",
+      "title": "New/modified path resolution introduces panics/unwraps for fallible operations",
+      "description": "`resolve_dirs` uses `panic!` and `unwrap()` (`tauri.parent().unwrap()`) for fallible operations (project discovery/path parent resolution) instead of returning a `Result`, violating the rule to make failure explicit rather than panicking.",
+      "file": "crates/tauri-cli/src/helpers/app_paths.rs",
+      "lines": [
+        127,
+        145
+      ],
+      "class": "rule"
+    }
+  ]
+}

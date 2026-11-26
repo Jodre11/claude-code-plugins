@@ -1,0 +1,111 @@
+{
+  "id": "qodo-aspnetcore-5",
+  "set": "decision",
+  "source": "qodo",
+  "upstream": {
+    "repo": "aspnetcore",
+    "pr": 5,
+    "url": "https://github.com/agentic-review-benchmarks/aspnetcore/pull/5",
+    "licence": "MIT",
+    "base_sha": "78e439da5e8e27e6ec2800d9f265905dcfc9719c",
+    "head_sha": "a8d897e3229de0627221b39113721370ef6c143b"
+  },
+  "commit_title": "Add test coverage for prerendering closed generic components",
+  "intent": "This change: Add test coverage for prerendering closed generic components. The original description follows as written.\n\n# Add test coverage for prerendering closed generic components\n\n- [x] You've read the [Contributor Guide](https://github.com/dotnet/aspnetcore/blob/main/CONTRIBUTING.md) and [Code of Conduct](https://github.com/dotnet/aspnetcore/blob/main/CODE-OF-CONDUCT.md).\n- [x] You've included unit or integration tests for your change, where applicable.\n- [x] You've included inline docs for your change, where applicable.\n- [x] There's an open issue for the PR that you are making. If you'd like to propose a new feature or change, please open an issue to discuss the change or find an existing issue.\n\nAdd tests verifying closed generic components can be prerendered\n\n## Description\n\nThe issue reported that generic components couldn't be rendered as root components due to type serialization limitations. Investigation shows **the feature already works correctly**:\n\n- `Type.FullName` produces valid assembly-qualified names for closed generics (e.g., `GenericComponent`1[[System.Int32, System.Private.CoreLib, ...]]`)\n- `Assembly.GetType()` correctly resolves these names during deserialization\n\nThis PR adds comprehensive test coverage:\n\n**EndpointHtmlRendererTest (4 tests)**\n- Static rendering of `GenericComponent<int>`\n- Interactive Server mode (prerendered and non-prerendered)\n- Interactive WebAssembly mode (prerendered)\n\n**ServerComponentDeserializerTest (4 tests)**\n- Serialization/deserialization round-trip for closed generic types\n- Different type parameters (`int`, `string`)\n- Parameter handling with generic components\n\n```razor\n@* Example: GenericComponent.razor *@\n@typeparam TValue\n\n<p>Generic value: @(Value?.ToString() ?? \"(null)\")</p>\n@code {\n    [Parameter] public TValue Value { get; set; }\n}\n```\n\nUsage in tests:\n```csharp\nvar result = await renderer.PrerenderComponentAsync(\n    httpContext, \n    typeof(GenericComponent<int>), \n    RenderMode.InteractiveServer, \n    ParameterView.FromDictionary(new Dictionary<string, object> { { \"Value\", 123 } }));\n```\n\n\n\n\n\n<details>\n\n<summary>Original prompt</summary>\n\n> \n> ----\n> \n> *This section details on the original issue you should resolve*\n> \n> <issue_title>Support prerendering closed generic components</issue_title>\n> <issue_description>\n> \n> ## Summary\n> \n> We don't support rendering generic components as root components due to limitations in the way we serialize the type definition for the component (a similar thing happens for component parameters). We should consider lifting this limitation to support some more advanced scenarios.\n> \n> ## Motivation and goals\n> \n> Turns out that rendering generic components is useful if you want to write a \"functional\" component to wrap around another component, an example of this is when you are rendering multiple components at different points on a page and you want to, for example, require authentication for those components.\n> \n> At that point, application developers are forced to write an individual wrapper for each of those components they want to wrap.\n> \n> ## In scope\n> \n> Support rendering closed generic components from Blazor applications.\n> \n> ## Out of scope\n> \n> TBD\n> \n> ## Risks / unknowns\n> \n> None so far\n> \n> ## Examples\n> \n> ```razor\n> <CascadingAuthenticationState>\n>     <AuthorizeView>\n>         <Authorized>\n>             <TComponent @attributes=\"Params\" />\n>         </Authorized>\n>     </AuthorizeView>\n> </CascadingAuthenticationState>\n> \n> @code{\n>     [Parameter(CaptureUnmatchedValues = true)] public IDictionary<string,object> Params { get; set; }\n> }\n> ```\n> \n> Having a language syntax for writing these types of components is also desirable, otherwise it's cumbersome and likely error prone to author them:\n> ```csharp\n>     public class ProtectedWidget<T> : IComponent where T : IComponent\n>     {\n>         private RenderHandle _handle;\n>         private ParameterView _parameters;\n>         static RenderFragment _authorizeFragment;\n> \n>         public ProtectedWidget()\n>         {\n>             _authorizeFragment = new RenderFragment(AuthorizedFragment);\n>         }\n> \n>         public void Attach(RenderHandle renderHandle)\n>         {\n>             _handle = renderHandle;\n>         }\n> \n>         public Task SetParametersAsync(ParameterView parameters)\n>         {\n>             _parameters = parameters;\n>             _handle.Render(BuildRenderTree);\n> \n>             return Task.CompletedTask;\n>         }\n> \n>         private void BuildRenderTree(RenderTreeBuilder builder)\n>         {\n> \n>             builder.OpenComponent<CascadingAuthenticationState>(0);\n>             builder.OpenComponent<AuthorizeView>(1);\n>             builder.AddAttribute(1, \"Authorized\", _authorizeFragment);\n>             builder.CloseComponent();\n>             builder.CloseComponent();\n> \n>         }\n>         void AuthorizedFragment(RenderTreeBuilder child)\n>         {\n>             child.OpenComponent<T>(0);\n>             child.AddMultipleAttributes(1, _parameters.ToDictionary());\n>             child.CloseComponent();\n>         }\n>     }\n> ```\n> </issue_description>\n> \n> ## Comments on the Issue (you are @copilot in this section)\n> \n> <comments>\n> <comment_new><author>@</author><body>\n> Thanks for contacting us.\n> We're moving this issue to the `Next sprint planning` milestone for future evaluation / consideration. We will evaluate the request when we are planning the work for the next milestone. To learn more about what to expect next and how this issue will be handled you can read more about our triage process [here](https://github.com/dotnet/aspnetcore/blob/master/docs/TriageProcess.md).</body></comment_new>\n> <comment_new><author>@</author><body>\n> We've moved this issue to the Backlog milestone. This means that it is not going to be worked on for the coming release. We will reassess the backlog following the current release and consider this item at that time. To learn more about our issue management process and to have better expectation regarding different types of issues you can read our [Triage Process](https://github.com/dotnet/aspnetcore/blob/master/docs/TriageProcess.md).</body></comment_new>\n> <comment_new><author>@</author><body>\n> We've moved this issue to the Backlog milestone. This means that it is not going to be worked on for the coming release. We will reassess the backlog following the current release and consider this item at that time. To learn more about our issue management process and to have better expectation regarding different types of issues you can read our [Triage Process](https://github.com/dotnet/aspnetcore/blob/main/docs/TriageProcess.md).</body></comment_new>\n> </comments>\n> \n\n\n</details>\n\n- Fixes dotnet/aspnetcore#27579\n\n\n---\n\n\ud83d\udca1 You can make Copilot smarter by setting up custom instructions, customizing its development environment and configuring Model Context Protocol (MCP) servers. Learn more [Copilot coding agent tips](https://gh.io/copilot-coding-agent-tips) in the docs.",
+  "removed": [],
+  "skipped_binary": [],
+  "diff": {
+    "files": 3,
+    "lines": 217
+  },
+  "issues": [
+    {
+      "key": "i1",
+      "title": "Traditional namespace declaration with braces",
+      "description": "The rule requires C# files to use file-scoped namespace declarations (ending with semicolon without braces), but this file uses traditional namespace declarations with opening and closing braces.",
+      "file": "src/Components/Server/test/Circuits/ServerComponentDeserializerTest.cs",
+      "lines": [
+        9,
+        11
+      ],
+      "class": "rule"
+    },
+    {
+      "key": "i2",
+      "title": "Incorrect type conversion in generic component parameter assertion",
+      "description": "The test validates a generic component with an int type parameter but uses Convert.ToInt64 instead of Convert.ToInt32 to assert the parameter value. Since the parameter is defined as int (System.Int32) in GenericTestComponent<int>, this creates a type mismatch. The assertion compares a long (Int64) value to the expected int (Int32) value 42, which will cause the test to fail even though the component deserialization is working correctly. This breaks the validation logic for generic component parameters.",
+      "file": "src/Components/Server/test/Circuits/ServerComponentDeserializerTest.cs",
+      "lines": [
+        121,
+        124
+      ],
+      "class": "bug"
+    },
+    {
+      "key": "i3",
+      "title": "Incorrect sequence validation for multiple generic components",
+      "description": "The test validates deserialization of multiple closed generic components but checks that both descriptors have sequence number 0 instead of verifying that the second descriptor has sequence number 1. Component descriptors in a collection must have sequential ordering starting from 0, and this test should verify the second component has sequence 1. This incorrect assertion fails to validate proper sequence ordering, which is critical for component initialization and rendering order in Blazor.",
+      "file": "src/Components/Server/test/Circuits/ServerComponentDeserializerTest.cs",
+      "lines": [
+        142,
+        144
+      ],
+      "class": "bug"
+    },
+    {
+      "key": "i4",
+      "title": "Generic type parameter mismatch in component marker validation",
+      "description": "The test creates and renders a GenericComponent<int> with value 456, but then validates the component marker against GenericComponent<string> type instead of GenericComponent<int>. This causes the test to check for the wrong fully qualified type name and assembly metadata. The type validation will fail because the actual rendered component is GenericComponent<int> while the test expects GenericComponent<string>, breaking the validation of WebAssembly component prerendering for closed generic types.",
+      "file": "src/Components/Endpoints/test/EndpointHtmlRendererTest.cs",
+      "lines": [
+        833,
+        838
+      ],
+      "class": "bug"
+    },
+    {
+      "key": "i5",
+      "title": "Async test method missing Async suffix",
+      "description": "This method returns Task and is marked async, but its name does not end with the required 'Async' suffix.",
+      "file": "src/Components/Endpoints/test/EndpointHtmlRendererTest.cs",
+      "lines": [
+        720,
+        736
+      ],
+      "class": "rule"
+    },
+    {
+      "key": "i6",
+      "title": "Async test method missing Async suffix",
+      "description": "This method returns Task and is marked async, but its name does not end with the required 'Async' suffix.",
+      "file": "src/Components/Endpoints/test/EndpointHtmlRendererTest.cs",
+      "lines": [
+        738,
+        786
+      ],
+      "class": "rule"
+    },
+    {
+      "key": "i7",
+      "title": "Async test method missing Async suffix",
+      "description": "This method returns Task and is marked async, but its name does not end with the required 'Async' suffix.",
+      "file": "src/Components/Endpoints/test/EndpointHtmlRendererTest.cs",
+      "lines": [
+        788,
+        836
+      ],
+      "class": "rule"
+    },
+    {
+      "key": "i8",
+      "title": "Async test method missing Async suffix",
+      "description": "This method returns Task and is marked async, but its name does not end with the required 'Async' suffix.",
+      "file": "src/Components/Endpoints/test/EndpointHtmlRendererTest.cs",
+      "lines": [
+        838,
+        878
+      ],
+      "class": "rule"
+    }
+  ]
+}

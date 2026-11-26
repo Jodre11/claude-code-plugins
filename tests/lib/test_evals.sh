@@ -76,7 +76,7 @@ test_evals_aggregate_drops_invalid_pairs() {
     assert_matches "$first-native: 1 of 1 runs invalid" "$out" "aggregate lists the invalid run"
     assert_matches "invalid in some arm\): $first" "$out" \
         "aggregate drops that PR from every arm's comparison"
-    assert_matches "Decision set \(11 PRs\)" "$out" "the comparison pairs only the PRs valid in every arm"
+    assert_matches "Decision set \(27 PRs\)" "$out" "the comparison pairs only the PRs valid in every arm"
     rm -rf "$tmp"
 }
 
@@ -89,6 +89,18 @@ test_evals_curate_regrades_and_drops() {
     python3 -I "$(_ev_tools)/curate.py" "$tmp/curate.json" --drop "$first" --regrade valid-anthropic-ok >/dev/null
     out=$(python3 -I "$(_ev_tools)/aggregate.py" "$tmp/curate.curated.json" 2>&1)
     assert_matches "every run valid" "$out" "curate regrades the status line with the current pattern"
-    assert_matches "Decision set \(11 PRs\)" "$out" "curate drops every run of a stale fixture"
+    assert_matches "Decision set \(27 PRs\)" "$out" "curate drops every run of a stale fixture"
+    rm -rf "$tmp"
+}
+
+test_evals_aggregate_arms_subset_pairs_without_hybrid() {
+    local tmp out
+    tmp=$(mktemp -d)
+    python3 -I "$REPO_ROOT/tests/lib/_evals_fake_results.py" curate "$tmp/subset.json" > /dev/null
+    out=$(python3 -I "$(_ev_tools)/aggregate.py" "$tmp/subset.json" 2>&1)
+    assert_not_matches "## Decision set" "$out" "with every hybrid decision run invalid, no PR pairs across all arms"
+    out=$(python3 -I "$(_ev_tools)/aggregate.py" "$tmp/subset.json" --arms suite native 2>&1)
+    assert_matches "Decision set \(28 PRs\)" "$out" "--arms pairs the PRs over the arms compared only"
+    assert_not_matches "hybrid" "$out" "--arms leaves the other arms out of the report"
     rm -rf "$tmp"
 }

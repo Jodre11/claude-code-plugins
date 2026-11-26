@@ -1,0 +1,75 @@
+{
+  "id": "qodo-ghost-9",
+  "set": "decision",
+  "source": "qodo",
+  "upstream": {
+    "repo": "Ghost",
+    "pr": 9,
+    "url": "https://github.com/agentic-review-benchmarks/Ghost/pull/9",
+    "licence": "MIT",
+    "base_sha": "1f554a3bdbae258490c1626916aa6d0ffe7464fa",
+    "head_sha": "5f87951e2dba8d7bda4b55373a44e272036426d5"
+  },
+  "commit_title": "Switched to time-based domain warmup",
+  "intent": "This change: Switched to time-based domain warmup. The original description follows as written.\n\ncloses [GVA-617](https://linear.app/ghost/issue/GVA-617/add-new-algorithm-for-time-based-warmup-to-ghost)\ncloses [GVA-619](https://linear.app/ghost/issue/GVA-619/ghost-disable-the-domain-warming-process-automatically-after-6-weeks)\n\nThis uses the new domain warmup algorithm that makes the warmup static:\n* The number of recipients we're targeting is 200,000\n* The number of days in which the warmup takes place is 6 weeks (42 days)\n\nThis simplifies the flow considerably, and we can experiment with the exact thresholds to make sure this is effective for most users of domain warming.",
+  "removed": [],
+  "skipped_binary": [],
+  "diff": {
+    "files": 3,
+    "lines": 311
+  },
+  "issues": [
+    {
+      "key": "i1",
+      "title": "Missing semicolons in getWarmupLimit method",
+      "description": "The rule requires all JavaScript and TypeScript statements to end with explicit semicolons, but this code relies on automatic semicolon insertion (ASI) instead",
+      "file": "ghost/core/core/server/services/email-service/DomainWarmingService.ts",
+      "lines": [
+        83,
+        98
+      ],
+      "class": "rule"
+    },
+    {
+      "key": "i2",
+      "title": "Incorrect rounding in day calculation causes off-by-one error in warmup schedule",
+      "description": "The getDaysSinceFirstEmail method uses Math.ceil instead of Math.floor to calculate days since the first email. This causes the warmup to start one day ahead of schedule. For example, on the same day an email is sent (even minutes after), the partial day will round up to day 1 instead of day 0. This breaks the entire 42-day warmup progression as all subsequent calculations will be offset by one day, causing the service to use higher email limits than intended for each actual day, potentially harming domain reputation by warming up too aggressively.",
+      "file": "ghost/core/core/server/services/email-service/DomainWarmingService.ts",
+      "lines": [
+        75,
+        75
+      ],
+      "class": "bug"
+    },
+    {
+      "key": "i3",
+      "title": "Off-by-one error in warmup completion check extends warmup period",
+      "description": "The condition checking if warmup is complete uses `day > this.#warmupConfig.totalDays` instead of `day >= this.#warmupConfig.totalDays`. With a 42-day warmup period (totalDays=42), this means the warmup won't complete until day 43 instead of day 42. On day 42, the system will still calculate and apply a limit instead of returning Infinity to indicate unlimited sending. This extends the warmup period by one full day, delaying when users can send emails at full volume and potentially causing confusion when the warmup doesn't complete as documented.",
+      "file": "ghost/core/core/server/services/email-service/DomainWarmingService.ts",
+      "lines": [
+        85,
+        86
+      ],
+      "class": "bug"
+    },
+    {
+      "key": "i4",
+      "title": "Using Math.floor instead of Math.round produces consistently lower warmup limits",
+      "description": "The warmup limit calculation uses Math.floor instead of Math.round to compute the daily email limit. This systematically underestimates the intended limits throughout the warmup period. For exponential growth calculations, proper rounding is critical - when the formula produces values like 237.6, Math.floor gives 237 while Math.round would give 238. Over a 42-day warmup period, this accumulates significant deviation from the intended warmup curve, making the warmup more conservative than designed and potentially extending the effective time needed to reach full sending capacity. This undermines the carefully calculated exponential progression from 200 to 200,000 emails.",
+      "file": "ghost/core/core/server/services/email-service/DomainWarmingService.ts",
+      "lines": [
+        89,
+        95
+      ],
+      "class": "bug"
+    },
+    {
+      "key": "i5",
+      "title": "Test-to-implementation mismatch: integration test helper uses Math.round while implementation uses Math.floor",
+      "description": "The integration test file defines a helper function `getExpectedLimit` that uses `Math.round` to calculate expected warmup limits, but the actual implementation uses `Math.floor`. This mismatch will cause test failures because the test expects different values than what the implementation produces. For example, on day 1, the formula produces 237.6, which Math.floor rounds to 237 but Math.round rounds to 238. This inconsistency means tests will fail even though the implementation logic might be correct, blocking the PR from merging successfully.",
+      "file": null,
+      "lines": null,
+      "class": "bug"
+    }
+  ]
+}

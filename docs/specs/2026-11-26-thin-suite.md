@@ -1,7 +1,7 @@
 # Thin suite: Anthropic's review as the finder
 
-Status: reviewed 2026-11-26 (three-lens spec panel), amended. Step 4b of the code-review-suite overhaul, between
-the eval (step 4) and portability (step 5).
+Status: reviewed 2026-11-26 (three-lens spec panel), amended; spikes run 2026-11-27 (route C). Step 4b of the
+code-review-suite overhaul, between the eval (step 4) and portability (step 5).
 
 ## Goal
 
@@ -38,7 +38,8 @@ its JSON array, so a format change surfaces as a failed native run (no verdict) 
   reviewed repo (`includes/rule-sources.md`), so a personal rule never becomes a finding on someone else's PR. The
   eval could not see this: its child sessions had a temporary home with no user CLAUDE.md.
 - **Native cannot be called by the model today.** `skillOverrides.code-review` is `user-invocable-only`
-  (`~/.claude` 146073a). The 2026-11-23 spike S1 showed a Workflow agent calling Skill on it gets a tool error.
+  (`~/.claude` 146073a). The 2026-11-23 spike S1 showed a Workflow agent calling Skill on it gets a tool error;
+  with the override lifted, this spec's S1 succeeds (see Spike results).
 - **The panel was also the static analysers' existence check.** In PR #106 jbinspect reasoned its way to a
   confidence-100 Critical ("missing global usings") that its tool never reported; the panel voted it false.
   Every static agent caps its tool's top tier at `Important` unless the rule ID is on that agent's
@@ -106,6 +107,55 @@ built.
 - **Neither captures:** stop and re-spec. Letting native post with `--comment` beside a separate suite review is a
   different design.
 
+### Spike results (2026-11-27, CLI 2.1.332): route C, with text capture
+
+Run in-session on a throwaway fixture with no remote (base `main`, a `feature` branch with an off-by-one, a
+project-rule `print` and a rule only in `~/.claude/CLAUDE.md`; a `feature2` branch on top of it; detached
+worktrees at both heads, the session checkout left on `main`). Workflows `wf_0eeb9f7f-c3e`, `wf_cf06f406-80d` and
+`wf_4f8f04f4-155`, eight native runs, all with `agentType: general-purpose` wrappers.
+
+**S1: passes, but not with a schema.**
+
+- With the override lifted (it applies live, without a restart), a Workflow agent's Skill call to `code-review`
+  succeeds. Native forks as a `general-purpose` subagent at spawn depth 2; the depth-1 limit on `Agent` does not
+  apply to a forked skill.
+- **A schema on the wrapper swallows the result.** The fork inherits the wrapper's `StructuredOutput` tool and
+  schema, fills it in itself, and the wrapper's Skill call returns only `Skill execution completed`. With no
+  schema, the Skill result is native's text, ending in a fenced `json` array of exactly the eval's shape
+  (`file, line, summary, failure_scenario, severity`, `summary` ending `Fix: …`). One wrapper dropped the
+  `Skill "code-review" completed` header and kept the rest, so the parse must not depend on the header.
+- **The user CLAUDE.md is in native's context**, so the personal-rule guard is built. Native flagged both planted
+  personal rules (four parameters on one line; a public function with no doc comment) as `nit`s whose
+  `failure_scenario` names `~/.claude/CLAUDE.md`. It also cited the project rule by the worktree's **absolute**
+  path (`/tmp/…/fx-wt/CLAUDE.md`), which the guard as first written would have dropped.
+- **Model:** native ran on the wrapper's model (the session model, `claude-opus-5-5`, the same as the eval's native
+  arm); the fork is spawned unnamed and inherits. So `native-reviewer` must not pin a smaller model.
+- **Wall-clock:** 30–55 s per native run on the two-file fixture; the eval's mean on real PRs was 1.9 minutes.
+- No GitHub writes (no remote), no file edits.
+
+**S2: passes with `<worktree path> <range>`.** Native's own target rule is "a PR number, branch name, or file path";
+a path plus a git range is honoured as written.
+
+| Target args | Native ran | Result |
+|---|---|---|
+| `high <base SHA>` (cwd = session repo) | `git -C <session repo> show <sha>` | failed: the SHA is not in the session's repo |
+| `high` (cwd = session repo) | `git diff origin/HEAD...HEAD` | reviewed the session's own branch, not the worktree |
+| `high <worktree>` | `git -C <worktree> diff main...HEAD` | right files, but the base is guessed (`origin/HEAD`, then `main`) |
+| `high <worktree> <feature>...HEAD` (base not `main`) | `git -C <worktree> diff <feature>...HEAD` | exactly the pinned range |
+| `high <worktree> <base>...HEAD -- lib/other.py` | `git -C <worktree> diff <base>...HEAD -- lib/other.py` | range and path scope honoured |
+| `high <worktree> <empty tree> HEAD` | `git -C <worktree> diff <empty tree> HEAD` | whole tree, two-dot form honoured |
+| `high <worktree> <feature>...HEAD`, tree dirty | the range, then the working tree | **also reviewed the uncommitted change** ("in scope under Phase 0") |
+
+Every cross-file read opened the worktree's files by absolute path, whatever the agent's cwd; a `cd` in the
+wrapper does not persist (the path is outside the session's working directories) and is not needed. A cross-repo
+review is the same mechanism (a worktree of another repo), so it was not run against a live PR.
+
+Two native behaviours to carry into the design: an explicit range does not exclude uncommitted changes (see
+Guards), and native keeps two pieces of state between runs, "with no level given, it reuses the level you typed
+last" and a sticky `--max-findings` choice. The suite always passes `high`; it does not pass `--max-findings`, so a
+user's sticky choice applies (**assumption**: resetting it with `--max-findings default` would change the user's
+own setting).
+
 ## Design
 
 ### Pipeline
@@ -117,27 +167,33 @@ built.
 3. Step 2.9 (agent prompt) keeps only what the static specialists read.
 4. Step 3 (route) retires. Step 3.5 calls `review-core` with the same args minus `route`, `intentLedger`,
    `panelSize`, `panelBrief`, `anthropicSpecialist` and `selfReReview` (its only consumer was the alignment
-   filter), plus `nativeTarget` (computed and validated in prose from S2's answer, never by `review-core`'s
-   agents). The bare-command guard switches from `route` to `nativeTarget`.
+   filter), plus `nativeTarget`, built in prose from values the pipeline already validated, never by
+   `review-core`'s agents: `"$REPO_DIR" "$BASE"..."$HEAD_SHA"`, or `"$REPO_DIR" "$BASE" "$HEAD_SHA"` under
+   `EMPTY_TREE_MODE`, with ` -- <path>…` appended for a `Path scope:` (S2). `review-core` re-checks the shape in
+   code (an absolute path, two 40-hex SHAs or the empty-tree SHA, no `--` flag before the scope) and treats a
+   mismatch as native not running. The bare-command guard switches from `route` to `nativeTarget`.
 5. `review-core`: dispatch `native` and the conditional static specialists in parallel; normalise; guard;
    compute the verdict; wording pass; render. Phases: `dispatch`, `assemble`, `voice`.
 
 ### The native specialist (route C)
 
 - **Agent:** `code-review-suite:native-reviewer`. Tools `Skill`, `Read`, `Grep`, `Glob`, `Bash`; no `Write`,
-  `Edit` or `Agent`. A `*-reviewer` name, so reviewer-guard blocks mutating git. Its model is the one S1 records
-  for the eval's native arm.
+  `Edit` or `Agent`. A `*-reviewer` name, so reviewer-guard blocks mutating git. No `model` in its frontmatter:
+  native's fork runs on the wrapper's model (S1), so the agent inherits the session model, as the eval's native
+  arm did.
 - **Dispatch:** `stallMs: 600000`. The wrapper is silent while the skill runs, and the sandbox's default watchdog
   drops a silent agent after 180 s (`review-core.js` panel comment); the eval's mean native run was 1.9 minutes.
-- **Prompt:** call Skill `code-review` with the args string `review-core` built (`high ${nativeTarget}`),
-  verbatim; never add `--comment` or `--fix`; return native's array unchanged. If S1 finds the user CLAUDE.md in
-  the agent's context, the prompt also carries `rule-sources.md` (personal instructions never decide a finding);
-  see Guards.
-- **Schema:** `{status, statusReason?, findings: [{file, line, summary, failure_scenario, severity}]}`, status
-  `ok | failed`, severity `important | nit | pre_existing`. `review-core` maps it in code, so no model decides
-  the mapping.
-- **Not running:** any non-`ok` result (skill disabled, error, timeout) is "native did not run", with
-  `statusReason` shown in the body note.
+- **Prompt:** call Skill `code-review` once with the args string `review-core` built (`high ${nativeTarget}`),
+  verbatim; never add `--comment`, `--fix` or `--max-findings`; no other tool; the final message is the Skill
+  result verbatim, or `SKILL_ERROR: <text>`. The prompt also carries `rule-sources.md` (personal instructions
+  never decide a finding), since S1 found the user CLAUDE.md in native's context; see Guards.
+- **No agent schema** (S1: a schema leaks into the fork and the result is lost). `review-core` parses the text in
+  code: the last fenced `json` block that parses as an array, each element checked for the five keys, string
+  `file`, positive integer `line` and severity `important | nit | pre_existing`; extra keys are dropped. An empty
+  array is a valid result. The mapping is in code, so no model decides it.
+- **Not running:** `SKILL_ERROR`, no parseable array, a failed element check, a null agent result (timeout) or a
+  bad `nativeTarget` is "native did not run", with the reason shown in the body note. A partly valid array is
+  rejected whole rather than trimmed, so a format change is never half-read.
 
 ### Normalisation (in code)
 
@@ -157,17 +213,21 @@ PR" and "raise as a follow-up" suffixes go with `routeFinding`.
 
 ### Guards (in code)
 
-- **Personal rules, best effort, only if needed.** If S1 shows the user CLAUDE.md is not in native's context, this
-  guard is not built and PR #138's rule holds by construction. If it is in context (always under F1), two layers
-  apply, and neither is complete: the wrapper prompt carries `rule-sources.md`, and a native finding whose
-  `failure_scenario` names as its rule source a CLAUDE.md path that is not repo-relative (starts with `~/` or `/`)
-  is dropped and logged as `filtered: rule-source`. A finding that only mentions such a path, for example a change
-  to `rule-sources.md`, is kept. A paraphrased personal rule with no citation gets through; the PR A live check
-  measures how often.
+- **Personal rules, best effort** (built: S1 found the user CLAUDE.md in native's context). Two layers, neither
+  complete: the wrapper prompt carries `rule-sources.md`, and a native finding whose `failure_scenario` cites as
+  its rule source a CLAUDE.md outside the reviewed repo is dropped and logged as `filtered: rule-source`. Outside
+  means a path starting `~/`, or an absolute path not under `$REPO_DIR` (S1: native cites the project's own
+  CLAUDE.md by the worktree's absolute path, which must be kept). A finding that only mentions such a path, for
+  example a change to `rule-sources.md`, is kept. A paraphrased personal rule with no citation gets through; the
+  PR A live check measures how often. In S1 native cited `~/.claude/CLAUDE.md` every time it used a personal rule.
 - **Anchors** (existing logic, now one function for every finding): file not in the diff, so the body; line not a
   changed line, so file-level; otherwise inline. Housekeeper findings stay exempt and go to the freshness table.
-  Under `/pre-review` with a `Path scope:`, a native finding outside the scope goes to an "Outside the path scope"
-  section of the local report, unless S2 finds a target form that scopes native itself.
+  Native honours a `Path scope:` itself (S2), and a stray finding outside the scope lands in the body by the
+  file-not-in-diff rule, so no separate section is needed.
+- **Uncommitted changes.** Native adds the working tree to any range (S2). PR mode reviews in the Phase -0.5
+  worktree, which is clean, so nothing changes there. In `/pre-review` (in place) and when Phase -0.5 is skipped,
+  a native finding on an uncommitted line is outside `$CHANGED_LINES` and goes file-level or to the body by the
+  anchor rules. **Assumption:** that is wanted for a pre-commit review, and needs no handling of its own.
 - **Static severity.** A static finding labelled `Critical` whose `rule_id` is not on its tool's
   `Critical-allow-list` is invalid: it posts as non-blocking with its label and is logged `filtered:
   severity-unreachable`. This would have caught the PR #106 case. The allow-lists are copied into `review-core.js`
@@ -257,15 +317,14 @@ counts with counts by severity and source ("native", "ruff", …) and drop "pane
 
 0. **Housekeeping: none.** Checked 2026-11-26: Actions and runners are current (housekeeper engine), and the repo
    has no package manifests.
-1. **Spikes S1–S2.** Results appended to this spec; they pick route C or F1.
+1. **Spikes S1–S2. Done 2026-11-27:** route C, text capture (see Spike results).
 2. **Settings (`~/.claude`, private, direct to `main`).** Remove `code-review` from `skillOverrides` in
    `settings.json.tmpl` (via `__remove__`), apply, run the seed screen. Before PR A's live check.
-3. **PR A: thin pipeline.** `review-core.js`, `native-reviewer` (route C only), the pipeline prose and both hosts,
+3. **PR A: thin pipeline.** `review-core.js`, `native-reviewer` (route C), the pipeline prose and both hosts,
    the Stage 6 host changes, the folded includes, the schema, the verdict rubric, the retired-key notice, the
    README's architecture section. Live checks on a pinned local diff by direct `review-core` dispatch: a
-   planted-bug fixture (native and ruff findings on the same lines merge); if the personal-rule guard is built, a
-   fixture with one rule only in `~/.claude/CLAUDE.md` and one paraphrased personal rule (count what gets
-   through).
+   planted-bug fixture (native and ruff findings on the same lines merge); a fixture with one rule only in
+   `~/.claude/CLAUDE.md` and one paraphrased personal rule (count what gets through the personal-rule guard).
 4. **PR B: retirement.** Delete what PR A left unreferenced. `tests/run.sh` and the cross-reference checks prove
    nothing dangles.
 5. **PR C: eval check.** Depends on PR #146 (the harness) merging. A `thin` arm (`/pre-review` on the thin suite)
@@ -285,16 +344,19 @@ counts with counts by severity and source ("native", "ruff", …) and drop "pane
   agent.
 - Unit tests beside the existing `review-core.js` ones: the native-to-finding mapping (each severity, a summary
   with and without `Fix:`); the anchor routes, including path scope; the static severity guard; each verdict row,
-  including native not running; a non-`ok` `native-reviewer` result; under F1, a malformed `nativeFindings`; the
-  personal-rule filter if built (`~/.claude/CLAUDE.md` as rule source dropped, a repo CLAUDE.md kept, a mention
-  of a user-level path kept).
+  including native not running; the text parse (the array with and without the `Skill … completed` header and
+  with prose before it, `SKILL_ERROR`, no array, an element with a bad severity or a missing key, an empty array);
+  the `nativeTarget` shape check (each of the three forms, and a rejected flag); the personal-rule filter
+  (`~/.claude/CLAUDE.md` as rule source dropped, a repo CLAUDE.md cited by repo-relative and by absolute
+  `$REPO_DIR` path kept, an absolute path outside `$REPO_DIR` dropped, a mention of a user-level path kept).
 - Live checks as in PR A; one `/address-pr-comments` run on a scratch PR the thin suite reviewed.
 
 ## Assumptions
 
 - Decisions 3, 5 and 8 above.
-- Native's JSON array, as seen in the eval traces, is the contract S1 captures. If native moves to the
-  ReportFindings tool in this host, the agent reads that instead; the schema is the same shape.
+- Native's fenced JSON array, as seen in the eval traces and S1, is the contract. If native moves to a findings
+  tool (the main session here offers `ReportFindings`; a schema-bound wrapper exposes `StructuredOutput`, which
+  native then fills instead of answering), the capture breaks loudly as "native did not run" and is re-mapped.
 - The 12-PR, three-run check in PR C is enough to show the wrapper does no harm. It is not a new keep-or-switch
   decision, and a one-fixture match in S1 does not replace it, since native varies from run to run.
 

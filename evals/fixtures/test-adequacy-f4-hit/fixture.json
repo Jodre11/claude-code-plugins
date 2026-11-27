@@ -1,0 +1,30 @@
+{
+  "id": "test-adequacy-f4-hit",
+  "set": "sanity",
+  "source": "corpus",
+  "files_from": "tests/fixtures/test-adequacy/f4-hit",
+  "base": [
+    "README.md"
+  ],
+  "head": [
+    "src/invoiceEmitter.ts",
+    "tests/invoiceEmitter.test.ts"
+  ],
+  "readme": "# Project\n\nInvoice emitter scaffold.\n",
+  "base_title": "base: invoice emitter scaffold",
+  "commit_title": "feat: add InvoicePayload DTO and emitter with consumer-side test",
+  "intent": "This change will add an InvoicePayload wire-contract DTO and a bus emitter, with a test that verifies the emitter calls publish. Nothing else in the repository changes.",
+  "issues": [
+    {
+      "key": "i1",
+      "title": "Producer side of the InvoicePayload contract is untested",
+      "description": "The test stubs an empty payload and only checks that publish is called; nothing asserts that the emitter publishes a populated InvoicePayload.",
+      "file": "src/invoiceEmitter.ts",
+      "lines": [
+        1,
+        5
+      ],
+      "class": "bug"
+    }
+  ]
+}

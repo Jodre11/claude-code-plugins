@@ -1,0 +1,60 @@
+{
+  "id": "qodo-aspnetcore-6",
+  "set": "decision",
+  "source": "qodo",
+  "upstream": {
+    "repo": "aspnetcore",
+    "pr": 6,
+    "url": "https://github.com/agentic-review-benchmarks/aspnetcore/pull/6",
+    "licence": "MIT",
+    "base_sha": "abb347100670af461da458a9d164515e18ce75a4",
+    "head_sha": "fec63512b01c268e0dd53d7f10c0339eb298d0e4"
+  },
+  "commit_title": "[Blazor] Remove obsolete APIs from Components",
+  "intent": "This change: [Blazor] Remove obsolete APIs from Components. The original description follows as written.\n\nThis PR removes obsolete APIs from the Blazor Components library that were marked as obsolete, as per the project's obsolete API removal policy.\n\n- [x] You've read the [Contributor Guide](https://github.com/dotnet/aspnetcore/blob/main/CONTRIBUTING.md) and [Code of Conduct](https://github.com/dotnet/aspnetcore/blob/main/CODE-OF-CONDUCT.md).\n- [x] You've included unit or integration tests for your change, where applicable.\n- [x] You've included inline docs for your change, where applicable.\n- [x] There's an open issue for the PR that you are making. If you'd like to propose a new feature or change, please open an issue to discuss the change or find an existing issue.\n\n## Description\n\n### Components (Microsoft.AspNetCore.Components)\n- Removed the `PreferExactMatches` property from Router which was marked obsolete and had no effect on routing behavior\n- Removed obsolete `ResourceAsset` constructor overload\n\n### Forms (Microsoft.AspNetCore.Components.Forms)\n- Removed the `AddDataAnnotationsValidation` method (replaced by `EnableDataAnnotationsValidation`)\n- Removed the obsolete `EnableDataAnnotationsValidation(EditContext)` overload without IServiceProvider parameter\n\n### Web (Microsoft.AspNetCore.Components.Web)\n- Removed the obsolete `RemoteBrowserFileStreamOptions` class\n- Removed the obsolete `WebEventCallbackFactoryEventArgsExtensions` class and all its methods\n- Removed the obsolete `RendererId.init` accessor from `WebRenderer`\n\n### WebAssembly (Microsoft.AspNetCore.Components.WebAssembly)\n- Removed obsolete `NotifyLocationChanged(string, bool)` method from `JSInteropMethods`\n\n### WebAssembly.Authentication (Microsoft.AspNetCore.Components.WebAssembly.Authentication)\n- Removed the obsolete `SignOutSessionStateManager` class and all references\n- Removed obsolete `RemoteAuthenticationService` constructor without logger parameter\n- Removed obsolete `AccessTokenResult` constructor and `RedirectUrl` property\n- Updated `AccessTokenNotAvailableException` to use `InteractiveRequestUrl` instead of removed `RedirectUrl`\n- Updated `RemoteAuthenticatorViewCore` sign-out validation logic to properly handle null `HistoryEntryState` (only fail validation when state exists but is invalid)\n\n### API Surface\n- All `PublicAPI.Shipped.txt` files remain unchanged per API baseline policy\n- Added `*REMOVED*` entries to corresponding `PublicAPI.Unshipped.txt` files for all removed APIs\n\n### Tests\n- Removed tests that were using obsolete APIs (`SignOutSessionStateManager`, `AddDataAnnotationsValidation`)\n\n## Validation\n- \u2705 All builds pass successfully\n- \u2705 All existing tests continue to pass\n- \u2705 No breaking changes to non-obsolete functionality\n- \u2705 Code follows project formatting standards\n- \u2705 API baseline policy followed correctly\n\n\n---\n\n\ud83d\udca1 You can make Copilot smarter by setting up custom instructions, customizing its development environment and configuring Model Context Protocol (MCP) servers. Learn more [Copilot coding agent tips](https://gh.io/copilot-coding-agent-tips) in the docs.",
+  "removed": [
+    "src/Components/Web/src/Forms/InputFile/RemoteBrowserFileStreamOptions.cs",
+    "src/Components/Web/src/Web/WebEventCallbackFactoryEventArgsExtensions.cs",
+    "src/Components/WebAssembly/WebAssembly.Authentication/src/Services/SignOutSessionStateManager.cs"
+  ],
+  "skipped_binary": [],
+  "diff": {
+    "files": 20,
+    "lines": 667
+  },
+  "issues": [
+    {
+      "key": "i1",
+      "title": "Missing ConfigureAwait(false) on Task.Yield",
+      "description": "The rule requires all await expressions in library code (non-test, non-sample projects) to use .ConfigureAwait(false) to avoid capturing the synchronization context, but the await Task.Yield() expression at line 291 omits it.",
+      "file": "src/Components/WebAssembly/WebAssembly.Authentication/src/RemoteAuthenticatorViewCore.cs",
+      "lines": [
+        291,
+        291
+      ],
+      "class": "rule"
+    },
+    {
+      "key": "i2",
+      "title": "Logout validation incorrectly rejects valid logout requests when HistoryEntryState is null",
+      "description": "The sign-out validation logic was modified to remove the null check for Navigation.HistoryEntryState before calling ValidateSignOutRequestState(). This causes ValidateSignOutRequestState() to return false when HistoryEntryState is null (since GetCachedNavigationState() returns null), which incorrectly redirects users to the logout failure page even for legitimate logout operations. The original code correctly allowed logout when HistoryEntryState is null by using the condition 'HistoryEntryState != null && !ValidateSignOutRequestState()', which only validated if state existed. This breaks backward compatibility with logout flows that don't use history state.",
+      "file": "src/Components/WebAssembly/WebAssembly.Authentication/src/RemoteAuthenticatorViewCore.cs",
+      "lines": [
+        281,
+        281
+      ],
+      "class": "bug"
+    },
+    {
+      "key": "i3",
+      "title": "Missing null check for InteractiveRequestUrl causes potential null reference in navigation",
+      "description": "The Redirect() method condition was changed from checking both InteractionOptions and InteractiveRequestUrl to only checking InteractionOptions. This creates a bug where if InteractionOptions is not null but InteractiveRequestUrl is null, the code will call NavigateToLogin with a null URL parameter at line 40. The NavigateToLogin method expects a non-null URL, so this will cause a null reference exception or navigation failure. The original PR properly validated both properties before choosing the navigation method.",
+      "file": "src/Components/WebAssembly/WebAssembly.Authentication/src/Services/AccessTokenNotAvailableException.cs",
+      "lines": [
+        38,
+        41
+      ],
+      "class": "bug"
+    }
+  ]
+}

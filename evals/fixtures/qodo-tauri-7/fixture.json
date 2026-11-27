@@ -1,0 +1,83 @@
+{
+  "id": "qodo-tauri-7",
+  "set": "decision",
+  "source": "qodo",
+  "upstream": {
+    "repo": "tauri",
+    "pr": 7,
+    "url": "https://github.com/agentic-review-benchmarks/tauri/pull/7",
+    "licence": "Apache-2.0",
+    "base_sha": "57faad0b3d49c8c5a97a3229f0a527527120ffc2",
+    "head_sha": "ab921886bfcca88c3bae1b354039c5e884f26c4a"
+  },
+  "commit_title": "Apply Version Updates From Current Changes",
+  "intent": "This change: Apply Version Updates From Current Changes. The original description follows as written.\n\n# Version Updates\n\nMerging this PR will release new versions of the following packages based on your change files.\n\n\n\n\n# tauri-bundler\n\n## [2.7.3]\n### Enhancements\n\n- 22edc65aa (#14408 by @FabianLars) Set user-agent in bundler and cli http requests when fetching build tools.\n### Bug Fixes\n\n- 9a1922636 (#14410 by @Legend-Master) Fix uninstall fails if you close the app manually during the 'Click Ok to kill it' dialog\n\n\n\n# @tauri-apps/cli\n\n## [2.9.3]\n### Bug Fixes\n\n- fd8c30b4f (#14353 by @ChaseKnowlden) Premultiply Alpha before Resizing which gets rid of the gray fringe around the icons.\n### Dependencies\n\n- Upgraded to `tauri-cli@2.9.3`\n\n\n\n# tauri-cli\n\n## [2.9.3]\n### Enhancements\n\n- 22edc65aa (#14408 by @FabianLars) Set user-agent in bundler and cli http requests when fetching build tools.\n- 779612ac8 (#14379 by @moubctez) Properly read the `required-features` field of binaries in Cargo.toml to prevent bundling issues when the features weren't enabled.\n### Bug Fixes\n\n- fd8c30b4f (#14353 by @ChaseKnowlden) Premultiply Alpha before Resizing which gets rid of the gray fringe around the icons.\n### Dependencies\n\n- Upgraded to `tauri-bundler@2.7.3`",
+  "removed": [
+    ".changes/bundler-user-agent.md",
+    ".changes/change-pr-14379.md",
+    ".changes/image-premultiply-fix.md",
+    ".changes/nsis-uninstall-already-killed.md"
+  ],
+  "skipped_binary": [],
+  "diff": {
+    "files": 13,
+    "lines": 79
+  },
+  "issues": [
+    {
+      "key": "i1",
+      "title": "Windows-only Sha256 lacks platform guards",
+      "description": "The HashAlgorithm::Sha256 variant is only used for Windows-specific WIX tooling downloads but lacks #[cfg(target_os = \"windows\")] guards. Platform-specific code should use conditional compilation attributes to ensure it only compiles on supported platforms.",
+      "file": "crates/tauri-bundler/src/utils/http_utils.rs",
+      "lines": [
+        97,
+        129
+      ],
+      "class": "rule"
+    },
+    {
+      "key": "i2",
+      "title": "GitHub mirror URL ignored, always downloads from original URL",
+      "description": "The function `generate_github_alternative_url` computes an alternative mirror URL from environment variables but then returns the original GitHub URL instead of the computed mirror URL. This breaks the GitHub mirror functionality that users configure via `TAURI_BUNDLER_TOOLS_GITHUB_MIRROR` or `TAURI_BUNDLER_TOOLS_GITHUB_MIRROR_TEMPLATE` environment variables. When GitHub has rate limits or accessibility issues, the configured mirrors will be silently ignored and downloads will fail from the original GitHub URLs. The bug occurs because `alt_url` is renamed to `_alt_url` (indicating it's unused) and `url.to_owned()` is returned instead of `alt_url`.",
+      "file": "crates/tauri-bundler/src/utils/http_utils.rs",
+      "lines": [
+        45,
+        61
+      ],
+      "class": "bug"
+    },
+    {
+      "key": "i3",
+      "title": "Version mismatch between CLI and Tauri core in metadata",
+      "description": "The metadata-v2.json file incorrectly declares tauri core version as \"2.9.3\" when the actual Tauri runtime version remains at \"2.9.2\" (as confirmed in Cargo.lock). This PR only updates tauri-cli and tauri-bundler to 2.9.3, not the core Tauri runtime. This metadata file is used by the CLI to verify version compatibility and inform users about which versions work together. The incorrect version could lead to confusion about compatibility, failed version checks, or users attempting to use mismatched versions thinking they are compatible.",
+      "file": "crates/tauri-cli/metadata-v2.json",
+      "lines": [
+        6,
+        6
+      ],
+      "class": "bug"
+    },
+    {
+      "key": "i4",
+      "title": "Version bump without corresponding .changes change file in this PR",
+      "description": "This PR bumps crate versions (and updates changelogs) but deletes all existing entries in `.changes/` and does not add a new change file. Per the rule, user-facing/functional changes requiring a version bump must include a covector change file under `.changes/` documenting the bump and summary.",
+      "file": "crates/tauri-bundler/Cargo.toml",
+      "lines": [
+        1,
+        4
+      ],
+      "class": "rule"
+    },
+    {
+      "key": "i5",
+      "title": "Version bump without corresponding .changes change file in this PR",
+      "description": "This PR bumps the `tauri-cli` version to 2.9.3 while removing `.changes/*` entries and not adding any new change file. The version bump indicates release-relevant changes that should be accompanied by a covector change file in `.changes/`.",
+      "file": "crates/tauri-cli/Cargo.toml",
+      "lines": [
+        1,
+        4
+      ],
+      "class": "rule"
+    }
+  ]
+}

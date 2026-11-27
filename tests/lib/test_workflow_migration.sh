@@ -28,7 +28,7 @@ const baseArgs = {
     agentPrompt: "x", flags: {}, route: "full", selfReReview: false,
     reviewMode: "pr", base: "main", headSha: "a".repeat(40),
     emptyTreeMode: false, pathScope: "", tempDir: "/tmp/x",
-    panelSize: 3, panelBrief: "brief", changedLinesBlock: "",
+    panelSize: 3, changedLinesBlock: "",
 };
 const capturePanel = async (args) => {
     const votePrompts = [];

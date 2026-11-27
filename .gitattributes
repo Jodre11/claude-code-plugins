@@ -5,3 +5,6 @@
 *.yaml text eol=lf
 *.sh text eol=lf
 *.toml text eol=lf
+# Review eval fixtures vendor upstream files byte for byte; never normalise them.
+evals/fixtures/*/files/** -text
+evals/fixtures/*/UPSTREAM-LICENSE -text

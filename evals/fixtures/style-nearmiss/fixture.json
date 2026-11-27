@@ -1,0 +1,21 @@
+{
+  "id": "style-nearmiss",
+  "set": "sanity",
+  "source": "corpus",
+  "files_from": "tests/fixtures/style/nearmiss",
+  "base": [
+    "README.md"
+  ],
+  "head": [
+    "lib/report.py"
+  ],
+  "readme": "# Project\n\nAudit report scaffold.\n",
+  "base_title": "base: audit report scaffold",
+  "commit_title": "feat: add audit report builder",
+  "intent": "This change will add a plain-text audit report builder that renders all fields for each record. Nothing else in the repository changes.",
+  "issues": [],
+  "near_miss": {
+    "file": "lib/report.py",
+    "pattern": "the length of build_audit_report (it is long but linear, with no branching)"
+  }
+}

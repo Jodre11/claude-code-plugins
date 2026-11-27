@@ -1,0 +1,92 @@
+{
+  "id": "qodo-ghost-5",
+  "set": "decision",
+  "source": "qodo",
+  "upstream": {
+    "repo": "Ghost",
+    "pr": 5,
+    "url": "https://github.com/agentic-review-benchmarks/Ghost/pull/5",
+    "licence": "MIT",
+    "base_sha": "66745e826c095f3fcc009c19a0d4fb0262f87db3",
+    "head_sha": "9b8f32c1cc8a74989d146ba555507f14ac170e11"
+  },
+  "commit_title": "Moved to kebab-case formatting signup-form",
+  "intent": "This change: Moved to kebab-case formatting signup-form. The original description follows as written.\n\nref https://linear.app/ghost/issue/NY-722/migrate-ghost-codebase-to-kebab-case-file-naming-convention\n\n**what**\n\n* Renamed all files to match to kebab-case format\n* Added ESLint kebab-case linting rules\n* Updated `readme` to make it consistent with other micro apps that require separate release with publishing package\n\n**why**\n\n* To match our working agreement on filenames in Ghost repo",
+  "removed": [
+    "apps/signup-form/src/App.tsx",
+    "apps/signup-form/src/AppContext.ts",
+    "apps/signup-form/src/Preview.stories.tsx",
+    "apps/signup-form/src/components/ContentBox.tsx",
+    "apps/signup-form/src/components/Frame.tsx",
+    "apps/signup-form/src/components/IFrame.tsx",
+    "apps/signup-form/src/components/pages/FormPage.tsx",
+    "apps/signup-form/src/components/pages/FormView.stories.ts",
+    "apps/signup-form/src/components/pages/FormView.tsx",
+    "apps/signup-form/src/components/pages/SuccessPage.tsx",
+    "apps/signup-form/src/components/pages/SuccessView.stories.ts",
+    "apps/signup-form/src/components/pages/SuccessView.tsx",
+    "apps/signup-form/test/utils/isTestEnv.js"
+  ],
+  "skipped_binary": [],
+  "diff": {
+    "files": 22,
+    "lines": 85
+  },
+  "issues": [
+    {
+      "key": "i1",
+      "title": "Double quotes used for string literal",
+      "description": "The rule requires string literals to use single quotes, but this code uses double quotes for the STORAGE_KEY constant without justified reason (no interpolation needed).",
+      "file": "apps/signup-form/src/utils/helpers.tsx",
+      "lines": [
+        20,
+        20
+      ],
+      "class": "rule"
+    },
+    {
+      "key": "i2",
+      "title": "Potential undefined return value breaks type contract",
+      "description": "The getUrlHistory() function can now return undefined when the form is embedded on the same host and getDefaultUrlHistory() returns undefined (e.g., when sessionStorage is empty or invalid). This violates the URLHistory return type contract and will cause a runtime error when the API tries to use the history in sendMagicLink(), as it expects an array. The original code properly handled this by checking 'if (history)' before returning, ensuring a fallback to the constructed history array.",
+      "file": "apps/signup-form/src/utils/helpers.tsx",
+      "lines": [
+        40,
+        46
+      ],
+      "class": "bug"
+    },
+    {
+      "key": "i3",
+      "title": "Loading state not reset in minimal mode success case",
+      "description": "When the form is in minimal mode and successfully sends a magic link, the loading state is set to true but never reset to false. This causes the submit button to remain disabled with a loading spinner showing indefinitely, preventing users from resubmitting. The non-minimal mode correctly resets loading through setPage(), but minimal mode now lacks the setLoading(false) call that was removed, creating an inconsistent and broken user experience.",
+      "file": "apps/signup-form/src/components/pages/form-page.tsx",
+      "lines": [
+        27,
+        30
+      ],
+      "class": "bug"
+    },
+    {
+      "key": "i4",
+      "title": "Email trimming creates validation and display inconsistency",
+      "description": "The form now trims the email on submission but validates and displays the untrimmed version. If a user enters ' user@example.com ' (with spaces), the validator checks the untrimmed email which passes validation (spaces don't invalidate the regex), but the API receives 'user@example.com' (trimmed). This creates confusion where the displayed email in the UI doesn't match what was actually submitted, and could cause issues if the user needs to verify what they signed up with. The trim should either be applied before validation and reflected in the display, or not applied at all.",
+      "file": "apps/signup-form/src/components/pages/form-view.tsx",
+      "lines": [
+        54,
+        56
+      ],
+      "class": "bug"
+    },
+    {
+      "key": "i5",
+      "title": "Double quotes used in import specifier",
+      "description": "String literals in JavaScript/TypeScript must use single quotes. This import uses double quotes around the module specifier.",
+      "file": "apps/signup-form/.storybook/preview.tsx",
+      "lines": [
+        4,
+        4
+      ],
+      "class": "rule"
+    }
+  ]
+}

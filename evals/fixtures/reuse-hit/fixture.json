@@ -1,0 +1,30 @@
+{
+  "id": "reuse-hit",
+  "set": "sanity",
+  "source": "corpus",
+  "files_from": "tests/fixtures/reuse/hit",
+  "base": [
+    "README.md",
+    "utils/formatting.py"
+  ],
+  "head": [
+    "lib/invoice.py"
+  ],
+  "readme": "# Project\n\nFormatting utils and project scaffold.\n",
+  "base_title": "base: formatting utils and project scaffold",
+  "commit_title": "feat: add invoice rendering helper",
+  "intent": "This change will add an invoice rendering helper that displays a formatted currency amount. Nothing else in the repository changes.",
+  "issues": [
+    {
+      "key": "i1",
+      "title": "Reimplements the existing format_currency helper",
+      "description": "render_invoice_summary formats money by hand, duplicating format_currency in utils/formatting.py.",
+      "file": "lib/invoice.py",
+      "lines": [
+        15,
+        21
+      ],
+      "class": "quality"
+    }
+  ]
+}

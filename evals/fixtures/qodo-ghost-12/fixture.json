@@ -1,0 +1,75 @@
+{
+  "id": "qodo-ghost-12",
+  "set": "decision",
+  "source": "qodo",
+  "upstream": {
+    "repo": "Ghost",
+    "pr": 12,
+    "url": "https://github.com/agentic-review-benchmarks/Ghost/pull/12",
+    "licence": "MIT",
+    "base_sha": "ea99744877907cfbea6bd18f3f4ea550c82a8e15",
+    "head_sha": "6fdbd46582bcf0885572a8c2025bd99ad633e2d0"
+  },
+  "commit_title": "Removed unused tinybird filters",
+  "intent": "This change: Removed unused tinybird filters. The original description follows as written.\n\nref 1633eabd50a487129abfdb35c8b97b5233b741a8\nref a6adad113ac92ad431f5c349fcf470c8efbb6f93\n\nCleaned up unused filters. This is an addendum to the original commit and reversion commit (above).",
+  "removed": [],
+  "skipped_binary": [],
+  "diff": {
+    "files": 14,
+    "lines": 374
+  },
+  "issues": [
+    {
+      "key": "i1",
+      "title": "Documentation references npm instead of yarn",
+      "description": "The rule requires all package management commands to use yarn, but the code documentation references npm commands for installing and running Tinybird tools",
+      "file": "ghost/core/core/server/services/tinybird/TinybirdService.js",
+      "lines": [
+        61,
+        67
+      ],
+      "class": "rule"
+    },
+    {
+      "key": "i2",
+      "title": "Token caching stores entire object instead of token string",
+      "description": "In the getToken method, when caching the JWT token, the code now stores the entire tokenData object (containing both 'token' and 'exp' properties) instead of just extracting the token string. This causes the returned token structure to be malformed as {token: {token: string, exp: number}, exp: number} instead of the expected {token: string, exp: number}. This will break any consumers of the Tinybird API (like the /api/tinybird/token endpoint and stats/tinybird.js) that expect a string token value, causing authentication failures when making requests to Tinybird pipes.",
+      "file": "ghost/core/core/server/services/tinybird/TinybirdService.js",
+      "lines": [
+        97,
+        99
+      ],
+      "class": "bug"
+    },
+    {
+      "key": "i3",
+      "title": "JWT signature validation bypassed in token expiration check",
+      "description": "The _isJWTExpired method now uses jwt.decode() instead of jwt.verify() to check token expiration. While jwt.verify() validates the token's signature and ensures it hasn't been tampered with, jwt.decode() only decodes the token without any cryptographic validation. This creates a security vulnerability where expired, tampered, or forged tokens could be accepted as valid. An attacker could potentially modify token claims (like extending expiration or changing site_uuid in scopes) and the system would accept the malicious token, bypassing authentication controls for Tinybird API access.",
+      "file": "ghost/core/core/server/services/tinybird/TinybirdService.js",
+      "lines": [
+        162,
+        170
+      ],
+      "class": "bug"
+    },
+    {
+      "key": "i4",
+      "title": "JWT token structure changed by removing noTimestamp option",
+      "description": "The _generateToken method previously created JWT tokens with {noTimestamp: true} to exclude the 'iat' (issued at) claim from the token payload. This option has been removed, causing the JWT library to automatically include the 'iat' timestamp in the token. This changes the token structure that Tinybird expects and may cause authentication failures if Tinybird's API validates or expects a specific token payload structure without the 'iat' claim. The changed token format could also affect token caching behavior and invalidate existing token validation logic.",
+      "file": "ghost/core/core/server/services/tinybird/TinybirdService.js",
+      "lines": [
+        147,
+        147
+      ],
+      "class": "bug"
+    },
+    {
+      "key": "i5",
+      "title": "Type mismatch in _isJWTExpired call after token caching change",
+      "description": "The _isJWTExpired method expects a string token parameter, but after line 98 changes this._serverToken from storing just the token string to storing the entire tokenData object, line 96 now passes an object {token: string, exp: number} to _isJWTExpired instead of a string. This causes jwt.decode() at line 164 to fail when trying to decode an object instead of a JWT string. The method will always return true (treating the token as expired) on subsequent calls, forcing unnecessary token regeneration on every request and breaking the token caching mechanism entirely.",
+      "file": null,
+      "lines": null,
+      "class": "bug"
+    }
+  ]
+}

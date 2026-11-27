@@ -5,20 +5,53 @@ _pw_cr_dir() {
     echo "$REPO_ROOT/plugins/code-review-suite"
 }
 
-# Both call-sites must thread the two panel params into the workflow invocation.
-test_panel_params_threaded_in_both_call_sites() {
+# Both call-sites must thread the panel size into the workflow invocation.
+test_panel_size_threaded_in_both_call_sites() {
     local cr skill prerev
     cr=$(_pw_cr_dir)
     skill="$cr/skills/review-gh-pr/SKILL.md"
     prerev="$cr/commands/pre-review.md"
     for f in "$skill" "$prerev"; do
-        if grep -q "panelSize: \$PANEL_SIZE" "$f" \
-            && grep -q "panelBrief: \$PANEL_BRIEF" "$f"; then
-            pass "panel params threaded in $(basename "$(dirname "$f")")/$(basename "$f")"
+        if grep -q "panelSize: \$PANEL_SIZE" "$f"; then
+            pass "panelSize threaded in $(basename "$(dirname "$f")")/$(basename "$f")"
         else
-            fail "panel params threaded in $(basename "$f")" "missing panelSize/panelBrief"
+            fail "panelSize threaded in $(basename "$f")" "missing panelSize"
         fi
     done
+}
+
+# The concern brief is embedded in review-core, so no host reads it from the plugin cache
+# (unreadable in an eval child) or copies it into the args, and review-core reads no such arg.
+test_panel_brief_not_threaded_through_args() {
+    local cr f
+    cr=$(_pw_cr_dir)
+    for f in "$cr/skills/review-gh-pr/SKILL.md" "$cr/commands/pre-review.md" \
+        "$cr/includes/review-pipeline.md" "$cr/workflows/review-core.js"; do
+        if grep -qE 'panelBrief|\$PANEL_BRIEF|\$PLUGIN_ROOT' "$f"; then
+            fail "no brief arg or plugin-root read in $(basename "$f")" \
+                "$(grep -nE 'panelBrief|\$PANEL_BRIEF|\$PLUGIN_ROOT' "$f" | head -3)"
+        else
+            pass "no brief arg or plugin-root read in $(basename "$f")"
+        fi
+    done
+}
+
+# Every panel-vote prompt carries the whole embedded brief, verbatim, straight after the mode
+# line (the seat prefix comes first). Uses the shared harness from test_workflow_migration.sh.
+test_panel_prompt_carries_embedded_brief() {
+    local cr result
+    cr=$(_pw_cr_dir)
+    result=$(BRIEF_FILE="$cr/includes/panel-concern-brief.md" node -e "$_WM_JS_PRELUDE"'
+        (async () => {
+            const brief = fs.readFileSync(process.env.BRIEF_FILE, "utf8");
+            let cap;
+            try { cap = await capturePanel(baseArgs); } catch (e) { console.log("THREW: " + e.message); return; }
+            if (cap.votePrompts.length !== 3) { console.log("VOTE_COUNT: " + cap.votePrompts.length); return; }
+            const anchored = "Mode: panel-review\n\n" + brief;
+            console.log(cap.votePrompts.every(p => p.includes(anchored)) ? "OK" : "BRIEF_ABSENT_OR_MOVED");
+        })();
+    ' "$cr/workflows/review-core.js" 2>&1)
+    assert_equals "OK" "$result" "every panel-vote prompt carries the whole brief after the mode line"
 }
 
 # Classic orchestration is retired: no host may still pass an orchestration mode, and

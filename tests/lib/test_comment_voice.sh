@@ -17,7 +17,7 @@ _cv_args() {
     jq -cn --arg route "$route" --arg mode "$mode" --arg cl "$(printf '%b' "$_CV_CHANGED")" \
         '{agentPrompt: "x", flags: {py: true}, route: $route, selfReReview: false, reviewMode: $mode,
           base: "main", headSha: ("a" * 40), emptyTreeMode: false, pathScope: "",
-          tempDir: "/tmp/claude-test/x", intentLedger: "", panelSize: 3, panelBrief: "BRIEF",
+          tempDir: "/tmp/claude-test/x", intentLedger: "", panelSize: 3,
           changedLinesBlock: $cl}'
 }
 

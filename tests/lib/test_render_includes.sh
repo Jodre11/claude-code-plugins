@@ -147,3 +147,86 @@ test_render_includes_rejects_bad_markers() {
     assert_matches "include cycle" "$out" "an include cycle is reported"
     rm -rf "$tmp"
 }
+
+_ri_js_gb() {
+    echo "// BEGIN GENERATED from $1 as $2: edit that file, then run scripts/render-includes.py"
+}
+
+_ri_js_ge() {
+    echo "// END GENERATED from $1"
+}
+
+test_render_includes_review_core_embeds_brief() {
+    local wf="$REPO_ROOT/plugins/code-review-suite/workflows/review-core.js"
+    if grep -qxF -- "$(_ri_js_gb includes/panel-concern-brief.md PANEL_BRIEF)" "$wf"; then
+        pass "review-core.js embeds the concern brief as PANEL_BRIEF"
+    else
+        fail "review-core.js embeds the concern brief as PANEL_BRIEF" "BEGIN GENERATED marker missing"
+    fi
+}
+
+test_render_includes_embeds_whole_file_in_js() {
+    local tmp out rc=0
+    tmp=$(mktemp -d)
+    mkdir -p "$tmp/plugins/p/includes" "$tmp/plugins/p/workflows"
+    printf '# Brief\n\nsay "hi" \\ there\n' > "$tmp/plugins/p/includes/brief.md"
+    printf 'const a = 1\n%s\nconst STALE = []\n%s\nrun(BRIEF)\n' \
+        "$(_ri_js_gb includes/brief.md BRIEF)" "$(_ri_js_ge includes/brief.md)" > "$tmp/plugins/p/workflows/w.js"
+    out=$(python3 "$(_ri_script)" --plugins-dir "$tmp/plugins" --check 2>&1) || rc=$?
+    assert_equals "1" "$rc" "--check exits 1 on a stale JS embed"
+    python3 "$(_ri_script)" --plugins-dir "$tmp/plugins" > /dev/null
+    # Quoted heredoc: every escape below appears exactly as it must in the rendered file.
+    cat > "$tmp/expected.js" <<'EOF_EXPECTED'
+const a = 1
+// BEGIN GENERATED from includes/brief.md as BRIEF: edit that file, then run scripts/render-includes.py
+const BRIEF = [
+    "# Brief",
+    "",
+    "say \"hi\" \\ there",
+    "",
+].join('\n')
+// END GENERATED from includes/brief.md
+run(BRIEF)
+EOF_EXPECTED
+    assert_equals "$(cat "$tmp/expected.js")" "$(cat "$tmp/plugins/p/workflows/w.js")" \
+        "render embeds the whole file as a string joined from JSON-escaped lines"
+    out=$(WF="$tmp/plugins/p/workflows/w.js" node -e '
+        const fs = require("fs");
+        const src = fs.readFileSync(process.env.WF, "utf8").replace("run(BRIEF)", "return BRIEF");
+        process.stdout.write(new Function(src)() === fs.readFileSync(process.env.WF.replace(
+            "workflows/w.js", "includes/brief.md"), "utf8") ? "SAME" : "DIFFERENT");
+    ' 2>&1)
+    assert_equals "SAME" "$out" "the embedded constant evaluates to the source text byte for byte"
+    rc=0
+    python3 "$(_ri_script)" --plugins-dir "$tmp/plugins" --check > /dev/null 2>&1 || rc=$?
+    assert_equals "0" "$rc" "--check passes after rendering the JS embed"
+    rm -rf "$tmp"
+}
+
+test_render_includes_rejects_bad_js_markers() {
+    local tmp out rc
+    tmp=$(mktemp -d)
+    mkdir -p "$tmp/plugins/p/includes" "$tmp/plugins/p/workflows"
+    printf 'x\n' > "$tmp/plugins/p/includes/brief.md"
+    printf 'x\n' > "$tmp/plugins/p/includes/data.txt"
+
+    printf '// BEGIN GENERATED from includes/brief.md\n' > "$tmp/plugins/p/workflows/w.js"
+    rc=0
+    out=$(python3 "$(_ri_script)" --plugins-dir "$tmp/plugins" --check 2>&1) || rc=$?
+    assert_equals "2" "$rc" "a JS marker without a constant name exits 2"
+    assert_matches "malformed or unmatched marker" "$out" "a malformed JS marker is reported"
+
+    printf '%s\n' "$(_ri_js_gb includes/brief.md BRIEF)" > "$tmp/plugins/p/workflows/w.js"
+    rc=0
+    out=$(python3 "$(_ri_script)" --plugins-dir "$tmp/plugins" --check 2>&1) || rc=$?
+    assert_equals "2" "$rc" "an unmatched JS BEGIN exits 2"
+    assert_matches "no matching" "$out" "an unmatched JS BEGIN names the missing END"
+
+    printf '%s\n%s\n' "$(_ri_js_gb includes/data.txt DATA)" "$(_ri_js_ge includes/data.txt)" \
+        > "$tmp/plugins/p/workflows/w.js"
+    rc=0
+    out=$(python3 "$(_ri_script)" --plugins-dir "$tmp/plugins" --check 2>&1) || rc=$?
+    assert_equals "2" "$rc" "a non-markdown embed source exits 2"
+    assert_matches "must be markdown" "$out" "a non-markdown embed source is reported"
+    rm -rf "$tmp"
+}

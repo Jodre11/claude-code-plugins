@@ -1,0 +1,67 @@
+{
+  "id": "qodo-prefect-3",
+  "set": "decision",
+  "source": "qodo",
+  "upstream": {
+    "repo": "prefect",
+    "pr": 3,
+    "url": "https://github.com/agentic-review-benchmarks/prefect/pull/3",
+    "licence": "Apache-2.0",
+    "base_sha": "025c503f88ccdecd918c38b60c60b52ed54aefab",
+    "head_sha": "b51b02c25575b508e203b297c2cd32b8331310dc"
+  },
+  "commit_title": "Add drag-and-drop reordering for schema form arrays",
+  "removed": [],
+  "skipped_binary": [],
+  "diff": {
+    "files": 6,
+    "lines": 1449
+  },
+  "issues": [
+    {
+      "key": "i1",
+      "title": "Test file separated from component",
+      "description": "The rule requires that for every React component file component.tsx, the test file component.test.tsx exists in the same directory. However, the test file schema-form-input-array-list.test.tsx was placed in a __tests__ subdirectory instead of being co-located with schema-form-input-array-list.tsx.",
+      "file": "ui-v2/src/components/schemas/__tests__/schema-form-input-array-list.test.tsx",
+      "lines": [
+        1,
+        8
+      ],
+      "class": "rule"
+    },
+    {
+      "key": "i2",
+      "title": "Drag-and-drop reordering swaps source and target indices",
+      "description": "The handleDragEnd function passes arguments to moveItem in the wrong order - it calls moveItem(newIndex, oldIndex) instead of moveItem(oldIndex, newIndex). This causes drag-and-drop operations to place items in the opposite position from where they're dropped. For example, dragging an item from index 2 to index 0 will incorrectly move the item at index 0 to index 2 instead, creating confusing and incorrect reordering behavior for users.",
+      "file": "ui-v2/src/components/schemas/schema-form-input-array-list.tsx",
+      "lines": [
+        130,
+        145
+      ],
+      "class": "bug"
+    },
+    {
+      "key": "i3",
+      "title": "Prefix items incorrectly included in sortable context",
+      "description": "The sortableKeys array is constructed from all localKeyedValues instead of excluding prefix items. The code removed the .slice(prefixItemsCount) operation, meaning prefix items (which should have fixed positions and not be draggable) are now included in the SortableContext. This allows prefix items to be moved via drag-and-drop, violating the constraint that prefix items must remain in their fixed positions and breaking the schema's structural requirements.",
+      "file": "ui-v2/src/components/schemas/schema-form-input-array-list.tsx",
+      "lines": [
+        147,
+        148
+      ],
+      "class": "bug"
+    },
+    {
+      "key": "i4",
+      "title": "Unused local variable `prefixItemsCount` added",
+      "description": "`prefixItemsCount` is introduced but never referenced anywhere in the component. This leaves unused code in the codebase, violating the rule requiring unused items to be removed.",
+      "file": "ui-v2/src/components/schemas/schema-form-input-array-list.tsx",
+      "lines": [
+        42,
+        45
+      ],
+      "class": "rule"
+    }
+  ],
+  "intent": "This PR replaces the up/down button approach with drag-and-drop reordering for array items in the schema form using the @dnd-kit library. Array items now display a visible drag handle (GripVertical icon) that allows users to reorder items by dragging. The existing move up/down menu options are preserved as a fallback for accessibility.\n\nKey implementation details:\n- Prefix items (tuples) are excluded from drag-and-drop - they remain fixed in position with no drag handle\n- Keyboard navigation is supported via KeyboardSensor with sortable keyboard coordinates\n- Drag handle uses semantic color tokens (text-muted-foreground) for dark mode support\n- Items show reduced opacity (0.5) while being dragged\n\nRelated to #15512\n\n### Test Coverage\n\nAdded comprehensive test coverage including:\n- Snapshot tests for arrays with drag handles visible\n- Snapshot tests verifying prefix items have no drag handles\n- Behavioral tests for move up/down menu options\n- Test verifying prefix items cannot be moved\n\nNote: The tests cover the menu-based reordering and DOM structure. Manual verification is still recommended for the actual drag-and-drop interaction.\n\n### Visual Verification\n\nVerified in Storybook that drag handles appear correctly for regular array items and are absent for prefix items:\n\n**Regular array items with drag handles:**\n\n\n**Prefix items without drag handles:**\n\n\n### Checklist\n\n- [x] This pull request references any related issue by including \"closes `<link to issue>`\"\n- [x] If this pull request adds new functionality, it includes unit tests that cover the changes\n- [ ] If this pull request removes docs files, it includes redirect settings in `mint.json`.\n- [ ] If this pull request adds functions or classes, it includes helpful docstrings.\n\n### Human Review Checklist\n- [ ] Verify drag-and-drop works correctly in the browser for regular array items\n- [ ] Verify prefix items (tuples) cannot be dragged and have no drag handle\n- [ ] Verify keyboard navigation works for reordering (Tab to drag handle, then arrow keys)\n- [ ] Verify move up/down menu options still function correctly\n- [ ] Check drag handle appearance in both light and dark mode\n\n---\n\nRequested by: @desertaxle\nLink to Devin run: https://app.devin.ai/sessions/313e0a45d63a4af09c979a1f22eff8fd"
+}

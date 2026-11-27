@@ -226,7 +226,7 @@ const nativeFindings = nativeRan ? normaliseNative(parsed.findings).map((f, i) =
     const cited = citesOutsideRule(f.failure_scenario, repoDir) || citesOutsideRule(parsed.findings[i].summary, repoDir)
     return cited
         ? { ...f, blocking: false, posting: 'drop', filtered: 'rule-source' }
-        : anchorFinding({ ...f, posting: 'inline' }, changedLines)
+        : anchorFinding(stripRepoDir({ ...f, posting: 'inline' }, repoDir), changedLines)
 }) : []
 const staticFindings = specialists.flatMap(s => (s.out.findings ?? []).map(raw => {
     const f = { ...raw, source: s.domain }
@@ -812,6 +812,20 @@ function normaliseNative(raw) {
         if (r.severity === 'pre_existing') f.annotation = 'pre-existing'
         return f
     })
+}
+
+// Native names repo files by absolute path (the review worktree under the reviewer's temp dir).
+// That path is local to the reviewer, so posted text shows it repo-relative.
+function stripRepoDir(f, repoDir) {
+    if (typeof repoDir !== 'string' || repoDir === '') return f
+    const prefix = repoDir.replace(/\/+$/, '') + '/'
+    const strip = s => (typeof s === 'string' ? s.split(prefix).join('') : s)
+    return {
+        ...f,
+        description: strip(f.description),
+        suggested_fix: strip(f.suggested_fix),
+        failure_scenario: strip(f.failure_scenario),
+    }
 }
 
 // True when text cites, as a finding's rule source, a CLAUDE.md outside the reviewed repo: one

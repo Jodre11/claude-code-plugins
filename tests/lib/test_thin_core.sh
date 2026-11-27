@@ -395,6 +395,19 @@ test_thin_core_personal_rule_filtered_in_flow() {
         "personal rule: logged filtered rule-source"
 }
 
+# Native cites repo files by the worktree's absolute path; posted text shows them repo-relative.
+test_thin_core_repo_dir_stripped_from_native_text() {
+    local nat out body
+    nat=$(jq -cn --arg r "$_TC_REPO" '[{file: "stats.py", line: 12, severity: "nit",
+        summary: ("Prints to stdout; see " + $r + "/stats.py. Fix: log instead."),
+        failure_scenario: ("This breaks " + $r + "/CLAUDE.md: \"no print()\".")}]')
+    out=$(_tc_run "$(_tc_args)" "$(_tc_native_text "$nat")")
+    body=$(echo "$out" | jq -r '.bundle.comments[0].body')
+    assert_not_matches "$_TC_REPO" "$body" "repo dir: the worktree path never reaches a posted comment"
+    assert_matches 'This breaks CLAUDE\.md: "no print\(\)"\.' "$body" "repo dir: the cited file reads repo-relative"
+    assert_matches 'see stats\.py\.' "$body" "repo dir: stripped from the description too"
+}
+
 test_thin_core_local_mode() {
     local out body
     out=$(_tc_run "$(_tc_args local)" "$(_tc_native_text "$_TC_NAT_IMPORTANT")")

@@ -131,12 +131,21 @@ test_dispatcher_includes_new_static_analysis_flags() {
         fi
 
         local flag
-        for flag in '$JS_DETECTED' '$PY_DETECTED' '$IAC_DETECTED' '$HOUSEKEEPING_DETECTED' '$PRODUCTION_SOURCE_DETECTED'; do
+        for flag in '$CSHARP_DETECTED' '$JS_DETECTED' '$PY_DETECTED' '$IAC_DETECTED' '$HOUSEKEEPING_DETECTED'; do
             if grep -qF "$flag" "$path"; then
                 pass "static-analysis dispatcher flags: $file contains $flag"
             else
                 fail "static-analysis dispatcher flags: $file contains $flag" \
                     "flag literal not found"
+            fi
+        done
+        # Only the static specialists read detection flags now; the LLM-domain ones retired.
+        for flag in '$UI_DETECTED' '$TESTS_DETECTED' '$PRODUCTION_SOURCE_DETECTED' '$SECURITY_SENSITIVE' \
+            '$SIGNIFICANT_DELETIONS'; do
+            if grep -qF "$flag" "$path"; then
+                fail "static-analysis dispatcher flags: $file omits retired $flag" "retired flag still present"
+            else
+                pass "static-analysis dispatcher flags: $file omits retired $flag"
             fi
         done
     done
@@ -542,32 +551,6 @@ test_analysis_only_stage1_resolve_and_no_short_circuit() {
     fi
 }
 
-test_analysis_only_phase04_suppress_present_in_canonical() {
-    # The existing pipeline-inline sync test enforces byte-identity across the three
-    # copies, but a *unanimous* deletion would keep them identical and pass. This
-    # presence check on the canonical is belt-and-braces: it fails if the analysis-only
-    # Phase 0.4 suppression clause is removed from all three at once.
-    local cr
-    cr=$(_cr_dir)
-    if [[ ! -d "$cr" ]]; then
-        skip "analysis-only Phase 0.4 suppression" "code-review-suite plugin not found"
-        return
-    fi
-
-    local canonical="$cr/includes/review-pipeline.md"
-    if [[ ! -f "$canonical" ]]; then
-        fail "analysis-only Phase 0.4 suppression: canonical present" "missing: $canonical"
-        return
-    fi
-
-    if grep -qF 'Phase 0 halt (analysis-only, not posted)' "$canonical"; then
-        pass "analysis-only Phase 0.4 suppression: canonical carries the render-not-post clause"
-    else
-        fail "analysis-only Phase 0.4 suppression: canonical carries the render-not-post clause" \
-            "review-pipeline.md Phase 0.4 pr-mode block must, under \$ANALYSIS_ONLY = true, render the halt notice to stdout ('Phase 0 halt (analysis-only, not posted)') instead of posting a REQUEST_CHANGES review — otherwise analysis-only still writes to GitHub on a narrative-less PR"
-    fi
-}
-
 test_analysis_only_stage6_render_not_post() {
     local cr
     cr=$(_cr_dir)
@@ -813,28 +796,6 @@ test_analysis_only_stage5_skips_posting() {
     else
         fail "analysis-only Stage 5: carries skip-posting guard" \
             "Stage 5 must open with 'Under \`\$ANALYSIS_ONLY = true\`, skip this stage entirely' — without it an analysis_only run posts inline comments to GitHub before ever reaching Stage 6's suppression clause"
-    fi
-}
-
-test_analysis_only_trivial_pr_no_post() {
-    local cr
-    cr=$(_cr_dir)
-    if [[ ! -d "$cr" ]]; then
-        skip "analysis-only trivial-mode pr no-post" "code-review-suite plugin not found"
-        return
-    fi
-
-    local canonical="$cr/includes/review-pipeline.md"
-    if [[ ! -f "$canonical" ]]; then
-        fail "analysis-only trivial-mode pr no-post: canonical present" "missing: $canonical"
-        return
-    fi
-
-    if grep -qF 'Under `$ANALYSIS_ONLY = true`, do not post' "$canonical"; then
-        pass "analysis-only trivial-mode pr no-post: canonical carries Phase 0.7.9 guard"
-    else
-        fail "analysis-only trivial-mode pr no-post: canonical carries Phase 0.7.9 guard" \
-            "review-pipeline.md Phase 0.7.9 pr-mode block must carry 'Under \`\$ANALYSIS_ONLY = true\`, do not post' so an analysis_only run skips the trivial-mode inline POST and verdict submission"
     fi
 }
 

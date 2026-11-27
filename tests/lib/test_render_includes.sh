@@ -43,7 +43,6 @@ test_render_includes_expected_consumers_present() {
     local -a pairs=(
         "skills/review-gh-pr/SKILL.md includes/review-pipeline.md"
         "commands/pre-review.md includes/review-pipeline.md"
-        "includes/review-pipeline.md includes/intent-ledger.md"
         "includes/review-pipeline.md includes/ci-status-gate.md"
     )
     local agent

@@ -14,7 +14,7 @@ test_base_pin_phase_minus05_pins_baserefoid() {
     local canonical="$cr/includes/review-pipeline.md"
     # Scope to the Phase -0.5 section so §2a's later baseRefOid addition cannot false-pass this.
     local phase
-    phase=$(sed -n '/^## Phase -0.5: Ephemeral worktree$/,/^## Phase 0: Intent Ledger$/p' "$canonical")
+    phase=$(sed -n '/^## Phase -0.5: Ephemeral worktree$/,/^## Phase 0.55: Local branch freshness check$/p' "$canonical")
     if grep -qF 'baseRefOid' <<<"$phase" && grep -qF 'BASE_PINNED = true' <<<"$phase"; then
         pass "base pin Phase -0.5: canonical resolves baseRefOid and sets \$BASE_PINNED"
     else

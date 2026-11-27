@@ -108,14 +108,13 @@ rm <TEMP_DIR>/housekeeper-lines.txt
 
 ## Structured fields
 
-The §7 markdown fields map 1:1 to `includes/finding-schema.json#/$defs/finding`:
+The §7 markdown fields map to `includes/finding-schema.json#/$defs/finding` as below; `Confidence` has no schema field:
 
 | §7 markdown bullet | Schema field |
 |---|---|
 | `- **File:** path:line` | `file` + `line` (split on the last colon) |
 | `- **Rule:** housekeeper/<source>` | `rule_id` (the full `housekeeper/<source>` string) |
 | `- **Severity:** Suggestion` | `severity` (always `Suggestion` for this specialist) |
-| `- **Confidence:** 100` | `confidence` (integer, always 100) |
 | `- **Description:** …` | `description` |
 | `- **Suggested fix:** …` | `suggested_fix` |
 

@@ -73,7 +73,7 @@ Severity in both tools is rule-config-derived, not rule-intrinsic — the same r
 
 ## Critical-allow-list:
 
-These rule IDs override the default `Important` cap to `Critical` per `includes/static-analysis-context.md` §10 — a rule must be enumerated here to escalate. New rules fall through to the default cap and are flagged separately by `security-reviewer` if warranted.
+These rule IDs override the default `Important` cap to `Critical` per `includes/static-analysis-context.md` §10 — a rule must be enumerated here to escalate. New rules fall through to the default cap and are not escalated.
 
 - `no-eval` — runtime code execution from string
 - `no-implied-eval` — `setTimeout("...")`, `setInterval("...")`
@@ -93,14 +93,13 @@ Streaming the JSON from stdout writes no temp file, so there is nothing to clean
 
 ## Structured fields
 
-The §7 markdown fields map 1:1 to `includes/finding-schema.json#/$defs/finding`:
+The §7 markdown fields map to `includes/finding-schema.json#/$defs/finding` as below; `Confidence` has no schema field:
 
 | §7 markdown bullet | Schema field |
 |---|---|
 | `- **File:** path:line` | `file` + `line` (split on the last colon) |
 | `- **Rule:** rule-id (plugin)` | `rule_id` (the bare rule-id, first whitespace token) |
 | `- **Severity:** …` | `severity` (enum: Critical / Important / Suggestion) |
-| `- **Confidence:** 100` | `confidence` (integer) |
 | `- **Description:** …` | `description` |
 | `- **Suggested fix:** …` | `suggested_fix` |
 | `- **Reference:** …` (optional) | `reference` |

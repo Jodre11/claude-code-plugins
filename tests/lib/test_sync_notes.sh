@@ -15,127 +15,102 @@ _extract_regex() {
         | head -1
 }
 
-test_sync_base_regex_matches() {
+# The files that resolve $BASE, $HEAD_SHA and $PATH_SCOPE on their own and so must agree with
+# review-pipeline.md Step 1. specialist-context.md serves the LLM agents until they retire.
+_sync_resolvers() {
     local cr
     cr=$(_cr_dir)
-    if [[ ! -d "$cr" ]]; then
-        skip "BASE regex sync" "code-review-suite plugin not found"
-        return
+    echo "$cr/includes/static-analysis-context.md"
+    if [[ -f "$cr/includes/specialist-context.md" ]]; then
+        echo "$cr/includes/specialist-context.md"
     fi
+}
 
-    local pipeline specialist
-    pipeline=$(_extract_regex "$cr/includes/review-pipeline.md" '\$BASE')
-    specialist=$(_extract_regex "$cr/includes/specialist-context.md" '\$BASE')
-
+# $1 variable name as it appears in the prose (e.g. '\$BASE'), $2 label.
+_sync_regex_case() {
+    local pipeline file got
+    pipeline=$(_extract_regex "$(_cr_dir)/includes/review-pipeline.md" "$1")
     if [[ -z "$pipeline" ]]; then
-        fail "BASE regex: extracted from review-pipeline.md" "no '\`\$BASE\` matches' line found"
-        return
+        fail "$2 regex: extracted from review-pipeline.md" "no '\`$1\` matches' line found"
+        return 0
     fi
-    assert_equals "$pipeline" "$specialist" \
-        "BASE regex: review-pipeline.md matches specialist-context.md"
+    while IFS= read -r file; do
+        got=$(_extract_regex "$file" "$1")
+        assert_equals "$pipeline" "$got" "$2 regex: review-pipeline.md matches $(basename "$file")"
+    done < <(_sync_resolvers)
+}
+
+test_sync_base_regex_matches() {
+    _sync_regex_case '\$BASE' BASE
 }
 
 test_sync_head_sha_regex_matches() {
-    local cr
-    cr=$(_cr_dir)
-    if [[ ! -d "$cr" ]]; then
-        skip "HEAD_SHA regex sync" "code-review-suite plugin not found"
-        return
-    fi
-
-    local pipeline specialist
-    pipeline=$(_extract_regex "$cr/includes/review-pipeline.md" '\$HEAD_SHA')
-    specialist=$(_extract_regex "$cr/includes/specialist-context.md" '\$HEAD_SHA')
-
-    if [[ -z "$pipeline" ]]; then
-        fail "HEAD_SHA regex: extracted from review-pipeline.md" "no '\`\$HEAD_SHA\` matches' line found"
-        return
-    fi
-    assert_equals "$pipeline" "$specialist" \
-        "HEAD_SHA regex: review-pipeline.md matches specialist-context.md"
+    _sync_regex_case '\$HEAD_SHA' HEAD_SHA
 }
 
 test_sync_path_scope_regex_matches() {
-    local cr
-    cr=$(_cr_dir)
-    if [[ ! -d "$cr" ]]; then
-        skip "PATH_SCOPE regex sync" "code-review-suite plugin not found"
-        return
-    fi
-
-    local pipeline specialist
-    pipeline=$(_extract_regex "$cr/includes/review-pipeline.md" '\$PATH_SCOPE')
-    specialist=$(_extract_regex "$cr/includes/specialist-context.md" '\$PATH_SCOPE')
-
-    if [[ -z "$pipeline" ]]; then
-        fail "PATH_SCOPE regex: extracted from review-pipeline.md" "no '\`\$PATH_SCOPE\` matches' line found"
-        return
-    fi
-    assert_equals "$pipeline" "$specialist" \
-        "PATH_SCOPE regex: review-pipeline.md matches specialist-context.md"
+    _sync_regex_case '\$PATH_SCOPE' PATH_SCOPE
 }
 
 test_sync_path_scope_traversal_check_present() {
-    local cr
-    cr=$(_cr_dir)
-    if [[ ! -d "$cr" ]]; then
-        skip "PATH_SCOPE traversal check" "code-review-suite plugin not found"
-        return
-    fi
-
-    for file in includes/review-pipeline.md includes/specialist-context.md; do
-        local basename_file
-        basename_file=$(basename "$file")
-        if grep -q 'contains `\.\.` as a substring' "$cr/$file" 2>/dev/null; then
-            pass "$basename_file: PATH_SCOPE .. traversal check present"
+    local file
+    while IFS= read -r file; do
+        if grep -q 'contains `\.\.` as a substring' "$file"; then
+            pass "$(basename "$file"): PATH_SCOPE .. traversal check present"
         else
-            fail "$basename_file: PATH_SCOPE .. traversal check present" "missing directory traversal guard"
+            fail "$(basename "$file"): PATH_SCOPE .. traversal check present" "missing directory traversal guard"
         fi
-    done
+    done < <(echo "$(_cr_dir)/includes/review-pipeline.md"; _sync_resolvers)
 }
 
 test_sync_base_branch_steps_match() {
-    local cr
-    cr=$(_cr_dir)
-    if [[ ! -d "$cr" ]]; then
-        skip "base-branch steps sync" "code-review-suite plugin not found"
-        return
-    fi
-
-    # Extract numbered items 1-4 from each file
-    # review-pipeline.md: under "Try these in order:", items 1-4
-    # specialist-context.md: starts directly at "1. If `$ARGUMENTS`", items 1-4
-
-    local pipeline_steps specialist_steps
-
+    # review-pipeline.md lists items 1-4 under "Try these in order:"; each resolver starts
+    # directly at "1. If `$ARGUMENTS`".
+    local pipeline_steps steps file tmp1 tmp2 diff_output
     pipeline_steps=$(sed -n '/^Try these in order:$/,/^Store as/{
 /^[1-4]\. /p
-}' "$cr/includes/review-pipeline.md")
-    specialist_steps=$(sed -n '/^1\. If `\$ARGUMENTS`/,/^Store as/{
-/^[1-4]\. /p
-}' "$cr/includes/specialist-context.md")
-
+}' "$(_cr_dir)/includes/review-pipeline.md")
     if [[ -z "$pipeline_steps" ]]; then
         fail "base-branch steps: extracted from review-pipeline.md" "no steps found"
-        return
+        return 0
     fi
-    if [[ -z "$specialist_steps" ]]; then
-        fail "base-branch steps: extracted from specialist-context.md" "no steps found"
-        return
-    fi
+    while IFS= read -r file; do
+        steps=$(sed -n '/^1\. If `\$ARGUMENTS`/,/^Store as/{
+/^[1-4]\. /p
+}' "$file")
+        if [[ -n "$steps" && "$pipeline_steps" == "$steps" ]]; then
+            pass "base-branch resolution steps 1-4 match between pipeline and $(basename "$file")"
+        else
+            tmp1=$(mktemp)
+            tmp2=$(mktemp)
+            echo "$pipeline_steps" > "$tmp1"
+            echo "$steps" > "$tmp2"
+            diff_output=$(diff -u --label review-pipeline.md --label "$(basename "$file")" "$tmp1" "$tmp2" || true)
+            rm -f "$tmp1" "$tmp2"
+            fail "base-branch resolution steps 1-4 match between pipeline and $(basename "$file")" "$diff_output"
+        fi
+    done < <(_sync_resolvers)
+}
 
-    if [[ "$pipeline_steps" == "$specialist_steps" ]]; then
-        pass "base-branch resolution steps 1-4 match between pipeline and specialist"
+# The severity ladder the static mappings use (§11): Critical stays outage / breach / data
+# loss and is reachable only through a tool's allow-list.
+test_sync_static_severity_definitions() {
+    local sa="$(_cr_dir)/includes/static-analysis-context.md" lit
+    for lit in \
+        '## 11. Severity definitions' \
+        '**data loss, a security breach, or a production outage**' \
+        "reaches Critical only through its tool's \`Critical-allow-list:\`" \
+        '(see §11)'; do
+        if grep -qF -- "$lit" "$sa"; then
+            pass "static severity definitions: static-analysis-context.md contains '$lit'"
+        else
+            fail "static severity definitions: static-analysis-context.md contains '$lit'" "literal not found in $sa"
+        fi
+    done
+    if grep -qF 'severity-definitions.md' "$sa"; then
+        fail "static severity definitions: no pointer to severity-definitions.md" "static-analysis-context.md still cites it"
     else
-        local tmp1 tmp2
-        tmp1=$(mktemp)
-        tmp2=$(mktemp)
-        echo "$pipeline_steps" > "$tmp1"
-        echo "$specialist_steps" > "$tmp2"
-        local diff_output
-        diff_output=$(diff -u --label review-pipeline.md --label specialist-context.md "$tmp1" "$tmp2" || true)
-        rm -f "$tmp1" "$tmp2"
-        fail "base-branch resolution steps 1-4 match between pipeline and specialist" "$diff_output"
+        pass "static severity definitions: no pointer to severity-definitions.md"
     fi
 }
 
@@ -860,59 +835,6 @@ test_analysis_only_trivial_pr_no_post() {
     else
         fail "analysis-only trivial-mode pr no-post: canonical carries Phase 0.7.9 guard" \
             "review-pipeline.md Phase 0.7.9 pr-mode block must carry 'Under \`\$ANALYSIS_ONLY = true\`, do not post' so an analysis_only run skips the trivial-mode inline POST and verdict submission"
-    fi
-}
-
-test_sync_agent_hazard_severity_basis() {
-    local cr
-    cr=$(_cr_dir)
-    if [[ ! -d "$cr" ]]; then
-        skip "agent-hazard severity basis" "code-review-suite plugin not found"
-        return
-    fi
-
-    local sev="$cr/includes/severity-definitions.md"
-    local brief="$cr/includes/panel-concern-brief.md"
-    local apic="$cr/agents/api-contract-reviewer.md"
-
-    local f
-    for f in "$sev" "$brief" "$apic"; do
-        if [[ ! -f "$f" ]]; then
-            fail "agent-hazard severity basis: inputs present" "missing: $f"
-            return
-        fi
-    done
-
-    # Canonical: the basis heading, the load-bearing predicate, and the
-    # Critical-untouched guardrail must all be present in severity-definitions.md.
-    local lit
-    for lit in \
-        '**Agent-hazard basis**' \
-        'predictably cause a future maintainer' \
-        'Important only, never Critical'; do
-        if grep -qF "$lit" "$sev"; then
-            pass "agent-hazard severity basis: severity-definitions.md contains '$lit'"
-        else
-            fail "agent-hazard severity basis: severity-definitions.md contains '$lit'" \
-                "literal not found in $sev"
-        fi
-    done
-
-    # Ripple lock: the panel brief must name the basis, or panelists voting severity
-    # will silently downgrade agent-hazard findings to Suggestion.
-    if grep -qF 'agent-hazard basis' "$brief"; then
-        pass "agent-hazard severity basis: panel brief references the agent-hazard basis"
-    else
-        fail "agent-hazard severity basis: panel brief references the agent-hazard basis" \
-            "anchor 'agent-hazard basis' not found in $brief"
-    fi
-
-    # Additive re-point lock: comment-truth (now in api-contract) must cite the basis.
-    if grep -qF 'agent-hazard basis' "$apic"; then
-        pass "agent-hazard severity basis: comment-truth cites the agent-hazard basis"
-    else
-        fail "agent-hazard severity basis: comment-truth cites the agent-hazard basis" \
-            "anchor 'agent-hazard basis' not found in $apic"
     fi
 }
 

@@ -1,7 +1,7 @@
 <!-- READ-ONLY CONTRACT — canonical source. Inherited by every reviewer agent.
-The static-analysis specialists (jbinspect/eslint/ruff/trivy/housekeeper) reach this
-block via includes/static-analysis-context.md §0, which re-states it because those
-specialists skip most of this file. Keep the two copies in sync. -->
+The static-analysis specialists (jbinspect/eslint/ruff/trivy/housekeeper) do not read this
+file: includes/static-analysis-context.md carries their own copy of the mandate, the base
+resolution and the changed-lines grammar. Keep the shared parts in sync. -->
 
 > **READ-ONLY MANDATE — NON-NEGOTIABLE**
 >

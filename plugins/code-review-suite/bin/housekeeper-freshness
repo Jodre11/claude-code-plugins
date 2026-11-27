@@ -667,7 +667,7 @@ def collect_github_actions(changed_files, file_text, changed_lines, registry):
 # --- source: runner ---------------------------------------------------------
 
 # Curated latest GitHub-hosted runner labels. MANUALLY MAINTAINED — there is
-# no live registry for runner images. Keep in sync with the cookbook table.
+# no live registry for runner images. Update when GitHub ships a new runner label.
 # Reviewed 2026-06-05.
 LATEST_RUNNERS = {
     "ubuntu": "24.04",

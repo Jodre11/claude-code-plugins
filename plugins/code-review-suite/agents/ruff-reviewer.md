@@ -73,7 +73,7 @@ Per `includes/static-analysis-context.md` §10, the highest tier defaults to `Im
 
 ## Critical-allow-list:
 
-These rule IDs override the default `Important` cap to `Critical` per `includes/static-analysis-context.md` §10 — a rule must be enumerated here to escalate. New rules fall through to the default cap and are flagged separately by `security-reviewer` if warranted.
+These rule IDs override the default `Important` cap to `Critical` per `includes/static-analysis-context.md` §10 — a rule must be enumerated here to escalate. New rules fall through to the default cap and are not escalated.
 
 - `S105`, `S106`, `S107`, `S108` — hardcoded password / temp-file leak rules
 - `S301`, `S302`, `S307` — unsafe deserialisation / dynamic-eval rules
@@ -90,14 +90,13 @@ Streaming ruff's JSON from stdout writes no temp file, so there is nothing to cl
 
 ## Structured fields
 
-The §7 markdown fields map 1:1 to `includes/finding-schema.json#/$defs/finding`:
+The §7 markdown fields map to `includes/finding-schema.json#/$defs/finding` as below; `Confidence` has no schema field:
 
 | §7 markdown bullet | Schema field |
 |---|---|
 | `- **File:** path:line` | `file` + `line` (split on the last colon) |
 | `- **Rule:** code (category)` | `rule_id` (the bare code, first whitespace token) |
 | `- **Severity:** …` | `severity` (enum: Critical / Important / Suggestion) |
-| `- **Confidence:** 100` | `confidence` (integer) |
 | `- **Description:** …` | `description` |
 | `- **Suggested fix:** …` | `suggested_fix` |
 | `- **Reference:** …` (optional) | `reference` |

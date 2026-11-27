@@ -369,6 +369,35 @@ const EDITOR_SCHEMA = {
     },
 }
 
+// The rules each static tool may label Critical: a copy of the `## Critical-allow-list:` section
+// in each static agent file, checked against those files by a structural test. A static Critical
+// whose rule is not listed here posts non-blocking (staticCriticalAllowed). Declared above
+// resolvedArgs so every later use reads it initialised (temporal dead zone).
+const STATIC_CRITICAL_ALLOW = {
+    ruff: { ids: ['S105', 'S106', 'S107', 'S108', 'S301', 'S302', 'S307'] },
+    eslint: {
+        ids: [
+            'no-eval',
+            'no-implied-eval',
+            'eslint-plugin-security/detect-eval-with-expression',
+            'eslint-plugin-security/detect-non-literal-require',
+            'eslint-plugin-security/detect-child-process',
+        ],
+    },
+    trivy: {
+        ids: ['AVD-AWS-0017', 'AVD-GCP-0001'],
+        idPatterns: [/^AVD-.*-SECRET-/],
+        titlePatterns: [/secret|credential|private key/i],
+    },
+    jbinspect: { ids: [] },
+    housekeeper: { ids: [] },
+}
+
+// The empty-tree object every git repository shares; the base of an EMPTY_TREE review.
+const EMPTY_TREE_SHA = '4b825dc642cb6eb9a060e54bf8d69288fbee4904'
+const NATIVE_SEVERITIES = new Set(['important', 'nit', 'pre_existing'])
+const NATIVE_KEYS = ['file', 'line', 'summary', 'failure_scenario', 'severity']
+
 // The Workflow TOOL delivers args as a JSON string; the workflow() PRIMITIVE passes an
 // object. The host skill runs in the main agent loop (no workflow() primitive) so its
 // documented Workflow({ name, args }) call arrives as a string. Normalise both shapes
@@ -1592,4 +1621,153 @@ function buildLightweightBundle(la, reviewMode) {
         body: withMarker(renderCommentBody(f)),
     }))
     return { verdict: 'NONE', bodyText: withMarker(body), comments }
+}
+
+// ---------------------------------------------------------------------------
+// Native capture: Anthropic's bundled /code-review, run by agents/native-reviewer.md.
+// Every decision about its output is made here, in code.
+// ---------------------------------------------------------------------------
+
+// Re-checks the target the pipeline built in prose before it reaches the Skill args:
+// `<abs path> <base>...<head>` or `<abs path> <empty tree> <head>`, optionally followed by
+// ` -- <pathspec>…`. The path must equal repoDir and the head must equal headSha, so native
+// reviews exactly the range the static specialists see.
+function checkNativeTarget(target, repoDir, headSha) {
+    if (typeof target !== 'string' || target === '') return { ok: false, reason: 'no native target' }
+    const sep = target.indexOf(' -- ')
+    const main = sep === -1 ? target : target.slice(0, sep)
+    const tokens = main.split(' ')
+    const sha = /^[0-9a-f]{40}$/
+    const path = tokens[0]
+    if (!/^\/\S*$/.test(path) || path.split('/').includes('..')) {
+        return { ok: false, reason: 'native target path is not an absolute path' }
+    }
+    const trimSlash = s => (s.length > 1 ? s.replace(/\/+$/, '') : s)
+    if (typeof repoDir !== 'string' || trimSlash(path) !== trimSlash(repoDir)) {
+        return { ok: false, reason: 'native target path is not the review repository' }
+    }
+    let head
+    if (tokens.length === 2) {
+        const range = tokens[1].split('...')
+        if (range.length !== 2 || !sha.test(range[0]) || !sha.test(range[1])) {
+            return { ok: false, reason: 'native target range is not <sha>...<sha>' }
+        }
+        head = range[1]
+    } else if (tokens.length === 3) {
+        if (tokens[1] !== EMPTY_TREE_SHA || !sha.test(tokens[2])) {
+            return { ok: false, reason: 'native target is not <empty tree> <sha>' }
+        }
+        head = tokens[2]
+    } else {
+        return { ok: false, reason: 'native target has the wrong number of parts' }
+    }
+    if (head !== headSha) return { ok: false, reason: 'native target head is not the review head' }
+    if (sep !== -1) {
+        const scope = target.slice(sep + 4).split(' ')
+        const bad = scope.find(t => !/^[a-zA-Z0-9/_.\-*]+$/.test(t) || t.includes('..') || t.startsWith('-'))
+        if (bad !== undefined) return { ok: false, reason: 'native target path scope is invalid' }
+    }
+    return { ok: true }
+}
+
+// Reads native's result text: the last fenced json block that parses to an array, every element
+// checked whole. A partly valid array is rejected, so a format change is never half-read. The
+// parse never depends on the `Skill … completed` header, which a wrapper may drop.
+function parseNativeText(text) {
+    if (typeof text !== 'string') return { ok: false, reason: 'native returned no result' }
+    const err = text.match(/^SKILL_ERROR:(.*)$/m)
+    if (err) return { ok: false, reason: `SKILL_ERROR: ${err[1].trim()}` }
+    const blocks = [...text.matchAll(/```json[ \t]*\r?\n([\s\S]*?)\r?\n[ \t]*```/g)].map(m => m[1])
+    let arr = null
+    for (let i = blocks.length - 1; i >= 0 && arr === null; i--) {
+        try {
+            const v = JSON.parse(blocks[i])
+            if (Array.isArray(v)) arr = v
+        } catch { /* not JSON: try the block before it */ }
+    }
+    if (arr === null) return { ok: false, reason: 'native result has no findings array' }
+    const findings = []
+    for (let i = 0; i < arr.length; i++) {
+        const e = arr[i]
+        if (e === null || typeof e !== 'object' || Array.isArray(e)) {
+            return { ok: false, reason: `native finding ${i} is not an object` }
+        }
+        const missing = NATIVE_KEYS.find(k => !(k in e))
+        if (missing) return { ok: false, reason: `native finding ${i} has no ${missing}` }
+        if (typeof e.file !== 'string' || e.file === '') return { ok: false, reason: `native finding ${i} has a bad file` }
+        if (!Number.isInteger(e.line) || e.line < 1) return { ok: false, reason: `native finding ${i} has a bad line` }
+        if (typeof e.summary !== 'string' || typeof e.failure_scenario !== 'string') {
+            return { ok: false, reason: `native finding ${i} has a non-string summary or failure_scenario` }
+        }
+        if (!NATIVE_SEVERITIES.has(e.severity)) return { ok: false, reason: `native finding ${i} has a bad severity` }
+        findings.push({
+            file: e.file,
+            line: e.line,
+            summary: e.summary,
+            failure_scenario: e.failure_scenario,
+            severity: e.severity,
+        })
+    }
+    return { ok: true, findings }
+}
+
+// Maps native's validated findings to the suite's finding shape (spec "Normalisation").
+// The `Fix:` label is dropped because the renderer adds its own.
+function normaliseNative(raw) {
+    return raw.map(r => {
+        const m = r.summary.match(/(^|\s)Fix:\s*/)
+        const description = (m ? r.summary.slice(0, m.index) : r.summary).trim()
+        const suggested_fix = m ? r.summary.slice(m.index + m[0].length).trim() : ''
+        const f = {
+            source: 'native',
+            file: r.file,
+            line: r.line,
+            severity: r.severity === 'important' ? 'Important' : 'Suggestion',
+            description,
+            suggested_fix,
+            failure_scenario: r.failure_scenario,
+            blocking: r.severity === 'important',
+        }
+        if (r.severity === 'pre_existing') f.annotation = 'pre-existing'
+        return f
+    })
+}
+
+// True when text cites, as a finding's rule source, a CLAUDE.md outside the reviewed repo: one
+// starting `~/`, or an absolute path not under repoDir. A citation is the path followed by a
+// colon or by "rule", or preceded in the same sentence by break/violat/rule/per/against. Any
+// other occurrence is a mention and does not count. Best effort: a paraphrase with no path
+// gets through.
+function citesOutsideRule(text, repoDir) {
+    if (typeof text !== 'string') return false
+    const root = typeof repoDir === 'string' ? repoDir.replace(/\/+$/, '') : ''
+    const re = /(?:~\/|\/)[^\s"'`()<>]*CLAUDE\.md|[A-Za-z0-9_.\-/]*CLAUDE\.md/g
+    for (const m of text.matchAll(re)) {
+        const path = m[0]
+        const outside = path.startsWith('~/')
+            || (path.startsWith('/') && !(root !== '' && path.startsWith(root + '/')))
+        if (!outside) continue
+        const after = text.slice(m.index + path.length)
+        if (/^["'`]?:/.test(after) || /^["'`]?\s+rules?\b/i.test(after)) return true
+        const before = text.slice(0, m.index)
+        let start = 0
+        for (const s of before.matchAll(/[.!?]\s+/g)) start = s.index + s[0].length
+        const sentence = before.slice(start)
+        if (/\bbreak|\bviolat|\brules?\s|\bper\s|\bagainst\b/i.test(sentence)) return true
+    }
+    return false
+}
+
+// True when a static finding labelled Critical has a rule on its tool's allow-list. Trivy's
+// finding shape has no title, so its title patterns are matched against the description.
+// ESLint reports a plugin rule as `security/…`; the list names the package
+// (`eslint-plugin-security/…`), so the `eslint-plugin-` prefix is ignored on both sides.
+function staticCriticalAllowed(domain, f) {
+    const allow = STATIC_CRITICAL_ALLOW[domain]
+    if (!allow) return false
+    const bare = s => String(s || '').replace(/^eslint-plugin-/, '')
+    const id = bare(f.rule_id)
+    if (id !== '' && allow.ids.some(a => bare(a) === id)) return true
+    if (id !== '' && (allow.idPatterns || []).some(p => p.test(id))) return true
+    return (allow.titlePatterns || []).some(p => p.test(f.description || ''))
 }

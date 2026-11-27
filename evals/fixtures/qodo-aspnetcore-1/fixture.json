@@ -1,0 +1,97 @@
+{
+  "id": "qodo-aspnetcore-1",
+  "set": "decision",
+  "source": "qodo",
+  "upstream": {
+    "repo": "aspnetcore",
+    "pr": 1,
+    "url": "https://github.com/agentic-review-benchmarks/aspnetcore/pull/1",
+    "licence": "MIT",
+    "base_sha": "fde00e6dc4c9f31698f28c4603ee6cc887cc9314",
+    "head_sha": "96519fe9621bf264555e076d6bba7dc5e456209b"
+  },
+  "commit_title": "[release/10.0] Source code updates from dotnet/dotnet",
+  "removed": [],
+  "skipped_binary": [],
+  "diff": {
+    "files": 5,
+    "lines": 261
+  },
+  "issues": [
+    {
+      "key": "i1",
+      "title": "MSTest attribute in xUnit project",
+      "description": "The rule requires test projects to consistently use the xUnit framework, but the test method uses MSTest's [TestMethod] attribute instead of xUnit's [Fact] attribute",
+      "file": "src/Components/test/E2ETest/ServerRenderingTests/RedirectionTest.cs",
+      "lines": [
+        287,
+        289
+      ],
+      "class": "rule"
+    },
+    {
+      "key": "i2",
+      "title": "Stale element reference captured before navigation in test initialization",
+      "description": "In the InitializeAsync method, _originalH1Element is captured by calling Browser.Exists(By.TagName(\"h1\")) before navigating to the test page. This captures an element from whatever page the browser was previously on (from a prior test), then the Navigate() call loads the /redirect page. The stored element reference now points to a detached DOM node from the old page, making it stale. When test methods later access _originalH1Element.Text, they will encounter StaleElementReferenceException or get incorrect values because the element belongs to a different page's DOM that no longer exists in the browser.",
+      "file": "src/Components/test/E2ETest/ServerRenderingTests/RedirectionTest.cs",
+      "lines": [
+        28,
+        35
+      ],
+      "class": "bug"
+    },
+    {
+      "key": "i3",
+      "title": "Browser navigation uses Forward() instead of Back() breaking test flow",
+      "description": "In the RedirectEnhancedGetToInternal test, after clicking a link that redirects from /redirect to /scroll-to-hash, the test attempts to verify that browser back navigation works correctly. However, the code calls Browser.Navigate().Forward() instead of Browser.Navigate().Back(). Since there is no forward history (the browser just navigated forward to the current page), Forward() does nothing and the browser remains at /scroll-to-hash. The subsequent assertions expect the browser to be back at /redirect with the \"Redirections\" heading, but it's still at the redirected page, causing the test to fail. The comment explicitly states \"See that 'back' takes you to the place from before the redirection\" but the code does the opposite action.",
+      "file": "src/Components/test/E2ETest/ServerRenderingTests/RedirectionTest.cs",
+      "lines": [
+        112,
+        115
+      ],
+      "class": "bug"
+    },
+    {
+      "key": "i4",
+      "title": "Navigation exception test disables the exception mechanism it's meant to test",
+      "description": "The NavigationException_InAsyncContext_DoesNotBecomeUnobservedTaskException test is designed to verify that NavigationException thrown during circular redirects doesn't become an unobserved task exception. The test name, comments, and logic all indicate it should test the exception handling behavior. However, the AppContext switch is set to true, which enables DisableThrowNavigationException, preventing NavigationException from being thrown at all. This fundamentally breaks the test's purpose - it can't validate exception handling behavior when exceptions are disabled. The test navigates to a circular redirect page that relies on NavigationException being thrown and properly handled, but with the switch enabled, the navigation manager uses a different code path that doesn't throw exceptions, making the test validate nothing meaningful.",
+      "file": "src/Components/test/E2ETest/ServerRenderingTests/RedirectionTest.cs",
+      "lines": [
+        287,
+        297
+      ],
+      "class": "bug"
+    },
+    {
+      "key": "i5",
+      "title": "Test methods missing required Arrange-Act-Assert pattern comments",
+      "description": "AGENTS.md Rule 6 explicitly requires all test methods to include '// Arrange', '// Act', and '// Assert' comments to clearly delineate test phases. Multiple newly added test methods violate this requirement: ReloadsPage_AfterDisconnection_WithoutServerState, CanResume_AfterClientPause_WithoutServerState in ServerReconnectionWithoutStateTest.cs, HotReload_ReRenderPreservesAsyncLocalValues in RendererTest.cs, and BrowserNavigationToNotExistingPathReExecutesTo404_Interactive in InteractivityTest.cs. These tests have descriptive comments but lack the required structural AAA comments that the repository standard mandates for maintaining consistency and readability across all test methods.",
+      "file": null,
+      "lines": null,
+      "class": "bug"
+    },
+    {
+      "key": "i6",
+      "title": "MSTest dependency imported in xUnit test project",
+      "description": "The repository rule requires test projects to use xUnit. Adding an MSTest namespace import indicates use of an alternative test framework (MSTest) in this test file.",
+      "file": "src/Components/test/E2ETest/ServerRenderingTests/RedirectionTest.cs",
+      "lines": [
+        8,
+        8
+      ],
+      "class": "rule"
+    },
+    {
+      "key": "i7",
+      "title": "Non-xUnit test attribute added",
+      "description": "The rule requires using xUnit test framework attributes. The added [QuarantinedTest] attribute is not an xUnit attribute ([Fact]/[Theory]) and introduces non-xUnit test metadata on the test method.",
+      "file": "src/Components/test/E2ETest/ServerRenderingTests/RedirectionTest.cs",
+      "lines": [
+        288,
+        288
+      ],
+      "class": "rule"
+    }
+  ],
+  "intent": "> [!NOTE]\n> This is a codeflow update. It may contain both source code changes from\n> [the VMR](https://github.com/dotnet/dotnet)\n> as well as dependency updates. Learn more [here](https://github.com/dotnet/dotnet/tree/main/docs/Codeflow-PRs.md).\n\nThis pull request brings the following source code changes\n\n[marker]: <> (Begin:8348293c-6613-4077-9cb7-c977fb9a8e78)\n\n## From https://github.com/dotnet/dotnet\n- **Subscription**: [8348293c-6613-4077-9cb7-c977fb9a8e78](https://maestro.dot.net/subscriptions?search=8348293c-6613-4077-9cb7-c977fb9a8e78)\n- **Build**: [20260106.15](https://dev.azure.com/dnceng/internal/_build/results?buildId=2873496) ([296265](https://maestro.dot.net/channel/5173/github:dotnet:dotnet/build/296265))\n- **Date Produced**: January 7, 2026 8:21:19 AM UTC\n- **Commit**: [10596eb13c79f38d547565beb273458d0c832bf8](https://github.com/dotnet/dotnet/commit/10596eb13c79f38d547565beb273458d0c832bf8)\n- **Commit Diff**: [6828227...10596eb](https://github.com/dotnet/dotnet/compare/68282276aba776ff485c66ffd6c207f26e77cfd6...10596eb13c79f38d547565beb273458d0c832bf8)\n- **Branch**: [release/10.0.1xx](https://github.com/dotnet/dotnet/tree/release/10.0.1xx)\n\n**Updated Dependencies**\n- From [10.0.3 to 10.0.3][1]\n  - dotnet-ef\n  - Microsoft.Bcl.AsyncInterfaces\n  - Microsoft.Bcl.TimeProvider\n  - Microsoft.EntityFrameworkCore\n  - Microsoft.EntityFrameworkCore.Design\n  - Microsoft.EntityFrameworkCore.InMemory\n  - Microsoft.EntityFrameworkCore.Relational\n  - Microsoft.EntityFrameworkCore.Sqlite\n  - Microsoft.EntityFrameworkCore.SqlServer\n  - Microsoft.EntityFrameworkCore.Tools\n  - Microsoft.Extensions.Caching.Abstractions\n  - Microsoft.Extensions.Caching.Memory\n  - Microsoft.Extensions.Configuration\n  - Microsoft.Extensions.Configuration.Abstractions\n  - Microsoft.Extensions.Configuration.Binder\n  - Microsoft.Extensions.Configuration.CommandLine\n  - Microsoft.Extensions.Configuration.EnvironmentVariables\n  - Microsoft.Extensions.Configuration.FileExtensions\n  - Microsoft.Extensions.Configuration.Ini\n  - Microsoft.Extensions.Configuration.Json\n  - Microsoft.Extensions.Configuration.UserSecrets\n  - Microsoft.Extensions.Configuration.Xml\n  - Microsoft.Extensions.DependencyInjection\n  - Microsoft.Extensions.DependencyInjection.Abstractions\n  - Microsoft.Extensions.DependencyModel\n  - Microsoft.Extensions.Diagnostics\n  - Microsoft.Extensions.Diagnostics.Abstractions\n  - Microsoft.Extensions.FileProviders.Abstractions\n  - Microsoft.Extensions.FileProviders.Composite\n  - Microsoft.Extensions.FileProviders.Physical\n  - Microsoft.Extensions.FileSystemGlobbing\n  - Microsoft.Extensions.Hosting\n  - Microsoft.Extensions.Hosting.Abstractions\n  - Microsoft.Extensions.Http\n  - Microsoft.Extensions.Logging\n  - Microsoft.Extensions.Logging.Abstractions\n  - Microsoft.Extensions.Logging.Configuration\n  - Microsoft.Extensions.Logging.Console\n  - Microsoft.Extensions.Logging.Debug\n  - Microsoft.Extensions.Logging.EventLog\n  - Microsoft.Extensions.Logging.EventSource\n  - Microsoft.Extensions.Logging.TraceSource\n  - Microsoft.Extensions.Options\n  - Microsoft.Extensions.Options.ConfigurationExtensions\n  - Microsoft.Extensions.Options.DataAnnotations\n  - Microsoft.Extensions.Primitives\n  - Microsoft.NET.Runtime.MonoAOTCompiler.Task\n  - Microsoft.NET.Runtime.WebAssembly.Sdk\n  - Microsoft.NETCore.App.Ref\n  - System.Collections.Immutable\n  - System.Composition\n  - System.Configuration.ConfigurationManager\n  - System.Diagnostics.DiagnosticSource\n  - System.Diagnostics.EventLog\n  - System.Diagnostics.PerformanceCounter\n  - System.DirectoryServices.Protocols\n  - System.Formats.Asn1\n  - System.Formats.Cbor\n  - System.IO.Hashing\n  - System.IO.Pipelines\n  - System.Memory.Data\n  - System.Net.Http.Json\n  - System.Net.Http.WinHttpHandler\n  - System.Net.ServerSentEvents\n  - System.Numerics.Tensors\n  - System.Reflection.Metadata\n  - System.Resources.Extensions\n  - System.Runtime.Caching\n  - System.Security.Cryptography.Pkcs\n  - System.Security.Cryptography.Xml\n  - System.Security.Permissions\n  - System.ServiceProcess.ServiceController\n  - System.Text.Encodings.Web\n  - System.Text.Json\n  - System.Threading.AccessControl\n  - System.Threading.Channels\n  - System.Threading.RateLimiting\n- From [10.0.3-servicing.26055.111 to 10.0.3-servicing.26056.115][1]\n  - Microsoft.Extensions.HostFactoryResolver.Sources\n  - Microsoft.Internal.Runtime.AspNetCore.Transport\n  - Microsoft.NETCore.BrowserDebugHost.Transport\n  - Microsoft.NETCore.Platforms\n- From [10.0.0-beta.26055.111 to 10.0.0-beta.26056.115][1]\n  - Microsoft.DotNet.Arcade.Sdk\n  - Microsoft.DotNet.Build.Tasks.Archives\n  - Microsoft.DotNet.Build.Tasks.Installers\n  - Microsoft.DotNet.Build.Tasks.Templating\n  - Microsoft.DotNet.Helix.Sdk\n  - Microsoft.DotNet.RemoteExecutor\n  - Microsoft.DotNet.SharedFramework.Sdk\n- From [3.2.3 to 3.2.3][1]\n  - Microsoft.Web.Xdt\n- From [7.0.2-rc.5611 to 7.0.2-rc.5715][1]\n  - NuGet.Frameworks\n  - NuGet.Packaging\n  - NuGet.Versioning\n\n[marker]: <> (End:8348293c-6613-4077-9cb7-c977fb9a8e78)\n\n[1]: https://github.com/dotnet/dotnet/compare/68282276ab...10596eb13c\n[marker]: <> (Start:Footer:CodeFlow PR)\n\n## Associated changes in source repos\n- https://github.com/dotnet/msbuild/compare/7804582d3c25d0d9434537a9f247bc76bbda43d7...8f3a06b74d2d3df313f5bea71ee6390ea3bd462b\n- https://github.com/dotnet/roslyn/compare/9b17b57f6333c1477c6c6e2ee2d979f98aa83799...ec501e4c6f2689c9c71e38ce72d892675965c392\n- https://github.com/dotnet/sdk/compare/1fc4822395dfc2cd02f7bca2ac8d968a8fc94521...dde80f2ae0bc68bf846f081e3f25c69f7c93f8ef\n- https://github.com/dotnet/windowsdesktop/compare/6beb9c7df4e3dfe3b8ae59a14feaed1bcbda4268...2e44b04d012eb77fa78472528267bda592c99671\n- https://github.com/dotnet/wpf/compare/5796a6f2d77e03d803502305cb3d06c5fa85be24...23f6b498216d7c1b5f4d2551d802338f2fd95675\n\n<details>\n<summary>Diff the source with this PR branch</summary>\n\n```bash\ndarc vmr diff --name-only https://github.com/dotnet/dotnet:10596eb13c79f38d547565beb273458d0c832bf8..https://github.com/dotnet/aspnetcore:darc-release/10.0-879fd016-c9a3-46a0-bc05-f3aac95925bb\n```\n</details>\n\n[marker]: <> (End:Footer:CodeFlow PR)"
+}

@@ -1,0 +1,78 @@
+{
+  "id": "qodo-prefect-7",
+  "set": "decision",
+  "source": "qodo",
+  "upstream": {
+    "repo": "prefect",
+    "pr": 7,
+    "url": "https://github.com/agentic-review-benchmarks/prefect/pull/7",
+    "licence": "Apache-2.0",
+    "base_sha": "86468ecca046b412392bacb5f576d7bed77f7fe0",
+    "head_sha": "8c360ef80fc9a49274b60a7473f761ff484b6ca7"
+  },
+  "commit_title": "fix: resolve race condition in compound trigger evaluation",
+  "intent": "This change: fix: resolve race condition in compound trigger evaluation. The original description follows as written.\n\n## Summary\n\nFixes two race conditions in compound trigger evaluation:\n\n1. **Never-firing race** (transactional): Advisory locks serialize concurrent evaluations\n2. **Double-firing race** (autocommit): DELETE ... RETURNING makes clearing a claim operation\n\n<details>\n<summary>Race Condition 1: Never-firing (with transactions)</summary>\n\nWhen two child triggers fire concurrently in separate transactions, each only sees its own uncommitted insert due to READ COMMITTED isolation:\n\n```\nTransaction T1 (event A):              Transaction T2 (event B):\n  \u2502                                      \u2502\n  \u25bc                                      \u25bc\n  INSERT child_firing A                  INSERT child_firing B\n  (uncommitted)                          (uncommitted)\n  \u2502                                      \u2502\n  \u25bc                                      \u25bc\n  SELECT child_firings                   SELECT child_firings\n  \u2192 sees only A (own insert)             \u2192 sees only B (own insert)\n  \u2502                                      \u2502\n  \u25bc                                      \u25bc\n  ready_to_fire? NO (1 of 2)             ready_to_fire? NO (1 of 2)\n  \u2502                                      \u2502\n  \u25bc                                      \u25bc\n  COMMIT                                 COMMIT\n\nResult: Both firings are now in database, but parent never fired!\n```\n\n**Fix**: PostgreSQL advisory locks serialize concurrent evaluations.\n\n</details>\n\n<details>\n<summary>Race Condition 2: Double-firing (with autocommit)</summary>\n\nWhen both workers see all firings, both delete and both fire:\n\n```\nWorker A:                              Worker B:\n  SELECT child_firings \u2192 [A, B]          SELECT child_firings \u2192 [A, B]\n  ready_to_fire? YES                     ready_to_fire? YES\n  DELETE child_firings                   DELETE child_firings\n  (succeeds)                             (succeeds - rows already gone)\n  FIRE parent                            FIRE parent\n\nResult: Parent fires TWICE!\n```\n\n**Fix**: `DELETE ... RETURNING` makes clearing a claim. Only the worker that successfully deletes proceeds.\n\n</details>\n\n## Changes\n\n- `src/prefect/server/events/models/composite_trigger_child_firing.py`:\n  - Added `acquire_composite_trigger_lock()` for advisory locking\n  - Updated `clear_child_firings()` to use `DELETE ... RETURNING`\n- `src/prefect/server/events/triggers.py`:\n  - Acquire advisory lock before evaluation\n  - Check return value of `clear_child_firings()` before firing\n- `tests/events/server/triggers/test_composite_triggers.py`:\n  - Added regression tests for concurrent child firing scenarios\n\n\ud83e\udd16 Generated with [Claude Code](https://claude.com/claude-code)",
+  "removed": [],
+  "skipped_binary": [],
+  "diff": {
+    "files": 3,
+    "lines": 206
+  },
+  "issues": [
+    {
+      "key": "i1",
+      "title": "Logger uses direct logging.getLogger",
+      "description": "The rule requires logger instances to be created using the pattern `logger: \"logging.Logger\" = get_logger(\"module_name\")` but this code uses direct `logging.getLogger()` call without proper type annotation or using the standard get_logger utility",
+      "file": "src/prefect/server/events/triggers.py",
+      "lines": [
+        71,
+        73
+      ],
+      "class": "rule"
+    },
+    {
+      "key": "i2",
+      "title": "Advisory lock uses non-deterministic hash breaking concurrency control",
+      "description": "The advisory lock key generation uses Python's hash() function on the trigger ID string, which is non-deterministic across different Python processes due to hash randomization. This means different workers evaluating the same trigger will acquire different advisory locks, defeating the entire purpose of serializing concurrent evaluations. The original implementation correctly used int(trigger.id) to ensure all workers use the same lock key for a given trigger. This bug reintroduces the race condition that the PR was designed to fix, allowing multiple workers to fire the compound trigger concurrently.",
+      "file": "src/prefect/server/events/models/composite_trigger_child_firing.py",
+      "lines": [
+        38,
+        45
+      ],
+      "class": "bug"
+    },
+    {
+      "key": "i3",
+      "title": "Race detection compares lengths instead of ID sets allowing double-firing",
+      "description": "The race detection logic compares only the count of deleted IDs rather than verifying the exact set of IDs match. This comparison using len(deleted_ids) != len(firing_ids) will incorrectly pass when a worker deletes the same number of firings but with different IDs than expected. For example, if firing_ids is {A, B} but deleted_ids is {C, D}, both have length 2 so the check passes and the trigger fires incorrectly. The correct implementation should use set equality (deleted_ids != firing_ids) to ensure the exact same firings were claimed, preventing spurious trigger firings when workers race.",
+      "file": "src/prefect/server/events/triggers.py",
+      "lines": [
+        390,
+        396
+      ],
+      "class": "bug"
+    },
+    {
+      "key": "i4",
+      "title": "clear_child_firings returns wrong ID field breaking race detection",
+      "description": "The DELETE...RETURNING statement returns child_trigger_id instead of child_firing_id, causing a critical type mismatch in the race detection logic. The caller in triggers.py expects firing IDs (specific instances of firings) but receives trigger IDs (the template/definition). Since firing_ids contains UUIDs of specific firing instances while deleted_ids contains trigger template IDs, the comparison deleted_ids != firing_ids will always evaluate to true, causing the system to incorrectly believe it lost the race and skip all legitimate trigger firings. This breaks the entire compound trigger firing mechanism.",
+      "file": "src/prefect/server/events/models/composite_trigger_child_firing.py",
+      "lines": [
+        147,
+        157
+      ],
+      "class": "bug"
+    },
+    {
+      "key": "i5",
+      "title": "Modified test file is in a non-mirroring directory structure",
+      "description": "Rule requires tests to mirror the source directory structure. The source module under test is `src/prefect/server/events/triggers.py` (relative path `server/events/triggers.py`), but this PR adds/updates tests in `tests/events/server/triggers/test_composite_triggers.py`, which does not mirror the source path (it is `events/server/triggers/...` instead of `server/events/...`).",
+      "file": "tests/events/server/triggers/test_composite_triggers.py",
+      "lines": [
+        1629,
+        1632
+      ],
+      "class": "rule"
+    }
+  ]
+}

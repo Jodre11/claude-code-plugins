@@ -1,0 +1,64 @@
+{
+  "id": "qodo-prefect-2",
+  "set": "decision",
+  "source": "qodo",
+  "upstream": {
+    "repo": "prefect",
+    "pr": 2,
+    "url": "https://github.com/agentic-review-benchmarks/prefect/pull/2",
+    "licence": "Apache-2.0",
+    "base_sha": "23a746d62df52199199369b547bc7eb291a39487",
+    "head_sha": "7a8ea7161e6ca281127bae1e8c231dc652100583"
+  },
+  "commit_title": "Link automation.action.* events to automation.triggered event",
+  "removed": [],
+  "skipped_binary": [],
+  "diff": {
+    "files": 16,
+    "lines": 488
+  },
+  "issues": [
+    {
+      "key": "i1",
+      "title": "Cross-field validation uses field validator",
+      "description": "The rule requires cross-field validation to use @model_validator decorator, but the code uses @field_validator which accesses unvalidated fields via info.data, causing order-dependent validation issues",
+      "file": "src/prefect/server/events/schemas/automations.py",
+      "lines": [
+        772,
+        780
+      ],
+      "class": "rule"
+    },
+    {
+      "key": "i2",
+      "title": "Incorrect automation_triggered_event_id for state-specific actions",
+      "description": "When actions_on_trigger or actions_on_resolve are executed, they should be linked to their specific triggered_event.id or resolved_event.id respectively. However, the code incorrectly uses primary_state_change_event_id (which always prefers Triggered over Resolved) for both types of actions. This breaks the tracing chain for actions_on_resolve - they will reference the wrong event ID when only a Resolved state change occurs, making it impossible to correctly trace the action back to the automation.resolved event that actually prompted it.",
+      "file": "src/prefect/server/events/triggers.py",
+      "lines": [
+        458,
+        471
+      ],
+      "class": "bug"
+    },
+    {
+      "key": "i3",
+      "title": "Missing related resources in action.triggered event on failure path",
+      "description": "In the fail() method, the code builds related_resources list that includes both automation-triggered-event and triggering-event references. However, when emitting the 'prefect.automation.action.triggered' event, it incorrectly uses self._resulting_related_resources instead of the newly built related_resources list. This means the action.triggered event will not include the automation-triggered-event or triggering-event links on the failure path, breaking the traceability chain documented in the PR. Users won't be able to trace from failed actions back to their source events.",
+      "file": "src/prefect/server/events/actions.py",
+      "lines": [
+        197,
+        207
+      ],
+      "class": "bug"
+    },
+    {
+      "key": "i4",
+      "title": "Validation incorrectly rejects proactive triggers with automation_triggered_event_id",
+      "description": "The field_validator for automation_triggered_event_id prevents setting this field when triggering_event is None. However, proactive triggers (which have no triggering_event) still create automation.triggered events and need to link actions to them via automation_triggered_event_id. The code in triggers.py sets automation_triggered_event_id=primary_state_change_event_id for all actions including proactive triggers, causing Pydantic validation to fail at runtime. This breaks all proactive automations, which is a critical functional regression.",
+      "file": null,
+      "lines": null,
+      "class": "bug"
+    }
+  ],
+  "intent": "When an automation fires, it emits `automation.triggered` events, then queues\nactions that emit `automation.action.*` events. Previously there was no way to\ntrace from `automation.action.failed` back to the `automation.triggered` event,\nmaking debugging difficult.\n\nNow `automation.action.*` events include a related resource with role\n`automation-triggered-event` that links back to the state change event:\n\n```json\n{\n  \"prefect.resource.id\": \"prefect.event.<id>\",\n  \"prefect.resource.role\": \"automation-triggered-event\"\n}\n```\n\nThis was requested via support to help with debugging automation failures at\nhigher volumes.\n\nPort of https://github.com/PrefectHQ/nebula/pull/10911\n\n\ud83e\udd16 Generated with [Claude Code](https://claude.ai/code)"
+}

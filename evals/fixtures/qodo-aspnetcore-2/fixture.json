@@ -1,0 +1,122 @@
+{
+  "id": "qodo-aspnetcore-2",
+  "set": "decision",
+  "source": "qodo",
+  "upstream": {
+    "repo": "aspnetcore",
+    "pr": 2,
+    "url": "https://github.com/agentic-review-benchmarks/aspnetcore/pull/2",
+    "licence": "MIT",
+    "base_sha": "07803ab5e98eb8adc5535f8173428a04a4c5e4f6",
+    "head_sha": "b71ad44079ecd98463942a9aa067667a7639ac3a"
+  },
+  "commit_title": "[release/9.0] Update dependencies from dotnet/arcade",
+  "removed": [],
+  "skipped_binary": [],
+  "diff": {
+    "files": 11,
+    "lines": 83
+  },
+  "issues": [
+    {
+      "key": "i1",
+      "title": "Internal class missing sealed keyword",
+      "description": "Internal implementation classes that are not designed for inheritance must be marked with the 'sealed' keyword. The WebSocketWrapper class is an internal implementation class that should be sealed to prevent unintended subclassing.",
+      "file": "src/SignalR/server/StackExchangeRedis/test/RedisEndToEnd.cs",
+      "lines": [
+        362,
+        365
+      ],
+      "class": "rule"
+    },
+    {
+      "key": "i2",
+      "title": "Incorrect boolean operator in regex validation",
+      "description": "The test assertion uses AND (&&) operator instead of OR (||) when checking if the log message matches either the old or new CSP error pattern. This causes the test to fail because a log message cannot simultaneously match both regex patterns - they represent different browser error message formats. The original intent was to accept either format, but the AND operator requires both patterns to match at the same time, which is impossible. This will cause the test to fail even when receiving a valid CSP error message in either format.",
+      "file": "src/Components/test/E2ETest/ServerExecutionTests/WebSocketCompressionTests.cs",
+      "lines": [
+        107,
+        110
+      ],
+      "class": "bug"
+    },
+    {
+      "key": "i3",
+      "title": "Disposal order causing potential race condition",
+      "description": "The connection disposal order is reversed - disposing secondConnection before the connection that is still being used. In the test, 'connection' performs an InvokeAsync call and its TaskCompletionSource (tcs) is awaited immediately before disposal. However, disposing secondConnection first may cause premature cleanup of shared resources or message handlers since both connections share the same user ('*'). This can lead to flaky test behavior where the connection's pending operations are interrupted by the disposal of secondConnection, especially in distributed scenarios where both connections interact with the same Redis backplane.",
+      "file": "src/SignalR/server/StackExchangeRedis/test/RedisEndToEnd.cs",
+      "lines": [
+        210,
+        214
+      ],
+      "class": "bug"
+    },
+    {
+      "key": "i4",
+      "title": "Race condition from premature TaskCompletionSource recreation",
+      "description": "The _receiveTcs TaskCompletionSource is recreated before checking if the buffer is zero-sized, creating a race condition in the WebSocketWrapper's ReceiveAsync implementation. When a zero-byte read occurs (buffer.Count == 0), the method returns early with the result but the TCS has already been reset. This means if another thread or the background task tries to set a result on the now-recreated TCS while this zero-byte read is in progress, it will affect the next receive operation rather than completing the current one. This breaks the synchronization contract and can cause message loss or out-of-order receives in the stateful reconnection test scenarios where WebSocket message sequencing is critical.",
+      "file": "src/SignalR/server/StackExchangeRedis/test/RedisEndToEnd.cs",
+      "lines": [
+        406,
+        417
+      ],
+      "class": "bug"
+    },
+    {
+      "key": "i5",
+      "title": "Test method missing Arrange/Act/Assert comments",
+      "description": "The modified test method does not contain explicit '// Arrange', '// Act', and '// Assert' (or '// Act & Assert') comments to delineate phases, violating the required AAA comment pattern.",
+      "file": "src/Components/test/E2ETest/ServerExecutionTests/WebSocketCompressionTests.cs",
+      "lines": [
+        104,
+        113
+      ],
+      "class": "rule"
+    },
+    {
+      "key": "i6",
+      "title": "Async test method name missing Async suffix",
+      "description": "This method returns Task and is marked async, but its name does not end with the required 'Async' suffix.",
+      "file": "src/SignalR/server/StackExchangeRedis/test/RedisEndToEnd.cs",
+      "lines": [
+        90,
+        90
+      ],
+      "class": "rule"
+    },
+    {
+      "key": "i7",
+      "title": "Test method missing Arrange/Act/Assert comments",
+      "description": "The modified test method does not include explicit AAA structure comments ('// Arrange', '// Act', '// Assert' or '// Act & Assert'), violating the test readability rule.",
+      "file": "src/SignalR/server/StackExchangeRedis/test/RedisEndToEnd.cs",
+      "lines": [
+        90,
+        120
+      ],
+      "class": "rule"
+    },
+    {
+      "key": "i8",
+      "title": "Async test method name missing Async suffix",
+      "description": "This method returns Task and is marked async, but its name does not end with the required 'Async' suffix.",
+      "file": "src/SignalR/server/StackExchangeRedis/test/RedisEndToEnd.cs",
+      "lines": [
+        186,
+        186
+      ],
+      "class": "rule"
+    },
+    {
+      "key": "i9",
+      "title": "Test method missing Arrange/Act/Assert comments",
+      "description": "The modified test method does not include explicit AAA structure comments ('// Arrange', '// Act', '// Assert' or '// Act & Assert'), violating the test readability rule.",
+      "file": "src/SignalR/server/StackExchangeRedis/test/RedisEndToEnd.cs",
+      "lines": [
+        186,
+        235
+      ],
+      "class": "rule"
+    }
+  ],
+  "intent": "This change: [release/9.0] Update dependencies from dotnet/arcade. The original description follows as written.\n\nThis pull request updates the following dependencies\n\n[marker]: <> (Begin:5cf95ae7-830b-490f-0a55-08dcbc302537)\n## From https://github.com/dotnet/arcade\n- **Subscription**: [5cf95ae7-830b-490f-0a55-08dcbc302537](https://maestro.dot.net/subscriptions?search=5cf95ae7-830b-490f-0a55-08dcbc302537)\n- **Build**: [20251226.6](https://dev.azure.com/dnceng/internal/_build/results?buildId=2867608) ([295621](https://maestro.dot.net/channel/5175/github:dotnet:arcade/build/295621))\n- **Date Produced**: December 26, 2025 6:06:19 PM UTC\n- **Commit**: [ab5773ac30dce73227fa1dff6bf1a21eea67cbd0](https://github.com/dotnet/arcade/commit/ab5773ac30dce73227fa1dff6bf1a21eea67cbd0)\n- **Branch**: [release/9.0](https://github.com/dotnet/arcade/tree/release/9.0)\n\n[DependencyUpdate]: <> (Begin)\n\n- **Dependency Updates**:\n  - From [9.0.0-beta.25562.4 to 9.0.0-beta.25626.6][3]\n     - Microsoft.SourceBuild.Intermediate.arcade\n     - Microsoft.DotNet.Arcade.Sdk\n     - Microsoft.DotNet.Build.Tasks.Installers\n     - Microsoft.DotNet.Build.Tasks.Templating\n     - Microsoft.DotNet.Helix.Sdk\n     - Microsoft.DotNet.RemoteExecutor\n\n[3]: https://github.com/dotnet/arcade/compare/6e2d8e204c...ab5773ac30\n\n[DependencyUpdate]: <> (End)\n\n\n[marker]: <> (End:5cf95ae7-830b-490f-0a55-08dcbc302537)"
+}

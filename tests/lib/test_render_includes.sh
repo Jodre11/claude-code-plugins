@@ -157,12 +157,13 @@ _ri_js_ge() {
     echo "// END GENERATED from $1"
 }
 
-test_render_includes_review_core_embeds_brief() {
+# The panel retired with the thin pipeline, so review-core embeds no concern brief.
+test_render_includes_review_core_embeds_no_brief() {
     local wf="$REPO_ROOT/plugins/code-review-suite/workflows/review-core.js"
-    if grep -qxF -- "$(_ri_js_gb includes/panel-concern-brief.md PANEL_BRIEF)" "$wf"; then
-        pass "review-core.js embeds the concern brief as PANEL_BRIEF"
+    if grep -qF -- 'PANEL_BRIEF' "$wf"; then
+        fail "review-core.js no longer embeds the panel concern brief" "PANEL_BRIEF still present"
     else
-        fail "review-core.js embeds the concern brief as PANEL_BRIEF" "BEGIN GENERATED marker missing"
+        pass "review-core.js no longer embeds the panel concern brief"
     fi
 }
 

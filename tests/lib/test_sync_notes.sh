@@ -223,9 +223,6 @@ test_sync_static_analysis_policy_literals() {
     for literal in \
         '## 10. Severity-locked policy' \
         '**Severity is locked.**' \
-        '**Existence gate.**' \
-        'Static trust governs severity, never whether the issue is real.' \
-        '**Confidence reflects panel agreement.**' \
         '**Critical-allow-list mechanism.**' \
         '### Dependency Freshness'; do
         if grep -qF "$literal" "$include"; then
@@ -236,67 +233,20 @@ test_sync_static_analysis_policy_literals() {
         fi
     done
 
-    # The enforcement side: the STATIC set names all five specialists, the static branch
-    # keeps the tool's severity, and the static-tier rule blocks only on a unanimous-real
-    # Important-or-higher finding — the rule §10 documents.
-    if grep -qF "const STATIC = new Set(['jbinspect', 'eslint', 'ruff', 'trivy', 'housekeeper'])" "$review_core"; then
-        pass "static-analysis policy: review-core.js STATIC set lists all five specialists"
-    else
-        fail "static-analysis policy: review-core.js STATIC set lists all five specialists" \
-            "expected const STATIC = new Set(['jbinspect', 'eslint', 'ruff', 'trivy', 'housekeeper']) in $review_core"
-    fi
-    if grep -qF 'severity = finding.severity           // severity locked' "$review_core"; then
-        pass "static-analysis policy: review-core.js locks static severity"
-    else
-        fail "static-analysis policy: review-core.js locks static severity" \
-            "the static branch of mapSpreadToTierConfidence must keep finding.severity (the '// severity locked' line)"
-    fi
-    if grep -qF "tier = (unanimousReal && SEV_TO_LEVEL[severity] >= 2) ? 'consensus' : 'contested'" "$review_core"; then
-        pass "static-analysis policy: review-core.js blocks static findings only when unanimous-real and >= Important"
-    else
-        fail "static-analysis policy: review-core.js blocks static findings only when unanimous-real and >= Important" \
-            "the static tier rule documented in §10 ('Confidence reflects panel agreement') was not found in $review_core"
-    fi
-}
-
-test_sync_static_analysis_existence_gate() {
-    local cr
-    cr=$(_cr_dir)
-    if [[ ! -d "$cr" ]]; then
-        skip "static-analysis existence gate" "code-review-suite plugin not found"
-        return
-    fi
-
-    local include="$cr/includes/static-analysis-context.md"
-    local review_core="$cr/workflows/review-core.js"
-    local f
-    for f in "$include" "$review_core"; do
-        if [[ ! -f "$f" ]]; then
-            fail "static-analysis existence gate: inputs present" "missing: $f"
-            return
+    # The enforcement side: the STATIC set names all five specialists, a static finding blocks
+    # on the tool's own Critical or Important, and a Critical off the allow-list does not block.
+    local literal_code
+    for literal_code in \
+        "const STATIC = new Set(['jbinspect', 'eslint', 'ruff', 'trivy', 'housekeeper'])" \
+        "const blocking = f.severity === 'Critical' || f.severity === 'Important'" \
+        "if (f.severity === 'Critical' && !staticCriticalAllowed(s.domain, f)) {"; do
+        if grep -qF -- "$literal_code" "$review_core"; then
+            pass "static-analysis policy: review-core.js contains '$literal_code'"
+        else
+            fail "static-analysis policy: review-core.js contains '$literal_code'" \
+                "the §10 enforcement line was not found in $review_core"
         fi
     done
-
-    # The classic rule "Dismissed tier is forbidden" for static findings was replaced by the
-    # existence gate: a static agent can misreport tool output, so the panel may dismiss it.
-    # Reintroducing the old wording would document the opposite of what the code does.
-    if grep -qF 'Dismissed tier is forbidden' "$include"; then
-        fail "static-analysis existence gate: retired 'Dismissed tier is forbidden' rule absent" \
-            "static-analysis-context.md reinstates the retired rule; review-core.js dismisses a static finding a panel majority votes not real"
-    else
-        pass "static-analysis existence gate: retired 'Dismissed tier is forbidden' rule absent"
-    fi
-
-    # The gate must be evaluated before the static branch, or static findings bypass it.
-    local gate_line static_line
-    gate_line=$(grep -nF 'if (tally.is_real_false > tally.is_real_true) {' "$review_core" | head -1 | cut -d: -f1)
-    static_line=$(grep -nF '} else if (isStatic) {' "$review_core" | head -1 | cut -d: -f1)
-    if [[ -n "$gate_line" && -n "$static_line" ]] && (( gate_line < static_line )); then
-        pass "static-analysis existence gate: review-core.js applies the gate before the static branch"
-    else
-        fail "static-analysis existence gate: review-core.js applies the gate before the static branch" \
-            "expected the majority-not-real check (line ${gate_line:-<missing>}) to precede '} else if (isStatic) {' (line ${static_line:-<missing>})"
-    fi
 }
 
 test_sync_static_analysis_critical_allowlist_present() {
@@ -465,11 +415,11 @@ test_sync_phase_minus1_target_repo_present() {
     fi
 }
 
-test_sync_static_analysis_panel_feed_documented() {
+test_sync_static_analysis_specialist_enumeration() {
     local cr
     cr=$(_cr_dir)
     if [[ ! -d "$cr" ]]; then
-        skip "static-analysis panel feed documentation" "code-review-suite plugin not found"
+        skip "static-analysis specialist enumeration" "code-review-suite plugin not found"
         return
     fi
 
@@ -479,18 +429,10 @@ test_sync_static_analysis_panel_feed_documented() {
     local file
     for file in "$sa_context" "$review_core"; do
         if [[ ! -f "$file" ]]; then
-            fail "static-analysis panel feed documentation: $(basename "$file") present" "file not found"
+            fail "static-analysis specialist enumeration: $(basename "$file") present" "file not found"
             return
         fi
     done
-
-    # §8 documents that static findings reach every panelist alongside the LLM findings.
-    if grep -qF 'every static-analysis finding is shown to each panelist' "$sa_context"; then
-        pass "static-analysis panel feed: §8 affirms findings shown to each panelist"
-    else
-        fail "static-analysis panel feed: §8 affirms findings shown to each panelist" \
-            "static-analysis-context.md §8 must state 'every static-analysis finding is shown to each panelist'"
-    fi
 
     # Each of the five static-analysis specialist names must appear in both review-core.js
     # and static-analysis-context.md. Presence is asserted individually (not order/format)
@@ -508,9 +450,9 @@ test_sync_static_analysis_panel_feed_documented() {
         fi
     done
     if [[ -z "$core_missing" && -z "$sa_missing" ]]; then
-        pass "static-analysis panel feed: specialist enumeration consistent across canonicals"
+        pass "static-analysis specialist enumeration: consistent across canonicals"
     else
-        fail "static-analysis panel feed: specialist enumeration consistent across canonicals" \
+        fail "static-analysis specialist enumeration: consistent across canonicals" \
             "review-core.js missing names:${core_missing:-<none>}; static-analysis-context.md missing names:${sa_missing:-<none>} — both must reference all five (jbinspect, eslint, ruff, trivy, housekeeper) static-analysis specialists"
     fi
 }

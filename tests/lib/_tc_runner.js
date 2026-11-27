@@ -70,6 +70,8 @@ const timeoutId = setTimeout(() => { process.stdout.write('TIMEOUT'); process.ex
     const tcCall = (lookup) => lookup(call)(...JSON.parse(process.env.TC_INPUT || '[]'));
     const out = await fn(agent, parallel, pipeline, noop, log, process.env.TC_ARGS, async () => null, tcCall);
     clearTimeout(timeoutId);
-    process.stdout.write(JSON.stringify(call ? { result: out } : { bundle: out, editorCalls, dispatches, logs }));
+    // A Set (parseChangedLines) serialises as a sorted array, for stable comparison.
+    const replacer = (k, v) => (v instanceof Set ? [...v].sort((a, b) => a - b) : v);
+    process.stdout.write(JSON.stringify(call ? { result: out } : { bundle: out, editorCalls, dispatches, logs }, replacer));
     process.exit(0);
 })().catch((e) => { clearTimeout(timeoutId); process.stdout.write('THREW: ' + e.message); process.exit(1); });

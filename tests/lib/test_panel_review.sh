@@ -102,21 +102,21 @@ _PAN_CHANGED_BLOCK='Changed lines:\na.cs: 1-40\nb.cs: 1-40\na.js: 1-40\napi.cs: 
 _pan_args() {
     local n="${1:-3}"
     local sha40="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-    echo "{\"agentPrompt\":\"x\",\"flags\":{},\"route\":\"full\",\"selfReReview\":false,\"reviewMode\":\"pr\",\"base\":\"main\",\"headSha\":\"${sha40}\",\"emptyTreeMode\":false,\"pathScope\":\"\",\"tempDir\":\"/tmp/claude-test/x\",\"intentLedger\":\"\",\"panelSize\":${n},\"panelBrief\":\"BRIEF\",\"changedLinesBlock\":\"${_PAN_CHANGED_BLOCK}\"}"
+    echo "{\"agentPrompt\":\"x\",\"flags\":{},\"route\":\"full\",\"selfReReview\":false,\"reviewMode\":\"pr\",\"base\":\"main\",\"headSha\":\"${sha40}\",\"emptyTreeMode\":false,\"pathScope\":\"\",\"tempDir\":\"/tmp/claude-test/x\",\"intentLedger\":\"\",\"panelSize\":${n},\"changedLinesBlock\":\"${_PAN_CHANGED_BLOCK}\"}"
 }
 
 # args with flags.js=true — enables the eslint specialist (Track B test E).
 _pan_args_js() {
     local n="${1:-3}"
     local sha40="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-    echo "{\"agentPrompt\":\"x\",\"flags\":{\"js\":true},\"route\":\"full\",\"selfReReview\":false,\"reviewMode\":\"pr\",\"base\":\"main\",\"headSha\":\"${sha40}\",\"emptyTreeMode\":false,\"pathScope\":\"\",\"tempDir\":\"/tmp/claude-test/x\",\"intentLedger\":\"\",\"panelSize\":${n},\"panelBrief\":\"BRIEF\",\"changedLinesBlock\":\"${_PAN_CHANGED_BLOCK}\"}"
+    echo "{\"agentPrompt\":\"x\",\"flags\":{\"js\":true},\"route\":\"full\",\"selfReReview\":false,\"reviewMode\":\"pr\",\"base\":\"main\",\"headSha\":\"${sha40}\",\"emptyTreeMode\":false,\"pathScope\":\"\",\"tempDir\":\"/tmp/claude-test/x\",\"intentLedger\":\"\",\"panelSize\":${n},\"changedLinesBlock\":\"${_PAN_CHANGED_BLOCK}\"}"
 }
 
 # args with flags.iac=true — enables the trivy specialist (Track B test F).
 _pan_args_iac() {
     local n="${1:-3}"
     local sha40="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-    echo "{\"agentPrompt\":\"x\",\"flags\":{\"iac\":true},\"route\":\"full\",\"selfReReview\":false,\"reviewMode\":\"pr\",\"base\":\"main\",\"headSha\":\"${sha40}\",\"emptyTreeMode\":false,\"pathScope\":\"\",\"tempDir\":\"/tmp/claude-test/x\",\"intentLedger\":\"\",\"panelSize\":${n},\"panelBrief\":\"BRIEF\",\"changedLinesBlock\":\"${_PAN_CHANGED_BLOCK}\"}"
+    echo "{\"agentPrompt\":\"x\",\"flags\":{\"iac\":true},\"route\":\"full\",\"selfReReview\":false,\"reviewMode\":\"pr\",\"base\":\"main\",\"headSha\":\"${sha40}\",\"emptyTreeMode\":false,\"pathScope\":\"\",\"tempDir\":\"/tmp/claude-test/x\",\"intentLedger\":\"\",\"panelSize\":${n},\"changedLinesBlock\":\"${_PAN_CHANGED_BLOCK}\"}"
 }
 
 # args with a goal-bearing intent ledger (matches the /(^|\n)\s*goal:\s*\S/ detector).
@@ -124,7 +124,7 @@ _pan_args_goal() {
     local n="${1:-3}"
     local sha40="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
     local ledger="Intent ledger:\ngoal: ship the widget end to end.\nnon_goals: none\nsource: pr_body\n"
-    echo "{\"agentPrompt\":\"x\",\"flags\":{},\"route\":\"full\",\"selfReReview\":false,\"reviewMode\":\"pr\",\"base\":\"main\",\"headSha\":\"${sha40}\",\"emptyTreeMode\":false,\"pathScope\":\"\",\"tempDir\":\"/tmp/claude-test/x\",\"intentLedger\":\"${ledger}\",\"panelSize\":${n},\"panelBrief\":\"BRIEF\",\"changedLinesBlock\":\"${_PAN_CHANGED_BLOCK}\"}"
+    echo "{\"agentPrompt\":\"x\",\"flags\":{},\"route\":\"full\",\"selfReReview\":false,\"reviewMode\":\"pr\",\"base\":\"main\",\"headSha\":\"${sha40}\",\"emptyTreeMode\":false,\"pathScope\":\"\",\"tempDir\":\"/tmp/claude-test/x\",\"intentLedger\":\"${ledger}\",\"panelSize\":${n},\"changedLinesBlock\":\"${_PAN_CHANGED_BLOCK}\"}"
 }
 
 # One Important consensus finding, unanimously voted real by 3 panelists → RC via rubric row 3.
@@ -574,7 +574,7 @@ test_absent_panel_size_defaults_to_3() {
 test_panel_skipped_on_lightweight_route() {
     local args out
     local sha40="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-    args="{\"agentPrompt\":\"x\",\"flags\":{},\"route\":\"lightweight\",\"selfReReview\":false,\"reviewMode\":\"pr\",\"base\":\"main\",\"headSha\":\"${sha40}\",\"emptyTreeMode\":false,\"pathScope\":\"\",\"tempDir\":\"/tmp/claude-test/x\",\"intentLedger\":\"\",\"panelSize\":3,\"panelBrief\":\"BRIEF\"}"
+    args="{\"agentPrompt\":\"x\",\"flags\":{},\"route\":\"lightweight\",\"selfReReview\":false,\"reviewMode\":\"pr\",\"base\":\"main\",\"headSha\":\"${sha40}\",\"emptyTreeMode\":false,\"pathScope\":\"\",\"tempDir\":\"/tmp/claude-test/x\",\"intentLedger\":\"\",\"panelSize\":3}"
     # The lightweight mock: the code-analysis agent (label 'code-analysis') returns findings.
     # _pan_run_core's mock returns specialists[label] for non-panel labels, so
     # 'code-analysis' → specialists["code-analysis"].

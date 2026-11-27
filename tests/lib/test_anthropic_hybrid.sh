@@ -15,7 +15,7 @@ _ah_args() {
     jq -cn --arg flag "$flag" --arg route "$route" --arg cl "$(printf '%b' 'Changed lines:\na.cs: 1-60\n')" \
         '{agentPrompt: "x", flags: {}, route: $route, selfReReview: false, reviewMode: "pr",
           base: "main", headSha: ("a" * 40), emptyTreeMode: false, pathScope: "",
-          tempDir: "/tmp/claude-test/x", intentLedger: "", panelSize: 3, panelBrief: "BRIEF",
+          tempDir: "/tmp/claude-test/x", intentLedger: "", panelSize: 3,
           changedLinesBlock: $cl}
          + (if $flag == "absent" then {} else {anthropicSpecialist: ($flag == "true")} end)'
 }

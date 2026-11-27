@@ -76,7 +76,7 @@ const args = JSON.stringify({
     agentPrompt: 'x', flags: {}, route: 'full', selfReReview: false,
     reviewMode: 'pr', base: 'main', headSha: 'a'.repeat(40), emptyTreeMode: false,
     pathScope: '', tempDir: '/tmp/claude-test/x', intentLedger: '',
-    panelSize: panelists.length, panelBrief: 'BRIEF', changedLinesBlock,
+    panelSize: panelists.length, changedLinesBlock,
 })
 
 const agent = async (_prompt, opts) => {

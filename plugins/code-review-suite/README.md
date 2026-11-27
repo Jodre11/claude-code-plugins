@@ -1,48 +1,30 @@
 # Code Review Plugin
 
-Deep code review using specialist agents whose findings a panel of independent reviewers
-votes on. Includes a PR review skill and commands for pre-review analysis and addressing PR
-comments.
+Reviews a change with Claude Code's bundled `/code-review` and a set of deterministic static
+analysers, and posts the result as one marked review with a verdict. Includes a PR review
+skill and commands for pre-review analysis and addressing PR comments.
 
-### Phase 0: intent ledger and CI status
+### CI status
 
-Before any specialists run, the pipeline captures the change's intent and CI status.
-
-**Intent ledger:** the pipeline reads (in priority order) any in-diff prose document under
-`docs/`, `design/`, `specs/`, `rfcs/`, `proposals/`, `adr/`, or repo-configured paths
-(`intent.doc_paths` in `.claude/code-review.toml`) — a README, CHANGELOG or prompt file
-elsewhere never counts — then a verbatim prompt block (`Prompt:` section in the PR body or
-commit message), the PR body itself, and (for local pre-review only) the branch commit
-subjects. The first source containing a narrative paragraph (≥ 2 sentences, > 7 words,
-not a verbatim PR template) becomes the ledger. Without a sufficient source, the pipeline
-halts before any specialist fans out. In local mode it asks you to paste an intent
-paragraph. In PR mode it asks whether to post a canned "please describe this PR" review as
-`REQUEST_CHANGES`, as `COMMENT`, or not at all; `intent.halt_action` (`prompt`,
-`request_changes`, `comment` or `print`, read from the reviewed repo's
-`.claude/code-review.toml` and then `~/.claude/code-review.toml`) preselects the answer for
-unattended use.
-
-**CI status (PR mode only):** after the body check, the pipeline fetches `gh pr checks`.
+**CI status (PR mode only):** before any review runs, the pipeline fetches `gh pr checks`.
 Any check that is not green and settled — a failure, a time-out, or one still pending or in
-progress — halts the review before fan-out, with no acknowledge-to-proceed path. `CANCELLED`
-counts as settled (multi-trigger workflows legitimately cancel one trigger when another takes
-over). The verdict is therefore only ever computed on green CI.
+progress — halts the review, with no acknowledge-to-proceed path. `CANCELLED` counts as
+settled (multi-trigger workflows legitimately cancel one trigger when another takes over).
+The verdict is therefore only ever computed on green CI.
 
-### Specialists
+### Finders
 
-The full review path dispatches 9 core specialists (up to 18 with all conditionals):
-`security-reviewer`, `correctness-reviewer`, `api-contract-reviewer`, `consistency-reviewer`, `style-reviewer`,
-`archaeology-reviewer`, `reuse-reviewer`, `efficiency-reviewer`, `alignment-reviewer`, plus
-conditional specialists by file type: `jbinspect-reviewer` (C#), `ui-reviewer` (visual
-components), `eslint-reviewer` (JS/TS), `ruff-reviewer` (Python incl. notebooks),
-`trivy-reviewer` (IaC: Terraform, Dockerfile, Kubernetes, Helm, CFN),
-`housekeeper-reviewer` (dependency/version freshness + maintenance-health: GitHub Actions,
-workflow runners, npm, NuGet, Docker base images, PyPI), `test-quality-reviewer`
-(false-green test detection — test files only), `test-adequacy-reviewer` (new production code lacking a direct test, or a new wire contract whose producer side is untested), and `latent-hazard-reviewer` (silent-conditional hazards — a mechanism present in the diff that fails silently only under a concrete named trigger).
+Every review runs Claude Code's bundled `/code-review` as the `native` finder, through the
+`native-reviewer` agent, at the `high` effort level on the pinned range. Beside it,
+conditional static analysers run by file type: `jbinspect-reviewer` (C#), `eslint-reviewer`
+(JS/TS), `ruff-reviewer` (Python incl. notebooks), `trivy-reviewer` (IaC: Terraform,
+Dockerfile, Kubernetes, Helm, CFN) and `housekeeper-reviewer` (dependency/version freshness
++ maintenance-health: GitHub Actions, workflow runners, npm, NuGet, Docker base images,
+PyPI).
 
-The five static-analysis specialists (`jbinspect`, `eslint`, `ruff`, `trivy`,
-`housekeeper`) share the cross-cutting contract in `includes/static-analysis-context.md`:
-the tool's severity is locked, and the panel decides only whether each finding is real.
+The five static-analysis specialists share the contract in
+`includes/static-analysis-context.md`: the tool's severity is locked, and a `Critical` blocks
+only when its rule is on the tool's `Critical-allow-list:`.
 
 ### Version-freshness rule
 
@@ -53,61 +35,66 @@ release, and flags packages the registry marks deprecated, unlisted, or yanked
 (`bin/housekeeper-freshness`) parses in-scope sources, fetches latest-GA from the
 registries, and emits stale-version findings — uniform `Suggestion` severity ("staleness is
 a smell, not a defect"). They render in an informational `### Dependency Freshness` table in
-the review body and never affect the verdict. A stale version with a known advisory reaches
-the verdict through the `security-reviewer`'s own version-safety finding (#6a), or through a
-panelist raising the upgrade as a net-new finding.
+the review body and never affect the verdict.
 
 ## Architecture
 
-The review pipeline (`includes/review-pipeline.md`) does inline prep and classification,
-then hands every review to the deterministic Workflow core (`workflows/review-core.js`) —
-the **sole orchestration engine**. There is no inline specialist-dispatch fallback: the
-pipeline's Step 3.5 calls the Workflow unconditionally, and the orchestrator only posts the
-sealed bundle the Workflow returns. A plugin-shipped `PreToolUse(Agent)` hook
-(`hooks/reviewer-dispatch-observe.sh`) logs any main-session reviewer dispatch in observe
-mode, making the single-path guarantee measurable.
+The review pipeline (`includes/review-pipeline.md`) does inline prep, then hands every review
+to the deterministic Workflow core (`workflows/review-core.js`) — the **sole orchestration
+engine**. There is no inline dispatch fallback: the pipeline's Step 3.5 calls the Workflow
+unconditionally, and the orchestrator only posts the sealed bundle the Workflow returns. A
+plugin-shipped `PreToolUse(Agent)` hook (`hooks/reviewer-dispatch-observe.sh`) logs any
+main-session reviewer dispatch in observe mode, making the single-path guarantee measurable.
 
-1. **Inline prep** — Phase 0 intent ledger, Phase 0.6 CI status gate, base branch determination, diff measurement, C#/UI/deletion/security detection
-2. **Trivial-mode (Phase 0.7)** — orchestrator-only mini-review for docs/config-only diffs (≤3 files, ≤30 lines, allow-listed extensions, excluding load-bearing prompt paths under `plugins/*/agents|skills|commands|includes/`). Hard cap of 3 inline comments and a user-confirm gate before posting. Override with the `--force` argument or `intent.skip_trivial_check = true` in `.claude/code-review.toml`. Falls through to the lightweight or full path when the bar is not met.
-3. **Classification** — Step 3 computes the route (`lightweight` for small diffs: ≤5 files, ≤150 lines, no significant deletions, no security-sensitive areas; `full` otherwise) and Step 3.5 passes it to the Workflow.
-4. **Workflow core** — the lightweight route runs a single `code-analysis` pass inside the Workflow; the full route dispatches 9 core specialists plus up to 9 conditional specialists (C#, UI, JS/TS, Python, IaC, dependency freshness, test quality, test adequacy, latent hazard) in parallel (slowest first). A panel of independent opus reviewers then votes on every finding (is it real, how severe, how tractable, does it block the stated goal) and may raise net-new findings; code tallies the votes into consensus, contested and dismissed tiers and applies the verdict rubric (`includes/verdict-rubric.md`); a writer agent produces the prose assessment. All of this is implemented in `review-core.js`.
-5. **Panel size** — `orchestration.panel_size` in `.claude/code-review.toml` (the reviewed repo first, then `~/.claude/code-review.toml`) sets the number of panelists. It must be odd and at least 3; the default is 3. `orchestration.review_mode` is retired and ignored.
-   **Hybrid arm (opt-in)** — `[review] anthropic_specialist = true` in the same files adds `anthropic-reviewer` to the full route. `review-core` runs steps 2–6 of Anthropic's official `code-review` plugin pipeline, each step agent reading the plugin's command file at runtime from the `claude-plugins-official` marketplace clone (the plugin itself can stay disabled). Nothing is posted, and the validated issues enter the panel vote as Important findings at confidence 90. The durable log records the arm as `meta.anthropic_specialist`. Off by default.
-6. **Output** — the review body (PR mode) and the pre-review report (local mode) are assembled in code from the tiers; the writer contributes only the short Panel Assessment. Findings from several specialists on the same file within three lines are merged into one inline comment and one index line, so the author sees one thread per issue.
-7. **Wording pass** — once the verdict and tiers are fixed, a `comment-editor` agent rewords the surfaced findings and the assessment to the rules in `includes/comment-voice.md`. Code guards keep the original text of any field whose rewrite drops a code span, `path:line` reference, URL, code block or (in a finding) number, grows by more than 10%, or adds a number, verdict word or severity word. Static-analysis findings keep the tool's text. Every comment and review body the suite posts ends with the hidden marker `<!-- code-review-suite -->`, which `/address-pr-comments` and self-re-review detection use to tell the suite's posts from the user's own.
+1. **Inline prep** — target repository, ephemeral worktree (PR mode), branch freshness, the
+   Phase 0.6 CI status gate, base branch determination, diff measurement and file-type
+   detection. Step 3.5 builds the native target (repo path and pinned range) from those
+   validated values.
+2. **Dispatch** — `review-core` runs `native` and the selected static analysers in parallel.
+   The native result is text ending in a fenced JSON array; code parses and checks it, and
+   any failure means native did not run.
+3. **Assemble** — code maps native's severities (`important` → Important and blocking, `nit`
+   → Suggestion, `pre_existing` → Suggestion annotated pre-existing), drops a native finding
+   that cites a `CLAUDE.md` outside the reviewed repository, demotes a static `Critical` that
+   is not allow-listed, anchors every finding to the diff, and computes the verdict
+   (`includes/verdict-rubric.md`): `NONE` when native did not run, `REQUEST_CHANGES` on any
+   blocking finding, otherwise `APPROVE`.
+4. **Output** — the review body (PR mode) and the pre-review report (local mode) are
+   assembled in code. Findings on the same file within three lines merge into one inline
+   comment and one index line, so the author sees one thread per issue.
+5. **Wording pass** — once the verdict is fixed, a `comment-editor` agent rewords native's
+   surfaced findings to the rules in `includes/comment-voice.md`. Code guards keep the
+   original text of any field whose rewrite drops a code span, `path:line` reference, URL,
+   code block or number, grows by more than 10%, or adds a number, verdict word or severity
+   word. Static-analysis findings keep the tool's text. Every comment and review body the
+   suite posts ends with the hidden marker `<!-- code-review-suite -->`, which
+   `/address-pr-comments` and self-re-review detection use to tell the suite's posts from the
+   user's own.
+
+`orchestration.review_mode`, `orchestration.panel_size`, `review.anthropic_specialist` and
+the `intent.*` keys are retired: the pipeline prints one notice per config file that still
+sets them, then ignores them.
 
 ## Agents
 
 | Agent | Focus |
 |---|---|
-| `code-analysis` | Lightweight single-agent review (small diffs) |
-| `security-reviewer` | Injection, auth bypass, secrets, OWASP top 10, version safety/pinning, SSRF, path traversal |
-| `correctness-reviewer` | Logic errors, off-by-one, null derefs, race conditions, async/await pitfalls |
-| `api-contract-reviewer` | Hallucinated/nonexistent APIs, wrong signatures/versions, deprecated API usage, and comment-truth (comments that misdescribe the code) — always-on core |
-| `consistency-reviewer` | Violations of project conventions (the repo's committed CLAUDE.md, .editorconfig, linting configs) |
-| `style-reviewer` | Readability, unnecessary complexity, dead code, naming clarity |
-| `archaeology-reviewer` | Investigates deleted/modified code for hidden historical intent |
-| `reuse-reviewer` | Missed reuse of existing utilities, helpers, and patterns |
-| `efficiency-reviewer` | Performance issues, N+1 patterns, missed concurrency, resource leaks |
-| `alignment-reviewer` | Intent drift and scope creep against the captured intent ledger |
+| `native-reviewer` | Runs Claude Code's bundled `/code-review` on the pinned range and returns its text unchanged (dispatched by `review-core` only) |
 | `jbinspect-reviewer` | JetBrains InspectCode static analysis for C# (conditional — `.cs` files only) |
 | `eslint-reviewer` | ESLint or Biome static analysis for JS/TS (conditional — `.js`/`.jsx`/`.mjs`/`.cjs`/`.ts`/`.tsx`/`.mts`/`.cts`/`.vue`/`.svelte` files only) |
 | `ruff-reviewer` | Ruff static analysis for Python (conditional — `.py`/`.ipynb` files only; notebooks via Ruff ≥ 0.6.0 or `nbqa` fallback) |
 | `trivy-reviewer` | `trivy config` IaC security analysis (conditional — Terraform / Dockerfile / Kubernetes / Helm / CFN files only) |
 | `housekeeper-reviewer` | Dependency/version freshness + maintenance-health — flags GitHub Actions, workflow runners, npm, NuGet, Docker base images, and PyPI packages behind latest GA or marked deprecated/unlisted/yanked (conditional — workflows + `package.json` + `*.csproj`/`*.props` + `pyproject.toml`/`requirements*.txt` + Dockerfiles; registry-backed deterministic engine) |
-| `test-quality-reviewer` | False-green test detection — no-assert, tautological, asserts-on-the-mock, over-mocking (conditional — test files only) |
-| `test-adequacy-reviewer` | Absent coverage on new production code — untested new/changed public types (F1) and untested producers of new wire contracts/DTOs (F4) (conditional — fires on changed non-test C#/Python/TS-JS source) |
-| `latent-hazard-reviewer` | Silent-conditional hazards — a mechanism present in the diff that fails silently only under a concrete named trigger (e.g. an optional column read that blanks to a legitimate-looking value on source drift) (conditional — fires on changed non-test C#/Python/TS-JS source) |
-| `ui-reviewer` | UI/UX quality, accessibility, usability (conditional — visual component files only) |
-| `anthropic-reviewer` | Hybrid arm: one step of Anthropic's official code-review plugin pipeline (CLAUDE.md discovery, summary, CLAUDE.md-compliance and bug review, validation). `review-core` runs the steps and dispatches one read-only instance per agent the plugin asks for, so no agent launches another (opt-in — `[review] anthropic_specialist = true`; skipped when the official marketplace is not added) |
-| `panel-reviewer` | One independent panel seat: votes on every Stage-1 finding and raises net-new ones (read-only; dispatched by `review-core` only) |
-| `panel-writer` | Writes the short Panel Assessment for a verdict already fixed in code (no tools beyond `Read`; dispatched by `review-core` only) |
-| `comment-editor` | Rewords surfaced findings and the Panel Assessment to the comment-voice rules without changing what they say; guarded in code (no tools beyond `Read`; dispatched by `review-core` only) |
+| `comment-editor` | Rewords native's surfaced findings to the comment-voice rules without changing what they say; guarded in code (no tools beyond `Read`; dispatched by `review-core` only) |
+
+The LLM specialist, panel and hybrid agents (`code-analysis`, `security-reviewer`,
+`correctness-reviewer`, `panel-reviewer`, `anthropic-reviewer` and the rest) are no longer
+dispatched; they are removed in a follow-up change.
 
 ## Skill
 
-- **review-gh-pr** — Review a GitHub PR with inline comments. Automatically routes to lightweight
-  or full pipeline review based on diff size. Usage: `/review-gh-pr <pr-number-or-url>`
+- **review-gh-pr** — Review a GitHub PR and post one marked review with inline comments.
+  Usage: `/review-gh-pr <pr-number-or-url>`
 
 ## Commands
 
@@ -128,6 +115,9 @@ mode, making the single-path guarantee measurable.
 
 ## Prerequisites
 
+- Claude Code with the bundled `/code-review` skill, with model invocation enabled — no
+  `user-invocable-only` override for `code-review` in your settings, or the `native-reviewer`
+  agent cannot call it and every review runs on the static analysers alone
 - `reply-fit` plugin (same marketplace) — declared in `plugin.json` `dependencies`, so it installs with the suite; the suite does not load while it is disabled
 - `gh` (GitHub CLI) — required for PR interactions; graceful fallback for base branch if absent
 - `jb` (JetBrains CLI) — optional, only needed for C# InspectCode analysis
@@ -136,7 +126,6 @@ mode, making the single-path guarantee measurable.
 - `trivy` (`brew install trivy`) — optional, only needed for IaC security analysis. First run on a clean machine fetches the policy DB (~10s slower); subsequent runs are fast.
 - `python3` (≥3.11 for PyPI `pyproject.toml` parsing via `tomllib`) — required for the `housekeeper-reviewer` dependency-freshness engine (`bin/housekeeper-freshness`). Stdlib only; no pip packages. Live runs need outbound HTTPS to npm, PyPI, container registries, and the GitHub API.
 - **Background subagent dispatch:** When the housekeeper runs as a dispatched background subagent (the normal mode in `review-gh-pr`), the host machine must pre-authorise the `housekeeper-freshness` command in `hooks/allow-permissions.sh` and `permissions.allow` (pattern: `Bash(housekeeper-freshness:*)`). Without this, the subagent auto-denies the engine call. The same pattern applies to `ruff`, `trivy`, `eslint`, and `jb` — all static-analysis engine binaries require host-side permission for background dispatch.
-- `playwright-cli` skill — optional, enables visual verification of UI reviewer findings
 
 ## Installation
 

@@ -1,6 +1,6 @@
 ---
 name: review-gh-pr
-description: Multi-agent panel review of a GitHub pull request, posted as inline comments
+description: Reviews a GitHub pull request with Anthropic's /code-review plus the static analysers and posts one marked review with a verdict
 argument-hint: "[pr-number-or-url]"
 allowed-tools: Workflow(code-review-suite:review-core)
 ---
@@ -67,13 +67,13 @@ is the resolved boolean. An explicit `false` in the repo-level file wins over a 
 user-level file.
 
 `$ANALYSIS_ONLY = true` runs the **full** review pipeline to completion but renders the report
-to stdout instead of posting to GitHub (see Phase 0.4 and Stage 6). It exists so a
+to stdout instead of posting to GitHub (see Stage 6). It exists so a
 retrospective analysis can run against a `CLOSED`/`MERGED` PR — the report is never submitted,
 so a non-open state is expected and valid.
 
 **Do not short-circuit on PR state under analysis-only.** When `$ANALYSIS_ONLY = true`, a
 `state` of `CLOSED` or `MERGED` in the PR data above MUST NOT halt the pipeline: proceed
-through every stage to the panel verdict exactly as for an open PR. Do not reason that "a merged PR has
+through every stage to the verdict exactly as for an open PR. Do not reason that "a merged PR has
 no actionable target" or that "any verdict would be refused" — under analysis-only the verdict
 is rendered to stdout, not submitted. State-based posting refusal still applies at Stage 6,
 where it belongs.
@@ -83,7 +83,7 @@ where it belongs.
 Determine the current GitHub user, then check for prior reviews. Run these two commands **sequentially** — the second depends on the output of the first:
 
 1. Run `gh api user --jq .login` and capture the output as the current user's login. If this call fails, warn the user that GitHub authentication may be required and stop.
-2. Run `gh pr view "$ARGUMENTS" --json reviews --jq '.reviews[]'` and filter the results to entries where `.author.login` matches the captured login. Extract `{state, submittedAt, commit: .commit.oid, body}` from any matches. **Keep only the suite's own reviews:** an entry whose `body` contains the review marker `<!-- code-review-suite -->` (every review body this suite posts ends with it), or, for reviews posted before the marker existed, whose `body` starts with the suite's verdict headline (matches `^\*\*(APPROVE|REQUEST_CHANGES|COMMENT)\*\*`). Discard every other entry: the same login may have posted it by hand or through another tool (for example a standalone `/code-review --comment` run), and re-reviewing it as this suite's prior pass would "verify fixes" against feedback the suite never wrote. Discard any entries where `.commit` is null or `.commit.oid` is null — these are reviews submitted before any commit existed or on force-pushed branches where the original commit is gone. **Also discard any entry whose `state` is `CHANGES_REQUESTED` and whose `body` matches the canonical Phase 0.4 halt body verbatim, ignoring a trailing marker line** (the `This PR has no narrative description. ...` review composed in Phase 0.4 below). These are intent-halt placeholders — the substantive review never ran, so the next invocation must be a full review, not a re-review of changes that no prior pass actually evaluated. From the remaining entries, sort by `submittedAt` descending and take the first entry. Store its `commit` value as `$LAST_REVIEW_SHA`. Validate that `$LAST_REVIEW_SHA` matches `^[0-9a-f]{40}$` — if it does not, warn and fall back to full review (do not enter self-re-review mode).
+2. Run `gh pr view "$ARGUMENTS" --json reviews --jq '.reviews[]'` and filter the results to entries where `.author.login` matches the captured login. Extract `{state, submittedAt, commit: .commit.oid, body}` from any matches. **Keep only the suite's own reviews:** an entry whose `body` contains the review marker `<!-- code-review-suite -->` (every review body this suite posts ends with it), or, for reviews posted before the marker existed, whose `body` starts with the suite's verdict headline (matches `^\*\*(APPROVE|REQUEST_CHANGES|COMMENT)\*\*`). Discard every other entry: the same login may have posted it by hand or through another tool (for example a standalone `/code-review --comment` run), and re-reviewing it as this suite's prior pass would "verify fixes" against feedback the suite never wrote. Discard any entries where `.commit` is null or `.commit.oid` is null — these are reviews submitted before any commit existed or on force-pushed branches where the original commit is gone. **Also discard any entry whose `state` is `CHANGES_REQUESTED` and whose `body` begins with the sentence `This PR has no narrative description.`** (the halt review earlier versions of this suite posted when a PR had no description). These are intent-halt placeholders — the substantive review never ran, so the next invocation must be a full review, not a re-review of changes that no prior pass actually evaluated. From the remaining entries, sort by `submittedAt` descending and take the first entry. Store its `commit` value as `$LAST_REVIEW_SHA`. Validate that `$LAST_REVIEW_SHA` matches `^[0-9a-f]{40}$` — if it does not, warn and fall back to full review (do not enter self-re-review mode).
 
 If no matching reviews are found, `$LAST_REVIEW_SHA` is unset — this is not a self-re-review; proceed with standard full review.
 
@@ -103,19 +103,6 @@ When re-reviewing a PR you have previously reviewed, the scope is deliberately n
 
 The expected outcome is usually short and affirming: previous comments addressed, no new blockers, approved.
 
-**Phase 0 in self-re-review mode:** Phase 0 still runs (the body must still meet the
-narrative bar). The CI gate also still runs. However, the alignment-reviewer is NOT
-dispatched in self-re-review mode (consistent with the existing rule that the full agent
-team is not dispatched). Body-improvement Suggestions from a previous review must not be
-re-raised; only verify previously-raised alignment issues.
-
-**Lightweight path in self-re-review mode:** if Step 3 routes to the lightweight path
-(small diff, no significant deletions, no security-sensitive areas), the `code-analysis`
-dispatch prompt includes the additional directive: "Skip alignment findings — this is a
-self-re-review pass; intent and scope were evaluated on the prior review." This preserves
-the Step 4.4 alignment carve-out's intent on the lightweight path, where a single agent
-covers all domains including alignment.
-
 **What NOT to do in re-review mode:**
 - Do not re-review the entire diff with fresh eyes looking for new minor issues
 - Do not raise style, naming, or structural suggestions that weren't worth raising first time
@@ -125,7 +112,7 @@ covers all domains including alignment.
 
 ### Choose review approach
 
-**If self-re-review mode:** Do NOT dispatch the full agent team. Review the diff yourself, focused on:
+**If self-re-review mode:** Do NOT run the review pipeline. Review the diff yourself, focused on:
 - Commits since your last review (verify fixes)
 - Any blocker-severity issues in the full diff that were previously overlooked
 
@@ -787,15 +774,12 @@ Present the review report to the user.
 
 **STOP — do not present the report yet. First complete Step 3.6 (Durable full log) below; the "present" instruction above must not execute until Step 3.6 has run (or been skipped because `full_log` is off).**
 
-**Optional Playwright verification:** If the ui-reviewer produced a "Findings Requiring Visual Verification" section AND the `playwright-cli` skill is available, verify those specific findings in the browser. Append verification results to the report.
-
 #### Step 3.6: Durable full log (opt-in, default OFF)
 
 The full unfiltered analytical record is a fine-tuning instrument with a finite useful life.
 Resolve `orchestration.full_log` from two config layers, first match wins: (1) the reviewed
 repo's `.claude/code-review.toml`, then (2) the user-level `~/.claude/code-review.toml`. Read
-each file the same way as `intent.doc_paths`; treat a missing/malformed file as not setting the
-key, and fall through. If neither layer sets the key, the value is `false`. An explicit `false`
+each file as TOML; treat a missing/malformed file as not setting the key, and fall through. If neither layer sets the key, the value is `false`. An explicit `false`
 in the repo-level file wins over a `true` in the user-level file. If the resolved value is
 `false`, skip this entire step — write nothing (no breadcrumb, so the Stop-hook gate stays inert).
 
@@ -832,7 +816,7 @@ the log file is missing.
 
 ---
 
-After the review pipeline completes (whether via lightweight or full path), continue with the additional checks and Stage 3 below.
+After the review pipeline completes, continue with the additional checks and Stage 3 below.
 
 ### Additional checks
 
@@ -916,6 +900,9 @@ If the plan changes materially, present the updated findings table to the user b
 **Under `$ANALYSIS_ONLY = true`, skip this stage entirely.** Do not call `gh api
 .../comments`. The inline comments are rendered to stdout at Stage 6 (see "Analysis-only
 — render, do not post"), not posted here.
+
+**Under `bundle.verdict == 'NONE'`, skip this stage too.** Native did not run, and Stage 6
+asks whether the static-analysis comments post at all.
 
 Iterate `bundle.comments[]` — each entry carries `path` plus either `line`/`side`
 (line-level) or `subjectType: "file"` (file-level). The Workflow already line-filtered
@@ -1018,37 +1005,39 @@ The file attachment provides the link to the existing code - only include the su
 
 ## Stage 6: Submit Review Verdict
 
-The panel's deterministic rubric (`applyRubric` in `review-core.js`) is the sole authority
-for the PR review verdict. The orchestrator
-(this step) executes that verdict — it cannot alter findings, severity, confidence,
-fix text, file/line attribution, or the rubric-produced verdict on its own
-initiative. `$FINAL_VERDICT` equals the rubric's verdict for every review
-path; the orchestrator never auto-emits `COMMENT`.
+`review-core` computes the PR review verdict in code (see `includes/verdict-rubric.md`). The
+orchestrator (this step) executes that verdict — it cannot alter findings, severity, fix
+text, file/line attribution, or the verdict on its own initiative. `$FINAL_VERDICT` equals
+the proposed verdict unless the user overrides it; the orchestrator never auto-emits
+`COMMENT` for an `APPROVE` or `REQUEST_CHANGES` verdict.
 
 The user is sovereign over the final action submitted. At the confirmation prompt
 the user can override the proposed action; the user's `[c]` keypress under the
-`REQUEST_CHANGES` prompt is the only path to a `COMMENT` submission. This is the
-documented caveat to rubric-as-sole-authority.
+`REQUEST_CHANGES` prompt, and the `NONE` choice below, are the only paths to a `COMMENT`
+submission.
 
 The `review-core` Workflow (Step 3.5) returned a sealed bundle
-`{ verdict, bodyText, comments }`. The bundle is the sole input to this step — there
-is no report markdown to parse. The bundle drives the rest of Stage 6:
+`{ verdict, bodyText, comments, native, counts, log }`. The bundle is the sole input to
+this step — there is no report markdown to parse. The bundle drives the rest of Stage 6:
 
 - `$BUNDLE_VERDICT = bundle.verdict` — read the verdict directly from the bundle.
-- **`bundle.verdict == 'NONE'` (lightweight PR path).** `review-core`'s
-  `buildLightweightBundle` returns `verdict: 'NONE'` when Step 3.5 resolved
-  `route` to `lightweight`. In that case: present `bundle.bodyText` to the user
-  and STOP — do NOT run the Class A prompt, do NOT post inline comments, do NOT
-  submit a `gh pr review` verdict. (The trivial/lightweight/full paths producing
-  divergent posted output is a known pre-existing issue, tracked separately — it
-  is out of scope for this migration.)
+- **`bundle.verdict == 'NONE'` (native did not run).** The bundle carries the
+  static-analysis findings only, and `bundle.bodyText` already leads with a `COMMENT`
+  headline naming the reason. Run Class B first, then show `bundle.bodyText` and
+  `bundle.native.reason`, and ask once:
+
+  ```
+  > Native review did not run: <bundle.native.reason>
+  > Post the static-analysis findings as a COMMENT review [p], or stop without posting [n]? [p/N]
+  ```
+
+  The default (Enter) is `n`: stop cleanly with nothing posted. On `p`, post as Class C
+  describes with `$FINAL_VERDICT = COMMENT` and provenance `user chose COMMENT (native did
+  not run)`. Never submit `APPROVE` or `REQUEST_CHANGES` for a `NONE` bundle. Skip Class A.
 - For an `APPROVE` / `REQUEST_CHANGES` verdict, the Class A user-confirmation
   prompt (A.2/A.3) STILL RUNS — the human gate is preserved (design D6). Set
   `$PROPOSED_ACTION = bundle.verdict`; the `[s]` / `[r]` / `[n]` (and `[c]` under a
-  `REQUEST_CHANGES` prompt) override semantics are unchanged. The bundle does NOT
-  carry the rubric row, so `$BUNDLE_RUBRIC_ROW` is unset and the prompt's
-  `Rubric row …` line renders blank — the verdict and its reason still display
-  normally.
+  `REQUEST_CHANGES` prompt) override semantics are unchanged.
 - The bundle's `comments[]` is already the filtered, rendered post-set, and
   `bundle.bodyText` is already the constructed GitHub body. Do NOT re-filter or
   re-render either.
@@ -1087,23 +1076,27 @@ Class A renders one of two confirmation prompts based purely on `$BUNDLE_VERDICT
 
 Render ONE of two confirmation prompts based on the proposed action:
 
-**Prompt template (panel proposed APPROVE):**
+Fill the counts from `bundle.counts`: `<severity counts>` lists each non-zero entry of
+`bundle.counts.severity` (e.g. `2 Important, 5 Suggestion`), `<source counts>` each entry of
+`bundle.counts.source` (e.g. `native 4, ruff 3`), `<B>` is `bundle.counts.blocking` and
+`<N>` is `bundle.counts.files`. With no findings, print `no findings` in place of the
+count line.
+
+**Prompt template (proposed APPROVE):**
 
 ```
-> Panel proposes: APPROVE
->   Rubric row $BUNDLE_RUBRIC_ROW: <rubric reason from the bundle headline>
->   <tier counts> across <N> files
+> Proposes: APPROVE
+>   <severity counts> (<source counts>) across <N> files; <B> blocking
 >
 > Submit as proposed [s], override to REQUEST_CHANGES [r],
 > or cancel without submitting [n]? [s/r/n]
 ```
 
-**Prompt template (panel proposed REQUEST_CHANGES):**
+**Prompt template (proposed REQUEST_CHANGES):**
 
 ```
-> Panel proposes: REQUEST_CHANGES
->   Rubric row $BUNDLE_RUBRIC_ROW: <rubric reason from the bundle headline>
->   <tier counts> across <N> files
+> Proposes: REQUEST_CHANGES
+>   <severity counts> (<source counts>) across <N> files; <B> blocking
 >
 > Submit as proposed [s], override to APPROVE [a], override to COMMENT [c],
 > or cancel without submitting [n]? [s/a/c/n]
@@ -1122,8 +1115,9 @@ Render ONE of two confirmation prompts based on the proposed action:
 ```
 
 Where `<provenance>` is one of:
-- `panel-proposed` — submitted exactly as the panel proposed
-- `user override of panel-proposed <ORIGINAL>` — user changed the verdict
+- `as proposed` — submitted exactly as proposed
+- `user override of proposed <ORIGINAL>` — user changed the verdict
+- `user chose COMMENT (native did not run)` — the `NONE` choice above
 
 ### Class B — PR-thread state handling
 

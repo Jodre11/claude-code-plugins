@@ -843,3 +843,25 @@ test_sync_intent_halt_action_gated() {
         fail "intent halt action resolved before any submission" "resolve=$resolve submit=$submit"
     fi
 }
+
+# Stage 6 in the thin flow: NONE means native did not run, the Class A prompt reads counts
+# from bundle.counts, and no panel-era wording survives.
+test_skill_md_stage6_thin_contract() {
+    local skill="$REPO_ROOT/plugins/code-review-suite/skills/review-gh-pr/SKILL.md" step6 lit
+    step6=$(sed -n '/^## Stage 6: Submit Review Verdict/,/^## Stage 7/p' "$skill")
+    for lit in 'bundle.native.reason' 'bundle.counts.severity' 'bundle.counts.source' \
+        'Never submit `APPROVE` or `REQUEST_CHANGES` for a `NONE` bundle' '`as proposed`'; do
+        if grep -qF -- "$lit" <<<"$step6"; then
+            pass "Stage 6 thin contract: contains '$lit'"
+        else
+            fail "Stage 6 thin contract: contains '$lit'" "literal not found in Stage 6 of $skill"
+        fi
+    done
+    for lit in 'panel-proposed' 'Rubric row' 'lightweight' 'applyRubric'; do
+        if grep -qF -- "$lit" <<<"$step6"; then
+            fail "Stage 6 thin contract: omits '$lit'" "panel-era wording still in Stage 6"
+        else
+            pass "Stage 6 thin contract: omits '$lit'"
+        fi
+    done
+}

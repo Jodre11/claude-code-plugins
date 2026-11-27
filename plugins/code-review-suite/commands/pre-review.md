@@ -1,6 +1,6 @@
 ---
 name: pre-review
-description: Multi-agent panel review of local changes before creating a PR
+description: Reviews local changes with Anthropic's /code-review plus the static analysers before you open a PR
 argument-hint: "[base-branch | EMPTY_TREE] [Path scope: <pathspec>]"
 allowed-tools: Workflow(code-review-suite:review-core)
 ---
@@ -661,15 +661,12 @@ Present the review report to the user.
 
 **STOP — do not present the report yet. First complete Step 3.6 (Durable full log) below; the "present" instruction above must not execute until Step 3.6 has run (or been skipped because `full_log` is off).**
 
-**Optional Playwright verification:** If the ui-reviewer produced a "Findings Requiring Visual Verification" section AND the `playwright-cli` skill is available, verify those specific findings in the browser. Append verification results to the report.
-
 #### Step 3.6: Durable full log (opt-in, default OFF)
 
 The full unfiltered analytical record is a fine-tuning instrument with a finite useful life.
 Resolve `orchestration.full_log` from two config layers, first match wins: (1) the reviewed
 repo's `.claude/code-review.toml`, then (2) the user-level `~/.claude/code-review.toml`. Read
-each file the same way as `intent.doc_paths`; treat a missing/malformed file as not setting the
-key, and fall through. If neither layer sets the key, the value is `false`. An explicit `false`
+each file as TOML; treat a missing/malformed file as not setting the key, and fall through. If neither layer sets the key, the value is `false`. An explicit `false`
 in the repo-level file wins over a `true` in the user-level file. If the resolved value is
 `false`, skip this entire step — write nothing (no breadcrumb, so the Stop-hook gate stays inert).
 
@@ -705,7 +702,10 @@ makes it reliable; the `durable-log-gate` Stop hook blocks turn-end if the bread
 the log file is missing.
 
 **Presenting the bundle.** The `review-core` Workflow (Step 3.5) returned the sealed
-bundle `{ verdict, bodyText, comments }`. In local (pre-review) mode the bundle's
-`verdict` is `NONE` and `comments` is empty by construction. Print `bundle.bodyText`
-to stdout as the presented report and post NOTHING — local mode never posts. Do NOT
-re-derive or re-render the bundle; the core already constructed `bodyText`.
+bundle `{ verdict, bodyText, comments, native, counts, log }`. In local (pre-review) mode
+the bundle's `verdict` is `NONE` and `comments` is empty by construction. Print
+`bundle.bodyText` to stdout as the presented report and post NOTHING — local mode never
+posts. When `bundle.native.ran` is `false`, the report already leads with a note that native
+did not run and names `bundle.native.reason`; the findings shown are static-analysis
+findings only. Do NOT re-derive or re-render the bundle; the core already constructed
+`bodyText`.

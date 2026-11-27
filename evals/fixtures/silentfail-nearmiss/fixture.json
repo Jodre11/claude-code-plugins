@@ -1,0 +1,21 @@
+{
+  "id": "silentfail-nearmiss",
+  "set": "sanity",
+  "source": "corpus",
+  "files_from": "tests/fixtures/silent-failure/nearmiss",
+  "base": [
+    "README.md"
+  ],
+  "head": [
+    "lib/http_client.py"
+  ],
+  "readme": "# Project\n\nHttp client scaffold.\n",
+  "base_title": "base: http client scaffold",
+  "commit_title": "feat: add fetch_user_profile helper",
+  "intent": "This change will add an HTTP client helper for fetching user profiles from the profile endpoint. Nothing else in the repository changes.",
+  "issues": [],
+  "near_miss": {
+    "file": "lib/http_client.py",
+    "pattern": "the exception handling in fetch_user_profile (it logs the exception before returning None)"
+  }
+}

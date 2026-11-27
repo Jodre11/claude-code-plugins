@@ -1,0 +1,67 @@
+{
+  "id": "qodo-prefect-8",
+  "set": "decision",
+  "source": "qodo",
+  "upstream": {
+    "repo": "prefect",
+    "pr": 8,
+    "url": "https://github.com/agentic-review-benchmarks/prefect/pull/8",
+    "licence": "Apache-2.0",
+    "base_sha": "920990f9b0f7651fd8d892840d11b36f173675f9",
+    "head_sha": "6926a9f6d04b5d229db37b714b0a2e08e8e561b6"
+  },
+  "commit_title": "Add V2 UI packaging and Docker integration",
+  "intent": "This change: Add V2 UI packaging and Docker integration. The original description follows as written.\n\nRelated to #15512\n\nThis PR adds support for building and serving the experimental V2 React UI alongside the existing V1 Vue UI in Docker images and Python packages.\n\nThe V2 UI can be enabled by setting `PREFECT_SERVER_UI_V2_ENABLED=true` when starting the server. V1 remains the default.\n\nChanges:\n- Add base path placeholder support to V2 vite.config.ts for dynamic serving\n- Add new `PREFECT_SERVER_UI_V2_ENABLED` setting (default: false) to switch between UIs\n- Add V2 UI path constants (`__ui_v2_static_path__`, `__ui_v2_static_subpath__`)\n- Update Dockerfile with separate V2 UI builder stage using Node 22\n- Update pyproject.toml to include `ui-v2` as a build artifact\n- Update `create_ui_app()` to serve the appropriate UI based on setting\n- Update GitHub Actions workflow to build V2 UI\n\n\ud83e\udd16 Generated with [Claude Code](https://claude.com/claude-code)",
+  "removed": [],
+  "skipped_binary": [],
+  "diff": {
+    "files": 7,
+    "lines": 80
+  },
+  "issues": [
+    {
+      "key": "i1",
+      "title": "Direct logging.getLogger() call used",
+      "description": "The rule requires loggers to be instantiated using the pattern `logger: \"logging.Logger\" = get_logger(\"module_name\")` instead of direct `logging.getLogger()` calls",
+      "file": "src/prefect/server/api/server.py",
+      "lines": [
+        529,
+        532
+      ],
+      "class": "rule"
+    },
+    {
+      "key": "i2",
+      "title": "Wrong static subpath used for V2 UI",
+      "description": "When v2_enabled is True, the code incorrectly assigns static_subpath to prefect.__ui_static_subpath__ (V1 path) instead of prefect.__ui_v2_static_subpath__ (V2 path). This causes the V2 UI files to be copied to the wrong temporary directory (ui_build instead of ui_v2_build), resulting in incorrect file serving and potential conflicts with V1 UI files. The bug occurs because the variable assignment on line 464 doesn't follow the conditional logic properly.",
+      "file": "src/prefect/server/api/server.py",
+      "lines": [
+        462,
+        469
+      ],
+      "class": "bug"
+    },
+    {
+      "key": "i3",
+      "title": "Path mismatch for V2 UI static files",
+      "description": "The V2 UI static path is defined as 'server/ui_v2' with an underscore, but the Docker build process copies files to 'server/ui-v2' with a hyphen (as seen in Dockerfile line 108). This path mismatch will cause the existence check on line 524-525 to fail, preventing the V2 UI from being served even when enabled. The application will either fail to start or fall back silently without serving any UI.",
+      "file": "src/prefect/__init__.py",
+      "lines": [
+        67,
+        72
+      ],
+      "class": "bug"
+    },
+    {
+      "key": "i4",
+      "title": "Experimental V2 UI enabled by default",
+      "description": "The default value for v2_enabled is set to True, making the experimental V2 UI the default instead of the stable V1 UI. This is problematic because the PR description indicates V2 is experimental and should be opt-in. Users who upgrade will unexpectedly get the experimental UI by default, potentially encountering bugs, incomplete features, or breaking changes. The setting should default to False to maintain backward compatibility and allow users to explicitly opt into the experimental V2 UI.",
+      "file": "src/prefect/settings/models/server/ui.py",
+      "lines": [
+        22,
+        25
+      ],
+      "class": "bug"
+    }
+  ]
+}

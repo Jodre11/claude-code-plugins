@@ -1,0 +1,67 @@
+{
+  "id": "qodo-prefect-1",
+  "set": "decision",
+  "source": "qodo",
+  "upstream": {
+    "repo": "prefect",
+    "pr": 1,
+    "url": "https://github.com/agentic-review-benchmarks/prefect/pull/1",
+    "licence": "Apache-2.0",
+    "base_sha": "0ee35533f8f48c58f1b9d52827548bcedae5c880",
+    "head_sha": "37e272dd3bc5e6a79acc597754871cde96e42474"
+  },
+  "commit_title": "Add documentation for prefect sdk generate CLI",
+  "removed": [],
+  "skipped_binary": [],
+  "diff": {
+    "files": 4,
+    "lines": 278
+  },
+  "issues": [
+    {
+      "key": "i1",
+      "title": "Logger uses direct logging.getLogger initialization",
+      "description": "The rule requires logger instances to be created using the pattern `logger: \"logging.Logger\" = get_logger(\"module_name\")` from prefect.logging, but the code uses the direct `logging.getLogger(__name__)` pattern instead.",
+      "file": "src/prefect/_sdk/fetcher.py",
+      "lines": [
+        19,
+        20
+      ],
+      "class": "rule"
+    },
+    {
+      "key": "i2",
+      "title": "Incorrect deployment filtering breaks full-name matching",
+      "description": "The deployment filtering logic checks `dep.name not in deployment_names` instead of checking `full_name not in deployment_names`. This causes the filter to incorrectly evaluate when users specify deployment names in 'flow-name/deployment-name' format. When a user provides a full deployment name like 'my-flow/production', the code checks if 'production' (the short name) is in the list containing 'my-flow/production', which fails, causing the deployment to enter the fallback matching logic unnecessarily. This breaks the fast-path check and could lead to incorrect filtering behavior where deployments are included or excluded inappropriately.",
+      "file": "src/prefect/_sdk/fetcher.py",
+      "lines": [
+        396,
+        397
+      ],
+      "class": "bug"
+    },
+    {
+      "key": "i3",
+      "title": "Missing type validation for work pool job variables schema",
+      "description": "The code removes the `isinstance(variables, dict)` type check before assigning `base_job_template[\"variables\"]` to `job_vars_schema`. The `job_vars_schema` variable is typed as `dict[str, Any]` and is expected to be a dictionary throughout the SDK generation process. If `base_job_template[\"variables\"]` contains a non-dict value (like a list, string, or other type due to malformed work pool configuration), this will cause type inconsistencies that could lead to runtime errors in downstream code that expects a dict, such as the template renderer or SDK generator that processes the schema.",
+      "file": "src/prefect/_sdk/fetcher.py",
+      "lines": [
+        180,
+        182
+      ],
+      "class": "bug"
+    },
+    {
+      "key": "i4",
+      "title": "Removed strict zip validation enables silent data corruption",
+      "description": "The code removes `strict=True` from the `zip(pool_names_list, results)` call in the work pool parallel fetching logic. The strict parameter ensures that both iterables have the same length and raises a ValueError if they don't match. Without it, if there's a mismatch between the number of work pool names and the results from `asyncio.gather()` (which should never happen in correct code but could occur due to bugs in the async gather logic or unexpected exceptions), the zip will silently truncate to the shorter sequence. This means some work pool results could be dropped or mismatched with the wrong names, leading to incorrect work pool metadata in the generated SDK without any warning or error.",
+      "file": "src/prefect/_sdk/fetcher.py",
+      "lines": [
+        220,
+        220
+      ],
+      "class": "bug"
+    }
+  ],
+  "intent": "This change: Add documentation for prefect sdk generate CLI. The original description follows as written.\n\n## Summary\n\n- Add auto-generated CLI reference for `prefect sdk` command\n- Add comprehensive how-to guide for generating typed SDKs from deployments\n- Update navigation in docs.json for both new pages\n- Regenerate CLI docs to include new --output options\n\n\ud83e\udd16 Generated with [Claude Code](https://claude.ai/code)"
+}

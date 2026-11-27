@@ -1,0 +1,29 @@
+{
+  "id": "test-quality-hit",
+  "set": "sanity",
+  "source": "corpus",
+  "files_from": "tests/fixtures/test-quality/hit",
+  "base": [
+    "README.md"
+  ],
+  "head": [
+    "tests/test_email_validation.py"
+  ],
+  "readme": "# Project\n\nEmail validation scaffold.\n",
+  "base_title": "base: email validation scaffold",
+  "commit_title": "test: add email validation tests",
+  "intent": "This change will add tests for the email validation service to verify rejection of invalid addresses. Nothing else in the repository changes.",
+  "issues": [
+    {
+      "key": "i1",
+      "title": "Test asserts on its own mock",
+      "description": "test_rejects_invalid_email mocks validate() and then asserts the return value it configured on the mock, so the test proves nothing about validation.",
+      "file": "tests/test_email_validation.py",
+      "lines": [
+        10,
+        16
+      ],
+      "class": "quality"
+    }
+  ]
+}

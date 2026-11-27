@@ -1,0 +1,22 @@
+{
+  "id": "reuse-nearmiss",
+  "set": "sanity",
+  "source": "corpus",
+  "files_from": "tests/fixtures/reuse/nearmiss",
+  "base": [
+    "README.md",
+    "utils/strings.py"
+  ],
+  "head": [
+    "lib/reports.py"
+  ],
+  "readme": "# Project\n\nString utils and project scaffold.\n",
+  "base_title": "base: string utils and project scaffold",
+  "commit_title": "feat: add report filename generator",
+  "intent": "This change will add a helper that generates a filesystem-safe filename for a report. Nothing else in the repository changes.",
+  "issues": [],
+  "near_miss": {
+    "file": "lib/reports.py",
+    "pattern": "the one-line slug logic in generate_report_filename duplicating slugify from utils/strings.py"
+  }
+}

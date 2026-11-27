@@ -1032,11 +1032,8 @@ is in self-re-review mode (a validated `$LAST_REVIEW_SHA` is set — see
 `skills/review-gh-pr/SKILL.md`), `false` otherwise.
 
 Resolve the `review-core` args object from the values Phases 0–3 already computed,
-then call the Workflow once.
-
-Resolve `$PLUGIN_ROOT`: take the "Base directory for this skill" path that Claude Code
-injected into this conversation (shown before the skill body) and strip everything after
-`code-review-suite/<sha>/`.
+then call the Workflow once. The panel's concern brief is built into review-core; do not
+read or pass it.
 
 Invoke the core by its registered name, never by `scriptPath`: Claude Code refuses a
 `scriptPath` outside the working directory unless a read of that file is already allowed,
@@ -1071,9 +1068,6 @@ review-core also dispatches `anthropic-reviewer`, which runs Anthropic's officia
 plugin pipeline as one more specialist; announce `> Hybrid arm on: adding anthropic (plugin
 pipeline)` once. The lightweight route ignores the flag.
 
-**Read the concern brief.** Set `$PANEL_BRIEF` to the verbatim contents of
-`$PLUGIN_ROOT/includes/panel-concern-brief.md`.
-
 ```
 Workflow({ name: "code-review-suite:review-core", args: {
     agentPrompt: $AGENT_PROMPT,
@@ -1087,7 +1081,7 @@ Workflow({ name: "code-review-suite:review-core", args: {
     base: $BASE, headSha: $HEAD_SHA, emptyTreeMode: $EMPTY_TREE_MODE,
     pathScope: $PATH_SCOPE, tempDir: $RESOLVED_TEMP_DIR,
     intentLedger: $INTENT_LEDGER, repoDir: $REPO_DIR,
-    panelSize: $PANEL_SIZE, panelBrief: $PANEL_BRIEF,
+    panelSize: $PANEL_SIZE,
     changedLinesBlock: $CHANGED_LINES_BLOCK,
     anthropicSpecialist: $ANTHROPIC_SPECIALIST
 } })

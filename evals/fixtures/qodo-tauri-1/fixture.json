@@ -1,0 +1,108 @@
+{
+  "id": "qodo-tauri-1",
+  "set": "decision",
+  "source": "qodo",
+  "upstream": {
+    "repo": "tauri",
+    "pr": 1,
+    "url": "https://github.com/agentic-review-benchmarks/tauri/pull/1",
+    "licence": "Apache-2.0",
+    "base_sha": "5d202503b0830d69bdc55f689ce1ddf6914a54c7",
+    "head_sha": "9e67cf3e6976ed16f7908ac29deaebd34f5bedc1"
+  },
+  "commit_title": "feat(android): add auto_increment_version_code option for Android builds",
+  "removed": [],
+  "skipped_binary": [],
+  "diff": {
+    "files": 9,
+    "lines": 170
+  },
+  "issues": [
+    {
+      "key": "i1",
+      "title": "Android function missing target_os guard",
+      "description": "The rule requires platform-specific APIs to use #[cfg(target_os = \"...\")] or similar conditional compilation attributes. The generate_tauri_properties function is Android-specific but lacks proper conditional compilation guards, causing it to be compiled on all platforms where it may fail.",
+      "file": "crates/tauri-cli/src/mobile/android/mod.rs",
+      "lines": [
+        625,
+        629
+      ],
+      "class": "rule"
+    },
+    {
+      "key": "i2",
+      "title": "Auto-increment version code incorrectly applied in dev mode",
+      "description": "The auto-increment version code feature is now active during development builds, which violates the design intention stated in the config schema documentation. The condition `if tauri_config.bundle.android.auto_increment_version_code && !dev` has been changed to remove the `&& !dev` check (line 635). This means dev builds will now increment and persist the version code to tauri.properties, causing version code drift during development and potentially exhausting the version code space prematurely. The feature should only increment during production builds to avoid polluting the version history with development iterations.",
+      "file": "crates/tauri-cli/src/mobile/android/mod.rs",
+      "lines": [
+        635,
+        646
+      ],
+      "class": "bug"
+    },
+    {
+      "key": "i3",
+      "title": "Version code validation occurs before dev mode clamping causing build failures",
+      "description": "The order of operations for version code validation and dev mode clamping has been reversed, causing validation to fail for valid semver versions in development mode. Previously, the code clamped the version_code in dev mode BEFORE validation (line 652-654 originally), but now validation happens first (lines 652-661) and clamping occurs after (lines 663-665). This means that if a semver version produces a version_code greater than 2100000000, the build will fail with an error even in dev mode where it should be clamped to a valid range. For example, a version like \"3.0.0\" produces version_code 3000000000, which will now throw an error in dev builds instead of being safely clamped.",
+      "file": "crates/tauri-cli/src/mobile/android/mod.rs",
+      "lines": [
+        649,
+        667
+      ],
+      "class": "bug"
+    },
+    {
+      "key": "i4",
+      "title": "File comparison logic always evaluates to not-equal due to operand order",
+      "description": "The file content comparison has a subtle logical error where the operands are reversed in the inequality check at line 677. The code reads the existing file content into variable `o` and checks `app_tauri_properties_content != o` instead of `o != app_tauri_properties_content`. While mathematically equivalent for inequality, this changes the semantic meaning in Rust's comparison evaluation and may cause unnecessary file writes. More critically, this breaks the optimization that prevents redundant writes when content hasn't changed, potentially causing unnecessary build triggers and file system churn on every build even when the properties haven't actually changed.",
+      "file": "crates/tauri-cli/src/mobile/android/mod.rs",
+      "lines": [
+        676,
+        682
+      ],
+      "class": "bug"
+    },
+    {
+      "key": "i5",
+      "title": "Auto-increment version code lacks maximum value validation",
+      "description": "The auto-increment feature increments the version code using saturating_add(1) without validating against Android's maximum version code limit of 2,100,000,000. When auto-increment is enabled and the version code approaches or exceeds this limit through repeated builds, it will produce invalid version codes that violate Android platform constraints. This causes silent corruption of the version code until it eventually triggers build failures. The semver-derived path has proper validation (lines 652-661), but the auto-increment path bypasses all validation checks.",
+      "file": null,
+      "lines": null,
+      "class": "bug"
+    },
+    {
+      "key": "i6",
+      "title": "Public function added without documentation",
+      "description": "A new public API (`pub fn generate_tauri_properties`) was introduced without any `///` documentation comments explaining purpose/params/behavior, violating the requirement that public APIs must be documented.",
+      "file": "crates/tauri-cli/src/mobile/android/mod.rs",
+      "lines": [
+        624,
+        628
+      ],
+      "class": "rule"
+    },
+    {
+      "key": "i7",
+      "title": "Use of unwrap() on lock/as_ref in fallible path",
+      "description": "The added code uses `.unwrap()` twice (`tauri_config.lock().unwrap().as_ref().unwrap()`), which can panic and violates the rule to avoid unwrap/expect for fallible operations in favor of returning/propagating a `Result`.",
+      "file": "crates/tauri-cli/src/mobile/android/build.rs",
+      "lines": [
+        182,
+        187
+      ],
+      "class": "rule"
+    },
+    {
+      "key": "i8",
+      "title": "Use of unwrap() on lock/as_ref in fallible path",
+      "description": "The added code uses `.unwrap()` twice (`tauri_config.lock().unwrap().as_ref().unwrap()`), which can panic and violates the rule to avoid unwrap/expect for fallible operations in favor of returning/propagating a `Result`.",
+      "file": "crates/tauri-cli/src/mobile/android/dev.rs",
+      "lines": [
+        273,
+        273
+      ],
+      "class": "rule"
+    }
+  ],
+  "intent": "feat(android): add auto_increment_version_code option for Android builds. The original pull request gave no other description beyond \"closes #14135\"."
+}

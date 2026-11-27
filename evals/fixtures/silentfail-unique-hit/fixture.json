@@ -1,0 +1,29 @@
+{
+  "id": "silentfail-unique-hit",
+  "set": "sanity",
+  "source": "corpus",
+  "files_from": "tests/fixtures/silent-failure/unique-hit",
+  "base": [
+    "README.md"
+  ],
+  "head": [
+    "lib/dispatch_client.py"
+  ],
+  "readme": "# Project\n\nRate-limit resolution scaffold.\n",
+  "base_title": "base: rate-limit resolution scaffold",
+  "commit_title": "feat: add per-tenant rate-limit resolver",
+  "intent": "This change will add a per-tenant rate-limit resolver that returns the tenant-specific limit from the config API. Nothing else in the repository changes.",
+  "issues": [
+    {
+      "key": "i1",
+      "title": "Default rate limit silently impersonates a real tenant limit",
+      "description": "resolve_tenant_rate_limit falls back to DEFAULT_RATE_LIMIT (100) when the config API omits rate_limit; 100 is also a legitimate tenant limit, so a missing value is served as if it were real, with nothing logged.",
+      "file": "lib/dispatch_client.py",
+      "lines": [
+        17,
+        23
+      ],
+      "class": "bug"
+    }
+  ]
+}

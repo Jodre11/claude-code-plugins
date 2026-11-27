@@ -1,0 +1,22 @@
+{
+  "id": "api-contract-nearmiss",
+  "set": "sanity",
+  "source": "corpus",
+  "files_from": "tests/fixtures/api-contract/nearmiss",
+  "base": [
+    "README.md",
+    "requirements.txt"
+  ],
+  "head": [
+    "lib/config_parser.py"
+  ],
+  "readme": "# Project\n\nConfig parser scaffold.\n",
+  "base_title": "base: config parser scaffold",
+  "commit_title": "feat: add load_config helper",
+  "intent": "This change will add a config loader that parses JSON configuration from a file. Nothing else in the repository changes.",
+  "issues": [],
+  "near_miss": {
+    "file": "lib/config_parser.py",
+    "pattern": "the json.loads call in load_config as having a wrong signature, or its docstring as inaccurate"
+  }
+}

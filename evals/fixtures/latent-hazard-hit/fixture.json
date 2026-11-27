@@ -1,0 +1,30 @@
+{
+  "id": "latent-hazard-hit",
+  "set": "sanity",
+  "source": "corpus",
+  "files_from": "tests/fixtures/latent-hazard/hit",
+  "base": [
+    "README.md",
+    "src/margin_filter.py"
+  ],
+  "head": [
+    "src/margin_reader.py"
+  ],
+  "readme": "# Project\n\nMargin reader scaffold.\n",
+  "base_title": "base: margin reader scaffold",
+  "commit_title": "feat: add optional sub-department column read",
+  "intent": "This change will read the A&L sub-department from the margin report row. Nothing else in the repository changes.",
+  "issues": [
+    {
+      "key": "i1",
+      "title": "A missing column silently becomes a legitimate value",
+      "description": "read_subdepartment returns \"\" when the ZB61 column is missing, which downstream code reads as the legitimate \"000 = None\" sub-department, so column drift corrupts data without an error.",
+      "file": "src/margin_reader.py",
+      "lines": [
+        5,
+        11
+      ],
+      "class": "bug"
+    }
+  ]
+}

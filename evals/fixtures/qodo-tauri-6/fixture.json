@@ -1,0 +1,64 @@
+{
+  "id": "qodo-tauri-6",
+  "set": "decision",
+  "source": "qodo",
+  "upstream": {
+    "repo": "tauri",
+    "pr": 6,
+    "url": "https://github.com/agentic-review-benchmarks/tauri/pull/6",
+    "licence": "Apache-2.0",
+    "base_sha": "7415e5a28e1b3c32db7404ed11d68a557f8c7296",
+    "head_sha": "5a010d04b5d0db1fc9815d91afa469cf686647b2"
+  },
+  "commit_title": "feat(core): back button event on Android, closes #8142",
+  "intent": "This change: feat(core): back button event on Android, closes #8142. The original description follows as written.\n\nI've used https://github.com/ionic-team/capacitor-plugins/blob/main/app/android/src/main/java/com/capacitorjs/plugins/app/AppPlugin.java as a reference here, checking if there's a back button event handler with a default of webview's goBack implementation",
+  "removed": [],
+  "skipped_binary": [],
+  "diff": {
+    "files": 13,
+    "lines": 186
+  },
+  "issues": [
+    {
+      "key": "i1",
+      "title": "Needless borrow and dereference pattern",
+      "description": "The code creates an unnecessary reference and then immediately dereferences it, which clippy detects as redundant code that should be simplified",
+      "file": "crates/tauri/src/app/plugin.rs",
+      "lines": [
+        139,
+        140
+      ],
+      "class": "rule"
+    },
+    {
+      "key": "i2",
+      "title": "Exit command resolves after activity termination",
+      "description": "The exit command calls `activity.finish()` before `invoke.resolve()`. This creates a race condition where the activity lifecycle may terminate before the JavaScript callback receives the resolution response. This can lead to lost responses, potential crashes in the JavaScript layer when expecting a resolution that never arrives, and unreliable exit behavior. The resolution should occur before finishing the activity to ensure the response is sent back to the frontend before the Android activity is destroyed.",
+      "file": "crates/tauri/mobile/android/src/main/java/app/tauri/AppPlugin.kt",
+      "lines": [
+        49,
+        52
+      ],
+      "class": "bug"
+    },
+    {
+      "key": "i3",
+      "title": "Back navigation handled by both framework and plugin",
+      "description": "Setting `handleBackNavigation` to `true` in TauriActivity causes the Wry framework to handle back navigation, which conflicts with the AppPlugin's custom OnBackPressedCallback implementation. This creates competing back button handlers where both the framework's default behavior and the plugin's custom logic attempt to process back button events. This can result in double back navigation, skipped history entries, or inconsistent behavior when users press the back button. The value should remain `false` to allow the AppPlugin to be the sole handler of back button events as designed in the PR.",
+      "file": "crates/tauri/mobile/android-codegen/TauriActivity.kt",
+      "lines": [
+        13,
+        15
+      ],
+      "class": "bug"
+    },
+    {
+      "key": "i4",
+      "title": "Exit command not registered in build.rs permissions",
+      "description": "The Android exit command is implemented in AppPlugin.kt but is not registered in the Rust build.rs file under the core:app plugin commands list. Without registration in the PLUGINS constant, the exit command will not be accessible through the Tauri IPC bridge, making the exit functionality completely non-functional. All Tauri commands must be registered in build.rs to be callable from the frontend, as evidenced by the pattern used for register_listener and remove_listener commands which were properly added to the same list.",
+      "file": null,
+      "lines": null,
+      "class": "bug"
+    }
+  ]
+}

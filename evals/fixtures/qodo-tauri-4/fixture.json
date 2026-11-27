@@ -1,0 +1,78 @@
+{
+  "id": "qodo-tauri-4",
+  "set": "decision",
+  "source": "qodo",
+  "upstream": {
+    "repo": "tauri",
+    "pr": 4,
+    "url": "https://github.com/agentic-review-benchmarks/tauri/pull/4",
+    "licence": "Apache-2.0",
+    "base_sha": "15c999bffdd4ddf6bae288d90dc79f8cd2a3412d",
+    "head_sha": "4a5366abf2748da9c1562c19dd118ffc2c78aa75"
+  },
+  "commit_title": "refactor(cli): disable jsonschema resolving external resources",
+  "intent": "This change: refactor(cli): disable jsonschema resolving external resources. The original description follows as written.\n\nWe only ever use it on the bundled schema for `tauri.conf.json` and it doesn't have any external resources that needs to be resolved, this removed the dependency on reqwest\n\nAlso moved this to be a `OnceCell` as it should never change",
+  "removed": [],
+  "skipped_binary": [],
+  "diff": {
+    "files": 4,
+    "lines": 208
+  },
+  "issues": [
+    {
+      "key": "i1",
+      "title": "Line exceeds max_width of 100",
+      "description": "The rule requires all Rust code to pass 'cargo fmt --all -- --check' adhering to rustfmt.toml configuration (max_width=100). Line 153 in config.rs exceeds the 100 character limit.",
+      "file": "crates/tauri-cli/src/helpers/config.rs",
+      "lines": [
+        153,
+        153
+      ],
+      "class": "rule"
+    },
+    {
+      "key": "i2",
+      "title": "Incorrect field path for extracting original bundle identifier",
+      "description": "The code attempts to extract the original identifier from the 'bundle' field instead of the root-level 'identifier' field. Since 'bundle' is an object (not a string), the `.as_str()` call will always fail, causing `original_identifier` to always be None. This breaks the ability to track and report which config file overwrites the bundle identifier, as the `find_bundle_identifier_overwriter()` method relies on comparing against the original identifier value.",
+      "file": "crates/tauri-cli/src/helpers/config.rs",
+      "lines": [
+        175,
+        179
+      ],
+      "class": "bug"
+    },
+    {
+      "key": "i3",
+      "title": "Schema validation never executes due to impossible condition",
+      "description": "The conditional check was changed from OR (`||`) to AND (`&&`) when checking file extensions. A file path cannot have both '.json' AND '.json5' extensions simultaneously, making this condition impossible to satisfy. As a result, JSON schema validation is completely bypassed for all configuration files, allowing invalid configurations to pass through undetected. This could lead to runtime errors or unexpected behavior when the invalid config is later used by the application.",
+      "file": "crates/tauri-cli/src/helpers/config.rs",
+      "lines": [
+        201,
+        203
+      ],
+      "class": "bug"
+    },
+    {
+      "key": "i4",
+      "title": "Config merge operation fails to apply merged values",
+      "description": "The `merge_with` function performs the merge operation into the `value` variable but never applies it back to `config_metadata.inner`. The line that should deserialize the merged value back into the config object (`config_metadata.inner = serde_json::from_value(value)...`) was replaced with just inserting into extensions. This means any runtime config merges requested via this function will be ignored - the environment variable will be set, but the actual in-memory config object used by the application will remain unchanged, causing a mismatch between what the application thinks is configured and what's actually being used.",
+      "file": "crates/tauri-cli/src/helpers/config.rs",
+      "lines": [
+        286,
+        289
+      ],
+      "class": "bug"
+    },
+    {
+      "key": "i5",
+      "title": "Panicking on fallible config schema parsing/validation via expect()",
+      "description": "The new schema validator initialization performs fallible operations (JSON parsing and schema compilation) but uses `.expect(...)`, which will panic on failure instead of returning a `Result` and propagating/handling the error. This violates the rule requiring fallible operations to use `Result`-based error handling rather than panicking.",
+      "file": "crates/tauri-cli/src/helpers/config.rs",
+      "lines": [
+        150,
+        154
+      ],
+      "class": "rule"
+    }
+  ]
+}

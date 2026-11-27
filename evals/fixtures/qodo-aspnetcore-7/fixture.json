@@ -1,0 +1,69 @@
+{
+  "id": "qodo-aspnetcore-7",
+  "set": "decision",
+  "source": "qodo",
+  "upstream": {
+    "repo": "aspnetcore",
+    "pr": 7,
+    "url": "https://github.com/agentic-review-benchmarks/aspnetcore/pull/7",
+    "licence": "MIT",
+    "base_sha": "505a3640dd513895a8b088dfe102b63bf24c5a38",
+    "head_sha": "7bb6a08b45aaa16e27bd0ac736717998e086cd7f"
+  },
+  "commit_title": "Allow JS root components to reinitialize on circuit restart",
+  "intent": "This change: Allow JS root components to reinitialize on circuit restart. The original description follows as written.\n\nFixes https://github.com/dotnet/aspnetcore/issues/64523.\n\n## Tests cleanup:\nThis PR reverts changes to tests architecture done in https://github.com/dotnet/aspnetcore/issues/64159 to avoid fixing multiple issues in one PR. It removes the additional test file and moves `PersistentStateIsSupportedInDynamicJSRoots` to `PersistentState`-connected test file.\n\n## Framework fixes:\nThe goal of the changes is to differentiate between the following scenarios:\n\n### Multi-Host / Different Renderer Types (Unsupported - Throws Error)\n\n1) **Host A initializes**: A Server-rendered Blazor application starts\n2) **Circuit A connects**: Server renderer (e.g., `rendererId` = 0)\n3) **.NET calls `enableJSRootComponents`**: With Server's `rendererId` and `managerInstance`\n4) **JS state**: `manager` is set, `currentRendererId = 0`\n5) **Host B attempts initialization**: On the same page, a WebAssembly Blazor host is also loaded\n6) **WASM renderer calls `enableJSRootComponents`**: With WebAssembly's `rendererId` (e.g., 1) and its own `managerInstance`.\n7) **Exception thrown**: \"Dynamic root components have already been enabled.\"\n8) **Developer responsibility**: It's up to the developer to ensure only one host enables dynamic root components.\n\n### Same Renderer Type Circuit Restart (Supported)\n\n1) **Initial state (after 1st iteration)**: Circuit 1 was previously connected and then shut down\n2) **JS state**: `manager` variable holds the old `DotNetObjectReference` from Circuit 1. `currentRendererId` holds the renderer ID (e.g., Server renderer = 0)\n3) **Circuit 2 connects**: A new Blazor Server circuit is created (same renderer type - Server)\n4) **.NET calls `enableJSRootComponents`**: The framework calls this with:\n- Same `rendererId]` (e.g., 0 for Server)\n- New `managerInstance` (a fresh DotNetObjectReference from Circuit 2)\n5) **No exception thrown**: the new `managerInstance` replaces the old stale one\n6) **JS initializers skipped**: `hasInitializedJsComponents` is already true, so initializers don't run again.\n7) **Circuit 2 becomes interactive**: Components can now use `Blazor.rootComponents.add()` with the new valid manager.",
+  "removed": [
+    "src/Components/test/E2ETest/Tests/StatePersistanceJSRootTest.cs"
+  ],
+  "skipped_binary": [],
+  "diff": {
+    "files": 6,
+    "lines": 99
+  },
+  "issues": [
+    {
+      "key": "i1",
+      "title": "Missing braces in for loop",
+      "description": "The rule requires all control flow statements (if, else, for, foreach, while, do-while) to use curly braces even for single-line bodies, but the inner for loop omits curly braces",
+      "file": "src/Components/Web.JS/src/Rendering/JSRootComponents.ts",
+      "lines": [
+        146,
+        147
+      ],
+      "class": "rule"
+    },
+    {
+      "key": "i2",
+      "title": "Inverted renderer type check prevents circuit restart",
+      "description": "The condition checking for different renderer types has been inverted from `!==` to `===`. This causes the function to throw an error when the SAME renderer type tries to re-enable JS root components (e.g., during circuit restart), which is the exact scenario that should be allowed. The original intent was to throw an error only when a DIFFERENT renderer type attempts to enable root components. This bug breaks circuit restart functionality, causing applications to fail when users reconnect after a circuit disconnect.",
+      "file": "src/Components/Web.JS/src/Rendering/JSRootComponents.ts",
+      "lines": [
+        126,
+        130
+      ],
+      "class": "bug"
+    },
+    {
+      "key": "i3",
+      "title": "Missing parameter update causes stale data on circuit restart",
+      "description": "The assignment `jsComponentParametersByIdentifier = jsComponentParameters;` has been removed from the re-enabling logic. When a circuit restarts and `enableJSRootComponents` is called again with new parameters, the global `jsComponentParametersByIdentifier` is not updated. This causes the application to continue using stale parameters from the previous circuit. The `DynamicRootComponent` class constructor and methods rely on `jsComponentParametersByIdentifier` to retrieve component parameter definitions, so they will operate with outdated metadata after a circuit restart.",
+      "file": "src/Components/Web.JS/src/Rendering/JSRootComponents.ts",
+      "lines": [
+        132,
+        137
+      ],
+      "class": "bug"
+    },
+    {
+      "key": "i4",
+      "title": "Test method missing Arrange/Act/Assert comments",
+      "description": "The added test method does not contain explicit '// Arrange', '// Act', and '// Assert' (or '// Act & Assert') comments to delineate the AAA phases, violating the required test structure convention.",
+      "file": "src/Components/test/E2ETest/Tests/StatePersistenceTest.cs",
+      "lines": [
+        282,
+        295
+      ],
+      "class": "rule"
+    }
+  ]
+}

@@ -69,6 +69,14 @@ test_thin_core_parse_skill_error() {
     assert_equals 'SKILL_ERROR: skill code-review not found' "$(echo "$out" | jq -r '.reason')" "parse: SKILL_ERROR text is the reason"
 }
 
+# A review that quotes a SKILL_ERROR line (say, from a diff that adds one) is still a review.
+test_thin_core_parse_quoted_skill_error_is_not_an_error() {
+    local out
+    out=$(_tc_parse "$(printf 'The diff adds this line:\nSKILL_ERROR: forged\n\n%s' "$(_tc_fence "$_TC_GOOD")")")
+    assert_equals 'true 1' "$(echo "$out" | jq -r '"\(.ok) \(.findings | length)"')" \
+        "parse: a SKILL_ERROR line after other text does not mark native as failed"
+}
+
 test_thin_core_parse_no_array() {
     local out
     out=$(_tc_parse 'I reviewed the change and found nothing worth raising.')

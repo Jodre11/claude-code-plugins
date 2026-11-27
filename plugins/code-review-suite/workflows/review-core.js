@@ -754,8 +754,10 @@ function checkNativeTarget(target, repoDir, headSha) {
 // parse never depends on the `Skill … completed` header, which a wrapper may drop.
 function parseNativeText(text) {
     if (typeof text !== 'string') return { ok: false, reason: 'native returned no result' }
-    const err = text.match(/^SKILL_ERROR:(.*)$/m)
-    if (err) return { ok: false, reason: `SKILL_ERROR: ${err[1].trim()}` }
+    // The wrapper's error reply is the whole message, so only a leading SKILL_ERROR counts: a
+    // review that quotes such a line from the diff must not read as native failing.
+    const err = text.trimStart().match(/^SKILL_ERROR:([^\n]*)/)
+    if (err) return { ok: false, reason: `SKILL_ERROR: ${err[1].trim().slice(0, 200)}` }
     const blocks = [...text.matchAll(/```json[ \t]*\r?\n([\s\S]*?)\r?\n[ \t]*```/g)].map(m => m[1])
     let arr = null
     for (let i = blocks.length - 1; i >= 0 && arr === null; i--) {

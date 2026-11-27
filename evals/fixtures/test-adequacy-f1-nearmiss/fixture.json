@@ -1,0 +1,22 @@
+{
+  "id": "test-adequacy-f1-nearmiss",
+  "set": "sanity",
+  "source": "corpus",
+  "files_from": "tests/fixtures/test-adequacy/f1-nearmiss",
+  "base": [
+    "README.md"
+  ],
+  "head": [
+    "tax_calculator.py",
+    "tests/test_tax_calculator.py"
+  ],
+  "readme": "# Project\n\nTax calculator scaffold.\n",
+  "base_title": "base: tax calculator scaffold",
+  "commit_title": "feat: add TaxCalculator with direct unit tests",
+  "intent": "This change will add a tax calculator module and a unit test that directly asserts its behaviour. Nothing else in the repository changes.",
+  "issues": [],
+  "near_miss": {
+    "file": "tax_calculator.py",
+    "pattern": "TaxCalculator as lacking tests (tests/test_tax_calculator.py tests it directly)"
+  }
+}

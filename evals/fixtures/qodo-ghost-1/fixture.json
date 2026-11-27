@@ -1,0 +1,70 @@
+{
+  "id": "qodo-ghost-1",
+  "set": "decision",
+  "source": "qodo",
+  "upstream": {
+    "repo": "Ghost",
+    "pr": 1,
+    "url": "https://github.com/agentic-review-benchmarks/Ghost/pull/1",
+    "licence": "MIT",
+    "base_sha": "18c03d2522d44f458b717120ceb3caa3521ee751",
+    "head_sha": "d3184872c4837be0457b6311bc9113538d871db1"
+  },
+  "commit_title": "Removed xmlrpc/pingomatic ping service",
+  "removed": [
+    "ghost/core/core/server/services/xmlrpc.js",
+    "ghost/core/test/unit/server/services/xmlrpc.test.js"
+  ],
+  "skipped_binary": [],
+  "diff": {
+    "files": 4,
+    "lines": 422
+  },
+  "issues": [
+    {
+      "key": "i1",
+      "title": "NPM referenced instead of Yarn",
+      "description": "The rule requires all package management commands to use yarn, but the code documentation references npm for dependency installation",
+      "file": "ghost/core/core/boot.js",
+      "lines": [
+        313,
+        313
+      ],
+      "class": "rule"
+    },
+    {
+      "key": "i2",
+      "title": "Slack notifications not functioning - event listeners never registered",
+      "description": "The slack.listen() call was removed from the service initialization in Promise.all, but the slack service module is still imported. This means the Slack service event listeners for 'post.published' and 'slack.test' events are never registered during boot. As a result, posts published on the site will not trigger Slack webhook notifications even when Slack integration is configured correctly. The slack.listen() method registers critical event handlers that connect the Ghost event system to the Slack notification service, and without this call, the integration is completely non-functional.",
+      "file": "ghost/core/core/boot.js",
+      "lines": [
+        351,
+        377
+      ],
+      "class": "bug"
+    },
+    {
+      "key": "i3",
+      "title": "Post scheduling will fail on boot - missing required apiUrl parameter",
+      "description": "The scheduling.init() call is missing the required apiUrl parameter that was previously passed via urlUtils.urlFor('api', {type: 'admin'}, true). The PostScheduler constructor explicitly checks for this parameter and throws an IncorrectUsageError if it's not provided. This will cause Ghost to crash during the boot sequence when attempting to initialize the scheduling service. The apiUrl is critical for the scheduling service as it's used to generate signed admin tokens and callback URLs for scheduled post publishing. Without this parameter, the scheduled publishing feature cannot function.",
+      "file": "ghost/core/core/boot.js",
+      "lines": [
+        368,
+        368
+      ],
+      "class": "bug"
+    },
+    {
+      "key": "i4",
+      "title": "Race condition in email service initialization - dependency order violated",
+      "description": "The emailAddressService.init() was moved from sequential await execution into the parallel Promise.all block alongside emailService.init(). The comment explicitly states 'newsletter service and email service depend on email address service', indicating a required initialization order. The EmailServiceWrapper's init() method imports and uses emailAddressService, expecting it to be fully initialized. By running these initializations in parallel, emailService may attempt to access emailAddressService before it has completed initialization, leading to undefined behavior, null reference errors, or incorrect email configuration. This race condition can cause intermittent failures that are difficult to reproduce and debug.",
+      "file": "ghost/core/core/boot.js",
+      "lines": [
+        349,
+        366
+      ],
+      "class": "bug"
+    }
+  ],
+  "intent": "Pingomatic is a legacy blog ping service that notified external services when posts were published. It is no longer relevant for modern SEO or content distribution.\n\nThe service was disabled by default and added unnecessary complexity to the codebase.\n\nGot some code for us? Awesome \ud83c\udf8a!\n\nPlease take a minute to explain the change you're making:\n- Why are you making it?\n- What does it do?\n- Why is this something Ghost users or developers need?\n\nPlease check your PR against these items:\n\n- [x] I've read and followed the [Contributor Guide](https://github.com/TryGhost/Ghost/blob/main/.github/CONTRIBUTING.md)\n- [x] I've explained my change\n- [x] I've written an automated test to prove my change works\n\nWe appreciate your contribution! \ud83d\ude4f"
+}

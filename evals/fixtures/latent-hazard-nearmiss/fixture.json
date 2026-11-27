@@ -1,0 +1,21 @@
+{
+  "id": "latent-hazard-nearmiss",
+  "set": "sanity",
+  "source": "corpus",
+  "files_from": "tests/fixtures/latent-hazard/nearmiss",
+  "base": [
+    "README.md"
+  ],
+  "head": [
+    "src/margin_reader.py"
+  ],
+  "readme": "# Project\n\nMargin reader scaffold.\n",
+  "base_title": "base: margin reader scaffold",
+  "commit_title": "feat: add required sub-department column read",
+  "intent": "This change will read the A&L sub-department from the margin report row. Nothing else in the repository changes.",
+  "issues": [],
+  "near_miss": {
+    "file": "src/margin_reader.py",
+    "pattern": "the required column read raising KeyError on a missing column"
+  }
+}

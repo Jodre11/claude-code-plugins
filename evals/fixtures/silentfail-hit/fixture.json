@@ -1,0 +1,29 @@
+{
+  "id": "silentfail-hit",
+  "set": "sanity",
+  "source": "corpus",
+  "files_from": "tests/fixtures/silent-failure/hit",
+  "base": [
+    "README.md"
+  ],
+  "head": [
+    "lib/http_client.py"
+  ],
+  "readme": "# Project\n\nHttp client scaffold.\n",
+  "base_title": "base: http client scaffold",
+  "commit_title": "feat: add fetch_user_profile helper",
+  "intent": "This change will add an HTTP client helper for fetching user profiles from the profile endpoint. Nothing else in the repository changes.",
+  "issues": [
+    {
+      "key": "i1",
+      "title": "Exception swallowed without any signal",
+      "description": "fetch_user_profile catches every exception and returns None with no log or re-raise, so a network failure, a timeout or a malformed body is indistinguishable from a missing profile.",
+      "file": "lib/http_client.py",
+      "lines": [
+        27,
+        33
+      ],
+      "class": "bug"
+    }
+  ]
+}

@@ -1,0 +1,30 @@
+{
+  "id": "api-contract-apitruth-hit",
+  "set": "sanity",
+  "source": "corpus",
+  "files_from": "tests/fixtures/api-contract/apitruth-hit",
+  "base": [
+    "README.md",
+    "requirements.txt"
+  ],
+  "head": [
+    "lib/config_parser.py"
+  ],
+  "readme": "# Project\n\nConfig parser scaffold.\n",
+  "base_title": "base: config parser scaffold",
+  "commit_title": "feat: add load_config helper",
+  "intent": "This change will add a config loader that parses JSON configuration from a file. Nothing else in the repository changes.",
+  "issues": [
+    {
+      "key": "i1",
+      "title": "json.loads called with a keyword argument that does not exist",
+      "description": "load_config passes strict_mode=True to json.loads, which has no such parameter, so every call raises TypeError.",
+      "file": "lib/config_parser.py",
+      "lines": [
+        7,
+        13
+      ],
+      "class": "bug"
+    }
+  ]
+}

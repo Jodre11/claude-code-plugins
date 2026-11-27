@@ -1,0 +1,29 @@
+{
+  "id": "test-adequacy-f1-hit",
+  "set": "sanity",
+  "source": "corpus",
+  "files_from": "tests/fixtures/test-adequacy/f1-hit",
+  "base": [
+    "README.md"
+  ],
+  "head": [
+    "src/OrderProcessor.cs"
+  ],
+  "readme": "# Project\n\nOrder processor scaffold.\n",
+  "base_title": "base: order processor scaffold",
+  "commit_title": "feat: add OrderProcessor with loyalty discount logic",
+  "intent": "This change will add an order processor that calculates the total charge including tax and a loyalty discount. Nothing else in the repository changes.",
+  "issues": [
+    {
+      "key": "i1",
+      "title": "OrderProcessor has no tests",
+      "description": "The new public OrderProcessor carries the loyalty-discount logic but has no direct test, so a change to that logic passes the whole suite.",
+      "file": "src/OrderProcessor.cs",
+      "lines": [
+        11,
+        17
+      ],
+      "class": "bug"
+    }
+  ]
+}

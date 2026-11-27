@@ -1,0 +1,86 @@
+{
+  "id": "qodo-prefect-6",
+  "set": "decision",
+  "source": "qodo",
+  "upstream": {
+    "repo": "prefect",
+    "pr": 6,
+    "url": "https://github.com/agentic-review-benchmarks/prefect/pull/6",
+    "licence": "Apache-2.0",
+    "base_sha": "5b84502aae918e7d1a5c3075233e8357de77a209",
+    "head_sha": "1ff84aa2efd0669b5d35d4f6c0ac47bf6f7991f4"
+  },
+  "commit_title": "Add `arun_deployment` and replace `@sync_compatible` with `@async_dispatch`",
+  "intent": "This change: Add `arun_deployment` and replace `@sync_compatible` with `@async_dispatch`. The original description follows as written.\n\nRelated to https://github.com/PrefectHQ/prefect/issues/15008\n\nThis PR is needed for the Custom Deployment SDK feature (see `plans/2026-01-06-custom-deployment-sdks.md`).\n\n## Summary\n\n- Add `arun_deployment` as an explicit async function for running deployments\n- Replace `@sync_compatible` with `@async_dispatch` on `run_deployment`\n- `run_deployment` now automatically dispatches to `arun_deployment` in async context\n- Sync context uses `SyncPrefectClient` directly (no event loop magic)\n- Export `arun_deployment` from `prefect.deployments`\n\n## Changes\n\nThe `run_deployment` function now uses the `@async_dispatch` pattern instead of `@sync_compatible`:\n\n```python\n# Async context - dispatches to arun_deployment\nasync def my_flow():\n    flow_run = await run_deployment(\"my-flow/my-deployment\")\n\n# Sync context - runs synchronously with SyncPrefectClient\ndef my_sync_code():\n    flow_run = run_deployment(\"my-flow/my-deployment\")\n\n# Explicit async - can also call arun_deployment directly\nasync def explicit_async():\n    flow_run = await arun_deployment(\"my-flow/my-deployment\")\n```\n\n## Backward Compatibility\n\n- The `run_deployment` signature is maintained\n- The `run_deployment.aio` attribute is preserved, pointing to `arun_deployment`\n- All existing tests continue to pass\n\n\ud83e\udd16 Generated with [Claude Code](https://claude.ai/code)",
+  "removed": [],
+  "skipped_binary": [],
+  "diff": {
+    "files": 3,
+    "lines": 375
+  },
+  "issues": [
+    {
+      "key": "i1",
+      "title": "Missing sync wrapper for async function",
+      "description": "The public API function run_deployment is now just an alias to the async-only arun_deployment function, lacking a proper sync compatibility wrapper. This forces users to always use asyncio.run() or similar async context managers in synchronous code.",
+      "file": "src/prefect/deployments/flow_runs.py",
+      "lines": [
+        240,
+        241
+      ],
+      "class": "rule"
+    },
+    {
+      "key": "i2",
+      "title": "Missing await on async function call in task input collection",
+      "description": "The `collect_task_run_inputs` function is an async function that must be awaited, but in line 149 it's being called without `await` in a dictionary comprehension. This will result in the `task_inputs` dictionary containing coroutine objects instead of the actual collected task run input sets. When this dictionary is passed to `client.create_task_run()` on line 191, it will cause a type error since the API expects properly resolved input sets, not coroutine objects. This breaks the subflow linking functionality when `arun_deployment` is called from within a parent flow or task.",
+      "file": "src/prefect/deployments/flow_runs.py",
+      "lines": [
+        148,
+        150
+      ],
+      "class": "bug"
+    },
+    {
+      "key": "i3",
+      "title": "Wrong variable used for deployment ID in flow run creation",
+      "description": "On line 212, the function passes `deployment_id` to `create_flow_run_from_deployment()`, but this variable can be `None` when the deployment is looked up by name (line 138). In that case, only the `deployment` object has the actual ID via `deployment.id`. The API method requires a valid UUID, so passing `None` will cause an API error. The correct usage is `deployment.id` (as shown in the original PR), which is guaranteed to have a value after the deployment lookup succeeds.",
+      "file": "src/prefect/deployments/flow_runs.py",
+      "lines": [
+        211,
+        222
+      ],
+      "class": "bug"
+    },
+    {
+      "key": "i4",
+      "title": "Poll interval delay happens before first status check in timeout loop",
+      "description": "The polling loop on lines 229-235 was changed to sleep *before* checking the flow run status, rather than after. This means when `timeout` is very short (e.g., just above 0), the function will sleep for `poll_interval` seconds first, potentially causing the timeout to expire before even the first status check occurs. This wastes valuable timeout time and changes the behavior - the original code would check status immediately, then sleep between subsequent checks. For quick-running flows, this could mean missing their completion state entirely due to the initial unnecessary delay.",
+      "file": "src/prefect/deployments/flow_runs.py",
+      "lines": [
+        229,
+        235
+      ],
+      "class": "bug"
+    },
+    {
+      "key": "i5",
+      "title": "Missing required `from __future__ import annotations` import",
+      "description": "The modified file src/prefect/deployments/flow_runs.py contains type annotations but lacks the required `from __future__ import annotations` import statement. According to AGENTS.md Rule #1, every Python file in src/ with type annotations must include this import as the first import statement to enable forward reference resolution and improve type checking performance. This is an explicit compliance rule violation.",
+      "file": null,
+      "lines": null,
+      "class": "bug"
+    },
+    {
+      "key": "i6",
+      "title": "Unused import added (dynamic_key_for_task_run)",
+      "description": "The PR adds an import for `dynamic_key_for_task_run` but no usage of this symbol is present in the diff. This violates the rule requiring unused imports to be removed.",
+      "file": "src/prefect/deployments/flow_runs.py",
+      "lines": [
+        16,
+        16
+      ],
+      "class": "rule"
+    }
+  ]
+}

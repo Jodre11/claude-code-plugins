@@ -1,0 +1,22 @@
+{
+  "id": "test-quality-nearmiss",
+  "set": "sanity",
+  "source": "corpus",
+  "files_from": "tests/fixtures/test-quality/nearmiss",
+  "base": [
+    "README.md"
+  ],
+  "head": [
+    "tests/test_user_service.py",
+    "user_service.py"
+  ],
+  "readme": "# Project\n\nUser service scaffold.\n",
+  "base_title": "base: user service scaffold",
+  "commit_title": "test: add user service tests",
+  "intent": "This change will add tests for the user creation flow to verify database persistence. Nothing else in the repository changes.",
+  "issues": [],
+  "near_miss": {
+    "file": "tests/test_user_service.py",
+    "pattern": "the tests in tests/test_user_service.py as weak, tautological or false-green"
+  }
+}

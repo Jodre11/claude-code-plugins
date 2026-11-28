@@ -6,7 +6,7 @@ set -euo pipefail
 
 # Required keys in source.yaml. captured_under sub-keys (suite_sha, agent_model,
 # agent_effort) are validated as a unit when captured_under is present.
-_AB_FIXTURE_REQUIRED_KEYS="id agent captured_at captured_under working_dir_strategy intent_ledger depends_on"
+_AB_FIXTURE_REQUIRED_KEYS="id agent captured_at captured_under working_dir_strategy depends_on"
 _AB_FIXTURE_VALID_STRATEGIES="copy worktree patch"
 
 # Load a fixture by id from the corpus directory. Index.yaml gates the lookup

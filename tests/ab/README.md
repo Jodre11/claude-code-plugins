@@ -6,22 +6,17 @@ for the design.
 
 ## What it does
 
-Dispatches a single review agent against a fixed corpus fixture under a
-named (model, effort) configuration, N times. Captures wall-clock, exit
-code, token and cost figures, and — for the static-analysis specialists —
-a normalised findings set and its hash per trial. Writes everything to
+Dispatches a single static-analysis review agent against a fixed corpus
+fixture under a named (model, effort) configuration, N times. Captures
+wall-clock, exit code, token and cost figures, and a normalised findings
+set and its hash per trial. Writes everything to
 `tests/ab/runs/<timestamp>-<config-name>/` (gitignored).
 
 The harness never edits tracked files: the agent body is read from
 `plugins/code-review-suite/agents/<agent>.md` and passed as an appended
 system prompt, and each trial runs in a fresh copy of the materialised
-fixture.
-
-Two entry points:
-
-- `tests/ab/run.sh` — one config, one fixture, N trials.
-- `tests/ab/run-specialist-ablation.sh` — a two-arm ablation of one
-  reviewer file (see [Specialist ablation](#specialist-ablation)).
+fixture. The entry point is `tests/ab/run.sh`: one config, one fixture,
+N trials.
 
 No model-as-judge scoring — this is a permanent design constraint.
 
@@ -76,18 +71,14 @@ tests/ab/runs/<timestamp>-<config-name>/
     stdout.log
     stderr.log
     stream.jsonl         # only with --stream-json
-    agent-output.md      # the ## <Tool> Findings block (static specialists)
-    findings.json        # sorted, normalised tuples ([] for judgement specialists)
+    agent-output.md      # the ## <Tool> Findings block
+    findings.json        # sorted, normalised tuples
     findings_hash.txt    # sha256 of findings.json contents
     timing.json
     system-prompt.md     # the reconstructed agent body for this trial
     user-message.txt     # the reconstructed orchestrator-equivalent prompt
     faithfulness.diff    # only present when --faithfulness-check ran and diverged
 ```
-
-Judgement specialists (correctness, reuse, style and the like) emit no
-`rule_id`, so the static parser is skipped for them; score their
-`stdout.log` post-hoc with `tests/ab/lib/specialist_score.sh`.
 
 ## Configs
 
@@ -111,9 +102,7 @@ silently fall back to production defaults.
 Fixtures live under `tests/ab/corpus/<id>/` and are gated by
 `tests/ab/corpus/index.yaml` — no glob discovery. A fixture has:
 
-- `source.yaml` — provenance and working-directory strategy. Optional
-  `review_mode: pr` emits the `Review mode:` line in the reconstructed
-  prompt (PR review versus local pre-review).
+- `source.yaml` — provenance and working-directory strategy.
 - `diff/changed-lines.txt` — the orchestrator's `$CHANGED_LINES_BLOCK`.
 - `diff/full-diff.patch` (worktree / patch strategy only).
 - `expected/findings-<tool>.md` — the captured agent output verbatim.
@@ -134,33 +123,6 @@ When the decay-warner reports a depends_on path has changed (e.g.
 
 A generalised refresh subcommand is deferred — the workflow is rare and
 manual review is load-bearing.
-
-## Specialist ablation
-
-```
-tests/ab/run-specialist-ablation.sh --agent <name> --fixture <id> \
-    --file <repo-relative-path> [--ref <git-ref>] [--trials <n>]
-```
-
-Arm B runs the working tree as-is; arm A swaps the named file to its blob at
-`--ref` (default `HEAD`). Both arms use
-`tests/ab/configs/per-agent/<agent>-baseline.yaml`. The file is restored on
-every exit path; a failed restore writes `tests/ab/MANUAL_REVERT_REQUIRED`.
-Score each arm's `trial-NNN/stdout.log` with
-`tests/ab/lib/specialist_score.sh` and feed the counts to
-`tests/ab/lib/ab_stats.py`.
-
-## PR mockup renderer
-
-`tests/ab/lib/render_pr_mockup.mjs <fixture-dir>` replays captured panel
-output (`flat_findings.json`, `panelists.json`, `writer_body.md`) through
-the real `review-core.js` with model calls stubbed, and prints the review
-body and inline comments a PR would show. It re-runs no model, so it is for
-tuning presentation, not model prose. `writer_body.md` is the writer's
-assessment; an older capture holding a whole writer report replays only its
-`## Panel Assessment` section. An optional `changed-lines.txt` supplies the
-run's `Changed lines:` block; without it every anchor the fixture cites counts
-as changed, so the line guards do not demote the replayed findings.
 
 ## Implementation notes
 

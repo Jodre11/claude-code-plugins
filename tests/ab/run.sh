@@ -184,20 +184,7 @@ _ab_run_per_agent() {
             "$stream_json" \
             || rc=$?
 
-        case "$_AB_CONFIG_AGENT" in
-            ruff-reviewer|eslint-reviewer|trivy-reviewer|jbinspect-reviewer|housekeeper-reviewer)
-                agent_capture_parse_trial "$_AB_CONFIG_AGENT" "$trial_dir"
-                ;;
-            *)
-                # Judgement specialists (correctness/reuse/style/...) emit no
-                # `rule_id`; the static parser would drop every finding. They
-                # are scored post-hoc by tests/ab/lib/specialist_score.sh
-                # against stdout.log. Write the minimal artefacts the summary
-                # row consumes.
-                printf '[]\n' > "$trial_dir/findings.json"
-                printf '%s\n' "$_AB_CONFIG_AGENT" > "$trial_dir/findings_hash.txt"
-                ;;
-        esac
+        agent_capture_parse_trial "$_AB_CONFIG_AGENT" "$trial_dir"
         _ab_append_per_agent_summary_row "$trial_dir" "$i" "$rc"
 
         if [[ "$i" -lt "$trials" ]]; then

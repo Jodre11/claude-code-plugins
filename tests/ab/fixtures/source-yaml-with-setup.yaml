@@ -9,6 +9,4 @@ working_dir_strategy: copy
 setup:
   command: npm ci
 source_path: tests/fixtures/static-analysis/eslint/
-intent_ledger: |
-  - Test fixture for setup-command parsing.
 depends_on: []

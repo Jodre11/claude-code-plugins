@@ -2,10 +2,7 @@
 // Env vars:
 //   WF             path to review-core.js
 //   CV_ARGS        review args (JSON string, passed through as the Workflow tool does)
-//   CV_SPECIALISTS domain → findings array (code-analysis for the lightweight route), or a raw
-//                  result object returned verbatim (e.g. the anthropic adapter's {status, issues})
-//   CV_PANELISTS   array, one entry per seat; a missing entry is a dropped panelist
-//   CV_WRITER      the writer's assessment as a JSON string literal
+//   CV_SPECIALISTS label → findings array, or a raw result object returned verbatim
 //   CV_EDITOR      the comment-editor's result as JSON, or the bare word THROW to reject
 // Prints {bundle, editorCalls: [{prompt, opts}], dispatches: [{label, prompt, opts}], logs: [string]} as JSON.
 'use strict';
@@ -13,10 +10,7 @@ const fs = require('fs');
 
 const src = fs.readFileSync(process.env.WF, 'utf8').replace(/^export\s+const\s+meta/m, 'const meta');
 const specialists = JSON.parse(process.env.CV_SPECIALISTS || '{}');
-const panelists = JSON.parse(process.env.CV_PANELISTS || '[]');
-const writer = JSON.parse(process.env.CV_WRITER || '"panel prose"');
 const editorRaw = process.env.CV_EDITOR || 'null';
-const roster = ['Cronus', 'Rhea', 'Oceanus', 'Hyperion', 'Themis'];
 const editorCalls = [];
 const dispatches = [];
 const logs = [];
@@ -27,11 +21,6 @@ const agent = async (prompt, opts) => {
         editorCalls.push({ prompt, opts });
         if (editorRaw === 'THROW') throw new Error('editor failed');
         return JSON.parse(editorRaw);
-    }
-    if (label === 'panel-writer') return { assessment: writer };
-    if (label.startsWith('panel-')) {
-        const i = roster.indexOf(label.slice('panel-'.length));
-        return panelists[i] === undefined ? null : panelists[i];
     }
     dispatches.push({ label, prompt, opts: { ...opts, schema: undefined, schemaRequired: opts && opts.schema && opts.schema.required } });
     const s = specialists[label];

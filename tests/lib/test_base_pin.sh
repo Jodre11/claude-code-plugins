@@ -62,14 +62,9 @@ test_base_pin_step1_noworktree_fallback() {
 }
 
 
-# The reviewer-side base resolvers: static-analysis-context.md, plus specialist-context.md while
-# the LLM agents that read it remain.
+# The reviewer-side base resolver.
 _bp_resolvers() {
-    local cr="$REPO_ROOT/plugins/code-review-suite"
-    echo "$cr/includes/static-analysis-context.md"
-    if [[ -f "$cr/includes/specialist-context.md" ]]; then
-        echo "$cr/includes/specialist-context.md"
-    fi
+    echo "$REPO_ROOT/plugins/code-review-suite/includes/static-analysis-context.md"
 }
 
 test_base_pin_specialist_readonly() {

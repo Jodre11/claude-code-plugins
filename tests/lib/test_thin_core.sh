@@ -258,8 +258,27 @@ test_thin_core_personal_path_mention_kept() {
         "mention: a bug about code that reads the file, with break earlier in the sentence → kept"
     assert_equals 'false' "$(_tc_cites 'The guard drops `Breaks /private/tmp/x/wt-1/CLAUDE.md: "no print"` as a personal rule.')" \
         "mention: a citation quoted as an example inside a longer code span → kept"
-    assert_equals 'false' "$(_tc_cites 'Loading fails on ~/.claude/CLAUDE.md: the parser throws on a BOM.')" \
-        "mention: path then colon with no quoted rule and no citing phrase → kept"
+}
+
+# Native's own text from the branch's /pre-review, quotes lightly trimmed. The first two are
+# real bugs the earlier guard dropped as personal rules; the third is a personal rule.
+test_thin_core_personal_rule_guard_on_real_findings() {
+    assert_equals 'false' "$(_tc_cites 'Native may print the normalised `/tmp/claude-<id>/review-worktrees/...` or the realpath `/private/tmp/...`. Neither starts with `root`, so `Breaks /private/tmp/.../wt-x/CLAUDE.md: "..."` is dropped as `rule-source`. A blocking finding is lost.')" \
+        "real finding: a quoted example citation in a code span → kept"
+    assert_equals 'false' "$(_tc_cites 'In a repo whose code reads `~/.claude/CLAUDE.md` (config repos and hooks), native reports important: `The installer breaks when ~/.claude/CLAUDE.md is missing because read_file() throws.` `\bbreak` matches earlier in the sentence.')" \
+        "real finding: a bug in code that reads the file → kept"
+    assert_equals 'true' "$(_tc_cites 'Breaks ~/.claude/CLAUDE.md, Code Conventions > Style: "Max line length: 120 characters".')" \
+        "real finding: a personal line-length rule → dropped"
+}
+
+# The guard fails closed: a personal rule that slips through is quoted in a posted comment.
+test_thin_core_personal_rule_guard_fails_closed() {
+    assert_equals 'true' "$(_tc_cites 'Loading fails on ~/.claude/CLAUDE.md: the parser throws on a BOM.')" \
+        "fail closed: any path-then-colon counts as a citation"
+    assert_equals 'true' "$(_tc_cites 'This violates the line-length rule in ~/.claude/CLAUDE.md for new code.')" \
+        "fail closed: a rule word earlier in the sentence counts as a citation"
+    assert_equals 'true' "$(_tc_cites 'The new lines break the convention set in ~/.claude/CLAUDE.md for wrapping.')" \
+        "fail closed: break + determiner counts as a citation"
 }
 
 test_thin_core_personal_rule_citation_forms() {

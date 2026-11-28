@@ -857,12 +857,13 @@ function stripRepoDir(f, repoDir) {
 }
 
 // True when text cites, as a finding's rule source, a CLAUDE.md outside the reviewed repo: one
-// starting `~/`, or an absolute path not under repoDir. A citation is the path followed by a
-// colon and a quoted rule, or by "rule"; or the path directly after a citing phrase ("breaks",
-// "violates", "per", "against", "the rule in"). Any other occurrence is a mention and does not
-// count: a bug about code that reads the file ("the installer breaks when ~/… is missing"), or
-// a path inside a longer code span that quotes an example. Best effort: a paraphrase with no
-// path gets through.
+// starting `~/`, or an absolute path not under repoDir. It fails closed, because a personal rule
+// that slips through is quoted in a posted comment. A citation is the path followed by a colon
+// or by "rule"; or the path directly after "breaks"; or a sentence before the path that holds a
+// rule word (violat-, "rule ", convention, "per ", against, or "breaks" + a determiner). Two
+// shapes are mentions and are kept: a path inside a longer code span, which quotes an example,
+// and "breaks when/if/because …", which describes a bug in code that reads the file. Best
+// effort: a paraphrase with no path gets through.
 function citesOutsideRule(text, repoDir) {
     if (typeof text !== 'string') return false
     const roots = repoDirForms(repoDir)
@@ -872,11 +873,9 @@ function citesOutsideRule(text, repoDir) {
         inner: s[0].slice(1, -1),
     }))
     const re = /(?:~\/|\/)[^\s"'`()<>]*CLAUDE\.md|[A-Za-z0-9_.\-/]*CLAUDE\.md/g
-    const citingBefore = new RegExp(
-        '(?:\\b(?:breaks?|breaking|violates?|violating|violation\\s+of|per|against|contradicts?)\\s+'
-        + '(?:(?:the|a|this)\\s+)?(?:(?:user-level|global|personal|project)\\s+)?'
-        + '(?:(?:rules?|conventions?)\\s+(?:in|from|of)\\s+)?'
-        + '|\\b(?:rules?|conventions?)\\s+(?:in|from)\\s+)["\'`]?$', 'i')
+    const ruleWord = new RegExp(
+        '\\bviolat|\\brules?\\s|\\bconventions?\\b|\\bper\\s|\\bagainst\\b'
+        + '|\\bbreak(?:s|ing)?\\s+(?:the|a|an|this|that|its|their|your|our)\\b', 'i')
     for (const m of text.matchAll(re)) {
         const path = m[0]
         const norm = path.replace(/\/{2,}/g, '/')
@@ -886,8 +885,12 @@ function citesOutsideRule(text, repoDir) {
         const span = spans.find(s => s.start < m.index && end <= s.end)
         if (span && span.inner.trim() !== path) continue
         const after = text.slice(end)
-        if (/^["'`]?:\s*["“]/.test(after) || /^["'`]?\s+rules?\b/i.test(after)) return true
-        if (citingBefore.test(text.slice(0, m.index))) return true
+        if (/^["'`]?:/.test(after) || /^["'`]?\s+rules?\b/i.test(after)) return true
+        const before = text.slice(0, m.index)
+        if (/\bbreak(?:s|ing)?\s+["'`]?$/i.test(before)) return true
+        let start = 0
+        for (const s of before.matchAll(/[.!?]\s+/g)) start = s.index + s[0].length
+        if (ruleWord.test(before.slice(start))) return true
     }
     return false
 }

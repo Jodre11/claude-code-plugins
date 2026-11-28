@@ -561,7 +561,7 @@ Walk `$FULL_DIFF` line-by-line. Maintain four pieces of state:
   `@@ -A,B +C,D @@` hunk header (`$new_line_no = C`) and incremented per
   context/added line
 - `$deletion_anchor` — the line number in the new file at which the most recent
-  deletion run starts (used by `archaeology-reviewer` mapping)
+  deletion run starts (a finding on a deleted line anchors here)
 
 For each diff line:
 
@@ -588,11 +588,9 @@ file" — the rename itself is the only change.
 **Deletions of entire files.** If a file is deleted (`+++ b/dev/null`), the
 serialiser emits a single line `<original-path> (deleted): near 1` (no `a/`
 prefix; the `(deleted)` sentinel is mutually exclusive with `(empty — rename
-only)`). Archaeology-reviewer is the typical consumer; other specialists
-report 0 findings for fully-deleted files (there's nothing to review on the
-new side). Archaeology findings on fully-deleted files cannot be anchored
-inline (no still-present line exists in the new tree) — see
-`agents/archaeology-reviewer.md` for the top-level-prose rule.
+only)`). Specialists report 0 findings for fully-deleted files (there's
+nothing to review on the new side), and a finding on one cannot be anchored
+to a line, because no still-present line exists in the new tree.
 
 **Serialisation.** Once built, serialise `$CHANGED_LINES` into a compact form
 for the agent prompt. Collapse any run of **3 or more consecutive** added-line
@@ -615,7 +613,7 @@ path/to/deleted-file.cs (deleted): near 1
   lines. This keeps the block compact for wholly-new files (a 457-line file
   serialises to `1-457`, not 457 comma-separated integers) — load-bearing when
   the block is carried through a Workflow `args` payload.
-- `near N` tags are deletion anchors for `archaeology-reviewer`. They mean:
+- `near N` tags are deletion anchors. They mean:
   "a line was deleted just below or at line N in the new file" — the closest
   still-present line. Never collapsed into a range.
 - `(empty — rename only)` documents files that appear in the diff with zero

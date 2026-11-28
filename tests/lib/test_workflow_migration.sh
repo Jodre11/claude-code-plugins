@@ -1,14 +1,13 @@
 #!/usr/bin/env bash
-# Workflow-migration structural tests (schema validity, agent cross-refs,
-# workflow meta + flag wiring, and the panel prompt/stall/routing wiring in review-core).
+# Workflow-migration structural tests (schema validity, agent cross-refs, workflow meta and
+# flag wiring, and the native dispatch and housekeeper routing in review-core).
 
 _wm_cr_dir() {
     echo "$REPO_ROOT/plugins/code-review-suite"
 }
 
 # Shared JS prelude for tests that drive the REAL review-core module with mock globals.
-# Defines run(agent, args), a panel-shaped baseArgs, and capturePanel(args), which records
-# every panel-vote prompt and the writer prompt while returning minimal valid outputs.
+# Defines run(agent, args) and a thin-shaped baseArgs whose nativeTarget passes the shape check.
 # Single-quoted so bash leaves it alone; the JS uses double quotes only.
 _WM_JS_PRELUDE='
 const fs = require("fs");
@@ -25,24 +24,12 @@ const run = (agent, args) => {
     return fn(agent, parallel, pipeline, phase, log, args, workflow);
 };
 const baseArgs = {
-    agentPrompt: "x", flags: {}, route: "full", selfReReview: false,
-    reviewMode: "pr", base: "main", headSha: "a".repeat(40),
-    emptyTreeMode: false, pathScope: "", tempDir: "/tmp/x",
-    panelSize: 3, changedLinesBlock: "",
+    agentPrompt: "x", flags: {}, reviewMode: "pr", base: "main", headSha: "a".repeat(40),
+    emptyTreeMode: false, pathScope: "", tempDir: "/tmp/x", repoDir: "/tmp/fx-repo",
+    changedLinesBlock: "", cliVersion: "x",
+    nativeTarget: "/tmp/fx-repo " + "b".repeat(40) + "..." + "a".repeat(40),
 };
-const capturePanel = async (args) => {
-    const votePrompts = [];
-    let writerPrompt = null;
-    const agentTypes = [];
-    const agent = async (prompt, opts) => {
-        if (opts && opts.agentType) agentTypes.push(opts.agentType);
-        if (opts && opts.phase === "panel-vote") { votePrompts.push(prompt); return { votes: [], raised: [] }; }
-        if (opts && opts.phase === "panel-write") { writerPrompt = prompt; return { assessment: "ok" }; }
-        return { status: "ok", findings: [] };
-    };
-    const bundle = await run(agent, args);
-    return { votePrompts, writerPrompt, agentTypes, bundle };
-};
+const nativeText = (arr) => "Done.\n\n```json\n" + JSON.stringify(arr) + "\n```";
 '
 
 test_finding_schema_is_valid_json() {
@@ -95,54 +82,6 @@ test_static_agents_reference_finding_schema() {
                 "body must cite includes/finding-schema.json so its §7 fields stay aligned with the schema"
         fi
     done
-}
-
-# Classic orchestration (cross-review + review-synthesiser + stall recovery) is retired: the
-# panel is the only path. Its agent and include are deleted, review-core carries none of its
-# dispatch tokens, and a stale `orchestrationMode: "classic"` arg is ignored — the run still
-# votes through the panel and never dispatches a synthesiser or cross-reviewer.
-test_classic_orchestration_removed() {
-    local cr
-    cr=$(_wm_cr_dir)
-    local wf="$cr/workflows/review-core.js"
-    local gone
-    for gone in agents/review-synthesiser.md includes/cross-review-mode.md; do
-        if [[ -e "$cr/$gone" ]]; then
-            fail "classic artefact deleted: $gone" "classic orchestration is retired; delete $gone"
-        else
-            pass "classic artefact deleted: $gone"
-        fi
-    done
-    if [[ ! -f "$wf" ]]; then
-        fail "review-core has no classic dispatch tokens" "missing: $wf"
-        return
-    fi
-    local token
-    for token in 'review-synthesiser' 'Mode: cross-review' 'synthDeferred' 'SYNTH_SCHEMA' 'CROSS_SCHEMA' 'orchestrationMode'; do
-        if grep -qF "$token" "$wf"; then
-            fail "review-core has no classic token: $token" "found '$token' in review-core.js"
-        else
-            pass "review-core has no classic token: $token"
-        fi
-    done
-    local result
-    result=$(node -e "$_WM_JS_PRELUDE"'
-        (async () => {
-            let cap;
-            try { cap = await capturePanel({ ...baseArgs, orchestrationMode: "classic" }); }
-            catch (e) { console.log("THREW: " + e.message); return; }
-            if (cap.votePrompts.length !== 3) { console.log("PANEL_NOT_RUN: " + cap.votePrompts.length); return; }
-            const classic = cap.agentTypes.filter(t => /synthesiser|cross/.test(t));
-            if (classic.length) { console.log("CLASSIC_DISPATCH: " + classic.join(",")); return; }
-            console.log("OK");
-        })();
-    ' "$wf" 2>&1)
-    if [[ "$result" == "OK" ]]; then
-        pass "a stale orchestrationMode=classic arg still runs the panel (no synthesiser/cross dispatch)"
-    else
-        fail "a stale orchestrationMode=classic arg still runs the panel (no synthesiser/cross dispatch)" \
-            "$result"
-    fi
 }
 
 # A workflow script cannot pass a raw `node --check`: `export const meta` is illegal in a
@@ -264,12 +203,14 @@ test_review_core_bare_invocation_is_inert() {
         return
     fi
     local shape result
-    for shape in undefined empty-object empty-string free-text; do
+    # pre-thin-args: an old host's args (route, no nativeTarget) are refused the same way.
+    for shape in undefined empty-object empty-string free-text pre-thin-args; do
         result=$(node -e '
             const fs = require("fs");
             const src = fs.readFileSync(process.argv[1], "utf8")
                 .replace(/^export\s+const\s+meta/m, "const meta");
-            const shapes = { "undefined": undefined, "empty-object": {}, "empty-string": "", "free-text": "123 please" };
+            const shapes = { "undefined": undefined, "empty-object": {}, "empty-string": "", "free-text": "123 please",
+                "pre-thin-args": { agentPrompt: "x", flags: {}, route: "full", reviewMode: "pr" } };
             let agentCalls = 0;
             const agent = async () => { agentCalls++; return null; };
             const parallel = (thunks) => Promise.all(thunks.map(t => t()));
@@ -386,45 +327,22 @@ test_inlined_schema_matches_canonical() {
 }
 
 # Category C resilience: an agent() that resolves successfully with null (the documented
-# ~30% empty-stdout failure mode) must not crash any dispatch site — the specialists, the
-# panelists or the writer. We eval the full script body with mock globals — mock agent()
-# always returns null — and assert the workflow returns a bundle rather than throwing.
+# empty-stdout failure mode) must not crash any dispatch site — native, the static
+# specialists or the editor. Mock agent() always returns null; the workflow must still
+# return a bundle, and a null native result is "native did not run" (verdict NONE).
 test_review_core_survives_null_agent_results() {
-    local cr
-    cr=$(_wm_cr_dir)
-    local wf="$cr/workflows/review-core.js"
-    if [[ ! -f "$wf" ]]; then
-        fail "review-core null-agent resilience" "missing: $wf"
-        return
-    fi
-    local result
-    result=$(node -e '
-        const fs = require("fs");
-        const src = fs.readFileSync(process.argv[1], "utf8")
-            .replace(/^export\s+const\s+meta/m, "const meta");
-        const mkArgs = (mode) => ({
-            agentPrompt: "x", flags: {}, route: "full", selfReReview: false,
-            reviewMode: mode, base: "main", headSha: "a".repeat(40),
-            emptyTreeMode: false, pathScope: "", tempDir: "/tmp/x",
-        });
-        const agent = async () => null;                       // Category C: resolves, null value
-        const parallel = (thunks) => Promise.all(thunks.map(t => t()));
-        const phase = () => {};
-        const log = () => {};
-        const pipeline = async () => [];
-        const workflow = async () => null;
-        const run = (mode) => {
-            const fn = new Function("agent","parallel","pipeline","phase","log","args","workflow",
-                "return (async()=>{" + src + "\n})()");
-            return fn(agent, parallel, pipeline, phase, log, mkArgs(mode), workflow);
-        };
+    local wf result
+    wf="$(_wm_cr_dir)/workflows/review-core.js"
+    result=$(node -e "$_WM_JS_PRELUDE"'
+        const agent = async () => null;
         (async () => {
             for (const mode of ["local", "pr"]) {
-                let bundle;
-                try { bundle = await run(mode); }
+                let b;
+                try { b = await run(agent, { ...baseArgs, reviewMode: mode, flags: { py: true, csharp: true } }); }
                 catch (e) { console.log("THREW(" + mode + "): " + e.message); return; }
-                if (!bundle || typeof bundle !== "object") { console.log("NOBUNDLE(" + mode + ")"); return; }
-                if (!("verdict" in bundle) || !("comments" in bundle)) { console.log("BADSHAPE(" + mode + ")"); return; }
+                if (!b || typeof b !== "object") { console.log("NOBUNDLE(" + mode + ")"); return; }
+                if (!("verdict" in b) || !("comments" in b)) { console.log("BADSHAPE(" + mode + ")"); return; }
+                if (b.verdict !== "NONE" || b.native.ran !== false) { console.log("NOT_NONE(" + mode + "): " + b.verdict); return; }
             }
             console.log("OK");
         })();
@@ -437,46 +355,21 @@ test_review_core_survives_null_agent_results() {
     fi
 }
 
-# Production bug regression (2026-06-16): the host skill runs in the main agent loop, which
-# has no workflow() primitive, so its documented workflow({scriptPath}, {...}) call is
-# executed as a Workflow-TOOL invocation — and the Workflow tool delivers args as a JSON
-# STRING, not an object. Destructuring a string yields flags===undefined, and the first
-# flags.csharp read throws. The resolvedArgs normaliser must JSON.parse a string arg so the
-# script runs unchanged. We feed the FULL script a stringified args object (flags.csharp set)
-# with a null-returning agent and assert it reaches a bundle rather than throwing flags.csharp.
+# Production bug regression (2026-06-16): the Workflow tool delivers args as a JSON STRING,
+# not an object. The resolvedArgs normaliser must JSON.parse a string arg so the script runs
+# unchanged; destructuring a string would leave flags undefined.
 test_review_core_accepts_string_args() {
-    local cr
-    cr=$(_wm_cr_dir)
-    local wf="$cr/workflows/review-core.js"
-    if [[ ! -f "$wf" ]]; then
-        fail "review-core string-args resilience" "missing: $wf"
-        return
-    fi
-    local result
-    result=$(node -e '
-        const fs = require("fs");
-        const src = fs.readFileSync(process.argv[1], "utf8")
-            .replace(/^export\s+const\s+meta/m, "const meta");
-        const argsStr = JSON.stringify({
-            agentPrompt: "x", flags: { csharp: true }, route: "full", selfReReview: false,
-            reviewMode: "local", base: "main", headSha: "a".repeat(40),
-            emptyTreeMode: false, pathScope: "", tempDir: "/tmp/x",
-        });
-        const agent = async () => null;
-        const parallel = (thunks) => Promise.all(thunks.map(t => t()));
-        const phase = () => {};
-        const log = () => {};
-        const pipeline = async () => [];
-        const workflow = async () => null;
+    local wf result
+    wf="$(_wm_cr_dir)/workflows/review-core.js"
+    result=$(node -e "$_WM_JS_PRELUDE"'
+        const seen = [];
+        const agent = async (prompt, opts) => { seen.push(opts.label); return opts.label === "native" ? nativeText([]) : null; };
         (async () => {
-            let bundle;
-            try {
-                const fn = new Function("agent","parallel","pipeline","phase","log","args","workflow",
-                    "return (async()=>{" + src + "\n})()");
-                bundle = await fn(agent, parallel, pipeline, phase, log, argsStr, workflow);
-            } catch (e) { console.log("THREW: " + e.message); return; }
-            if (!bundle || typeof bundle !== "object") { console.log("NOBUNDLE"); return; }
-            if (!("verdict" in bundle) || !("comments" in bundle)) { console.log("BADSHAPE"); return; }
+            let b;
+            try { b = await run(agent, JSON.stringify({ ...baseArgs, reviewMode: "local", flags: { csharp: true } })); }
+            catch (e) { console.log("THREW: " + e.message); return; }
+            if (!b || !("verdict" in b) || !("comments" in b)) { console.log("BADSHAPE"); return; }
+            if (!seen.includes("jbinspect") || b.native.ran !== true) { console.log("ARGS_LOST: " + seen.join(",")); return; }
             console.log("OK");
         })();
     ' "$wf" 2>&1)
@@ -488,210 +381,60 @@ test_review_core_accepts_string_args() {
     fi
 }
 
-# The intent ledger must be threaded from args into every panel-vote prompt: panelists
-# decide `blocks_goal` against it, and without it verdict-rubric row 1 can never fire.
-# With no ledger, no ledger text may leak in.
-test_review_core_threads_intent_ledger_to_panel() {
-    local cr
-    cr=$(_wm_cr_dir)
-    local wf="$cr/workflows/review-core.js"
-    if [[ ! -f "$wf" ]]; then
-        fail "review-core intent-ledger threading" "missing: $wf"
-        return
-    fi
-    if grep -qE 'intentLedger,' "$wf" || grep -qE 'intentLedger\s*\}' "$wf"; then
-        pass "review-core destructures intentLedger from args"
-    else
-        fail "review-core destructures intentLedger from args" \
-            "the args destructure must include intentLedger so the panel prompt can reference it"
-    fi
-    local result
+# The native wrapper is silent while the bundled skill runs, so its dispatch raises the
+# sandbox's 180 s no-progress watchdog to 600 s. It carries no schema: a schema leaks into the
+# skill's fork and the result is lost (spec, spike S1).
+test_native_dispatch_stall_budget_and_no_schema() {
+    local wf result
+    wf="$(_wm_cr_dir)/workflows/review-core.js"
     result=$(node -e "$_WM_JS_PRELUDE"'
+        let nat = null;
+        const agent = async (prompt, opts) => {
+            if (opts.label === "native") { nat = opts; return nativeText([]); }
+            return { status: "ok", findings: [] };
+        };
         (async () => {
-            const LEDGER = "## Intent ledger\ngoal: ship the widget exporter";
-            let withL, without;
-            try {
-                withL = await capturePanel({ ...baseArgs, intentLedger: LEDGER });
-                without = await capturePanel({ ...baseArgs, intentLedger: "" });
-            } catch (e) { console.log("THREW: " + e.message); return; }
-            if (withL.votePrompts.length !== 3) { console.log("VOTE_COUNT: " + withL.votePrompts.length); return; }
-            if (!withL.votePrompts.every(p => p.includes(LEDGER))) { console.log("LEDGER_MISSING"); return; }
-            if (without.votePrompts.some(p => p.includes("goal:"))) { console.log("LEDGER_LEAKED_WHEN_ABSENT"); return; }
+            try { await run(agent, baseArgs); } catch (e) { console.log("THREW: " + e.message); return; }
+            if (!nat) { console.log("NOT_DISPATCHED"); return; }
+            if (nat.stallMs !== 600000) { console.log("STALL: " + nat.stallMs); return; }
+            if ("schema" in nat) { console.log("HAS_SCHEMA"); return; }
+            if (nat.agentType !== "code-review-suite:native-reviewer") { console.log("TYPE: " + nat.agentType); return; }
+            if ("model" in nat) { console.log("PINNED_MODEL: " + nat.model); return; }
             console.log("OK");
         })();
     ' "$wf" 2>&1)
     if [[ "$result" == "OK" ]]; then
-        pass "every panel-vote prompt carries the intent ledger (and none when it is absent)"
+        pass "native dispatch: native-reviewer type, stallMs 600000, no schema, no model pin"
     else
-        fail "every panel-vote prompt carries the intent ledger (and none when it is absent)" "$result"
+        fail "native dispatch: native-reviewer type, stallMs 600000, no schema, no model pin" "$result"
     fi
-}
-
-# repoDir must reach every panel-vote prompt so a panelist reads surrounding code in the
-# target repository (not cwd) when the review targets a PR in another checkout. Specialists
-# receive repoDir via the host-built agentPrompt; the panel prompt is built inside review-core,
-# so it needs its own injection. The line is omitted when no target repo was supplied.
-test_review_core_threads_repo_dir_to_panel() {
-    local cr
-    cr=$(_wm_cr_dir)
-    local wf="$cr/workflows/review-core.js"
-    if [[ ! -f "$wf" ]]; then
-        fail "review-core repoDir threading" "missing: $wf"
-        return
-    fi
-    if grep -qE 'repoDir,' "$wf" || grep -qE 'repoDir\s*\}' "$wf"; then
-        pass "review-core destructures repoDir from args"
+    if grep -qE '^model:' "$(_wm_cr_dir)/agents/native-reviewer.md"; then
+        fail "native-reviewer pins no model" "native's fork inherits the wrapper's model, so the agent must not pin one"
     else
-        fail "review-core destructures repoDir from args" \
-            "the args destructure must include repoDir so the panel prompt can target the right repo"
-    fi
-    local result
-    result=$(node -e "$_WM_JS_PRELUDE"'
-        (async () => {
-            let withR, without;
-            try {
-                withR = await capturePanel({ ...baseArgs, repoDir: "/repos/target" });
-                without = await capturePanel({ ...baseArgs });
-            } catch (e) { console.log("THREW: " + e.message); return; }
-            if (withR.votePrompts.length !== 3) { console.log("VOTE_COUNT: " + withR.votePrompts.length); return; }
-            if (!withR.votePrompts.every(p => p.includes("Repo dir: /repos/target\n"))) { console.log("REPO_DIR_MISSING"); return; }
-            if (without.votePrompts.some(p => p.includes("Repo dir:"))) { console.log("REPO_DIR_LINE_WHEN_ABSENT"); return; }
-            console.log("OK");
-        })();
-    ' "$wf" 2>&1)
-    if [[ "$result" == "OK" ]]; then
-        pass "every panel-vote prompt carries the Repo dir line (and none when repoDir is absent)"
-    else
-        fail "every panel-vote prompt carries the Repo dir line (and none when repoDir is absent)" "$result"
-    fi
-}
-
-# PR D: panelists read the pinned diff from a "Full diff file:" line rather than re-running
-# git. The panel prompt is assembled inside review-core, so the line is derived from tempDir
-# + the Step 2.85 filename (review-pipeline.md writes $RESOLVED_TEMP_DIR/review-diff.patch).
-# Drive the REAL module with a trailing-slash tempDir (the join must not double the slash)
-# and with no tempDir (the line must be omitted, not point at a bogus path).
-test_review_core_threads_full_diff_file_to_panel() {
-    local cr
-    cr=$(_wm_cr_dir)
-    local wf="$cr/workflows/review-core.js"
-    if [[ ! -f "$wf" ]]; then
-        fail "review-core full-diff-file threading" "missing: $wf"
-        return
-    fi
-    if grep -qE 'review-diff\.patch' "$wf"; then
-        pass "review-core derives the diff path from the Step 2.85 filename"
-    else
-        fail "review-core derives the diff path from the Step 2.85 filename" \
-            "the diff path must reference review-diff.patch (the artifact review-pipeline.md Step 2.85 writes)"
-    fi
-    local result
-    result=$(node -e "$_WM_JS_PRELUDE"'
-        (async () => {
-            let withT, without;
-            try {
-                withT = await capturePanel({ ...baseArgs, tempDir: "/tmp/claude-abc/" });
-                without = await capturePanel({ ...baseArgs, tempDir: "" });
-            } catch (e) { console.log("THREW: " + e.message); return; }
-            if (withT.votePrompts.length !== 3) { console.log("VOTE_COUNT: " + withT.votePrompts.length); return; }
-            const bad = withT.votePrompts.find(p => !p.includes("Full diff file: /tmp/claude-abc/review-diff.patch"));
-            if (bad) { console.log("MISSING_OR_BAD_LINE: " + (bad.match(/Full diff file:.*/) || ["<absent>"])[0]); return; }
-            if (withT.votePrompts.some(p => p.includes("//review-diff"))) { console.log("DOUBLE_SLASH"); return; }
-            if (without.votePrompts.some(p => p.includes("Full diff file:"))) { console.log("LINE_WITHOUT_TEMPDIR"); return; }
-            console.log("OK");
-        })();
-    ' "$wf" 2>&1)
-    if [[ "$result" == "OK" ]]; then
-        pass "every panel-vote prompt carries a clean Full diff file line (and none without tempDir)"
-    else
-        fail "every panel-vote prompt carries a clean Full diff file line (and none without tempDir)" "$result"
-    fi
-}
-
-# The panel's in-sandbox agents — the N opus panelists (panelVote) and the sonnet writer
-# (panelWrite) — inherit the sandbox's default 180s no-progress watchdog unless their agent()
-# call carries stallMs. On a complex diff a panelist reasons past 180s, trips the watchdog,
-# and is dropped by the `.catch(() => null)`, silently shrinking the panel until quorum fails.
-# The watchdog binds a per-agent()-call `stallMs` option, so this test drives review-core
-# with a mock agent() that captures the panel-vote and panel-write opts and asserts
-# stallMs=600000 reaches both — a behavioural guard so a refactor cannot silently drop it.
-test_panel_calls_set_stall_budget() {
-    local cr
-    cr=$(_wm_cr_dir)
-    local wf="$cr/workflows/review-core.js"
-    if [[ ! -f "$wf" ]]; then
-        fail "panel stall budget" "missing: $wf"
-        return
-    fi
-    local result
-    result=$(node -e "$_WM_JS_PRELUDE"'
-        (async () => {
-            const voteOpts = [];
-            let writeOpts = null;
-            const agent = async (prompt, opts) => {
-                if (opts && opts.phase === "panel-vote") { voteOpts.push(opts); return { votes: [], raised: [] }; }
-                if (opts && opts.phase === "panel-write") { writeOpts = opts; return { assessment: "ok" }; }
-                return { status: "ok", findings: [] };
-            };
-            try { await run(agent, baseArgs); }
-            catch (e) { console.log("THREW: " + e.message); return; }
-            if (voteOpts.length === 0) { console.log("PANEL_VOTE_NOT_CALLED"); return; }
-            const badVote = voteOpts.find(o => o.stallMs !== 600000);
-            if (badVote) { console.log("BAD_VOTE_STALLMS: " + JSON.stringify(badVote.stallMs)); return; }
-            if (writeOpts === null) { console.log("PANEL_WRITE_NOT_CALLED"); return; }
-            if (writeOpts.stallMs !== 600000) { console.log("BAD_WRITE_STALLMS: " + JSON.stringify(writeOpts.stallMs)); return; }
-            console.log("OK");
-        })();
-    ' "$wf" 2>&1)
-    if [[ "$result" == "OK" ]]; then
-        pass "panel-vote and panel-write agent() calls carry stallMs=600000 (raises sandbox watchdog above 180s)"
-    else
-        fail "panel-vote and panel-write agent() calls carry stallMs=600000 (raises sandbox watchdog above 180s)" \
-            "$result"
+        pass "native-reviewer pins no model"
     fi
 }
 
 # Housekeeper findings audit the whole touched project, so their manifest is often outside
-# the diff. They must bypass the voted-line guard (keeping file + line for the table) and
-# route to posting 'table': rendered in the Dependency Freshness section, never posted
-# inline, forced to Suggestion, and never verdict-relevant — even when the panel votes one
-# Important. A non-housekeeper finding on the same out-of-diff anchor proves the guard is
-# still active for everyone else (its file and line are cleared).
+# the diff. They bypass the anchor guard (keeping file + line for the table) and route to
+# posting 'table': rendered in the Dependency Freshness section, never posted inline and never
+# blocking, even labelled Important. A native finding on the same out-of-diff anchor proves the
+# guard is still active for everyone else (it moves to the body).
 test_housekeeper_findings_bypass_line_guard_and_route_to_table() {
-    local cr
-    cr=$(_wm_cr_dir)
-    local wf="$cr/workflows/review-core.js"
-    if [[ ! -f "$wf" ]]; then
-        fail "housekeeper table routing" "missing: $wf"
-        return
-    fi
-    local result
+    local wf result
+    wf="$(_wm_cr_dir)/workflows/review-core.js"
     result=$(node -e "$_WM_JS_PRELUDE"'
         const HK = [
-            { file: ".github/workflows/ci.yml", line: 12, severity: "Suggestion", confidence: 100,
+            { file: ".github/workflows/ci.yml", line: 12, severity: "Important",
               description: "actions/checkout is at v3; latest GA is v4.", suggested_fix: "Bump to v4." },
-            { file: "package.json", line: 7, severity: "Suggestion", confidence: 100,
+            { file: "package.json", line: 7, severity: "Suggestion",
               description: "lodash is at 4.17.20; latest GA is 4.17.21. Deprecated upstream.", suggested_fix: "Bump." },
         ];
-        const CORR = [
-            { file: ".github/workflows/ci.yml", line: 12, severity: "Suggestion", confidence: 80,
-              description: "Step name is misleading.", suggested_fix: "Rename it." },
-        ];
+        const NAT = [{ file: ".github/workflows/ci.yml", line: 12, summary: "Step name is misleading.",
+            failure_scenario: "A reader is misled.", severity: "nit" }];
         const agent = async (prompt, opts) => {
-            if (opts && opts.phase === "panel-vote") {
-                const flat = JSON.parse(prompt.split("by finding_id):\n")[1]);
-                return {
-                    votes: flat.map(f => ({
-                        finding_id: f.finding_id, is_real: true,
-                        severity: f.domain === "housekeeper" ? "Important" : "Suggestion",
-                        tractability: "Bounded", blocks_goal: false, rationale: "r",
-                    })),
-                    raised: [],
-                };
-            }
-            if (opts && opts.phase === "panel-write") return { assessment: "ok" };
-            if (opts && opts.agentType === "code-review-suite:housekeeper-reviewer") return { status: "ok", findings: HK };
-            if (opts && opts.agentType === "code-review-suite:correctness-reviewer") return { status: "ok", findings: CORR };
+            if (opts.label === "native") return nativeText(NAT);
+            if (opts.agentType === "code-review-suite:housekeeper-reviewer") return { status: "ok", findings: HK };
             return { status: "ok", findings: [] };
         };
         (async () => {
@@ -702,17 +445,17 @@ test_housekeeper_findings_bypass_line_guard_and_route_to_table() {
             } catch (e) { console.log("THREW: " + e.message); return; }
             if (b.verdict !== "APPROVE") { console.log("VERDICT: " + b.verdict); return; }
             if (b.comments.length !== 0) { console.log("COMMENTS: " + JSON.stringify(b.comments)); return; }
-            const hk = b.log.findings.filter(f => f.domain === "housekeeper");
+            const hk = b.log.findings.filter(f => f.source === "housekeeper");
             if (hk.length !== 2) { console.log("HK_COUNT: " + hk.length); return; }
             for (const f of hk) {
-                if (f.tier !== "contested" || f.posting !== "table" || f.severity !== "Suggestion" || f.verdict_relevant !== false) {
+                if (f.posting !== "table" || f.blocking !== false || f.verdict_relevant !== false) {
                     console.log("HK_ROUTE: " + JSON.stringify(f)); return;
                 }
             }
             const ci = hk.find(f => f.description.startsWith("actions/checkout"));
             if (!ci || ci.file !== ".github/workflows/ci.yml" || ci.line !== 12) { console.log("HK_ANCHOR_LOST: " + JSON.stringify(ci)); return; }
-            const corr = b.log.findings.find(f => f.domain === "correctness");
-            if (!corr || corr.file !== "" || corr.line !== 0) { console.log("GUARD_INACTIVE: " + JSON.stringify(corr)); return; }
+            const nat = b.log.findings.find(f => f.source === "native");
+            if (!nat || nat.file !== "" || nat.line !== 0) { console.log("GUARD_INACTIVE: " + JSON.stringify(nat)); return; }
             const body = b.bodyText;
             if (!body.includes("### Dependency Freshness")) { console.log("NO_FRESHNESS_SECTION"); return; }
             if (!body.includes("| actions/checkout | v3 | v4 | `.github/workflows/ci.yml:12` |  |")) { console.log("BAD_CI_ROW"); return; }

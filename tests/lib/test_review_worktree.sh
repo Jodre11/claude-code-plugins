@@ -115,6 +115,31 @@ test_review_worktree_add_explicit_root_no_env() {
     rm -rf "$root" "$work" "$origin"
 }
 
+test_review_worktree_add_trailing_slash_root() {
+    # The pipeline passes the session temp dir with a trailing slash. The printed path
+    # becomes $REPO_DIR, which review-core matches against native's text, so it must not
+    # carry a `//`.
+    local helper
+    helper="$(_rw_cr_dir)/bin/review-worktree"
+    local root work origin sha wt_path
+    root=$(mktemp -d)
+    read -r work origin sha < <(_rw_make_fixture)
+
+    wt_path=$(env -u CLAUDE_TEMP_DIR "$helper" add "$work" main "$sha" "$root/")
+
+    case "$wt_path" in
+        *//*)
+            fail "review-worktree add: trailing-slash root gives no //" "got: $wt_path" ;;
+        "$root/review-worktrees/"*)
+            pass "review-worktree add: trailing-slash root gives no //" ;;
+        *)
+            fail "review-worktree add: trailing-slash root gives no //" "expected under $root/review-worktrees/, got: $wt_path" ;;
+    esac
+
+    git -C "$work" worktree remove --force "$wt_path" 2>/dev/null || true
+    rm -rf "$root" "$work" "$origin"
+}
+
 test_review_worktree_add_sha_mismatch_halts() {
     local helper
     helper="$(_rw_cr_dir)/bin/review-worktree"

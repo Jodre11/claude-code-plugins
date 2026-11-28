@@ -54,7 +54,7 @@ to Step 1.
 Otherwise, halt the review. Print:
 
 ```
-> Phase 0 halt: CI is not green.
+> Phase 0.6 halt: CI is not green.
 > Non-green checks:
 > <c.name (c.state)>
 > <c.name (c.state)>
@@ -68,13 +68,13 @@ Otherwise, halt the review. Print:
 The halt is final — there is no acknowledge-to-proceed prompt. Stop the pipeline cleanly.
 
 <!-- COUPLING: this hard halt is the only CI guard. The verdict is computed in code
-(`applyRubric` in `workflows/review-core.js`), which never reads CI state: if the panel is
-reached, CI is green by construction.
+(the verdict step in `workflows/review-core.js`), which never reads CI state: if review-core
+is reached, CI is green by construction.
 
 If this halt is ever softened — restoring an acknowledge-to-proceed path, exempting
 specific check states such as `TIMED_OUT`, or reintroducing a transient-vs-definitive
-classification — add a CI rule to `applyRubric` as defence in depth. A single softened
-gate with no rubric-side check would let the panel emit APPROVE on a failing CI state, a
-real correctness regression. -->
+classification — add a CI rule to review-core's verdict as defence in depth. A single
+softened gate with no verdict-side check would let review-core emit APPROVE on a failing CI
+state, a real correctness regression. -->
 <!-- END SOURCE -->
 

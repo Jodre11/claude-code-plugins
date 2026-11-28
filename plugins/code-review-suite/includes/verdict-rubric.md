@@ -1,82 +1,81 @@
 ## Verdict Rubric
 
-<!-- REFERENCE — describes behaviour implemented in code. The verdict rubric, the
-tier mapping and the posting routes are computed by `workflows/review-core.js`
-(`mapSpreadToTierConfidence`, `routeFinding`, `applyRubric`, `finalizeBundle`). No
-agent reads this file at runtime; keep it in step with the code when either changes. -->
+<!-- REFERENCE — describes behaviour implemented in code. `workflows/review-core.js` is the
+source of truth: normalisation (`normaliseNative`), the guards (`citesOutsideRule`,
+`staticCriticalAllowed`, `anchorFinding`), the verdict and the rendering (`buildBody`,
+`buildLocalReport`). No agent reads this file at runtime; keep it in step with the code when
+either changes. -->
 
-### Tiers (panel tally, per finding)
+### Findings
 
-Each Stage-1 specialist finding is voted on by every panelist (`is_real`, `severity`,
-`tractability`, `blocks_goal`). Net-new findings a panelist raises are clustered across
-panelists by file and a three-line window.
+Two finders feed one review: Claude Code's bundled `/code-review` (`native`) and the
+static-analysis specialists the diff selects (`jbinspect`, `eslint`, `ruff`, `trivy`,
+`housekeeper`). Every finding keeps its `source`.
 
-| Finding | Tier |
+Native's findings are mapped in code:
+
+| Native | Finding |
 |---|---|
-| A panel majority votes it not real (any domain, static included) | Dismissed |
-| Static analyser (eslint, ruff, trivy, jbinspect), unanimous real, locked severity ≥ Important | Consensus |
-| Static analyser, otherwise | Contested |
-| Housekeeper, not dismissed | Contested, rendered in the Dependency Freshness table |
-| LLM specialist, severity majority Critical or Important | Consensus |
-| LLM specialist, severity majority Suggestion | Contested |
-| LLM specialist, no severity majority | Contested, marked as a judgement call |
-| Panel-raised cluster corroborated by at least ⌈2s/3⌉ raises (s = surviving panelists) | Consensus |
-| Panel-raised cluster, otherwise | Contested |
+| `severity: important` | `Important`, blocking |
+| `severity: nit` | `Suggestion` |
+| `severity: pre_existing` | `Suggestion`, annotated pre-existing, never blocking |
+| `summary` before `Fix:` | `description` |
+| `summary` from `Fix:` on | `suggested_fix` (empty when absent) |
+| `failure_scenario` | rendered verbatim under the description |
 
-Confidence is the discrete agreement flag (`high`, `medium` or `low`), never a number.
+A static finding keeps the severity its tool mapping gave it
+(`includes/static-analysis-context.md` §10). A static `Critical` or `Important` blocks; a
+static `Critical` whose rule is not on its tool's `Critical-allow-list:` posts with a
+not-blocking note and does not block. Housekeeper findings never block.
 
-### Verdict rubric (PR mode only, first match wins)
+A native finding that cites a `CLAUDE.md` outside the reviewed repository as its rule source
+is dropped and logged (`filtered: rule-source`): personal instructions never become findings.
+
+### Verdict (PR mode only, first match wins)
 
 | # | Condition | Verdict |
 |---|---|---|
-| 1 | The intent ledger states a `goal` AND a panel majority says a consensus or contested finding shows the goal is not achieved (`blocks_goal`) | `REQUEST_CHANGES` |
-| 2 | Any consensus **Critical** finding | `REQUEST_CHANGES` |
-| 3 | Any consensus **Important** finding (a severity majority — there is no confidence gate) | `REQUEST_CHANGES` |
-| 4 | Otherwise | `APPROVE` |
+| 1 | Native did not run (skill error, no parseable findings array, a malformed finding, no result, or a bad native target) | `NONE` |
+| 2 | Any blocking finding | `REQUEST_CHANGES` |
+| 3 | Otherwise | `APPROVE` |
 
-The rubric produces only `APPROVE` or `REQUEST_CHANGES`. The orchestrator never
-auto-downgrades a verdict to `COMMENT`; the only route to `COMMENT` is an explicit user
+Under `NONE` the bundle still carries the static-analysis comments, and the body headline
+reads `**COMMENT** — native review did not run (<reason>); static-analysis findings only`.
+The host asks the user whether to post them as a `COMMENT` review; it never submits
+`APPROVE` or `REQUEST_CHANGES` for a `NONE` bundle.
+
+Otherwise the code never produces `COMMENT`; the only route to it is an explicit user
 override at the Class A confirmation prompt.
 
-In `local` (pre-review) mode the rubric does not apply: pre-review produces no verdict —
+In `local` (pre-review) mode the verdict is always `NONE`: pre-review produces no verdict —
 the human reader decides what (if anything) to act on.
 
-### Posting routes
+### Anchors and posting
 
-Every finding carries an explicit `posting` route, so which findings post is decided in
-code, not by the orchestrator.
-
-| Finding | Route |
+| Finding | Where it posts |
 |---|---|
-| Consensus Critical or Important (blocking) | Inline comment, "fix in this PR". An Open-ended remedy also carries a do-not-dispatch-a-fix-agent note. |
-| Suggestion (any tier), Mechanical | Inline comment, "fix in this PR" |
-| Suggestion (any tier), Bounded | Review body, "raise as a follow-up" |
-| Suggestion (any tier), Open-ended | Dropped (Dismissed tier) |
-| Judgement call | Review body |
-| Contested Critical or Important (not blocking) | Review body |
+| File not in the diff | Review body, with its original location |
+| File in the diff, line not a changed line | File-level comment |
+| File and line in the diff | Inline comment |
 | Housekeeper | Dependency Freshness table in the review body |
+| Filtered as a personal rule | Not posted; logged only |
 
-Under `APPROVE`, when open-ended Suggestions were dropped, the posted body carries a single
-disclosure line — `N finding(s) pruned (open-ended suggestions not surfaced).` — so an
-APPROVE never looks cleaner than the run actually was.
-
-A finding anchored to a file outside the diff moves to the review body; one anchored to a
-line the diff did not touch becomes a file-level comment.
+Findings on one file within three lines of each other (`groupColocated`) render as ONE
+comment — headed by the most severe, every member's text kept — and one index line. Native
+and static findings on the same lines share that comment. This is rendering only: the
+verdict is computed first. Posted comments do not name a finding's source; the log and the
+local report do.
 
 ### Body construction
 
-The body is built by `review-core.js` `buildBody` from parts: the verdict headline with the
-rubric reason, the Panel Assessment written by the panel writer (its only contribution), a
-compact finding index, body notes for findings with no file, the pruned-findings disclosure,
-and the Dependency Freshness table. The local pre-review report (`buildLocalReport`) uses the
-same parts without the verdict headline, with every finding rendered in full.
+The PR body is built by `buildBody` from parts: the verdict headline with its reason, a
+compact finding index, body notes for findings that could not anchor in the diff, the
+Dependency Freshness table, and the hidden marker line `<!-- code-review-suite -->`. The
+local pre-review report (`buildLocalReport`) uses the same parts without the verdict
+headline, with every finding rendered in full and its source shown.
 
-Before either is built, the voice phase (`voicePass`) rewords the surfaced findings and the
-assessment to `includes/comment-voice.md`; a code guard keeps the original of any field whose
-rewrite changes a fact. The wording pass never touches the verdict, the tiers or a
-static-analysis finding. In PR mode every comment body and the review body end with the hidden
-marker line `<!-- code-review-suite -->`.
-
-Findings that share a file and a posting route and sit within three lines of each other
-(`groupColocated`) render as ONE inline comment — headed by the most severe, every member's
-text kept — and one index line. This is rendering only: the verdict is computed first.
+Before either is built, the voice phase (`voicePass`) rewords native's surfaced findings to
+`includes/comment-voice.md`; a code guard keeps the original of any field whose rewrite
+changes a fact. The wording pass never touches the verdict, a severity, a native
+`failure_scenario` or a static-analysis finding. In PR mode every comment body and the review
+body end with the marker line.

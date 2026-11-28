@@ -81,14 +81,13 @@ If you redirected trivy's output to `<resolved-temp-dir>/trivy-config.json`, cle
 
 ## Structured fields
 
-The §7 markdown fields map 1:1 to `includes/finding-schema.json#/$defs/finding`:
+The §7 markdown fields map to `includes/finding-schema.json#/$defs/finding` as below; `Confidence` has no schema field:
 
 | §7 markdown bullet | Schema field |
 |---|---|
 | `- **File:** path:line` | `file` + `line` (split on the last colon) |
 | `- **Rule:** DS-NNNN (Dockerfile) / AVD-XX-NNNN (provider)` | `rule_id` (the bare rule ID, first whitespace token) |
 | `- **Severity:** …` | `severity` (enum: Critical / Important / Suggestion) |
-| `- **Confidence:** 100` | `confidence` (integer) |
 | `- **Description:** …` | `description` |
 | `- **Suggested fix:** …` | `suggested_fix` |
 | `- **Reference:** …` (optional) | `reference` |

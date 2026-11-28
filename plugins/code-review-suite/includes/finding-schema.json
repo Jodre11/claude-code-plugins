@@ -6,13 +6,12 @@
     "finding": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["line", "severity", "confidence", "description", "suggested_fix"],
+      "required": ["line", "severity", "description", "suggested_fix"],
       "properties": {
         "file": { "type": "string", "description": "Repo-relative path, no a/ or b/ prefix." },
-        "line": { "type": "integer", "minimum": 0, "description": "Line in the new file's coordinate space. 0 only for deletion anchors handled out-of-band." },
-        "rule_id": { "type": "string", "description": "Static-analysis rule ID (e.g. F401, DS-002). Omit for LLM-specialist findings." },
+        "line": { "type": "integer", "minimum": 0, "description": "Line in the new file's coordinate space. 0 for a file-level finding." },
+        "rule_id": { "type": "string", "description": "Static-analysis rule ID (e.g. F401, DS-002)." },
         "severity": { "enum": ["Critical", "Important", "Suggestion"] },
-        "confidence": { "type": "integer", "minimum": 0, "maximum": 100 },
         "description": { "type": "string" },
         "suggested_fix": { "type": "string" },
         "reference": { "type": "string", "description": "Stable rule/advisory URL when the tool emits one." }
@@ -25,7 +24,10 @@
       "properties": {
         "status": { "enum": ["ok", "skipped", "failed"], "description": "skipped = tool legitimately absent; failed = error; ok = ran." },
         "statusReason": { "type": "string", "description": "One-line reason when status is skipped or failed." },
-        "findings": { "type": "array", "items": { "$ref": "#/$defs/finding" } }
+        "findings": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/finding" }
+        }
       }
     },
     "sealedBundle": {
@@ -33,8 +35,8 @@
       "additionalProperties": false,
       "required": ["verdict", "bodyText", "comments"],
       "properties": {
-        "verdict": { "enum": ["APPROVE", "REQUEST_CHANGES", "COMMENT", "NONE"], "description": "NONE in local mode (pre-review produces no verdict)." },
-        "bodyText": { "type": "string", "description": "Rendered GitHub body, built by review-core buildBody(): verdict headline, Panel Assessment, finding index, body notes, pruned-findings disclosure, Dependency Freshness table, then the review marker line (PR mode only)." },
+        "verdict": { "enum": ["APPROVE", "REQUEST_CHANGES", "COMMENT", "NONE"], "description": "NONE in local mode (pre-review produces no verdict), and in PR mode when native review did not run." },
+        "bodyText": { "type": "string", "description": "Rendered body, built by review-core: in PR mode the verdict headline, finding index, body notes, Dependency Freshness table and the review marker line; in local mode the full report." },
         "comments": {
           "type": "array",
           "items": {
@@ -52,34 +54,32 @@
         },
         "log": {
           "type": "object",
-          "description": "Full unfiltered analytical payload for the durable log. Host writes it to disk when orchestration.full_log is true; absent on lightweight/empty bundles.",
+          "description": "Full unfiltered analytical payload for the durable log. Host writes it to disk when orchestration.full_log is true; absent on the bare-invocation bundle.",
           "additionalProperties": false,
           "required": ["bodyText", "findings"],
           "properties": {
-            "bodyText": { "type": "string", "description": "The panel writer's complete verbatim prose." },
+            "bodyText": { "type": "string", "description": "The rendered body, verbatim." },
             "findings": {
               "type": "array",
               "items": {
                 "type": "object",
                 "additionalProperties": false,
-                "required": ["tier", "severity", "confidence", "description", "verdict_relevant"],
+                "required": ["source", "severity", "blocking", "verdict_relevant", "posting", "description"],
                 "properties": {
-                  "tier": { "enum": ["consensus", "contested", "dismissed"] },
-                  "domain": { "type": "string" },
+                  "source": { "type": "string", "description": "native, or the static domain (ruff, eslint, trivy, jbinspect, housekeeper)." },
                   "severity": { "enum": ["Critical", "Important", "Suggestion"] },
-                  "confidence": { "type": "integer", "minimum": 0, "maximum": 100, "description": "Numeric shim for confidence_flag (high 90, medium 75, low 50)." },
-                  "confidence_flag": { "enum": ["high", "medium", "low", null], "description": "Panel agreement on the finding." },
-                  "tractability": { "enum": ["Mechanical", "Bounded", "Open-ended", null] },
-                  "judgement_call": { "type": "boolean", "description": "True when the panel had no severity majority." },
-                  "recommendation": { "enum": ["fix-now", "follow-up", null] },
-                  "posting": { "enum": ["inline", "body", "table", "drop", null], "description": "Where the finding surfaces: inline comment, review body, Dependency Freshness table, or nowhere." },
-                  "dropped": { "type": "boolean", "description": "True for an open-ended Suggestion routed to the dismissed tier." },
+                  "blocking": { "type": "boolean" },
+                  "verdict_relevant": { "type": "boolean", "description": "Equals blocking: a blocking finding is what drives REQUEST_CHANGES." },
+                  "posting": { "enum": ["inline", "table", "drop"], "description": "inline (a comment, or a body note when fileless), the Dependency Freshness table, or nowhere." },
                   "annotation": { "type": ["string", "null"] },
+                  "filtered": { "enum": ["rule-source", "severity-unreachable"], "description": "rule-source: dropped for citing a CLAUDE.md outside the repo; severity-unreachable: a static Critical not on its allow-list, posted non-blocking." },
+                  "origin": { "type": "string", "description": "Where a finding moved to the body pointed (file:line outside the diff)." },
+                  "rule_id": { "type": "string" },
                   "file": { "type": "string" },
                   "line": { "type": "integer", "minimum": 0 },
                   "description": { "type": "string" },
                   "suggested_fix": { "type": "string" },
-                  "verdict_relevant": { "type": "boolean" }
+                  "failure_scenario": { "type": "string", "description": "Native findings only." }
                 }
               }
             },
@@ -91,8 +91,8 @@
                 "additionalProperties": false,
                 "required": ["index", "field", "original", "edited", "accepted"],
                 "properties": {
-                  "index": { "type": ["integer", "null"], "minimum": 0, "description": "Position in the item list sent to the editor; null for the assessment." },
-                  "field": { "enum": ["description", "suggested_fix", "assessment"] },
+                  "index": { "type": "integer", "minimum": 0, "description": "Position in the item list sent to the editor." },
+                  "field": { "enum": ["description", "suggested_fix"] },
                   "original": { "type": "string" },
                   "edited": { "type": "string" },
                   "accepted": { "type": "boolean", "description": "True when every guard passed and the rewrite replaced the original." },
@@ -102,33 +102,61 @@
             },
             "meta": {
               "type": "object",
-              "description": "Reconstruction keys for the per-cog corpus. The diff is regenerated from these, never stored. Present only when full_log captured per-cog I/O.",
+              "description": "Reconstruction keys for the per-cog corpus. The diff is regenerated from these, never stored.",
               "additionalProperties": false,
               "properties": {
                 "base": { "type": "string" },
                 "head_sha": { "type": "string" },
                 "empty_tree_mode": { "type": "boolean" },
                 "path_scope": { "type": "string" },
-                "orchestration_mode": { "const": "panel", "description": "Constant kept so logs written before classic orchestration was retired stay comparable." },
-                "panel_size": { "type": "integer", "minimum": 3 },
-                "anthropic_specialist": { "type": "boolean", "description": "True when the opt-in hybrid arm (anthropic-reviewer, Anthropic's plugin pipeline) was dispatched." }
+                "finder": { "const": "native" },
+                "cli_version": { "type": "string", "description": "The Claude Code version whose bundled /code-review produced the native findings, or unknown." }
               }
             },
             "cogs": {
               "type": "array",
-              "description": "Per-cog I/O records: one round1 record per specialist and one panel record per surviving panelist. input omitted on round-1 cogs (diff reconstructed from meta).",
+              "description": "Per-cog I/O records: one round1 record per static specialist and one native record. input omitted (diff reconstructed from meta).",
               "items": {
                 "type": "object",
                 "additionalProperties": true,
                 "required": ["phase", "output"],
                 "properties": {
-                  "phase": { "enum": ["round1", "panel"] },
+                  "phase": { "enum": ["round1", "native"] },
                   "domain": { "type": "string" },
                   "input": { "type": "object" },
                   "output": { "type": "object" }
                 }
               }
             }
+          }
+        },
+        "native": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["ran", "reason"],
+          "description": "Whether Anthropic's bundled /code-review ran and returned a valid findings array.",
+          "properties": {
+            "ran": { "type": "boolean" },
+            "reason": { "type": "string", "description": "Why native did not run; empty when it ran." }
+          }
+        },
+        "counts": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["severity", "source", "files", "blocking"],
+          "description": "Surfaced findings (inline and body notes), for the host prompt templates.",
+          "properties": {
+            "severity": {
+              "type": "object",
+              "additionalProperties": { "type": "integer", "minimum": 0 }
+            },
+            "source": {
+              "type": "object",
+              "additionalProperties": { "type": "integer", "minimum": 0 },
+              "description": "native or a static domain → count."
+            },
+            "files": { "type": "integer", "minimum": 0 },
+            "blocking": { "type": "integer", "minimum": 0 }
           }
         }
       }

@@ -6,7 +6,7 @@
   "plugins": [
     {
       "name": "code-review-suite",
-      "description": "13 specialist code review agents (incl. ESLint, Ruff, Trivy IaC, JetBrains InspectCode), shared static-analysis include, PR review skill, pre-review and address-pr-comments commands",
+      "description": "Claude Code's bundled /code-review plus static analysers (ESLint, Ruff, Trivy IaC, JetBrains InspectCode, dependency freshness), posted as one marked review — PR review skill, pre-review and address-pr-comments commands",
       "source": "./plugins/code-review-suite"
     },
     {

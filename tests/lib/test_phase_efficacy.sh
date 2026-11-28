@@ -1,138 +1,79 @@
 #!/usr/bin/env bash
-# Per-cog I/O instrumentation tests. The first group calls buildLogPayload in
-# isolation (strip-export + invoke). Later groups run review-core.js end-to-end
-# with mock globals and assert on bundle.log.
+# Per-cog I/O instrumentation tests. The first group calls buildLogPayload in isolation (the
+# call mode of tests/lib/_tc_runner.js). Later groups run review-core.js end to end through
+# the same runner and assert on bundle.log.
 
 _pe_cr_dir() {
     echo "$REPO_ROOT/plugins/code-review-suite"
 }
 
-# Invoke buildLogPayload(envelope, phaseLog) in isolation. $1 = envelope json,
-# $2 = phaseLog json (optional, defaults to undefined). Emits the payload JSON.
-# Uses the async-wrapper pattern (same as _op_run_core) so top-level await in
-# review-core.js is valid; a sentinel inserted before resolvedArgs causes the
-# async body to return before any agent() call is made.
+# Invoke buildLogPayload(findings, bodyText, phaseLog) in isolation. $1 = findings json,
+# $2 = phaseLog json. Emits the payload JSON.
 _pe_build_log_payload() {
-    local wf phaseLog runner
-    wf="$(_pe_cr_dir)/workflows/review-core.js"
-    phaseLog=''
-    [ "$#" -ge 2 ] && phaseLog="$2"
-    runner="$REPO_ROOT/tests/lib/_pe_runner.js"
-    WF="$wf" PE_ENV="$1" PE_PHASELOG="$phaseLog" node "$runner" 2>&1
-}
-
-test_buildlogpayload_omits_cogs_when_no_phaselog() {
-    local env out
-    env='{"verdict":"APPROVE","rubricReason":"clean","tiers":{"consensus":[{"file":"a.cs","line":10,"severity":"Important","confidence":75,"description":"d","suggested_fix":"f"}],"contested":[],"dismissed":[]},"bodyText":"## Panel Assessment\n> x\n"}'
-    out=$(_pe_build_log_payload "$env")
-    # Back-compat: no phaseLog → findings present, cogs/meta omitted.
-    assert_equals "1" "$(echo "$out" | jq '.findings | length')" "findings still flattened with no phaseLog"
-    assert_equals "null" "$(echo "$out" | jq -r '.cogs // "null"')" "cogs omitted when no phaseLog"
-    assert_equals "null" "$(echo "$out" | jq -r '.meta // "null"')" "meta omitted when no phaseLog"
+    WF="$(_pe_cr_dir)/workflows/review-core.js" TC_CALL=buildLogPayload \
+        TC_INPUT="$(jq -cn --argjson f "$1" --argjson p "$2" '[$f, "body", $p]')" \
+        node "$REPO_ROOT/tests/lib/_tc_runner.js" 2>&1 | jq -c '.result' 2>/dev/null || echo 'RUNNER_FAILED'
 }
 
 test_buildlogpayload_emits_meta_and_cogs() {
-    local env pl out
-    env='{"verdict":"APPROVE","rubricReason":"clean","tiers":{"consensus":[],"contested":[],"dismissed":[]},"bodyText":"## Panel Assessment\n> x\n"}'
-    pl='{"meta":{"base":"main","head_sha":"abc123","empty_tree_mode":false,"path_scope":""},"cogs":[{"phase":"round1","domain":"correctness","output":{"findings":[]}}]}'
-    out=$(_pe_build_log_payload "$env" "$pl")
+    local f pl out
+    f='[{"source":"native","severity":"Important","blocking":true,"posting":"inline","file":"a.py","line":3,"description":"d","suggested_fix":"","failure_scenario":"fs"}]'
+    pl='{"meta":{"base":"main","head_sha":"abc123","empty_tree_mode":false,"path_scope":"","finder":"native","cli_version":"x"},"cogs":[{"phase":"round1","domain":"ruff","output":{"findings":[]}}]}'
+    out=$(_pe_build_log_payload "$f" "$pl")
     assert_equals "main" "$(echo "$out" | jq -r '.meta.base')" "meta.base passed through"
     assert_equals "abc123" "$(echo "$out" | jq -r '.meta.head_sha')" "meta.head_sha passed through"
-    assert_equals "correctness" "$(echo "$out" | jq -r '.cogs[0].domain')" "cog domain passed through"
+    assert_equals "ruff" "$(echo "$out" | jq -r '.cogs[0].domain')" "cog domain passed through"
     assert_equals "round1" "$(echo "$out" | jq -r '.cogs[0].phase')" "cog phase passed through"
+    assert_equals "true true fs" "$(echo "$out" | jq -r '.findings[0] | "\(.blocking) \(.verdict_relevant) \(.failure_scenario)"')" \
+        "finding record: blocking, verdict_relevant = blocking, failure_scenario kept"
 }
 
-# Runs review-core.js end-to-end on the panel path. $1 = args json, $2 = round-1
-# specialist findings map (domain -> findings[]), $3 = panelists json array (one entry per
-# seat; a null entry is a dropped panelist). The panel writer returns minimal prose.
+# Runs review-core.js end to end. $1 = flags json, $2 = native findings array json.
 _pe_run_core() {
-    local wf
-    wf="$(_pe_cr_dir)/workflows/review-core.js"
-    WF="$wf" PE_ARGS="$1" PE_R1="$2" PE_PANELISTS="$3" node -e '
-        const fs = require("fs");
-        const src = fs.readFileSync(process.env.WF, "utf8")
-            .replace(/^export\s+const\s+meta/m, "const meta");
-        const r1 = JSON.parse(process.env.PE_R1);
-        const panelists = JSON.parse(process.env.PE_PANELISTS);
-        const roster = ["Cronus", "Rhea", "Oceanus", "Hyperion", "Themis"];
-        const agent = async (prompt, opts) => {
-            const label = (opts && opts.label) || "";
-            if (label === "panel-writer") return { assessment: "ok" };
-            if (label.startsWith("panel-")) {
-                const p = panelists[roster.indexOf(label.slice("panel-".length))];
-                return p === undefined ? null : p;
-            }
-            return { status: "ok", findings: r1[label] || [] };  // specialists
-        };
-        const parallel = (thunks) => Promise.all(thunks.map(t => t()));
-        const phase = () => {};
-        const log = () => {};
-        const pipeline = async () => [];
-        const workflow = async () => null;
-        const timeoutId = setTimeout(() => { process.stdout.write("TIMEOUT"); process.exit(1); }, 15000);
-        (async () => {
-            const fn = new Function("agent","parallel","pipeline","phase","log","args","workflow",
-                "return (async()=>{" + src + "\n})()");
-            const bundle = await fn(agent, parallel, pipeline, phase, log, process.env.PE_ARGS, workflow);
-            clearTimeout(timeoutId);
-            process.stdout.write(JSON.stringify(bundle));
-            process.exit(0);
-        })().catch(e => { clearTimeout(timeoutId); process.stdout.write("THREW: " + e.message); process.exit(1); });
-    ' 2>&1
+    local args native
+    args=$(jq -cn --argjson flags "$1" \
+        '{agentPrompt: "x", flags: $flags, reviewMode: "pr", base: "main", headSha: ("a" * 40),
+          emptyTreeMode: false, pathScope: "", tempDir: "/tmp/claude-test/x", repoDir: "/tmp/fx-repo",
+          changedLinesBlock: "Changed lines:\na.py: 1-40\n", cliVersion: "2.1.332",
+          nativeTarget: ("/tmp/fx-repo " + ("b" * 40) + "..." + ("a" * 40))}')
+    native=$(jq -cn --arg a "$2" '"Done.\n\n```json\n" + $a + "\n```"')
+    WF="$(_pe_cr_dir)/workflows/review-core.js" TC_ARGS="$args" TC_NATIVE="$native" \
+        node "$REPO_ROOT/tests/lib/_tc_runner.js" 2>&1 | jq -c '.bundle' 2>/dev/null || echo 'RUNNER_FAILED'
 }
 
-# $1 = panel size (default 3).
-_pe_args() {
-    local n="${1:-3}"
-    local sha40="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-    echo "{\"agentPrompt\":\"x\",\"flags\":{},\"route\":\"full\",\"selfReReview\":false,\"reviewMode\":\"pr\",\"base\":\"main\",\"headSha\":\"${sha40}\",\"emptyTreeMode\":false,\"pathScope\":\"\",\"tempDir\":\"/tmp/claude-test/x\",\"intentLedger\":\"\",\"panelSize\":${n},\"changedLinesBlock\":\"Changed lines:\\na.cs: 1-40\\n\"}"
-}
+_PE_NAT='[{"file":"a.py","line":10,"summary":"d","failure_scenario":"f","severity":"important"}]'
 
-# One correctness finding, and the panelist ballot that votes it real.
-_PE_R1='{"correctness":[{"file":"a.cs","line":10,"severity":"Important","confidence":90,"description":"d","suggested_fix":"f"}]}'
-_PE_BALLOT='{"votes":[{"finding_id":0,"is_real":true,"severity":"Important","tractability":"Bounded","blocks_goal":false,"rationale":"r"}],"raised":[]}'
-
-test_phaselog_captures_round1_and_meta() {
+test_phaselog_captures_round1_native_and_meta() {
     local out
-    out=$(_pe_run_core "$(_pe_args)" '{}' "[${_PE_BALLOT},${_PE_BALLOT},${_PE_BALLOT}]")
-    # meta carries the four reconstruction keys.
+    out=$(_pe_run_core '{"py":true,"iac":true}' "$_PE_NAT")
     assert_equals "main" "$(echo "$out" | jq -r '.log.meta.base')" "log.meta.base captured"
     assert_equals "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" "$(echo "$out" | jq -r '.log.meta.head_sha')" "log.meta.head_sha captured"
     assert_equals "false" "$(echo "$out" | jq -r '.log.meta.empty_tree_mode')" "log.meta.empty_tree_mode captured"
-    # One round-1 cog per core specialist (9 core, no conditionals).
-    assert_equals "9" "$(echo "$out" | jq '[.log.cogs[] | select(.phase=="round1")] | length')" "9 round-1 cogs (core list)"
-    # Round-1 cogs carry no input (diff reconstructed from meta).
+    assert_equals "native 2.1.332" "$(echo "$out" | jq -r '.log.meta | "\(.finder) \(.cli_version)"')" "log.meta finder and cli_version captured"
+    assert_equals "ruff,trivy" "$(echo "$out" | jq -r '[.log.cogs[] | select(.phase=="round1") | .domain] | sort | join(",")')" \
+        "one round-1 cog per flagged static specialist"
+    assert_equals "1" "$(echo "$out" | jq '[.log.cogs[] | select(.phase=="native")] | length')" "one native cog"
+    assert_equals "ok 1" "$(echo "$out" | jq -r '.log.cogs[] | select(.phase=="native") | "\(.output.status) \(.output.findings | length)"')" \
+        "native cog carries native's raw array"
     assert_equals "null" "$(echo "$out" | jq -r '[.log.cogs[] | select(.phase=="round1")][0].input // "null"')" "round-1 cog omits input"
 }
 
-test_phaselog_captures_one_panel_cog_per_surviving_panelist() {
-    local out
-    # Panel of 5 with seat 2 dropped (null): 4 panel cogs, each carrying that seat's ballot.
-    out=$(_pe_run_core "$(_pe_args 5)" "$_PE_R1" "[${_PE_BALLOT},${_PE_BALLOT},null,${_PE_BALLOT},${_PE_BALLOT}]")
-    assert_equals "4" "$(echo "$out" | jq '[.log.cogs[] | select(.phase=="panel")] | length')" "dropped panelist leaves no panel cog (4 of 5)"
-    assert_equals "true" "$(echo "$out" | jq -r '[.log.cogs[] | select(.phase=="panel")][0].output.votes[0].is_real')" "panel cog carries the panelist's votes"
-    assert_equals "[]" "$(echo "$out" | jq -c '[.log.cogs[] | select(.phase=="panel")][0].output.raised')" "panel cog carries the panelist's raised list"
-    assert_equals "null" "$(echo "$out" | jq -r '[.log.cogs[] | select(.phase=="panel")][0].input // "null"')" "panel cog omits input (prompt reconstructable from meta)"
-}
-
 test_phaselog_phases_match_schema_enum() {
-    local out schema emitted
+    local out schema
     schema="$(_pe_cr_dir)/includes/finding-schema.json"
-    out=$(_pe_run_core "$(_pe_args)" "$_PE_R1" "[${_PE_BALLOT},${_PE_BALLOT},${_PE_BALLOT}]")
-    emitted=$(echo "$out" | jq -c '[.log.cogs[].phase] | unique')
-    # Only the specialist and panelist phases are recorded.
-    assert_equals '["panel","round1"]' "$emitted" "cogs record only round1 and panel phases"
-    assert_equals '["panel","round1"]' \
+    out=$(_pe_run_core '{"py":true}' "$_PE_NAT")
+    assert_equals '["native","round1"]' "$(echo "$out" | jq -c '[.log.cogs[].phase] | unique')" "cogs record only round1 and native phases"
+    assert_equals '["native","round1"]' \
         "$(jq -c '.["$defs"].sealedBundle.properties.log.properties.cogs.items.properties.phase.enum | sort' "$schema")" \
-        "schema cog phase enum is exactly round1 + panel"
+        "schema cog phase enum is exactly round1 + native"
 }
 
 # ---------------------------------------------------------------------------
 # Replay contract: pins the diff-reconstruction recipe documented in
-# specialist-context.md so that a specialist can always regenerate its exact
+# static-analysis-context.md so that a specialist can always regenerate its exact
 # input from the four durable meta keys (base, head_sha, empty_tree_mode,
 # path_scope). If the diff syntax that specialists use ever changes, BOTH this
-# test AND the spec's reconstruction recipe in specialist-context.md must change
+# test AND the reconstruction recipe in static-analysis-context.md must change
 # in lockstep.
 #
 # Each fixture builds its OWN throwaway git repo (via _pe_make_fixture_repo)
@@ -143,7 +84,7 @@ test_phaselog_phases_match_schema_enum() {
 #
 # The helper below encodes the recipe. Each test_* function derives its
 # "specialist's actual command" side INDEPENDENTLY (literal git commands written
-# per specialist-context.md) so the two sides can genuinely diverge if the
+# per static-analysis-context.md) so the two sides can genuinely diverge if the
 # recipe drifts.
 # ---------------------------------------------------------------------------
 
@@ -171,7 +112,7 @@ _pe_make_fixture_repo() {
     echo "$dir"
 }
 
-# Encode the reconstruction recipe from specialist-context.md §44-46.
+# Encode the reconstruction recipe from static-analysis-context.md §1.
 # $1=repo $2=base $3=head_sha $4=empty_tree_mode (true|false) $5=path_scope (may be empty)
 # Emits the diff piped through git hash-object --stdin.
 _pe_reconstruct_diff() {
@@ -182,14 +123,14 @@ _pe_reconstruct_diff() {
     empty_tree_mode="$4"
     path_scope="$5"
     if [ "$empty_tree_mode" = "true" ]; then
-        # Two-arg syntax for empty-tree mode (spec §44).
+        # Two-arg syntax for empty-tree mode (static-analysis-context.md §1).
         if [ -n "$path_scope" ]; then
             hash=$(git -C "$repo" diff "$base" "$head_sha" -- "$path_scope" | git -C "$repo" hash-object --stdin)
         else
             hash=$(git -C "$repo" diff "$base" "$head_sha" | git -C "$repo" hash-object --stdin)
         fi
     else
-        # Three-dot syntax for normal mode (spec §44).
+        # Three-dot syntax for normal mode (static-analysis-context.md §1).
         if [ -n "$path_scope" ]; then
             hash=$(git -C "$repo" diff "$base"..."$head_sha" -- "$path_scope" | git -C "$repo" hash-object --stdin)
         else
@@ -205,7 +146,7 @@ test_reconstruction_round_trip_normal() {
     repo=$(_pe_make_fixture_repo)
     base=$(git -C "$repo" rev-parse HEAD~1)
     head=$(git -C "$repo" rev-parse HEAD)
-    # Specialist's literal command (specialist-context.md §44: three-dot when empty_tree_mode=false).
+    # Specialist's literal command (static-analysis-context.md §1: three-dot when empty_tree_mode=false).
     specialist_hash=$(git -C "$repo" diff "$base"..."$head" | git -C "$repo" hash-object --stdin)
     # Recipe output from meta keys.
     recipe_hash=$(_pe_reconstruct_diff "$repo" "$base" "$head" "false" "")
@@ -231,7 +172,7 @@ test_reconstruction_round_trip_path_scope() {
     base=$(git -C "$repo" rev-parse HEAD~1)
     head=$(git -C "$repo" rev-parse HEAD)
     path_scope="beta.txt"
-    # Specialist's literal command (spec §44 three-dot + §46 path scope).
+    # Specialist's literal command (static-analysis-context.md §1: three-dot + path scope).
     specialist_hash=$(git -C "$repo" diff "$base"..."$head" -- "$path_scope" | git -C "$repo" hash-object --stdin)
     # Recipe output from meta keys.
     recipe_hash=$(_pe_reconstruct_diff "$repo" "$base" "$head" "false" "$path_scope")
@@ -253,7 +194,7 @@ test_reconstruction_round_trip_empty_tree() {
     empty_tree="4b825dc642cb6eb9a060e54bf8d69288fbee4904"
     base=$(git -C "$repo" rev-parse HEAD~1)
     head=$(git -C "$repo" rev-parse HEAD)
-    # Specialist's literal command (spec §44: two-arg when empty_tree_mode=true).
+    # Specialist's literal command (static-analysis-context.md §1: two-arg when empty_tree_mode=true).
     specialist_hash=$(git -C "$repo" diff "$empty_tree" "$head" | git -C "$repo" hash-object --stdin)
     # Recipe output from meta keys.
     recipe_hash=$(_pe_reconstruct_diff "$repo" "$empty_tree" "$head" "true" "")
@@ -288,7 +229,7 @@ test_schema_documents_cog_payload() {
     else
         fail "log.cogs documented as array" "cogs missing or not array"
     fi
-    # meta/cogs MUST NOT be in log.required (omitted on lightweight/no-capture).
+    # cogs MUST NOT be in log.required (the bare-invocation bundle carries no log).
     if jq -e '.["$defs"].sealedBundle.properties.log.required | index("cogs")' "$schema" >/dev/null 2>&1; then
         fail "log.cogs is optional" "cogs wrongly listed in log.required"
     else

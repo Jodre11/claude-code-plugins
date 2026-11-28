@@ -15,127 +15,102 @@ _extract_regex() {
         | head -1
 }
 
-test_sync_base_regex_matches() {
+# The files that resolve $BASE, $HEAD_SHA and $PATH_SCOPE on their own and so must agree with
+# review-pipeline.md Step 1. specialist-context.md serves the LLM agents until they retire.
+_sync_resolvers() {
     local cr
     cr=$(_cr_dir)
-    if [[ ! -d "$cr" ]]; then
-        skip "BASE regex sync" "code-review-suite plugin not found"
-        return
+    echo "$cr/includes/static-analysis-context.md"
+    if [[ -f "$cr/includes/specialist-context.md" ]]; then
+        echo "$cr/includes/specialist-context.md"
     fi
+}
 
-    local pipeline specialist
-    pipeline=$(_extract_regex "$cr/includes/review-pipeline.md" '\$BASE')
-    specialist=$(_extract_regex "$cr/includes/specialist-context.md" '\$BASE')
-
+# $1 variable name as it appears in the prose (e.g. '\$BASE'), $2 label.
+_sync_regex_case() {
+    local pipeline file got
+    pipeline=$(_extract_regex "$(_cr_dir)/includes/review-pipeline.md" "$1")
     if [[ -z "$pipeline" ]]; then
-        fail "BASE regex: extracted from review-pipeline.md" "no '\`\$BASE\` matches' line found"
-        return
+        fail "$2 regex: extracted from review-pipeline.md" "no '\`$1\` matches' line found"
+        return 0
     fi
-    assert_equals "$pipeline" "$specialist" \
-        "BASE regex: review-pipeline.md matches specialist-context.md"
+    while IFS= read -r file; do
+        got=$(_extract_regex "$file" "$1")
+        assert_equals "$pipeline" "$got" "$2 regex: review-pipeline.md matches $(basename "$file")"
+    done < <(_sync_resolvers)
+}
+
+test_sync_base_regex_matches() {
+    _sync_regex_case '\$BASE' BASE
 }
 
 test_sync_head_sha_regex_matches() {
-    local cr
-    cr=$(_cr_dir)
-    if [[ ! -d "$cr" ]]; then
-        skip "HEAD_SHA regex sync" "code-review-suite plugin not found"
-        return
-    fi
-
-    local pipeline specialist
-    pipeline=$(_extract_regex "$cr/includes/review-pipeline.md" '\$HEAD_SHA')
-    specialist=$(_extract_regex "$cr/includes/specialist-context.md" '\$HEAD_SHA')
-
-    if [[ -z "$pipeline" ]]; then
-        fail "HEAD_SHA regex: extracted from review-pipeline.md" "no '\`\$HEAD_SHA\` matches' line found"
-        return
-    fi
-    assert_equals "$pipeline" "$specialist" \
-        "HEAD_SHA regex: review-pipeline.md matches specialist-context.md"
+    _sync_regex_case '\$HEAD_SHA' HEAD_SHA
 }
 
 test_sync_path_scope_regex_matches() {
-    local cr
-    cr=$(_cr_dir)
-    if [[ ! -d "$cr" ]]; then
-        skip "PATH_SCOPE regex sync" "code-review-suite plugin not found"
-        return
-    fi
-
-    local pipeline specialist
-    pipeline=$(_extract_regex "$cr/includes/review-pipeline.md" '\$PATH_SCOPE')
-    specialist=$(_extract_regex "$cr/includes/specialist-context.md" '\$PATH_SCOPE')
-
-    if [[ -z "$pipeline" ]]; then
-        fail "PATH_SCOPE regex: extracted from review-pipeline.md" "no '\`\$PATH_SCOPE\` matches' line found"
-        return
-    fi
-    assert_equals "$pipeline" "$specialist" \
-        "PATH_SCOPE regex: review-pipeline.md matches specialist-context.md"
+    _sync_regex_case '\$PATH_SCOPE' PATH_SCOPE
 }
 
 test_sync_path_scope_traversal_check_present() {
-    local cr
-    cr=$(_cr_dir)
-    if [[ ! -d "$cr" ]]; then
-        skip "PATH_SCOPE traversal check" "code-review-suite plugin not found"
-        return
-    fi
-
-    for file in includes/review-pipeline.md includes/specialist-context.md; do
-        local basename_file
-        basename_file=$(basename "$file")
-        if grep -q 'contains `\.\.` as a substring' "$cr/$file" 2>/dev/null; then
-            pass "$basename_file: PATH_SCOPE .. traversal check present"
+    local file
+    while IFS= read -r file; do
+        if grep -q 'contains `\.\.` as a substring' "$file"; then
+            pass "$(basename "$file"): PATH_SCOPE .. traversal check present"
         else
-            fail "$basename_file: PATH_SCOPE .. traversal check present" "missing directory traversal guard"
+            fail "$(basename "$file"): PATH_SCOPE .. traversal check present" "missing directory traversal guard"
         fi
-    done
+    done < <(echo "$(_cr_dir)/includes/review-pipeline.md"; _sync_resolvers)
 }
 
 test_sync_base_branch_steps_match() {
-    local cr
-    cr=$(_cr_dir)
-    if [[ ! -d "$cr" ]]; then
-        skip "base-branch steps sync" "code-review-suite plugin not found"
-        return
-    fi
-
-    # Extract numbered items 1-4 from each file
-    # review-pipeline.md: under "Try these in order:", items 1-4
-    # specialist-context.md: starts directly at "1. If `$ARGUMENTS`", items 1-4
-
-    local pipeline_steps specialist_steps
-
+    # review-pipeline.md lists items 1-4 under "Try these in order:"; each resolver starts
+    # directly at "1. If `$ARGUMENTS`".
+    local pipeline_steps steps file tmp1 tmp2 diff_output
     pipeline_steps=$(sed -n '/^Try these in order:$/,/^Store as/{
 /^[1-4]\. /p
-}' "$cr/includes/review-pipeline.md")
-    specialist_steps=$(sed -n '/^1\. If `\$ARGUMENTS`/,/^Store as/{
-/^[1-4]\. /p
-}' "$cr/includes/specialist-context.md")
-
+}' "$(_cr_dir)/includes/review-pipeline.md")
     if [[ -z "$pipeline_steps" ]]; then
         fail "base-branch steps: extracted from review-pipeline.md" "no steps found"
-        return
+        return 0
     fi
-    if [[ -z "$specialist_steps" ]]; then
-        fail "base-branch steps: extracted from specialist-context.md" "no steps found"
-        return
-    fi
+    while IFS= read -r file; do
+        steps=$(sed -n '/^1\. If `\$ARGUMENTS`/,/^Store as/{
+/^[1-4]\. /p
+}' "$file")
+        if [[ -n "$steps" && "$pipeline_steps" == "$steps" ]]; then
+            pass "base-branch resolution steps 1-4 match between pipeline and $(basename "$file")"
+        else
+            tmp1=$(mktemp)
+            tmp2=$(mktemp)
+            echo "$pipeline_steps" > "$tmp1"
+            echo "$steps" > "$tmp2"
+            diff_output=$(diff -u --label review-pipeline.md --label "$(basename "$file")" "$tmp1" "$tmp2" || true)
+            rm -f "$tmp1" "$tmp2"
+            fail "base-branch resolution steps 1-4 match between pipeline and $(basename "$file")" "$diff_output"
+        fi
+    done < <(_sync_resolvers)
+}
 
-    if [[ "$pipeline_steps" == "$specialist_steps" ]]; then
-        pass "base-branch resolution steps 1-4 match between pipeline and specialist"
+# The severity ladder the static mappings use (§11): Critical stays outage / breach / data
+# loss and is reachable only through a tool's allow-list.
+test_sync_static_severity_definitions() {
+    local sa="$(_cr_dir)/includes/static-analysis-context.md" lit
+    for lit in \
+        '## 11. Severity definitions' \
+        '**data loss, a security breach, or a production outage**' \
+        "reaches Critical only through its tool's \`Critical-allow-list:\`" \
+        '(see §11)'; do
+        if grep -qF -- "$lit" "$sa"; then
+            pass "static severity definitions: static-analysis-context.md contains '$lit'"
+        else
+            fail "static severity definitions: static-analysis-context.md contains '$lit'" "literal not found in $sa"
+        fi
+    done
+    if grep -qF 'severity-definitions.md' "$sa"; then
+        fail "static severity definitions: no pointer to severity-definitions.md" "static-analysis-context.md still cites it"
     else
-        local tmp1 tmp2
-        tmp1=$(mktemp)
-        tmp2=$(mktemp)
-        echo "$pipeline_steps" > "$tmp1"
-        echo "$specialist_steps" > "$tmp2"
-        local diff_output
-        diff_output=$(diff -u --label review-pipeline.md --label specialist-context.md "$tmp1" "$tmp2" || true)
-        rm -f "$tmp1" "$tmp2"
-        fail "base-branch resolution steps 1-4 match between pipeline and specialist" "$diff_output"
+        pass "static severity definitions: no pointer to severity-definitions.md"
     fi
 }
 
@@ -156,12 +131,21 @@ test_dispatcher_includes_new_static_analysis_flags() {
         fi
 
         local flag
-        for flag in '$JS_DETECTED' '$PY_DETECTED' '$IAC_DETECTED' '$HOUSEKEEPING_DETECTED' '$PRODUCTION_SOURCE_DETECTED'; do
+        for flag in '$CSHARP_DETECTED' '$JS_DETECTED' '$PY_DETECTED' '$IAC_DETECTED' '$HOUSEKEEPING_DETECTED'; do
             if grep -qF "$flag" "$path"; then
                 pass "static-analysis dispatcher flags: $file contains $flag"
             else
                 fail "static-analysis dispatcher flags: $file contains $flag" \
                     "flag literal not found"
+            fi
+        done
+        # Only the static specialists read detection flags now; the LLM-domain ones retired.
+        for flag in '$UI_DETECTED' '$TESTS_DETECTED' '$PRODUCTION_SOURCE_DETECTED' '$SECURITY_SENSITIVE' \
+            '$SIGNIFICANT_DELETIONS'; do
+            if grep -qF "$flag" "$path"; then
+                fail "static-analysis dispatcher flags: $file omits retired $flag" "retired flag still present"
+            else
+                pass "static-analysis dispatcher flags: $file omits retired $flag"
             fi
         done
     done
@@ -223,9 +207,6 @@ test_sync_static_analysis_policy_literals() {
     for literal in \
         '## 10. Severity-locked policy' \
         '**Severity is locked.**' \
-        '**Existence gate.**' \
-        'Static trust governs severity, never whether the issue is real.' \
-        '**Confidence reflects panel agreement.**' \
         '**Critical-allow-list mechanism.**' \
         '### Dependency Freshness'; do
         if grep -qF "$literal" "$include"; then
@@ -236,67 +217,20 @@ test_sync_static_analysis_policy_literals() {
         fi
     done
 
-    # The enforcement side: the STATIC set names all five specialists, the static branch
-    # keeps the tool's severity, and the static-tier rule blocks only on a unanimous-real
-    # Important-or-higher finding — the rule §10 documents.
-    if grep -qF "const STATIC = new Set(['jbinspect', 'eslint', 'ruff', 'trivy', 'housekeeper'])" "$review_core"; then
-        pass "static-analysis policy: review-core.js STATIC set lists all five specialists"
-    else
-        fail "static-analysis policy: review-core.js STATIC set lists all five specialists" \
-            "expected const STATIC = new Set(['jbinspect', 'eslint', 'ruff', 'trivy', 'housekeeper']) in $review_core"
-    fi
-    if grep -qF 'severity = finding.severity           // severity locked' "$review_core"; then
-        pass "static-analysis policy: review-core.js locks static severity"
-    else
-        fail "static-analysis policy: review-core.js locks static severity" \
-            "the static branch of mapSpreadToTierConfidence must keep finding.severity (the '// severity locked' line)"
-    fi
-    if grep -qF "tier = (unanimousReal && SEV_TO_LEVEL[severity] >= 2) ? 'consensus' : 'contested'" "$review_core"; then
-        pass "static-analysis policy: review-core.js blocks static findings only when unanimous-real and >= Important"
-    else
-        fail "static-analysis policy: review-core.js blocks static findings only when unanimous-real and >= Important" \
-            "the static tier rule documented in §10 ('Confidence reflects panel agreement') was not found in $review_core"
-    fi
-}
-
-test_sync_static_analysis_existence_gate() {
-    local cr
-    cr=$(_cr_dir)
-    if [[ ! -d "$cr" ]]; then
-        skip "static-analysis existence gate" "code-review-suite plugin not found"
-        return
-    fi
-
-    local include="$cr/includes/static-analysis-context.md"
-    local review_core="$cr/workflows/review-core.js"
-    local f
-    for f in "$include" "$review_core"; do
-        if [[ ! -f "$f" ]]; then
-            fail "static-analysis existence gate: inputs present" "missing: $f"
-            return
+    # The enforcement side: the STATIC set names all five specialists, a static finding blocks
+    # on the tool's own Critical or Important, and a Critical off the allow-list does not block.
+    local literal_code
+    for literal_code in \
+        "const STATIC = new Set(['jbinspect', 'eslint', 'ruff', 'trivy', 'housekeeper'])" \
+        "const blocking = f.severity === 'Critical' || f.severity === 'Important'" \
+        "if (f.severity === 'Critical' && !staticCriticalAllowed(s.domain, f)) {"; do
+        if grep -qF -- "$literal_code" "$review_core"; then
+            pass "static-analysis policy: review-core.js contains '$literal_code'"
+        else
+            fail "static-analysis policy: review-core.js contains '$literal_code'" \
+                "the §10 enforcement line was not found in $review_core"
         fi
     done
-
-    # The classic rule "Dismissed tier is forbidden" for static findings was replaced by the
-    # existence gate: a static agent can misreport tool output, so the panel may dismiss it.
-    # Reintroducing the old wording would document the opposite of what the code does.
-    if grep -qF 'Dismissed tier is forbidden' "$include"; then
-        fail "static-analysis existence gate: retired 'Dismissed tier is forbidden' rule absent" \
-            "static-analysis-context.md reinstates the retired rule; review-core.js dismisses a static finding a panel majority votes not real"
-    else
-        pass "static-analysis existence gate: retired 'Dismissed tier is forbidden' rule absent"
-    fi
-
-    # The gate must be evaluated before the static branch, or static findings bypass it.
-    local gate_line static_line
-    gate_line=$(grep -nF 'if (tally.is_real_false > tally.is_real_true) {' "$review_core" | head -1 | cut -d: -f1)
-    static_line=$(grep -nF '} else if (isStatic) {' "$review_core" | head -1 | cut -d: -f1)
-    if [[ -n "$gate_line" && -n "$static_line" ]] && (( gate_line < static_line )); then
-        pass "static-analysis existence gate: review-core.js applies the gate before the static branch"
-    else
-        fail "static-analysis existence gate: review-core.js applies the gate before the static branch" \
-            "expected the majority-not-real check (line ${gate_line:-<missing>}) to precede '} else if (isStatic) {' (line ${static_line:-<missing>})"
-    fi
 }
 
 test_sync_static_analysis_critical_allowlist_present() {
@@ -465,11 +399,11 @@ test_sync_phase_minus1_target_repo_present() {
     fi
 }
 
-test_sync_static_analysis_panel_feed_documented() {
+test_sync_static_analysis_specialist_enumeration() {
     local cr
     cr=$(_cr_dir)
     if [[ ! -d "$cr" ]]; then
-        skip "static-analysis panel feed documentation" "code-review-suite plugin not found"
+        skip "static-analysis specialist enumeration" "code-review-suite plugin not found"
         return
     fi
 
@@ -479,18 +413,10 @@ test_sync_static_analysis_panel_feed_documented() {
     local file
     for file in "$sa_context" "$review_core"; do
         if [[ ! -f "$file" ]]; then
-            fail "static-analysis panel feed documentation: $(basename "$file") present" "file not found"
+            fail "static-analysis specialist enumeration: $(basename "$file") present" "file not found"
             return
         fi
     done
-
-    # §8 documents that static findings reach every panelist alongside the LLM findings.
-    if grep -qF 'every static-analysis finding is shown to each panelist' "$sa_context"; then
-        pass "static-analysis panel feed: §8 affirms findings shown to each panelist"
-    else
-        fail "static-analysis panel feed: §8 affirms findings shown to each panelist" \
-            "static-analysis-context.md §8 must state 'every static-analysis finding is shown to each panelist'"
-    fi
 
     # Each of the five static-analysis specialist names must appear in both review-core.js
     # and static-analysis-context.md. Presence is asserted individually (not order/format)
@@ -508,9 +434,9 @@ test_sync_static_analysis_panel_feed_documented() {
         fi
     done
     if [[ -z "$core_missing" && -z "$sa_missing" ]]; then
-        pass "static-analysis panel feed: specialist enumeration consistent across canonicals"
+        pass "static-analysis specialist enumeration: consistent across canonicals"
     else
-        fail "static-analysis panel feed: specialist enumeration consistent across canonicals" \
+        fail "static-analysis specialist enumeration: consistent across canonicals" \
             "review-core.js missing names:${core_missing:-<none>}; static-analysis-context.md missing names:${sa_missing:-<none>} — both must reference all five (jbinspect, eslint, ruff, trivy, housekeeper) static-analysis specialists"
     fi
 }
@@ -622,32 +548,6 @@ test_analysis_only_stage1_resolve_and_no_short_circuit() {
     else
         fail "analysis-only Stage 1: forbids the MERGED/CLOSED short-circuit" \
             "Stage 1 must carry the explicit 'Do not short-circuit on PR state under analysis-only' instruction — without it the model rationalises a halt on a merged PR before dispatching any specialist (the root-cause failure this mode fixes)"
-    fi
-}
-
-test_analysis_only_phase04_suppress_present_in_canonical() {
-    # The existing pipeline-inline sync test enforces byte-identity across the three
-    # copies, but a *unanimous* deletion would keep them identical and pass. This
-    # presence check on the canonical is belt-and-braces: it fails if the analysis-only
-    # Phase 0.4 suppression clause is removed from all three at once.
-    local cr
-    cr=$(_cr_dir)
-    if [[ ! -d "$cr" ]]; then
-        skip "analysis-only Phase 0.4 suppression" "code-review-suite plugin not found"
-        return
-    fi
-
-    local canonical="$cr/includes/review-pipeline.md"
-    if [[ ! -f "$canonical" ]]; then
-        fail "analysis-only Phase 0.4 suppression: canonical present" "missing: $canonical"
-        return
-    fi
-
-    if grep -qF 'Phase 0 halt (analysis-only, not posted)' "$canonical"; then
-        pass "analysis-only Phase 0.4 suppression: canonical carries the render-not-post clause"
-    else
-        fail "analysis-only Phase 0.4 suppression: canonical carries the render-not-post clause" \
-            "review-pipeline.md Phase 0.4 pr-mode block must, under \$ANALYSIS_ONLY = true, render the halt notice to stdout ('Phase 0 halt (analysis-only, not posted)') instead of posting a REQUEST_CHANGES review — otherwise analysis-only still writes to GitHub on a narrative-less PR"
     fi
 }
 
@@ -899,81 +799,6 @@ test_analysis_only_stage5_skips_posting() {
     fi
 }
 
-test_analysis_only_trivial_pr_no_post() {
-    local cr
-    cr=$(_cr_dir)
-    if [[ ! -d "$cr" ]]; then
-        skip "analysis-only trivial-mode pr no-post" "code-review-suite plugin not found"
-        return
-    fi
-
-    local canonical="$cr/includes/review-pipeline.md"
-    if [[ ! -f "$canonical" ]]; then
-        fail "analysis-only trivial-mode pr no-post: canonical present" "missing: $canonical"
-        return
-    fi
-
-    if grep -qF 'Under `$ANALYSIS_ONLY = true`, do not post' "$canonical"; then
-        pass "analysis-only trivial-mode pr no-post: canonical carries Phase 0.7.9 guard"
-    else
-        fail "analysis-only trivial-mode pr no-post: canonical carries Phase 0.7.9 guard" \
-            "review-pipeline.md Phase 0.7.9 pr-mode block must carry 'Under \`\$ANALYSIS_ONLY = true\`, do not post' so an analysis_only run skips the trivial-mode inline POST and verdict submission"
-    fi
-}
-
-test_sync_agent_hazard_severity_basis() {
-    local cr
-    cr=$(_cr_dir)
-    if [[ ! -d "$cr" ]]; then
-        skip "agent-hazard severity basis" "code-review-suite plugin not found"
-        return
-    fi
-
-    local sev="$cr/includes/severity-definitions.md"
-    local brief="$cr/includes/panel-concern-brief.md"
-    local apic="$cr/agents/api-contract-reviewer.md"
-
-    local f
-    for f in "$sev" "$brief" "$apic"; do
-        if [[ ! -f "$f" ]]; then
-            fail "agent-hazard severity basis: inputs present" "missing: $f"
-            return
-        fi
-    done
-
-    # Canonical: the basis heading, the load-bearing predicate, and the
-    # Critical-untouched guardrail must all be present in severity-definitions.md.
-    local lit
-    for lit in \
-        '**Agent-hazard basis**' \
-        'predictably cause a future maintainer' \
-        'Important only, never Critical'; do
-        if grep -qF "$lit" "$sev"; then
-            pass "agent-hazard severity basis: severity-definitions.md contains '$lit'"
-        else
-            fail "agent-hazard severity basis: severity-definitions.md contains '$lit'" \
-                "literal not found in $sev"
-        fi
-    done
-
-    # Ripple lock: the panel brief must name the basis, or panelists voting severity
-    # will silently downgrade agent-hazard findings to Suggestion.
-    if grep -qF 'agent-hazard basis' "$brief"; then
-        pass "agent-hazard severity basis: panel brief references the agent-hazard basis"
-    else
-        fail "agent-hazard severity basis: panel brief references the agent-hazard basis" \
-            "anchor 'agent-hazard basis' not found in $brief"
-    fi
-
-    # Additive re-point lock: comment-truth (now in api-contract) must cite the basis.
-    if grep -qF 'agent-hazard basis' "$apic"; then
-        pass "agent-hazard severity basis: comment-truth cites the agent-hazard basis"
-    else
-        fail "agent-hazard severity basis: comment-truth cites the agent-hazard basis" \
-            "anchor 'agent-hazard basis' not found in $apic"
-    fi
-}
-
 # Phase 0.2 Source 1: a prose file is an intent candidate only inside a doc directory (or a
 # configured intent.doc_paths glob). An extension match alone — a README, CHANGELOG or agent
 # prompt edit — must never become the goal, because a goal can block the merge (row 1).
@@ -1017,4 +842,26 @@ test_sync_intent_halt_action_gated() {
     else
         fail "intent halt action resolved before any submission" "resolve=$resolve submit=$submit"
     fi
+}
+
+# Stage 6 in the thin flow: NONE means native did not run, the Class A prompt reads counts
+# from bundle.counts, and no panel-era wording survives.
+test_skill_md_stage6_thin_contract() {
+    local skill="$REPO_ROOT/plugins/code-review-suite/skills/review-gh-pr/SKILL.md" step6 lit
+    step6=$(sed -n '/^## Stage 6: Submit Review Verdict/,/^## Stage 7/p' "$skill")
+    for lit in 'bundle.native.reason' 'bundle.counts.severity' 'bundle.counts.source' \
+        'Never submit `APPROVE` or `REQUEST_CHANGES` for a `NONE` bundle' '`as proposed`'; do
+        if grep -qF -- "$lit" <<<"$step6"; then
+            pass "Stage 6 thin contract: contains '$lit'"
+        else
+            fail "Stage 6 thin contract: contains '$lit'" "literal not found in Stage 6 of $skill"
+        fi
+    done
+    for lit in 'panel-proposed' 'Rubric row' 'lightweight' 'applyRubric'; do
+        if grep -qF -- "$lit" <<<"$step6"; then
+            fail "Stage 6 thin contract: omits '$lit'" "panel-era wording still in Stage 6"
+        else
+            pass "Stage 6 thin contract: omits '$lit'"
+        fi
+    done
 }

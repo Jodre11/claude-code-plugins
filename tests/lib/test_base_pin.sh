@@ -2,7 +2,7 @@
 # Origin-pinned base SHA regression guards (spec 2026-07-10-origin-pinned-base-sha).
 # The pipeline body is byte-synced across three files; these guards assert the new
 # base-pin prose landed in the CANONICAL (includes/review-pipeline.md) and, for the
-# read-only path, in includes/specialist-context.md. The existing pipeline-inline sync
+# read-only path, in includes/static-analysis-context.md. The existing pipeline-inline sync
 # test enforces propagation to SKILL.md and pre-review.md.
 
 test_base_pin_phase_minus05_pins_baserefoid() {
@@ -14,7 +14,7 @@ test_base_pin_phase_minus05_pins_baserefoid() {
     local canonical="$cr/includes/review-pipeline.md"
     # Scope to the Phase -0.5 section so §2a's later baseRefOid addition cannot false-pass this.
     local phase
-    phase=$(sed -n '/^## Phase -0.5: Ephemeral worktree$/,/^## Phase 0: Intent Ledger$/p' "$canonical")
+    phase=$(sed -n '/^## Phase -0.5: Ephemeral worktree$/,/^## Phase 0.55: Local branch freshness check$/p' "$canonical")
     if grep -qF 'baseRefOid' <<<"$phase" && grep -qF 'BASE_PINNED = true' <<<"$phase"; then
         pass "base pin Phase -0.5: canonical resolves baseRefOid and sets \$BASE_PINNED"
     else
@@ -61,34 +61,41 @@ test_base_pin_step1_noworktree_fallback() {
     fi
 }
 
-test_base_pin_specialist_readonly() {
+
+# The reviewer-side base resolvers: static-analysis-context.md, plus specialist-context.md while
+# the LLM agents that read it remain.
+_bp_resolvers() {
     local cr="$REPO_ROOT/plugins/code-review-suite"
-    if [[ ! -d "$cr" ]]; then
-        skip "base pin specialist read-only" "code-review-suite plugin not found"
-        return
-    fi
-    local spec="$cr/includes/specialist-context.md"
-    # Standalone specialists may pin baseRefOid ONLY if the SHA is already local (git cat-file
-    # -e). They must NEVER fetch (read-only mandate; the guard blocks it).
-    if grep -qF 'baseRefOid' "$spec" && grep -qF 'git cat-file -e' "$spec"; then
-        pass "base pin specialist read-only: specialist-context pins baseRefOid guarded by cat-file"
-    else
-        fail "base pin specialist read-only: specialist-context pins baseRefOid guarded by cat-file" \
-            "specialist-context.md must read baseRefOid and gate the pin on 'git cat-file -e' (SHA already in the local object store)"
+    echo "$cr/includes/static-analysis-context.md"
+    if [[ -f "$cr/includes/specialist-context.md" ]]; then
+        echo "$cr/includes/specialist-context.md"
     fi
 }
 
+test_base_pin_specialist_readonly() {
+    # Standalone specialists may pin baseRefOid ONLY if the SHA is already local (git cat-file
+    # -e). They must NEVER fetch (read-only mandate; the guard blocks it).
+    local spec name
+    while IFS= read -r spec; do
+        name=$(basename "$spec")
+        if grep -qF 'baseRefOid' "$spec" && grep -qF 'git cat-file -e' "$spec"; then
+            pass "base pin specialist read-only: $name pins baseRefOid guarded by cat-file"
+        else
+            fail "base pin specialist read-only: $name pins baseRefOid guarded by cat-file" \
+                "$name must read baseRefOid and gate the pin on 'git cat-file -e' (SHA already in the local object store)"
+        fi
+    done < <(_bp_resolvers)
+}
+
 test_base_pin_specialist_never_fetches() {
-    local cr="$REPO_ROOT/plugins/code-review-suite"
-    if [[ ! -d "$cr" ]]; then
-        skip "base pin specialist never fetches" "code-review-suite plugin not found"
-        return
-    fi
-    local spec="$cr/includes/specialist-context.md"
-    if grep -qF 'fetch origin' "$spec"; then
-        fail "base pin specialist never fetches: specialist-context contains no 'fetch origin'" \
-            "specialist-context.md must contain no 'fetch origin' — reviewers are read-only and the reviewer guard (allow-permissions.sh) blocks a fetch"
-    else
-        pass "base pin specialist never fetches: specialist-context contains no 'fetch origin'"
-    fi
+    local spec name
+    while IFS= read -r spec; do
+        name=$(basename "$spec")
+        if grep -qF 'fetch origin' "$spec"; then
+            fail "base pin specialist never fetches: $name contains no 'fetch origin'" \
+                "$name must contain no 'fetch origin' — reviewers are read-only and the reviewer guard blocks a fetch"
+        else
+            pass "base pin specialist never fetches: $name contains no 'fetch origin'"
+        fi
+    done < <(_bp_resolvers)
 }

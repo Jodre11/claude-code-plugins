@@ -87,10 +87,6 @@ sets them, then ignores them.
 | `housekeeper-reviewer` | Dependency/version freshness + maintenance-health — flags GitHub Actions, workflow runners, npm, NuGet, Docker base images, and PyPI packages behind latest GA or marked deprecated/unlisted/yanked (conditional — workflows + `package.json` + `*.csproj`/`*.props` + `pyproject.toml`/`requirements*.txt` + Dockerfiles; registry-backed deterministic engine) |
 | `comment-editor` | Rewords native's surfaced findings to the comment-voice rules without changing what they say; guarded in code (no tools beyond `Read`; dispatched by `review-core` only) |
 
-The LLM specialist, panel and hybrid agents (`code-analysis`, `security-reviewer`,
-`correctness-reviewer`, `panel-reviewer`, `anthropic-reviewer` and the rest) are no longer
-dispatched; they are removed in a follow-up change.
-
 ## Skill
 
 - **review-gh-pr** — Review a GitHub PR and post one marked review with inline comments.

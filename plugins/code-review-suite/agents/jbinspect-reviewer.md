@@ -1,6 +1,6 @@
 ---
 name: jbinspect-reviewer
-description: Runs JetBrains InspectCode on affected C# solutions and reports findings. Standalone or dispatched by the review include or code-analysis agent.
+description: Runs JetBrains InspectCode on affected C# solutions and reports findings. Standalone or dispatched by the review include.
 model: haiku
 effort: low
 tools: Read, Grep, Glob, Bash
@@ -171,5 +171,3 @@ For the C# project whose changed lines 2, 11, 14 trip three InspectCode rules (a
 ```
 
 The heading is `### Finding — <title>` (em-dash, U+2014). The `Rule:` field is `TypeId (Category)` — the spaced `Category` attribute from the XML `<IssueType>` header (e.g. `Redundancies in Code`), not the CamelCase `CategoryId`. All three InspectCode `WARNING`s map to `Important` (jbinspect's Critical-allow-list is empty). The bullet field names are exactly `File`, `Confidence`, `Severity`, `Rule`, `Description`, `Suggested fix` — do not substitute synonyms, do not group findings under a `### <Severity>` sub-heading, and do not use a `**[Severity]**`/prose-block or `---`-separated layout; the harness parser pins to the §7 names and per-finding `### Finding` blocks.
-
-Keep in sync with the InspectCode section in `agents/code-analysis.md` — changes to the C#-specific solution-discovery + `jb inspectcode` invocation must be mirrored. (The cross-cutting bits live in `includes/static-analysis-context.md` and are no longer duplicated.)

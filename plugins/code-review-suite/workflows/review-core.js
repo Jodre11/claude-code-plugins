@@ -174,7 +174,7 @@ const CONDITIONAL = [
     ['housekeeper', flagsOn.housekeeping],
 ]
 const staticDomains = CONDITIONAL.filter(([, on]) => on === true).map(([d]) => d)
-const target = checkNativeTarget(nativeTarget, repoDir, headSha)
+const target = checkNativeTarget(nativeTarget, repoDir, headSha, base, emptyTreeMode, pathScope || '')
 if (!target.ok) log(`native: not dispatched (${target.reason})`)
 
 const [nativeText, ...staticOuts] = await parallel([
@@ -709,10 +709,15 @@ function buildLogPayload(findings, bodyText, phaseLog) {
 
 // Re-checks the target the pipeline built in prose before it reaches the Skill args:
 // `<abs path> <base>...<head>` or `<abs path> <empty tree> <head>`, optionally followed by
-// ` -- <pathspec>…`. The path must equal repoDir and the head must equal headSha, so native
-// reviews exactly the range the static specialists see.
-function checkNativeTarget(target, repoDir, headSha) {
+// ` -- <pathspec>…`. The path must equal repoDir and the head must equal headSha. When given,
+// the form must match emptyTreeMode, a SHA base must equal the range's base, and the scope must
+// equal pathScope, so native reviews exactly the range the static specialists see. A local-mode
+// base is a branch name the pipeline resolved to a SHA, so only a SHA base is compared.
+function checkNativeTarget(target, repoDir, headSha, base, emptyTreeMode, pathScope) {
     if (typeof target !== 'string' || target === '') return { ok: false, reason: 'no native target' }
+    if (typeof repoDir === 'string' && /\s/.test(repoDir)) {
+        return { ok: false, reason: 'the review repository path contains whitespace, which native cannot be given' }
+    }
     const sep = target.indexOf(' -- ')
     const main = sep === -1 ? target : target.slice(0, sep)
     const tokens = main.split(' ')
@@ -741,10 +746,19 @@ function checkNativeTarget(target, repoDir, headSha) {
         return { ok: false, reason: 'native target has the wrong number of parts' }
     }
     if (head !== headSha) return { ok: false, reason: 'native target head is not the review head' }
+    if (typeof emptyTreeMode === 'boolean' && (tokens.length === 3) !== emptyTreeMode) {
+        return { ok: false, reason: 'native target form does not match the empty-tree mode' }
+    }
+    if (tokens.length === 2 && typeof base === 'string' && sha.test(base) && tokens[1].split('...')[0] !== base) {
+        return { ok: false, reason: 'native target base is not the review base' }
+    }
     if (sep !== -1) {
         const scope = target.slice(sep + 4).split(' ')
         const bad = scope.find(t => !/^[a-zA-Z0-9/_.\-*]+$/.test(t) || t.includes('..') || t.startsWith('-'))
         if (bad !== undefined) return { ok: false, reason: 'native target path scope is invalid' }
+    }
+    if (typeof pathScope === 'string' && (sep === -1 ? '' : target.slice(sep + 4)) !== pathScope) {
+        return { ok: false, reason: 'native target path scope is not the review path scope' }
     }
     return { ok: true }
 }
@@ -814,14 +828,28 @@ function normaliseNative(raw) {
     })
 }
 
+// Every spelling of repoDir that native may print, without a trailing slash: as given, with
+// repeated slashes collapsed (the worktree helper can produce `…//review-worktrees`), and the
+// macOS realpath twin (`/tmp` and `/var` are symlinks into `/private`). Longest first.
+function repoDirForms(repoDir) {
+    if (typeof repoDir !== 'string' || repoDir === '') return []
+    const raw = repoDir.replace(/\/+$/, '')
+    const norm = raw.replace(/\/{2,}/g, '/')
+    const forms = new Set([raw, norm])
+    if (/^\/private\/(?:tmp|var)\//.test(norm)) forms.add(norm.slice('/private'.length))
+    else if (/^\/(?:tmp|var)\//.test(norm)) forms.add('/private' + norm)
+    return [...forms].filter(s => s !== '').sort((a, b) => b.length - a.length)
+}
+
 // Native names repo files by absolute path (the review worktree under the reviewer's temp dir).
-// That path is local to the reviewer, so posted text shows it repo-relative.
+// That path is local to the reviewer, so posted text and the anchor path show it repo-relative.
 function stripRepoDir(f, repoDir) {
-    if (typeof repoDir !== 'string' || repoDir === '') return f
-    const prefix = repoDir.replace(/\/+$/, '') + '/'
-    const strip = s => (typeof s === 'string' ? s.split(prefix).join('') : s)
+    const prefixes = repoDirForms(repoDir).map(s => s + '/')
+    if (prefixes.length === 0) return f
+    const strip = s => (typeof s === 'string' ? prefixes.reduce((acc, p) => acc.split(p).join(''), s) : s)
     return {
         ...f,
+        file: strip(f.file),
         description: strip(f.description),
         suggested_fix: strip(f.suggested_fix),
         failure_scenario: strip(f.failure_scenario),
@@ -830,25 +858,36 @@ function stripRepoDir(f, repoDir) {
 
 // True when text cites, as a finding's rule source, a CLAUDE.md outside the reviewed repo: one
 // starting `~/`, or an absolute path not under repoDir. A citation is the path followed by a
-// colon or by "rule", or preceded in the same sentence by break/violat/rule/per/against. Any
-// other occurrence is a mention and does not count. Best effort: a paraphrase with no path
-// gets through.
+// colon and a quoted rule, or by "rule"; or the path directly after a citing phrase ("breaks",
+// "violates", "per", "against", "the rule in"). Any other occurrence is a mention and does not
+// count: a bug about code that reads the file ("the installer breaks when ~/… is missing"), or
+// a path inside a longer code span that quotes an example. Best effort: a paraphrase with no
+// path gets through.
 function citesOutsideRule(text, repoDir) {
     if (typeof text !== 'string') return false
-    const root = typeof repoDir === 'string' ? repoDir.replace(/\/+$/, '') : ''
+    const roots = repoDirForms(repoDir)
+    const spans = [...text.matchAll(/`[^`\n]+`/g)].map(s => ({
+        start: s.index,
+        end: s.index + s[0].length,
+        inner: s[0].slice(1, -1),
+    }))
     const re = /(?:~\/|\/)[^\s"'`()<>]*CLAUDE\.md|[A-Za-z0-9_.\-/]*CLAUDE\.md/g
+    const citingBefore = new RegExp(
+        '(?:\\b(?:breaks?|breaking|violates?|violating|violation\\s+of|per|against|contradicts?)\\s+'
+        + '(?:(?:the|a|this)\\s+)?(?:(?:user-level|global|personal|project)\\s+)?'
+        + '(?:(?:rules?|conventions?)\\s+(?:in|from|of)\\s+)?'
+        + '|\\b(?:rules?|conventions?)\\s+(?:in|from)\\s+)["\'`]?$', 'i')
     for (const m of text.matchAll(re)) {
         const path = m[0]
-        const outside = path.startsWith('~/')
-            || (path.startsWith('/') && !(root !== '' && path.startsWith(root + '/')))
+        const norm = path.replace(/\/{2,}/g, '/')
+        const outside = path.startsWith('~/') || (path.startsWith('/') && !roots.some(r => norm.startsWith(r + '/')))
         if (!outside) continue
-        const after = text.slice(m.index + path.length)
-        if (/^["'`]?:/.test(after) || /^["'`]?\s+rules?\b/i.test(after)) return true
-        const before = text.slice(0, m.index)
-        let start = 0
-        for (const s of before.matchAll(/[.!?]\s+/g)) start = s.index + s[0].length
-        const sentence = before.slice(start)
-        if (/\bbreak|\bviolat|\brules?\s|\bper\s|\bagainst\b/i.test(sentence)) return true
+        const end = m.index + path.length
+        const span = spans.find(s => s.start < m.index && end <= s.end)
+        if (span && span.inner.trim() !== path) continue
+        const after = text.slice(end)
+        if (/^["'`]?:\s*["“]/.test(after) || /^["'`]?\s+rules?\b/i.test(after)) return true
+        if (citingBefore.test(text.slice(0, m.index))) return true
     }
     return false
 }

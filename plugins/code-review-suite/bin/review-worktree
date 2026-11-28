@@ -27,6 +27,8 @@ ROOT_OVERRIDE=""
 
 _root() {
     local base="${ROOT_OVERRIDE:-${CLAUDE_TEMP_DIR:-${TMPDIR:-/tmp}}}"
+    # Callers pass the temp dir with a trailing slash; strip it so the path has no `//`.
+    while [[ "$base" == */ && "$base" != / ]]; do base="${base%/}"; done
     printf '%s/review-worktrees' "$base"
 }
 

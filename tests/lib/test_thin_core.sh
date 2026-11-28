@@ -138,6 +138,60 @@ test_thin_core_target_rejects() {
     assert_equals 'false' "$(_tc_target '' | jq -r '.ok')" "target: empty string rejected"
 }
 
+# $1 target, $2 base, $3 emptyTreeMode (true/false), $4 pathScope. Prints {ok, reason?}.
+_tc_target_full() {
+    _tc_call checkNativeTarget "$(jq -cn --arg t "$1" --arg r "$_TC_REPO" --arg h "$_TC_HEAD" --arg b "$2" \
+        --argjson e "$3" --arg s "$4" '[$t, $r, $h, $b, $e, $s]')"
+}
+
+test_thin_core_target_matches_review_range() {
+    assert_equals 'true' "$(_tc_target_full "$_TC_REPO $_TC_BASE...$_TC_HEAD" "$_TC_BASE" false '' | jq -r '.ok')" \
+        "target: base, form and scope that match the review → accepted"
+    assert_equals 'true' "$(_tc_target_full "$_TC_REPO $_TC_BASE...$_TC_HEAD -- src" origin/main false src | jq -r '.ok')" \
+        "target: a branch-name base (local mode) is not compared"
+    assert_equals 'true' "$(_tc_target_full "$_TC_REPO $_TC_EMPTY $_TC_HEAD" "$_TC_EMPTY" true '' | jq -r '.ok')" \
+        "target: empty-tree form under emptyTreeMode → accepted"
+    local stale='cccccccccccccccccccccccccccccccccccccccc'
+    assert_matches 'base' "$(_tc_target_full "$_TC_REPO $stale...$_TC_HEAD" "$_TC_BASE" false '' | jq -r '.reason')" \
+        "target: a base other than the review base rejected"
+    assert_matches 'empty-tree' "$(_tc_target_full "$_TC_REPO $_TC_EMPTY $_TC_HEAD" "$_TC_EMPTY" false '' | jq -r '.reason')" \
+        "target: empty-tree form without emptyTreeMode rejected"
+    assert_matches 'empty-tree' "$(_tc_target_full "$_TC_REPO $_TC_BASE...$_TC_HEAD" "$_TC_BASE" true '' | jq -r '.reason')" \
+        "target: range form under emptyTreeMode rejected"
+    assert_matches 'scope' "$(_tc_target_full "$_TC_REPO $_TC_BASE...$_TC_HEAD" "$_TC_BASE" false src | jq -r '.reason')" \
+        "target: a missing scope rejected"
+    assert_matches 'scope' "$(_tc_target_full "$_TC_REPO $_TC_BASE...$_TC_HEAD -- docs" "$_TC_BASE" false src \
+        | jq -r '.reason')" "target: a different scope rejected"
+    assert_matches 'scope' "$(_tc_target_full "$_TC_REPO $_TC_BASE...$_TC_HEAD -- src" "$_TC_BASE" false '' \
+        | jq -r '.reason')" "target: a scope the review does not have rejected"
+}
+
+test_thin_core_target_whitespace_repo_reason() {
+    local out
+    out=$(_tc_call checkNativeTarget "$(jq -cn --arg h "$_TC_HEAD" --arg b "$_TC_BASE" \
+        '["/tmp/My Repos/app \($b)...\($h)", "/tmp/My Repos/app", $h]')")
+    assert_equals 'false' "$(echo "$out" | jq -r '.ok')" "target: a repo path with a space is rejected"
+    assert_matches 'whitespace' "$(echo "$out" | jq -r '.reason')" "target: the reason names the whitespace"
+}
+
+# --- stripRepoDir ------------------------------------------------------------------
+
+# $1 finding json, $2 repoDir. Prints the stripped finding.
+_tc_strip() {
+    _tc_call stripRepoDir "$(jq -cn --argjson f "$1" --arg r "$2" '[$f, $r]')"
+}
+
+test_thin_core_strip_repo_dir_forms() {
+    local f out
+    f='{"file":"/tmp/t//review-worktrees/wt-1/a.py","line":3,"description":"see /private/tmp/t/review-worktrees/wt-1/b.py","suggested_fix":"edit /tmp/t/review-worktrees/wt-1/c.py","failure_scenario":"x"}'
+    out=$(_tc_strip "$f" '/tmp/t//review-worktrees/wt-1')
+    assert_equals 'a.py' "$(echo "$out" | jq -r '.file')" "strip: an absolute file is made repo-relative"
+    assert_equals 'see b.py' "$(echo "$out" | jq -r '.description')" "strip: the macOS /private realpath form is stripped"
+    assert_equals 'edit c.py' "$(echo "$out" | jq -r '.suggested_fix')" "strip: the collapsed-slash form is stripped"
+    out=$(_tc_strip '{"file":"a.py","line":1,"description":"d","suggested_fix":"","failure_scenario":"f"}' '/tmp/t')
+    assert_equals 'a.py' "$(echo "$out" | jq -r '.file')" "strip: a repo-relative file is unchanged"
+}
+
 # --- normaliseNative ---------------------------------------------------------------
 
 # $1 severity, $2 summary. Prints the one normalised finding.
@@ -200,6 +254,27 @@ test_thin_core_personal_path_mention_kept() {
         "mention: user-level path mentioned, not cited → kept"
     assert_equals 'false' "$(_tc_cites 'Editing rule-sources.md changes how ~/.claude/CLAUDE.md content is screened.')" \
         "mention: rule-sources.md is not a citation keyword → kept"
+    assert_equals 'false' "$(_tc_cites 'The installer breaks when ~/.claude/CLAUDE.md is missing because read_file() throws.')" \
+        "mention: a bug about code that reads the file, with break earlier in the sentence → kept"
+    assert_equals 'false' "$(_tc_cites 'The guard drops `Breaks /private/tmp/x/wt-1/CLAUDE.md: "no print"` as a personal rule.')" \
+        "mention: a citation quoted as an example inside a longer code span → kept"
+    assert_equals 'false' "$(_tc_cites 'Loading fails on ~/.claude/CLAUDE.md: the parser throws on a BOM.')" \
+        "mention: path then colon with no quoted rule and no citing phrase → kept"
+}
+
+test_thin_core_personal_rule_citation_forms() {
+    assert_equals 'true' "$(_tc_cites 'This breaks the rule in `~/.claude/CLAUDE.md`: "Comments: a brief summary doc comment".')" \
+        "personal rule: path in its own code span, then colon and quote → dropped"
+    assert_equals 'true' "$(_tc_cites 'Breaks ~/.claude/CLAUDE.md, Code Conventions > Style: "Max line length: 120 characters".')" \
+        "personal rule: Breaks <path>, section: → dropped"
+    assert_equals 'true' "$(_tc_cites 'Per ~/.claude/CLAUDE.md, public functions need a doc comment.')" \
+        "personal rule: Per <path> → dropped"
+}
+
+test_thin_core_repo_rule_kept_under_path_forms() {
+    assert_equals 'false' "$(_tc_call citesOutsideRule "$(jq -cn \
+        '["Breaks /private/tmp/t/review-worktrees/wt-1/CLAUDE.md: \"use utf-8\".", "/tmp/t//review-worktrees/wt-1"]')")" \
+        "repo rule: realpath and collapsed-slash forms of repoDir are inside the repo → kept"
 }
 
 # --- staticCriticalAllowed ---------------------------------------------------------

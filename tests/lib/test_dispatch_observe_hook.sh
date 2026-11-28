@@ -5,7 +5,7 @@ _dh_hook() { echo "$REPO_ROOT/plugins/code-review-suite/hooks/reviewer-dispatch-
 test_observe_logs_main_session_reviewer_dispatch() {
     local log out
     log="$(mktemp)"
-    out=$(printf '{"tool_input":{"subagent_type":"code-review-suite:security-reviewer"}}' \
+    out=$(printf '{"tool_input":{"subagent_type":"code-review-suite:ruff-reviewer"}}' \
         | CLAUDE_REVIEW_OBSERVE_LOG="$log" bash "$(_dh_hook)"; echo "exit=$?")
     assert_matches 'exit=0' "$out" "observe hook always exits 0"
     assert_equals "1" "$(wc -l < "$log" | tr -d ' ')" "main-session reviewer dispatch logged once"
@@ -15,7 +15,7 @@ test_observe_logs_main_session_reviewer_dispatch() {
 test_observe_ignores_subagent_originated_dispatch() {
     local log out
     log="$(mktemp)"
-    printf '{"agent_type":"code-review-suite:code-analysis","tool_input":{"subagent_type":"code-review-suite:security-reviewer"}}' \
+    printf '{"agent_type":"code-review-suite:native-reviewer","tool_input":{"subagent_type":"code-review-suite:ruff-reviewer"}}' \
         | CLAUDE_REVIEW_OBSERVE_LOG="$log" bash "$(_dh_hook)" >/dev/null
     assert_equals "0" "$(wc -l < "$log" | tr -d ' ')" "subagent-originated dispatch NOT logged (agent_type present)"
     rm -f "$log"

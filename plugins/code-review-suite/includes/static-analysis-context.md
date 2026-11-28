@@ -6,7 +6,6 @@ Cited from:
   - agents/trivy-reviewer.md
   - agents/jbinspect-reviewer.md
   - agents/housekeeper-reviewer.md
-  - agents/code-analysis.md (InspectCode section)
 
 Cite-only design confirmed by Stage 2 behavioural smoke (33 dispatches across 4 specialists × 3
 sub-checks × 3 iterations, jbinspect/normal_run N/A — no C# fixture): every specialist emitted

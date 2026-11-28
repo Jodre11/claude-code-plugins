@@ -267,8 +267,7 @@ test_no_inline_dispatch_fallback() {
 # (the schema consts precede the `const resolvedArgs = ...` args normaliser), eval it to
 # recover SPECIALIST_SCHEMA, flatten the canonical's `#/$defs/finding` $refs the same way, and
 # deep-compare. The cut anchors on `const resolvedArgs` because the normaliser reads the
-# unbound `args` global, which would throw in the schema-only extract harness. PANEL_SCHEMA
-# and WRITER_SCHEMA are panel-local and deliberately outside the canonical schema. The eval
+# unbound `args` global, which would throw in the schema-only extract harness. The eval
 # input is the repo's own committed source — same trust level as the syntax gate above.
 test_inlined_schema_matches_canonical() {
     local cr

@@ -37,7 +37,7 @@ test_ab_corpus_smoke_fixture_required_keys_present() {
     fi
 
     local key
-    for key in id agent captured_at captured_under working_dir_strategy intent_ledger depends_on; do
+    for key in id agent captured_at captured_under working_dir_strategy depends_on; do
         if [[ "$(yq "has(\"$key\")" "$source_yaml")" == "true" ]]; then
             pass "A/B corpus: smoke source.yaml has $key"
         else

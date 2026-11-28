@@ -78,15 +78,11 @@ agent_dispatch_build_user_message() {
         return 1
     fi
 
-    local base head_sha path_scope empty_tree_mode intent_ledger
+    local base head_sha path_scope empty_tree_mode
     base=$(yq -r '.base_sha // ""' "$source_yaml")
     head_sha=$(yq -r '.head_sha // ""' "$source_yaml")
     path_scope=$(yq -r '.path_scope // ""' "$source_yaml")
     empty_tree_mode=$(yq -r '.empty_tree_mode // false' "$source_yaml")
-    intent_ledger=$(yq -r '.intent_ledger // ""' "$source_yaml")
-
-    local review_mode
-    review_mode=$(yq -r '.review_mode // ""' "$source_yaml")
 
     {
         printf 'Base branch: %s\n' "$base"
@@ -97,13 +93,7 @@ agent_dispatch_build_user_message() {
         if [[ "$empty_tree_mode" == "true" ]]; then
             printf 'Empty tree mode: true\n'
         fi
-        if [[ -n "$review_mode" ]]; then
-            printf 'Review mode: %s\n' "$review_mode"
-        fi
-        # Intent ledger and changed-lines block are inserted verbatim.
-        # Intent ledger may be multi-line; trim trailing newline from yq.
-        printf '%s\n' "$intent_ledger"
-        printf '\n'
+        # The changed-lines block is inserted verbatim.
         cat "$changed_lines"
         printf '\n'
         # PR-A path lines, mirroring review-pipeline.md Step 2.9. Emitted only

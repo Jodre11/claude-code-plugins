@@ -19,8 +19,8 @@ switch to Anthropic's bundled `/code-review`. The design, the decision rule and 
   lowest-numbered PRs large enough for the suite's full route. The first 12 (three per repo) ran in all three
   arms; the 16 added to narrow the suite-versus-native interval ran in those two arms only. Each fixture vendors the base and head versions of
   the touched files, the upstream licence (`UPSTREAM-LICENSE`) and the repo's extracted rules as `CLAUDE.md`.
-- **Sanity set**: the 17 judgement fixtures from `tests/ab/corpus`, read from `tests/fixtures/**`. They are not in
-  the decision rule: the suite was tuned on them.
+- **Sanity set**: 17 judgement fixtures, ported from the retired A/B judgement corpus; their files are read from
+  `tests/fixtures/**`. They are not in the decision rule: the suite was tuned on them.
 
 `fixtures/<id>/fixture.json` is the source of truth for each case: the issues to detect (`class` is `bug`, `rule`
 or `quality`; `lines: null` means no location), or a `near_miss` pattern that must not be reported as must-fix,
@@ -31,10 +31,9 @@ prompt, because `/pre-review` halts in local mode without a narrative descriptio
 
 ```
 fixtures/<id>/fixture.json       source of truth
-fixtures/<id>/files/{base,head}/ vendored Qodo files (corpus fixtures point at tests/fixtures/** instead)
+fixtures/<id>/files/{base,head}/ vendored Qodo files (sanity fixtures point at tests/fixtures/** instead)
 vendor/anthropic-code-review/    pinned code-review.md (Apache-2.0) and its LICENSE
 tools/port_qodo.py               host-side porter; needs gh and network
-tools/port_corpus.py             corpus porter; needs yq
 tools/build_cases.py             renders cases/ (gitignored) and checks the vendored sha256
 tools/aggregate.py               metrics, cluster bootstrap and the decision
 ```
@@ -73,7 +72,6 @@ is not used: `valid-*` decides whether a run counts, `route-full` and `diag-*` a
 
 ```bash
 python3 -I evals/tools/port_qodo.py --cache-dir "$CLAUDE_TEMP_DIR/qodo-data"
-python3 -I evals/tools/port_corpus.py
 ```
 
 `port_qodo.py` keeps fixtures already ported; `--refresh-intent` re-derives only their title and intent.

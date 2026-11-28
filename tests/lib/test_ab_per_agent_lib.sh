@@ -128,9 +128,6 @@ base_sha: aaaa
 head_sha: bbbb
 path_scope: ""
 empty_tree_mode: false
-intent_ledger: |
-  ## Intent ledger
-  - Test fixture intent.
 EOF
 
     mkdir -p "$fixture/diff"
@@ -147,7 +144,6 @@ EOF
 
     if grep -qF "Base branch: aaaa" "$out" && \
        grep -qF "Head SHA: bbbb" "$out" && \
-       grep -qF "Test fixture intent." "$out" && \
        grep -qF "Changed lines:" "$out" && \
        grep -qF "Use \$CLAUDE_TEMP_DIR for temporary files." "$out" && \
        grep -qF "Trust boundary:" "$out"; then
@@ -171,11 +167,11 @@ EOF
         pass "A/B agent_dispatch: omits Empty tree mode: when false"
     fi
 
-    if grep -qF "Review mode:" "$out"; then
-        fail "A/B agent_dispatch: omits Review mode: when absent" \
-            "expected the line to be omitted but it appeared in the output"
+    # Step 2.9 carries no intent ledger and no review mode since the thin pipeline.
+    if grep -qE "Review mode:|Intent ledger" "$out"; then
+        fail "A/B agent_dispatch: emits no retired Review mode or intent ledger line" "$(cat "$out")"
     else
-        pass "A/B agent_dispatch: omits Review mode: when absent"
+        pass "A/B agent_dispatch: emits no retired Review mode or intent ledger line"
     fi
 
     rm -rf "$fixture" "$out"
@@ -206,9 +202,6 @@ base_sha: aaaa
 head_sha: bbbb
 path_scope: "src/python"
 empty_tree_mode: true
-review_mode: pr
-intent_ledger: |
-  - Scoped fixture.
 EOF
 
     mkdir -p "$fixture/diff"
@@ -230,12 +223,6 @@ EOF
         pass "A/B agent_dispatch: includes Empty tree mode: true when set"
     else
         fail "A/B agent_dispatch: includes Empty tree mode: true when set" "$(cat "$out")"
-    fi
-
-    if grep -qF "Review mode: pr" "$out"; then
-        pass "A/B agent_dispatch: includes Review mode: when set"
-    else
-        fail "A/B agent_dispatch: includes Review mode: when set" "$(cat "$out")"
     fi
 
     rm -rf "$fixture" "$out"
